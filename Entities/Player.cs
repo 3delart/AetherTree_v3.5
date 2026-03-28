@@ -57,7 +57,6 @@ using System.Collections.Generic;
 [RequireComponent(typeof(PlayerController))]
 [RequireComponent(typeof(SkillBar))]
 [RequireComponent(typeof(CombatSystem))]
-[RequireComponent(typeof(LootApproach))]
 [RequireComponent(typeof(StatPointSystem))]
 [RequireComponent(typeof(UnityEngine.AI.NavMeshAgent))]
 [RequireComponent(typeof(UnityEngine.CapsuleCollider))]
@@ -270,12 +269,14 @@ public class Player : Entity
         }
         equippedWeaponInstance = instance;
         stats.RecalculateStats(this);
+        RefreshSlot0();
     }
 
     public void UnequipWeapon()
     {
         equippedWeaponInstance = null;
         stats.RecalculateStats(this);
+        RefreshSlot0();
     }
 
     public void EquipArmor(ArmorInstance instance)
@@ -399,6 +400,69 @@ public class Player : Entity
         SkillLibraryUI.Instance?.RefreshIfOpen();
         Debug.Log($"[PLAYER] Passive débloquée : {passive.skillName}");
     }
+
+        // ── AJOUTER RefreshSlot0() ────────────────────────────────
+    /// <summary>
+    /// Met à jour le slot 0 de SkillBar selon l'arme équipée.
+    /// - Arme équipée  → BasicAttack de la famille (choisie par le joueur
+    ///                   si plusieurs dans unlockedSkills, sinon celle du registry).
+    /// - Aucune arme   → UnArmedSkill (WeaponType.UnArmed).
+    /// Appelé par EquipWeapon() et UnequipWeapon().
+    /// </summary>
+    private void RefreshSlot0()
+    {
+        if (SkillBar.Instance == null) return;
+ 
+        // ── Pas d'arme → Unarmed ─────────────────────────────
+        if (equippedWeapon == null)
+        {
+            var registry = WeaponTypeRegistry.Instance;
+            if (registry != null)
+            {
+                SkillData unarmedSkill = registry.GetBasicAttackSkill(WeaponType.UnArmed);
+                if (unarmedSkill != null)
+                {
+                    SkillBar.Instance.SetSkillAtSlot(0, unarmedSkill);
+                    Debug.Log("[PLAYER] Slot 0 → UnArmedSkill (aucune arme équipée).");
+                    return;
+                }
+            }
+            Debug.LogWarning("[PLAYER] RefreshSlot0 : UnArmedSkill introuvable dans WeaponTypeRegistry.");
+            return;
+        }
+ 
+        // ── Arme équipée → BasicAttack de la famille ──────────
+        WeaponType family = equippedWeapon.weaponType.GetStartingFamily();
+ 
+        // Priorité 1 : skill BasicAttack déjà débloqué et compatible avec cette famille
+        // (le joueur peut avoir débloqué une BasicAttack alternative — ex: BasicAttackFeu)
+        SkillData chosen = unlockedSkills.Find(s =>
+            s != null
+            && (s.skillType == SkillType.BasicAttack || s.HasTag(SkillTag.BasicAttack))
+            && (s.compatibleWeapons == null
+                || s.compatibleWeapons.Count == 0
+                || s.compatibleWeapons.Contains(family)
+                || s.compatibleWeapons.Contains(WeaponType.Any)));
+ 
+        // Priorité 2 : BasicAttack de départ du registry
+        if (chosen == null)
+        {
+            var registry = WeaponTypeRegistry.Instance;
+            if (registry != null)
+                chosen = registry.GetBasicAttackSkill(family);
+        }
+ 
+        if (chosen != null)
+        {
+            SkillBar.Instance.SetSkillAtSlot(0, chosen);
+            Debug.Log($"[PLAYER] Slot 0 → {chosen.skillName} ({family}).");
+        }
+        else
+        {
+            Debug.LogWarning($"[PLAYER] RefreshSlot0 : aucune BasicAttack trouvée pour {family}.");
+        }
+    }
+ 
 
     // =========================================================
     // RECALCUL — override Entity.RequestRecalculate()

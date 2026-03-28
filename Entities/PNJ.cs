@@ -157,6 +157,11 @@ public class PNJ : Entity
 
         talkingTo = player;
 
+        // ── NotifyTalkTo — AVANT le switch ────────────────────
+        // Notifie QuestSystem que le joueur parle à CE PNJ précis (par référence SO).
+        // Valide uniquement les objectifs TalkTo qui ciblent exactement ce PNJData.
+        QuestSystem.Instance?.NotifyTalkTo(data, player);
+
         switch (data.pnjType)
         {
             case PNJType.Merchant:     InteractMerchant(player);     break;
@@ -172,7 +177,6 @@ public class PNJ : Entity
             case PNJType.HarborMaster: InteractHarborMaster(player); break;
         }
 
-        // Mémorise le joueur après interaction — GDD v3.5 §3.4
         RegisterKnownPlayer(player);
     }
 

@@ -447,7 +447,8 @@ public class CharacterPanelUI : MonoBehaviour
         SetText(detailAttackTotal,
             $"{Mathf.RoundToInt(_player.AttackDamageMin)}–{Mathf.RoundToInt(_player.AttackDamageMax)}" +
             $"  Prec {Mathf.RoundToInt(_player.Precision)}" +
-            $"  Crit {_player.CritChance * 100f:F1}%");
+            $"  CritChance {_player.CritChance * 100f:F1}%" +
+            $"  CritDamage{_player.CritMultiplier:F2}");
 
         // Row_Base — stats rollées arme seule (FinalDamageMin/Max depuis WeaponInstance)
         if (w != null)
@@ -505,7 +506,8 @@ public class CharacterPanelUI : MonoBehaviour
             $"Mêl {Mathf.RoundToInt(_player.MeleeDefense)}" +
             $"  Dist {Mathf.RoundToInt(_player.RangedDefense)}" +
             $"  Mag {Mathf.RoundToInt(_player.MagicDefense)}" +
-            $"  Esq {Mathf.RoundToInt(_player.Dodge)}");
+            $"  Esq {Mathf.RoundToInt(_player.Dodge)}" + 
+            $"  CritDamageReduction {_player.CritDamageReduction * 100f:F1}%");
 
         // Row_Base — armure rollée seule
         float bMel = armor?.FinalMeleeDefense  ?? 0f;
@@ -567,7 +569,9 @@ public class CharacterPanelUI : MonoBehaviour
         float       cdr  = _player.stats.cooldownReduction;
 
         SetText(detailElementalTotal,
-            $"{dom.GetLabel()}  Rang {rank}  {aff * 100f:F0}%  CDR {cdr * 100f:F0}%");
+            $"Element Actif : {_elemental.GetDominantElement()} " +
+            $"ElementalPoints {Mathf.RoundToInt(_player.GetElementalPoints(dom))}" +
+            $"  CD-Reduct {cdr * 100f:F1}%");
 
         // Row_Base — esprit actif (TotalElementalPoints = cumul de tous les niveaux)
         float spiritPts = 0f;
@@ -608,8 +612,8 @@ public class CharacterPanelUI : MonoBehaviour
     private void RefreshDetailVitality()
     {
         SetText(detailVitalityTotal,
-            $"HP {Mathf.CeilToInt(_player.MaxHP)}  MP {Mathf.CeilToInt(_player.MaxMana)}" +
-            $"  RgHP {_player.RegenHP:F1}  RgMP {_player.RegenMana:F1}");
+            $"HP Max {Mathf.CeilToInt(_player.MaxHP)}  MP Max {Mathf.CeilToInt(_player.MaxMana)}" +
+            $"  Regen HP {_player.RegenHP:F1}  Regen MP {_player.RegenMana:F1}");
 
         // Row_Base — CharacterData base + progression niveau
         var   cd       = _player.characterData;
@@ -659,57 +663,68 @@ public class CharacterPanelUI : MonoBehaviour
     private void RefreshDetailResistances()
     {
         SetText(detailResistTotal,
-            $"Feu {_player.GetElementalResistance(ElementType.Fire) * 100f:F0}%" +
-            $"  Eau {_player.GetElementalResistance(ElementType.Water) * 100f:F0}%" +
-            $"  Fod {_player.GetElementalResistance(ElementType.Lightning) * 100f:F0}%");
+            $"    {_player.GetElementalResistance(ElementType.Neutral) * 100f:F0}%" +
+            $"         {_player.GetElementalResistance(ElementType.Fire) * 100f:F0}%" +
+            $"          {_player.GetElementalResistance(ElementType.Water) * 100f:F0}%" +
+            $"         {_player.GetElementalResistance(ElementType.Lightning) * 100f:F0}%" +
+            $"         {_player.GetElementalResistance(ElementType.Earth) * 100f:F0}%" +
+            $"            {_player.GetElementalResistance(ElementType.Nature) * 100f:F0}%" +
+            $"          {_player.GetElementalResistance(ElementType.Darkness) * 100f:F0}%" +
+            $"         {_player.GetElementalResistance(ElementType.Light) * 100f:F0}%");
 
         // Row_Base — résistances propres des instances gants + bottes (fusionnées)
         var gl = _player.equippedGlovesInstance;
         var bo = _player.equippedBootsInstance;
         SetDetailRow(detailResistBase, "Base",
-            ("Neu", Fmt(GetBaseResist(gl, bo, ElementType.Neutral))),
-            ("Feu", Fmt(GetBaseResist(gl, bo, ElementType.Fire))),
-            ("Eau", Fmt(GetBaseResist(gl, bo, ElementType.Water))),
-            ("Ter", Fmt(GetBaseResist(gl, bo, ElementType.Earth))),
-            ("Nat", Fmt(GetBaseResist(gl, bo, ElementType.Nature))),
-            ("Fod", Fmt(GetBaseResist(gl, bo, ElementType.Lightning))),
-            ("Tèn", Fmt(GetBaseResist(gl, bo, ElementType.Darkness))),
-            ("Lum", Fmt(GetBaseResist(gl, bo, ElementType.Light))));
+            ("Neutral", Fmt(GetBaseResist(gl, bo, ElementType.Neutral))),
+            ("Fire", Fmt(GetBaseResist(gl, bo, ElementType.Fire))),
+            ("Water", Fmt(GetBaseResist(gl, bo, ElementType.Water))),
+            ("Lightning", Fmt(GetBaseResist(gl, bo, ElementType.Lightning))),
+            ("Earth", Fmt(GetBaseResist(gl, bo, ElementType.Earth))),
+            ("Nature", Fmt(GetBaseResist(gl, bo, ElementType.Nature))),
+
+            ("Darkness", Fmt(GetBaseResist(gl, bo, ElementType.Darkness))),
+            ("Light", Fmt(GetBaseResist(gl, bo, ElementType.Light))));
 
         // Row_Equipment — ResistXxx / ResistAll depuis config.bonuses
         var eqR = new Dictionary<ElementType, float>();
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType))) eqR[e] = 0f;
         AccumulateEquipmentResist(_player, eqR);
         SetDetailRow(detailResistEquipment, "Équipement",
-            ("Neu", FmtPlus(eqR[ElementType.Neutral])),
-            ("Feu", FmtPlus(eqR[ElementType.Fire])),
-            ("Eau", FmtPlus(eqR[ElementType.Water])),
-            ("Ter", FmtPlus(eqR[ElementType.Earth])),
-            ("Nat", FmtPlus(eqR[ElementType.Nature])),
-            ("Fod", FmtPlus(eqR[ElementType.Lightning])),
-            ("Tèn", FmtPlus(eqR[ElementType.Darkness])),
-            ("Lum", FmtPlus(eqR[ElementType.Light])));
+            ("Neutral", FmtPlus(eqR[ElementType.Neutral])),
+            ("Fire", FmtPlus(eqR[ElementType.Fire])),
+            ("Water", FmtPlus(eqR[ElementType.Water])),
+            ("Lightning", FmtPlus(eqR[ElementType.Lightning])),
+            ("Earth", FmtPlus(eqR[ElementType.Earth])),
+            ("Nature", FmtPlus(eqR[ElementType.Nature])),
+            ("Darkness", FmtPlus(eqR[ElementType.Darkness])),
+            ("Light", FmtPlus(eqR[ElementType.Light])));
 
         // Row_StatPoints — TotalResistAllFromPoints s'applique à tous les éléments
         var  sp  = _player.statPoints;
         float spR = sp != null ? sp.TotalResistAllFromPoints : 0f;
         SetDetailRow(detailResistStatPoints, "Stat Points",
-            ("Neu", FmtPlus(spR)), ("Feu", FmtPlus(spR)), ("Eau", FmtPlus(spR)),
-            ("Ter", FmtPlus(spR)), ("Nat", FmtPlus(spR)), ("Fod", FmtPlus(spR)),
-            ("Tèn", FmtPlus(spR)), ("Lum", FmtPlus(spR)));
+            ("Neutral", FmtPlus(spR)), 
+            ("Fire", FmtPlus(spR)), 
+            ("Water", FmtPlus(spR)),
+            ("Lightning", FmtPlus(spR)),
+            ("Earth", FmtPlus(spR)), 
+            ("Nature", FmtPlus(spR)), 
+            ("Darkness", FmtPlus(spR)), 
+            ("Light", FmtPlus(spR)));
 
         var pR = new Dictionary<ElementType, float>();
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType))) pR[e] = 0f;
         AccumulatePermanentResist(_player, pR);
         SetDetailRow(detailResistPassive, "Passifs",
-            ("Neu", FmtPlus(pR[ElementType.Neutral])),
-            ("Feu", FmtPlus(pR[ElementType.Fire])),
-            ("Eau", FmtPlus(pR[ElementType.Water])),
-            ("Ter", FmtPlus(pR[ElementType.Earth])),
-            ("Nat", FmtPlus(pR[ElementType.Nature])),
-            ("Fod", FmtPlus(pR[ElementType.Lightning])),
-            ("Tèn", FmtPlus(pR[ElementType.Darkness])),
-            ("Lum", FmtPlus(pR[ElementType.Light])));
+            ("Neutral", FmtPlus(pR[ElementType.Neutral])),
+            ("Fire", FmtPlus(pR[ElementType.Fire])),
+            ("Water", FmtPlus(pR[ElementType.Water])),
+            ("Lightning", FmtPlus(pR[ElementType.Lightning])),
+            ("Earth", FmtPlus(pR[ElementType.Earth])),
+            ("Nature", FmtPlus(pR[ElementType.Nature])),
+            ("Darkness", FmtPlus(pR[ElementType.Darkness])),
+            ("Light", FmtPlus(pR[ElementType.Light])));
     }
 
     // =========================================================

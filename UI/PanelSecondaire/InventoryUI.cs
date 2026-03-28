@@ -185,7 +185,9 @@ public class InventoryUI : MonoBehaviour
         var items = new List<InventoryItem>();
         if (_inventory != null)
             foreach (var slot in EQUIP_SLOTS)
-                items.AddRange(_inventory.GetItems(slot));
+                foreach (var item in _inventory.GetItems(slot))
+                    if (item.ItemCategory == InventoryCategory.Equipement)  // ← filtre ajouté
+                        items.Add(item);
         FillGrid(contentEquipements, _cellsEquip, items);
     }
 

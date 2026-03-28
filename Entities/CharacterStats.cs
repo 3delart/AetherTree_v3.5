@@ -140,9 +140,9 @@ public class CharacterStats
         {
             // Unarmed — scale avec le niveau. GDD §5.1 / §3.2.
             float lvl      = player.level;
-            accAttackMin   = 6f  + lvl * 0.12f * 6f;
-            accAttackMax   = 9f  + lvl * 0.12f * 9f;
-            accPrecision   = 85f;
+            accAttackMin   = 5f  + lvl * 0.12f * 6f;
+            accAttackMax   = 8f  + lvl * 0.12f * 9f;
+            accPrecision   = 12f;
             accCritChance  = 0.03f;
         }
         else
@@ -401,8 +401,6 @@ public class CharacterStats
         float baseRegenMana = cd != null ? cd.baseRegenMana                      : 0.5f;
         float baseMoveSpeed = cd != null ? cd.baseMoveSpeed                      : 4f;
 
-        Debug.Log("Recalculating stats...");
-        Debug.Log($"[STATS] lv={lv} cat={player.weaponCategory} baseHP={baseHP} bonus={accBonusHP} cd={cd?.name}");
 
         if (cd != null && levelOffset > 0)
         {

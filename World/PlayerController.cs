@@ -1,6 +1,20 @@
 using UnityEngine;
 using UnityEngine.AI;
 
+// =============================================================
+// PLAYERCONTROLLER.CS — Déplacement joueur
+// Path : Assets/Scripts/Core/PlayerController.cs
+// AetherTree GDD v3.5
+//
+// Gère uniquement le déplacement manuel (clic droit).
+// Toutes les approches automatiques (loot, ressources, PNJ,
+// bâtiments) sont gérées par TargetingSystem.
+//
+// Quand le joueur prend le contrôle manuel :
+//   → TargetingSystem.StopApproach() annule toute approche active
+//   → Plus de référence à LootApproach ou SkillBar.CancelApproach
+// =============================================================
+
 public class PlayerController : MonoBehaviour
 {
     [Header("Movement")]
@@ -8,30 +22,30 @@ public class PlayerController : MonoBehaviour
     public float stoppingDistance = 0.1f;
     public float rotationSpeed    = 10f;
 
-    private NavMeshAgent agent;
-    private Camera       mainCamera;
+    private NavMeshAgent _agent;
+    private Camera       _mainCamera;
     private Player       _player;
 
-    void Start()
+    private void Start()
     {
-        agent                  = GetComponent<NavMeshAgent>();
-        agent.speed            = moveSpeed;
-        agent.stoppingDistance = stoppingDistance;
-        agent.angularSpeed     = 999f;
-        agent.acceleration     = 999f;
-        mainCamera             = Camera.main;
-        _player                = GetComponent<Player>();
+        _agent                  = GetComponent<NavMeshAgent>();
+        _agent.speed            = moveSpeed;
+        _agent.stoppingDistance = stoppingDistance;
+        _agent.angularSpeed     = 999f;
+        _agent.acceleration     = 999f;
+        _mainCamera             = Camera.main;
+        _player                 = GetComponent<Player>();
     }
 
-    void Update()
+    private void Update()
     {
-        // Vitesse — base depuis player.moveSpeed (RecalculateStats) × Slow × Haste
-        if (_player != null)
+        // Vitesse synchronisée avec RecalculateStats + buffs/debuffs
+        if (_player != null && _agent != null)
         {
-            float baseSpeed = _player.MoveSpeed; // toujours à jour via RecalculateStats
-            float slow  = _player.statusEffects != null ? _player.statusEffects.slowMultiplier      : 1f;
-            float haste = _player.statusEffects != null ? _player.statusEffects.buffSpeedMultiplier : 1f;
-            agent.speed = baseSpeed * slow * haste;
+            float baseSpeed = _player.MoveSpeed;
+            float slow      = _player.statusEffects != null ? _player.statusEffects.slowMultiplier      : 1f;
+            float haste     = _player.statusEffects != null ? _player.statusEffects.buffSpeedMultiplier : 1f;
+            _agent.speed = baseSpeed * slow * haste;
         }
 
         HandleMovement();
@@ -42,66 +56,41 @@ public class PlayerController : MonoBehaviour
         var fx = _player?.statusEffects;
 
         // Stun ou Root — bloque le mouvement
-        if (fx != null && (fx.isStunned || fx.isRooted))
-        {
-            Debug.Log("[MOVE] ❌ Bloqué — Stun ou Root actif");
-            return;
-        }
+        if (fx != null && (fx.isStunned || fx.isRooted)) return;
 
-        // Fear
+        // Fear — fuite vers direction opposée à la menace
         if (fx != null && fx.isFeared)
         {
-            Debug.Log("[MOVE] 😨 Fear actif — fuite");
             Entity threat = TargetingSystem.Instance?.GetEngagedTarget()
-                        ?? TargetingSystem.Instance?.GetSelectedTarget();
+                         ?? TargetingSystem.Instance?.GetSelectedTarget();
             if (threat != null)
             {
                 Vector3 fleeDir = (_player.transform.position - threat.transform.position).normalized;
-                Vector3 fleePos = _player.transform.position + fleeDir * 5f;
-                agent.SetDestination(fleePos);
+                _agent.SetDestination(_player.transform.position + fleeDir * 5f);
             }
             return;
         }
 
-        if (!GameControls.MoveHeld)
-        {
-            // Debug.Log("[MOVE] MoveHeld = false"); // décommenter si besoin
-            return;
-        }
+        if (!GameControls.MoveHeld) return;
 
-        if (UIManager.Instance != null && UIManager.Instance.IsAnyPanelOpen())
-        {
-            Debug.Log("[MOVE] ❌ Bloqué — UI Panel ouvert");
-            return;
-        }
+        if (UIManager.Instance != null && UIManager.Instance.IsAnyPanelOpen()) return;
 
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-        RaycastHit hit;
+        Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
+        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
 
-        if (Physics.Raycast(ray, out hit))
-        {
-            if (hit.collider.CompareTag("Ground"))
-            {
-                agent.SetDestination(hit.point);
-                SkillBar.Instance?.CancelApproach();
-                LootApproach.Instance?.Cancel();
+        if (!hit.collider.CompareTag("Ground")) return;
 
-                Vector3 direction = (hit.point - transform.position).normalized;
-                direction.y = 0f;
-                if (direction != Vector3.zero)
-                    transform.rotation = Quaternion.Slerp(
-                        transform.rotation,
-                        Quaternion.LookRotation(direction),
-                        rotationSpeed * Time.deltaTime);
-            }
-            else
-            {
-                Debug.Log($"[MOVE] ⚠️ Tag incorrect — attendu 'Ground', reçu '{hit.collider.tag}'");
-            }
-        }
-        else
-        {
-            Debug.Log("[MOVE] ❌ Raycast ne touche rien du tout");
-        }
+        // Déplacement manuel — annule toute approche automatique en cours
+        TargetingSystem.Instance?.StopApproach();
+
+        _agent.SetDestination(hit.point);
+
+        Vector3 direction = (hit.point - transform.position);
+        direction.y = 0f;
+        if (direction.sqrMagnitude > 0.001f)
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                Quaternion.LookRotation(direction.normalized),
+                rotationSpeed * Time.deltaTime);
     }
 }

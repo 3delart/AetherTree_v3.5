@@ -209,6 +209,16 @@ public class InventorySystem : MonoBehaviour
         {
             case EquipmentSlot.Weapon:
                 if (item.WeaponInstance == null) return false;
+
+                // Vérification compatibilité AVANT de toucher à l'équipé actuel
+                if (item.WeaponInstance.data != null
+                    && item.WeaponInstance.Category != player.weaponCategory)
+                {
+                    Debug.LogWarning($"[INVENTORY] Arme incompatible — {item.WeaponInstance.WeaponName} " +
+                                    $"({item.WeaponInstance.Category}) refusée pour joueur {player.weaponCategory}.");
+                    return false;
+                }
+
                 if (player.equippedWeaponInstance?.data != null)
                     AddItem(new InventoryItem(player.equippedWeaponInstance));
                 player.EquipWeapon(item.WeaponInstance);

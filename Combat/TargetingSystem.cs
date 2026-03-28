@@ -3,43 +3,37 @@ using UnityEngine.AI;
 using System.Collections;
 
 // =============================================================
-// TARGETINGSYSTEM.CS — Ciblage & Auto-attaque
+// TARGETINGSYSTEM.CS — Ciblage, auto-attaque & approches
 // Path : Assets/Scripts/Systems/TargetingSystem.cs
 // AetherTree GDD v3.5 — §8 / §19 / §21
 //
 // ─── Cibles gérées ───────────────────────────────────────────
 //   Entity  (Mob / PNJ / Pet) → Select → Engage (mobs/pets)
-//   ResourceNode              → SelectNode  → collecte
-//   WorldLootItem             → SelectLoot  → pickup
-//   WorldAerisItem            → SelectAeris → pickup
+//   ResourceNode              → collecte
+//   WorldPickupItem           → pickup (item ou Aeris)
+//   IInteractableBuilding     → interaction bâtiment
 //   Ground / vide             → Deselect
 //
 // ─── Auto-approche unifiée ───────────────────────────────────
-//   Toutes les approches passent par ApproachCoroutine() :
-//     un seul pattern, une seule coroutine active à la fois.
-//   Annulée automatiquement si le joueur bouge manuellement
-//   (GameControls.MoveHeld).
+//   TOUTES les approches passent par une coroutine unique.
+//   StopApproach() est PUBLIC — appelé par PlayerController
+//   dès que le joueur prend le contrôle manuel.
+//   WorldLootItem et WorldAerisItem supprimés → WorldPickupItem.
 //
-// ─── Flow skill (GDD §7.1) ───────────────────────────────────
-//   TryExecuteSkill(skill) résout la target selon skill.targetType :
-//     Self / AoE_Self                          → caster = player, target = null
-//     GroundTarget                             → point au sol, target = null
-//     Direction / Skillshot / Cone             → direction forward/souris, target = null
-//     Dash_Direction                           → direction forward/souris, target = null
-//     Target / AoE_Target / Dash_Target /
-//       LineTarget                             → engagedTarget ?? selectedTarget
-//
-// ─── Auto-attaque (GDD §8.1) ─────────────────────────────────
-//   Timer cadence ici, exécution via SkillBar.TryUseSlot(0).
-//   Dodge roll : esquive effective de la CIBLE vs précision effective du JOUEUR.
-//
-// ─── Sélection / Engagement ──────────────────────────────────
-//   1er clic → Select (outline orange, TargetPanel)
-//   2e clic  → Engage si Mob/Pet (outline rouge, auto-attaque)
-//            → Interact si PNJ (dans rayon ou approche)
-//            → Collect si ResourceNode (dans rayon ou approche)
-//            → Pickup si LootItem (dans rayon ou approche)
+// ─── Bâtiments ───────────────────────────────────────────────
+//   Implémenter IInteractableBuilding sur forge, puits, etc.
 // =============================================================
+
+/// <summary>
+/// Interface à implémenter sur tous les bâtiments interactifs
+/// (Forge, Puits, Marché, Enclume, etc.).
+/// </summary>
+public interface IInteractableBuilding
+{
+    float  InteractionRadius { get; }
+    void   Interact(Player player);
+    string BuildingName { get; }
+}
 
 public class TargetingSystem : MonoBehaviour
 {
@@ -47,22 +41,26 @@ public class TargetingSystem : MonoBehaviour
 
     // ── Couleurs ──────────────────────────────────────────────
     [Header("Couleurs de sélection")]
-    public Color colorSelected = new Color(1f, 0.5f, 0f);  // Orange
-    public Color colorEngaged  = new Color(1f, 0f,   0f);  // Rouge
+    public Color colorSelected = new Color(1f, 0.5f, 0f);
+    public Color colorEngaged  = new Color(1f, 0f,   0f);
 
     // ── Références ────────────────────────────────────────────
-    private Player player;
+    private Player       player;
+    private NavMeshAgent _agent;
 
     // ── État sélection ────────────────────────────────────────
-    private Entity         selectedTarget;
-    private Entity         engagedTarget;
-    private ResourceNode   selectedNode;
-    private WorldLootItem  selectedLoot;
-    private WorldAerisItem selectedAeris;
+    private Entity                selectedTarget;
+    private Entity                engagedTarget;
+    private ResourceNode          selectedNode;
+    private WorldPickupItem       selectedPickup;
+    private IInteractableBuilding selectedBuilding;
+    private GameObject            selectedBuildingGO;
 
     // ── Outlines ──────────────────────────────────────────────
     private Outline selectedOutline;
     private Outline engagedOutline;
+    private Outline _nodeOutline;
+    private Outline _buildingOutline;
 
     // ── Auto-attaque ──────────────────────────────────────────
     private bool  autoAttacking   = false;
@@ -70,6 +68,7 @@ public class TargetingSystem : MonoBehaviour
 
     // ── Approche unifiée ──────────────────────────────────────
     private Coroutine _approachCoroutine;
+    private const float ApproachTimeout = 15f;
 
     // =========================================================
     // INIT
@@ -84,8 +83,10 @@ public class TargetingSystem : MonoBehaviour
     private void Start()
     {
         player = GetComponent<Player>();
-        if (player == null)
-            Debug.LogError("[TARGETING] Player non trouvé sur ce GameObject !");
+        _agent = GetComponent<NavMeshAgent>();
+
+        if (player == null) Debug.LogError("[TARGETING] Player non trouvé !");
+        if (_agent  == null) Debug.LogError("[TARGETING] NavMeshAgent non trouvé !");
     }
 
     // =========================================================
@@ -106,7 +107,6 @@ public class TargetingSystem : MonoBehaviour
     private void TickAutoAttack()
     {
         if (!autoAttacking || engagedTarget == null) return;
-
         if (engagedTarget.isDead) { Deselect(); return; }
 
         autoAttackTimer -= Time.deltaTime;
@@ -114,8 +114,7 @@ public class TargetingSystem : MonoBehaviour
         {
             PerformAutoAttack();
             float speed = player?.equippedWeaponInstance != null
-                ? player.equippedWeaponInstance.AttackSpeed
-                : 1.2f;
+                ? player.equippedWeaponInstance.AttackSpeed : 1.2f;
             autoAttackTimer = speed > 0f ? 1f / speed : 1f;
         }
     }
@@ -124,11 +123,8 @@ public class TargetingSystem : MonoBehaviour
     {
         if (player == null || SkillBar.Instance == null) return;
         if (engagedTarget == null || engagedTarget.isDead) return;
-
-        // Stun — bloque l'auto-attaque (GDD §21bis.1)
         if (player.statusEffects != null && player.statusEffects.isStunned) return;
 
-        // Dodge roll — esquive effective de la cible vs précision effective du joueur (GDD §3.1.1.2)
         if (CombatSystem.Instance != null)
         {
             bool dodged = CombatSystem.Instance.RollDodge(
@@ -151,12 +147,11 @@ public class TargetingSystem : MonoBehaviour
     }
 
     // =========================================================
-    // INPUT — dispatch principal
+    // INPUT
     // =========================================================
 
     private void HandleInput()
     {
-        // Echap : ferme dialogue ou déselectionne
         if (GameControls.Deselect)
         {
             if (DialogueUI.Instance != null && DialogueUI.Instance.IsOpen)
@@ -166,10 +161,8 @@ public class TargetingSystem : MonoBehaviour
             return;
         }
 
-        // Dialogue ouvert — bloque tout input monde
         if (DialogueUI.Instance != null && DialogueUI.Instance.IsOpen) return;
 
-        // Tab — toggle auto-attaque sur la cible engagée
         if (Input.GetKeyDown(KeyCode.Tab))
         {
             if (engagedTarget != null) ToggleAutoAttack();
@@ -182,20 +175,19 @@ public class TargetingSystem : MonoBehaviour
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
         if (!Physics.Raycast(ray, out RaycastHit hit, 100f)) { Deselect(); return; }
 
-        // ── Sol / terrain ─────────────────────────────────────
         if (hit.collider.CompareTag("Ground")) { Deselect(); return; }
 
-        // ── Priorité 1 : Aeris au sol ─────────────────────────
-        WorldAerisItem aeris = hit.collider.GetComponentInParent<WorldAerisItem>();
-        if (aeris != null) { HandleAerisClick(aeris); return; }
+        // ── Priorité 1 : WorldPickupItem (loot ou aeris) ──────
+        WorldPickupItem pickup = hit.collider.GetComponentInParent<WorldPickupItem>();
+        if (pickup != null) { HandlePickupClick(pickup); return; }
 
-        // ── Priorité 2 : Loot au sol ──────────────────────────
-        WorldLootItem loot = hit.collider.GetComponentInParent<WorldLootItem>();
-        if (loot != null) { HandleLootClick(loot); return; }
-
-        // ── Priorité 3 : ResourceNode ─────────────────────────
+        // ── Priorité 2 : ResourceNode ─────────────────────────
         ResourceNode node = hit.collider.GetComponentInParent<ResourceNode>();
         if (node != null) { HandleNodeClick(node); return; }
+
+        // ── Priorité 3 : Bâtiment interactif ──────────────────
+        IInteractableBuilding building = hit.collider.GetComponentInParent<IInteractableBuilding>();
+        if (building != null) { HandleBuildingClick(building, hit.collider.gameObject); return; }
 
         // ── Priorité 4 : Entity ───────────────────────────────
         Entity entity = hit.collider.GetComponentInParent<Entity>();
@@ -203,8 +195,8 @@ public class TargetingSystem : MonoBehaviour
 
         switch (entity.entityType)
         {
-            case EntityType.PNJ:  HandlePNJClick(entity as PNJ); break;
-            default:              HandleCombatEntityClick(entity); break;  // Mob, Pet
+            case EntityType.PNJ: HandlePNJClick(entity as PNJ); break;
+            default:             HandleCombatEntityClick(entity); break;
         }
     }
 
@@ -212,41 +204,22 @@ public class TargetingSystem : MonoBehaviour
     // HANDLERS PAR TYPE DE CIBLE
     // =========================================================
 
-    // ── WorldAerisItem ────────────────────────────────────────
+    // ── WorldPickupItem (item ou aeris) ───────────────────────
 
-    private void HandleAerisClick(WorldAerisItem aeris)
+    private void HandlePickupClick(WorldPickupItem pickup)
     {
-        if (selectedAeris == aeris)
+        if (selectedPickup == pickup)
         {
-            float dist = Vector3.Distance(player.transform.position, aeris.transform.position);
-            if (dist <= aeris.pickupRange)
-                aeris.TryPickUp();
+            float dist = Vector3.Distance(player.transform.position, pickup.transform.position);
+            if (dist <= pickup.pickupRange)
+                pickup.TryPickUp();
             else
-                StartApproach(ApproachAerisRoutine(aeris));
+                StartApproach(ApproachPickupRoutine(pickup));
         }
         else
         {
             ClearAllSelection();
-            selectedAeris = aeris;
-        }
-    }
-
-    // ── WorldLootItem ─────────────────────────────────────────
-
-    private void HandleLootClick(WorldLootItem loot)
-    {
-        if (selectedLoot == loot)
-        {
-            float dist = Vector3.Distance(player.transform.position, loot.transform.position);
-            if (dist <= loot.pickupRange)
-                loot.TryPickUp();
-            else
-                StartApproach(ApproachLootRoutine(loot));
-        }
-        else
-        {
-            ClearAllSelection();
-            selectedLoot = loot;
+            selectedPickup = pickup;
         }
     }
 
@@ -266,8 +239,38 @@ public class TargetingSystem : MonoBehaviour
         else
         {
             ClearAllSelection();
-            selectedNode = node;
+            selectedNode    = node;
+            _nodeOutline    = node.GetComponent<Outline>()
+                        ?? node.gameObject.AddComponent<Outline>();
+            _nodeOutline.OutlineColor = colorSelected;
+            _nodeOutline.OutlineWidth = 4f;
+            _nodeOutline.enabled      = true;
             TargetPanel.Instance?.ShowNode(node);
+        }
+    }
+
+    // ── Bâtiment interactif ───────────────────────────────────
+
+    private void HandleBuildingClick(IInteractableBuilding building, GameObject buildingGO)
+    {
+        if (selectedBuildingGO == buildingGO)
+        {
+            float dist = Vector3.Distance(player.transform.position, buildingGO.transform.position);
+            if (dist <= building.InteractionRadius)
+                building.Interact(player);
+            else
+                StartApproach(ApproachBuildingRoutine(building, buildingGO));
+        }
+        else
+        {
+            ClearAllSelection();
+            selectedBuilding   = building;
+            selectedBuildingGO = buildingGO;
+            _buildingOutline   = buildingGO.GetComponent<Outline>()
+                            ?? buildingGO.AddComponent<Outline>();
+            _buildingOutline.OutlineColor = colorSelected;
+            _buildingOutline.OutlineWidth = 4f;
+            _buildingOutline.enabled      = true;
         }
     }
 
@@ -292,21 +295,20 @@ public class TargetingSystem : MonoBehaviour
         }
     }
 
-    // ── Mob / Pet — combat ────────────────────────────────────
+    // ── Mob / Pet ─────────────────────────────────────────────
 
     private void HandleCombatEntityClick(Entity entity)
     {
         if (entity == selectedTarget && engagedTarget != entity)
-            Engage(entity);   // 2e clic → engage
+            Engage(entity);
         else
-            Select(entity);   // 1er clic → sélection
+            Select(entity);
     }
 
     // =========================================================
     // SELECT / ENGAGE
     // =========================================================
 
-    /// <summary>Sélectionne une Entity — outline orange + TargetPanel.</summary>
     public void Select(Entity entity)
     {
         if (entity == null) return;
@@ -322,7 +324,6 @@ public class TargetingSystem : MonoBehaviour
         TargetPanel.Instance?.Show(entity);
     }
 
-    /// <summary>Engage une Entity — outline rouge + démarre l'auto-attaque.</summary>
     public void Engage(Entity entity)
     {
         if (entity == null) return;
@@ -341,7 +342,6 @@ public class TargetingSystem : MonoBehaviour
         autoAttackTimer = 0f;
     }
 
-    /// <summary>Sélectionne ET engage immédiatement (depuis un skill qui initie le combat).</summary>
     public void EngageFromSkill(Entity entity)
     {
         Select(entity);
@@ -349,32 +349,20 @@ public class TargetingSystem : MonoBehaviour
     }
 
     // =========================================================
-    // EXÉCUTION DE SKILL — point d'entrée depuis SkillBar
+    // EXÉCUTION DE SKILL
     // =========================================================
 
-    /// <summary>
-    /// Résout la target selon skill.targetType puis appelle SkillSystem.Execute().
-    ///
-    /// Self / AoE_Self                          → target null
-    /// GroundTarget                             → point au sol, target null
-    /// Direction / Skillshot / Cone /
-    ///   Dash_Direction                         → direction forward/souris, target null
-    /// Target / AoE_Target / Dash_Target /
-    ///   LineTarget                             → engagedTarget ?? selectedTarget
-    /// </summary>
     public void TryExecuteSkill(SkillData skill)
     {
         if (skill == null || SkillSystem.Instance == null || player == null) return;
 
         switch (skill.targetType)
         {
-            // ── Sans target Entity ────────────────────────────
             case TargetType.Self:
             case TargetType.AoE_Self:
                 SkillSystem.Instance.Execute(skill, player, null);
                 return;
 
-            // ── Point au sol ──────────────────────────────────
             case TargetType.GroundTarget:
             {
                 Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
@@ -383,50 +371,19 @@ public class TargetingSystem : MonoBehaviour
                     SkillSystem.Instance.SetGroundTargetPoint(hit.point);
                     SkillSystem.Instance.Execute(skill, player, null);
                 }
-                else
-                {
-                    Debug.LogWarning($"[TARGETING] {skill.skillName} (GroundTarget) : aucune surface détectée.");
-                }
                 return;
             }
 
-            // ── Direction libre (projectile large, zone directionnelle) ──
             case TargetType.Direction:
-            {
-                Vector3 dir = ResolveDirection();
-                SkillSystem.Instance.SetSkillDirection(dir);
-                SkillSystem.Instance.Execute(skill, player, null);
-                return;
-            }
-
-            // ── Skillshot — projectile en ligne droite, frappe la première cible ──
             case TargetType.Skillshot:
-            {
-                Vector3 dir = ResolveDirection();
-                SkillSystem.Instance.SetSkillDirection(dir);
-                SkillSystem.Instance.Execute(skill, player, null);
-                return;
-            }
-
-            // ── Cône — éventail devant le joueur ──────────────
             case TargetType.Cone:
-            {
-                Vector3 dir = ResolveDirection();
-                SkillSystem.Instance.SetSkillDirection(dir);
-                SkillSystem.Instance.Execute(skill, player, null);
-                return;
-            }
-
-            // ── Dash directionnel — dash sans cible requise ───
             case TargetType.Dash_Direction:
             {
-                Vector3 dir = ResolveDirection();
-                SkillSystem.Instance.SetSkillDirection(dir);
+                SkillSystem.Instance.SetSkillDirection(ResolveDirection());
                 SkillSystem.Instance.Execute(skill, player, null);
                 return;
             }
 
-            // ── Target Entity requise ─────────────────────────
             case TargetType.Target:
             case TargetType.AoE_Target:
             case TargetType.Dash_Target:
@@ -443,7 +400,6 @@ public class TargetingSystem : MonoBehaviour
             }
 
             default:
-                // Fallback générique avec target si disponible
                 SkillSystem.Instance.Execute(skill, player, engagedTarget ?? selectedTarget);
                 return;
         }
@@ -453,30 +409,20 @@ public class TargetingSystem : MonoBehaviour
     // HELPERS DIRECTION
     // =========================================================
 
-    /// <summary>
-    /// Résout la direction du prochain skill directionnel.
-    /// Si une cible est sélectionnée/engagée → vers elle.
-    /// Sinon → rayon depuis la caméra vers la souris au sol.
-    /// Fallback → regard du joueur.
-    /// </summary>
     private Vector3 ResolveDirection()
     {
-        // Priorité 1 : vers la cible engagée ou sélectionnée
         Entity aim = engagedTarget ?? selectedTarget;
         if (aim != null)
             return (aim.transform.position - player.transform.position).normalized;
 
-        // Priorité 2 : direction vers le pointeur souris au sol
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
         if (Physics.Raycast(ray, out RaycastHit hit, 200f))
         {
             Vector3 toMouse = hit.point - player.transform.position;
             toMouse.y = 0f;
-            if (toMouse.sqrMagnitude > 0.001f)
-                return toMouse.normalized;
+            if (toMouse.sqrMagnitude > 0.001f) return toMouse.normalized;
         }
 
-        // Fallback : regard du joueur
         return player.transform.forward;
     }
 
@@ -490,46 +436,65 @@ public class TargetingSystem : MonoBehaviour
         _approachCoroutine = StartCoroutine(routine);
     }
 
-    private void StopApproach()
+    /// <summary>
+    /// Stoppe l'approche en cours.
+    /// PUBLIC — appelé par PlayerController dès que MoveHeld est vrai.
+    /// </summary>
+    public void StopApproach()
     {
-        if (_approachCoroutine != null)
+        if (_approachCoroutine == null) return;
+        StopCoroutine(_approachCoroutine);
+        _approachCoroutine = null;
+    }
+
+    private void CheckApproachCancelled()
+    {
+        if (GameControls.MoveHeld)
         {
-            StopCoroutine(_approachCoroutine);
-            _approachCoroutine = null;
+            if (_approachCoroutine != null)
+                StopApproach();
+
+            // Désengage la cible — repasse en orange (sélectionnée) si elle existe
+            if (engagedTarget != null)
+            {
+                // Transfère l'engagée en sélectionnée pour garder l'outline orange
+                if (selectedOutline != null) { selectedOutline.enabled = false; }
+                selectedTarget  = engagedTarget;
+                selectedOutline = engagedOutline;
+                if (selectedOutline != null) selectedOutline.OutlineColor = colorSelected;
+
+                engagedTarget  = null;
+                engagedOutline = null;
+                autoAttacking  = false;
+            }
         }
     }
 
-    /// <summary>Annule l'approche dès que le joueur prend le contrôle manuel.</summary>
-    private void CheckApproachCancelled()
+    // ── Routine WorldPickupItem (item ou aeris) ───────────────
+
+    private IEnumerator ApproachPickupRoutine(WorldPickupItem pickup)
     {
-        if (_approachCoroutine != null && GameControls.MoveHeld)
-            StopApproach();
-    }
+        if (_agent == null) yield break;
 
-    // ── Routine PNJ ───────────────────────────────────────────
-
-    private IEnumerator ApproachPNJRoutine(PNJ pnj)
-    {
-        NavMeshAgent agent = player.GetComponent<NavMeshAgent>();
-        if (agent == null) yield break;
-
-        agent.SetDestination(pnj.transform.position);
-
-        float timeout = 10f;
         float elapsed = 0f;
-        while (elapsed < timeout)
+        _agent.SetDestination(pickup.transform.position);
+
+        while (elapsed < ApproachTimeout)
         {
-            if (pnj == null || pnj.isDead) yield break;
-            if (Vector3.Distance(player.transform.position, pnj.transform.position) <= pnj.interactionRadius)
+            if (pickup == null || !pickup.gameObject.activeSelf) yield break;
+
+            if (Vector3.Distance(player.transform.position, pickup.transform.position) <= pickup.pickupRange)
             {
-                agent.ResetPath();
-                pnj.Interact(player);
+                _agent.ResetPath();
+                pickup.TryPickUp();
                 yield break;
             }
+
             elapsed += Time.deltaTime;
             yield return null;
         }
-        agent.ResetPath();
+
+        _agent.ResetPath();
         _approachCoroutine = null;
     }
 
@@ -537,83 +502,85 @@ public class TargetingSystem : MonoBehaviour
 
     private IEnumerator ApproachNodeRoutine(ResourceNode node)
     {
-        NavMeshAgent agent = player.GetComponent<NavMeshAgent>();
-        if (agent == null) yield break;
+        if (_agent == null) yield break;
 
-        float radius = node.data?.interactionRadius ?? 2.5f;
-        agent.SetDestination(node.transform.position);
-
-        float timeout = 10f;
+        float radius  = node.data?.interactionRadius ?? 2.5f;
         float elapsed = 0f;
-        while (elapsed < timeout)
+        _agent.SetDestination(node.transform.position);
+
+        while (elapsed < ApproachTimeout)
         {
             if (node == null || !node.gameObject.activeSelf) yield break;
-            agent.SetDestination(node.transform.position);
+            _agent.SetDestination(node.transform.position);
 
             if (Vector3.Distance(player.transform.position, node.transform.position) <= radius)
             {
-                agent.ResetPath();
+                _agent.ResetPath();
                 node.BeginCollect(player);
                 yield break;
             }
+
             elapsed += Time.deltaTime;
             yield return null;
         }
-        agent.ResetPath();
+
+        _agent.ResetPath();
         _approachCoroutine = null;
     }
 
-    // ── Routine WorldLootItem ─────────────────────────────────
+    // ── Routine PNJ ───────────────────────────────────────────
 
-    private IEnumerator ApproachLootRoutine(WorldLootItem loot)
+    private IEnumerator ApproachPNJRoutine(PNJ pnj)
     {
-        NavMeshAgent agent = player.GetComponent<NavMeshAgent>();
-        if (agent == null) yield break;
+        if (_agent == null) yield break;
 
-        agent.SetDestination(loot.transform.position);
-
-        float timeout = 10f;
         float elapsed = 0f;
-        while (elapsed < timeout)
+        _agent.SetDestination(pnj.transform.position);
+
+        while (elapsed < ApproachTimeout)
         {
-            if (loot == null || !loot.gameObject.activeSelf) yield break;
-            if (Vector3.Distance(player.transform.position, loot.transform.position) <= loot.pickupRange)
+            if (pnj == null || pnj.isDead) yield break;
+
+            if (Vector3.Distance(player.transform.position, pnj.transform.position) <= pnj.interactionRadius)
             {
-                agent.ResetPath();
-                loot.TryPickUp();
+                _agent.ResetPath();
+                pnj.Interact(player);
                 yield break;
             }
+
             elapsed += Time.deltaTime;
             yield return null;
         }
-        agent.ResetPath();
+
+        _agent.ResetPath();
         _approachCoroutine = null;
     }
 
-    // ── Routine WorldAerisItem ────────────────────────────────
+    // ── Routine Bâtiment ──────────────────────────────────────
 
-    private IEnumerator ApproachAerisRoutine(WorldAerisItem aeris)
+    private IEnumerator ApproachBuildingRoutine(IInteractableBuilding building, GameObject buildingGO)
     {
-        NavMeshAgent agent = player.GetComponent<NavMeshAgent>();
-        if (agent == null) yield break;
+        if (_agent == null) yield break;
 
-        agent.SetDestination(aeris.transform.position);
-
-        float timeout = 10f;
         float elapsed = 0f;
-        while (elapsed < timeout)
+        _agent.SetDestination(buildingGO.transform.position);
+
+        while (elapsed < ApproachTimeout)
         {
-            if (aeris == null || !aeris.gameObject.activeSelf) yield break;
-            if (Vector3.Distance(player.transform.position, aeris.transform.position) <= aeris.pickupRange)
+            if (buildingGO == null || !buildingGO.activeSelf) yield break;
+
+            if (Vector3.Distance(player.transform.position, buildingGO.transform.position) <= building.InteractionRadius)
             {
-                agent.ResetPath();
-                aeris.TryPickUp();
+                _agent.ResetPath();
+                building.Interact(player);
                 yield break;
             }
+
             elapsed += Time.deltaTime;
             yield return null;
         }
-        agent.ResetPath();
+
+        _agent.ResetPath();
         _approachCoroutine = null;
     }
 
@@ -621,7 +588,6 @@ public class TargetingSystem : MonoBehaviour
     // DESELECT
     // =========================================================
 
-    /// <summary>Réinitialise toute sélection et stoppe l'auto-attaque.</summary>
     public void Deselect()
     {
         ClearAllSelection();
@@ -637,10 +603,13 @@ public class TargetingSystem : MonoBehaviour
     private void ClearAllSelection()
     {
         if (selectedOutline != null) { selectedOutline.enabled = false; selectedOutline = null; }
-        selectedTarget = null;
-        selectedNode   = null;
-        selectedLoot   = null;
-        selectedAeris  = null;
+        if (_nodeOutline     != null) { _nodeOutline.enabled     = false; _nodeOutline     = null; }
+        if (_buildingOutline != null) { _buildingOutline.enabled = false; _buildingOutline = null; }
+        selectedTarget     = null;
+        selectedNode       = null;
+        selectedPickup     = null;
+        selectedBuilding   = null;
+        selectedBuildingGO = null;
     }
 
     private void ClearEngage()
@@ -654,10 +623,10 @@ public class TargetingSystem : MonoBehaviour
     // ACCESSEURS PUBLICS
     // =========================================================
 
-    public Entity         GetEngagedTarget()  => engagedTarget;
-    public Entity         GetSelectedTarget() => selectedTarget;
-    public ResourceNode   GetSelectedNode()   => selectedNode;
-    public WorldLootItem  GetSelectedLoot()   => selectedLoot;
-    public WorldAerisItem GetSelectedAeris()  => selectedAeris;
-    public bool           IsAutoAttacking     => autoAttacking;
+    public Entity                GetEngagedTarget()   => engagedTarget;
+    public Entity                GetSelectedTarget()  => selectedTarget;
+    public ResourceNode          GetSelectedNode()    => selectedNode;
+    public WorldPickupItem       GetSelectedPickup()  => selectedPickup;
+    public IInteractableBuilding GetSelectedBuilding() => selectedBuilding;
+    public bool                  IsAutoAttacking      => autoAttacking;
 }

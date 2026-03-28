@@ -39,10 +39,6 @@ public class AerisSystem : MonoBehaviour
         _aeris += amount;
         Save();
         OnAerisChanged?.Invoke(_aeris);
-        FloatingText.Spawn($"+{amount} Aeris",
-            FindObjectOfType<Player>()?.transform.position ?? Vector3.zero,
-            new Color(1f, 0.85f, 0.2f));
-        Debug.Log($"[AERIS] +{amount} → Total : {_aeris}");
     }
 
     public bool Spend(int amount)

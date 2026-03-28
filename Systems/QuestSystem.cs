@@ -240,32 +240,28 @@ public class QuestSystem : MonoBehaviour
     /// <summary>
     /// À appeler depuis PNJ.Interact() quand le PNJ est la cible d'un objectif TalkTo.
     /// </summary>
-    public void NotifyTalkTo(string pnjName, Player player)
+    public void NotifyTalkTo(PNJData pnjData, Player player)
     {
-        if (string.IsNullOrEmpty(pnjName) || player == null) return;
+        if (pnjData == null || player == null) return;
 
         foreach (var kvp in _activeData)
         {
             if (_states[kvp.Key] != QuestState.Active) continue;
 
-            QuestData quest = kvp.Value;
-            
-            // GetActiveObjectiveIndices() gère déjà la séquence —
-            // en mode séquentiel, seuls les objectifs du groupe courant sont retournés.
-            // Si les kills ne sont pas finis, TalkTo n'est pas dans les indices actifs.
-            var activeIndices = quest.GetActiveObjectiveIndices();
+            QuestData quest       = kvp.Value;
+            var       activeIndices = quest.GetActiveObjectiveIndices();
 
             foreach (int idx in activeIndices)
             {
                 var obj = quest.objectives[idx];
                 if (obj.type != QuestObjectiveType.TalkTo) continue;
-                if (string.IsNullOrEmpty(obj.TargetName)) continue;
-                if (!obj.TargetName.Equals(pnjName, 
-                    System.StringComparison.OrdinalIgnoreCase)) continue;
+
+                // Comparaison par référence SO — pas par nom string
+                if (obj.targetPNJ == null || obj.targetPNJ != pnjData) continue;
 
                 obj.Increment();
-                Debug.Log($"[QUEST] {quest.questName} · TalkTo {pnjName} : {obj.ProgressLabel}");
-                
+                Debug.Log($"[QUEST] {quest.questName} · TalkTo {pnjData.pnjName} : {obj.ProgressLabel}");
+
                 GameEventBus.Publish(new QuestEvent
                 {
                     quest          = quest,

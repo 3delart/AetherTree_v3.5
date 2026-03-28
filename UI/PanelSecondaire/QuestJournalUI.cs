@@ -202,25 +202,15 @@ public class QuestJournalUI : MonoBehaviour
         var suiviBtn = go.transform.Find("ButtonSuivis")?.GetComponent<Button>();
         if (suiviBtn != null)
         {
-            // Couleur selon état de suivi
             bool tracked = QuestTrackerUI.Instance?.IsTracked(captured) ?? false;
             var suiviBtnImg = suiviBtn.GetComponent<Image>();
             if (suiviBtnImg != null)
                 suiviBtnImg.color = tracked
-                    ? new Color(0.35f, 0.75f, 0.35f) // vert = suivi
-                    : new Color(0.25f, 0.25f, 0.35f); // gris = non suivi
+                    ? new Color(0.35f, 0.75f, 0.35f)
+                    : new Color(0.25f, 0.25f, 0.35f);
 
-            // Listener
             suiviBtn.onClick.RemoveAllListeners();
             suiviBtn.onClick.AddListener(() => OnSuiviClicked(captured));
-
-            // Bloque la remontée du clic vers rootBtn
-            var trigger = suiviBtn.gameObject.GetComponent<EventTrigger>()
-                    ?? suiviBtn.gameObject.AddComponent<EventTrigger>();
-            trigger.triggers.Clear();
-            var triggerEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerClick };
-            triggerEntry.callback.AddListener((_) => { });
-            trigger.triggers.Add(triggerEntry);
         }
 
         // ── rootBtn → affiche le détail ───────────────────────────

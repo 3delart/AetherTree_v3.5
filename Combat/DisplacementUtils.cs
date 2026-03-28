@@ -3,7 +3,7 @@ using UnityEngine;
 // =============================================================
 // DISPLACEMENTUTILS.CS — Helpers de déplacement partagés
 // Path : Assets/Scripts/Systems/DisplacementUtils.cs
-// AetherTree GDD v30
+// AetherTree GDD v3.5
 //
 // Utilisé par SkillSystem (joueur) ET MobSkillSystem (mobs).
 // Centralise WarpToNavMesh, WarpEntity, ApplyDisplacementAoE
