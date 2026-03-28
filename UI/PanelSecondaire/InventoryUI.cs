@@ -204,7 +204,10 @@ public class InventoryUI : MonoBehaviour
     private void RefreshCosmetiques()
     {
         if (contentCosmetiques == null || _inventory == null) return;
-        FillGrid(contentCosmetiques, _cellsCosm, _inventory.GetCosmetiques());
+        var items = new List<InventoryItem>();
+        items.AddRange(_inventory.GetCosmetiquesHead());
+        items.AddRange(_inventory.GetCosmetiquesBody());
+        FillGrid(contentCosmetiques, _cellsCosm, items);
     }
 
     /// <summary>Retourne UnlockedSlots si disponible, sinon MAX_SLOTS.</summary>

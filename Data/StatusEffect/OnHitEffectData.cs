@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // =============================================================
 // OnHitEffectData — ScriptableObject template d'effet On-Hit
 // Path : Assets/Scripts/Data/StatusEffect/OnHitEffectData.cs
-// AetherTree GDD v30 — Section 21bis
+// AetherTree GDD v3.5 — §5.1 à §5.6 (OnHitEffects via EquipmentConfig)
 //
 // Déclenché quand l'entité équipée REÇOIT un coup.
 // Chaque effet a une chance d'activation [0..1].

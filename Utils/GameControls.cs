@@ -42,6 +42,7 @@ public static class GameControls
     public static bool OpenChat         => KeyBindings.GetDown("OpenChat");
     public static bool OpenGuild        => KeyBindings.GetDown("OpenGuild");
     public static bool OpenRecipe       => KeyBindings.GetDown("OpenRecipe");
+    public static bool OpenStatPoints   => KeyBindings.GetDown("OpenStatPoints");
 
     // ── Interaction ───────────────────────────────────────────
     public static bool Interact         => KeyBindings.GetDown("Interact");
@@ -63,5 +64,5 @@ public static class GameControls
     public static bool AnyUIToggle =>
         OpenSkillLibrary || OpenInventory || OpenCharacter ||
         OpenMap || OpenQuests || OpenSettings || OpenSocial || OpenRecipe ||
-        OpenMail || OpenChat || OpenGuild;
+        OpenMail || OpenChat || OpenGuild || OpenStatPoints;
 }

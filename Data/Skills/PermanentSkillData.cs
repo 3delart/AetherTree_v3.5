@@ -69,7 +69,7 @@ public class PermanentSkillData : ScriptableObject
             if (parts.Length > 0) parts.Append("  |  ");
 
             bool isRatio = b.statType == StatType.CritChance
-                        || b.statType == StatType.CritDamage
+                        || b.statType == StatType.CritMultiplier
                         || b.statType.ToString().StartsWith("Resist")
                         || b.statType.ToString().StartsWith("Element");
 
@@ -93,7 +93,7 @@ public class PermanentSkillData : ScriptableObject
         StatType.MagicDefense    => "Déf. magie",
         StatType.BonusAttack     => "Attaque",
         StatType.CritChance      => "Chance critique",
-        StatType.CritDamage      => "Dégâts crit.",
+        StatType.CritMultiplier  => "Dégâts crit.",
         StatType.Dodge           => "Esquive",
         StatType.Precision       => "Précision",
         StatType.MoveSpeed       => "Vitesse",

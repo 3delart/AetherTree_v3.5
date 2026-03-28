@@ -47,6 +47,7 @@ public static class KeyBindings
         { "OpenChat",        KeyCode.V },
         { "OpenGuild",       KeyCode.G },
         { "OpenRecipe",       KeyCode.N },
+        { "OpenStatPoints",   KeyCode.S },
 
         // Interaction
         { "Interact",         KeyCode.F   },
@@ -134,6 +135,7 @@ public static class KeyBindings
         "OpenChat"         => "Chat",
         "OpenGuild"        => "Guilde",
         "OpenRecipe"       => "Recettes",
+        "OpenStatPoints"   => "Points de Stats",
         "Interact"         => "Interagir",
         "AutoAttackToggle" => "Auto-Attaque",
         _ => action

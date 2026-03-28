@@ -4,56 +4,60 @@ using System.Collections.Generic;
 // =============================================================
 // StatusEffectData — SO de base pour tous les buffs et debuffs
 // Path : Assets/Scripts/Data/StatusEffect/StatusEffectData.cs
-// AetherTree GDD v30 — Section 21bis
+// AetherTree GDD v3.5 — §3.1.1
 //
 // Historique :
-//   v21 — Silence réattribué à Ténèbres (Wind supprimé v21)
-//   v30 — Glace supprimée → Freeze reste, réattribué à Eau
-//          Shock renommé ArmorBreak (réduction défense physique)
-//          Shocked ajouté séparément (interrupt + mini-stun Foudre)
-//          ManaBreak renommé ManaDrain (cohérence GDD §21bis.1)
-//          HealOnTime renommé Regeneration (cohérence GDD §21bis.2)
-//          AttackSpeedUp / MoveSpeedUp fusionnés dans Haste (§21bis.2)
-//          RangeDefense corrigé en RangedDefense (cohérence §4.3)
-//          Doublons BuffStatType / DebuffStatType supprimés
+//   v3.0 — Silence réattribué à Ténèbres (Wind supprimé)
+//           Glace supprimée → Freeze reste, réattribué à Eau
+//           Shock renommé ArmorBreak (réduction défense physique)
+//           Shocked ajouté séparément (interrupt + mini-stun Foudre)
+//           ManaBreak renommé ManaDrain (§3.1.1.1)
+//           HealOnTime renommé Regeneration (§3.1.1.2)
+//           AttackSpeedUp / MoveSpeedUp fusionnés dans Haste (§3.1.1.2)
+//           RangeDefense corrigé en RangedDefense (§3.1)
+//           Doublons BuffStatType / DebuffStatType supprimés
+//   v3.5 — BuffStatType + DebuffStatType fusionnés en StatModifierType
+//           BuffType.RegenHP supprimé (doublon avec Regeneration)
+//           BuffType.Taunt supprimé (c'est un DebuffType)
+//           CritChanceUp / CritDamageUp séparés dans BuffType
 // =============================================================
 
 // ── Enums debuff ──────────────────────────────────────────────
 public enum DebuffType
 {
     // DoT
-    Burn,       // Brûlure    — Feu        — dégâts sur la durée, tick/s (§21bis.1)
-    Poison,     // Poison     — Nature     — DoT + réduction soins reçus % (§21bis.1)
+    Burn,       // Brûlure    — Feu        — dégâts sur la durée, tick/s (§3.1.1.1)
+    Poison,     // Poison     — Nature     — DoT + réduction soins reçus % (§3.1.1.1)
     Bleed,      // Saignement — Neutre     — dégâts sur la durée
 
     // Ralentissement & Immobilisation
-    Freeze,     // Gel        — Eau        — ralentit / immobilise (réattribué Eau v30)
-    Slow,       // Ralenti    — Eau        — réduit la vitesse de déplacement % (§21bis.1)
-    Root,       // Enraciné   — Nature     — bloque le mouvement, peut toujours attaquer (§21bis.1)
+    Freeze,     // Gel        — Eau        — immobilisation totale (réattribué Eau v3.0 — §3.1.1.1)
+    Slow,       // Ralenti    — Eau        — réduit la vitesse de déplacement % (§3.1.1.1)
+    Root,       // Enraciné   — Nature     — bloque le mouvement, peut toujours attaquer (§3.1.1.1)
 
     // Contrôle de foule dur
-    Stun,       // Étourdi    — Terre      — bloque toutes les actions (CC dur §21bis.1)
-    Fear,       // Peur       — Ténèbres   — fuite incontrôlée (CC dur §21bis.1)
-    Sleep,      // Sommeil    — réveil au premier dégât reçu (§21bis.3)
+    Stun,       // Étourdi    — Terre      — bloque toutes les actions (CC dur §3.1.1.1)
+    Fear,       // Peur       — Ténèbres   — fuite incontrôlée (CC dur §3.1.1.1)
+    Sleep,      // Sommeil    — réveil au premier dégât reçu (§3.1.1.1)
 
     // Déplacement & Interrupt
-    Knockback,  // Recul      — Eau        — déplace la cible à l'impact (§21bis.1)
-    Shocked,    // Choc       — Foudre     — interruption du cast + mini-stun 0.5s (§21bis.1)
+    Knockback,  // Recul      — Eau        — déplace la cible à l'impact, ponctuel (§3.1.1.1)
+    Shocked,    // Choc       — Foudre     — interruption du cast + mini-stun 0.5s (§3.1.1.1)
 
     // Précision & Ressource
-    Blind,      // Aveugle    — Lumière    — réduction précision drastique (§21bis.1)
-    ManaDrain,  // Drain mana — Ténèbres   — drain progressif sur la durée (§21bis.1)
+    Blind,      // Aveugle    — Lumière    — réduction précision drastique (§3.1.1.1)
+    ManaDrain,  // Drain mana — Ténèbres   — drain progressif sur la durée (§3.1.1.1)
 
     // Défense
-    ArmorBreak, // Armure brisée — Terre  — réduction défense physique % temporaire (§21bis.1)
+    ArmorBreak, // Armure brisée — Terre  — réduction défense physique % temporaire (§3.1.1.1)
 
     // Utilitaire
-    Silence,    // Silence    — Ténèbres   — bloque les skills (réattribué Ténèbres v30)
+    Silence,    // Silence    — Ténèbres   — bloque les skills (§3.1.1.1)
+    Taunt,      // Taunt      — force les ennemis à cibler cette entité (§3.1.1.1)
 
     // Stats & Spéciaux
-    Stats,      // Réduction de stat spécifique (utilise DebuffStatType)
-    Curse,      // Malédiction spéciale
-    Mark,       // Marque pour bonus dégâts
+    Stats,      // Réduction de stat spécifique (utilise StatModifierType)
+    Mark,       // Marque pour bonus dégâts (design decision)
     Other,      // Effet spécial custom
 }
 
@@ -61,54 +65,42 @@ public enum DebuffType
 public enum BuffType
 {
     // Soins
-    Heal,           // Soin instantané (§21bis.2)
-    Regeneration,   // Soin sur la durée — HoT — Lumière / Skills soin (§21bis.2)
-    RegenHP,        // Régénération HP passive (tick interne Entity)
+    Heal,           // Soin instantané (§3.1.1.2)
+    Regeneration,   // Soin sur la durée — HoT (§3.1.1.2)
 
     // Défense
-    Shield,         // Bouclier — absorbe les dégâts en priorité avant les HP (§21bis.2)
-    Barrier,        // Bouclier HP + résistance élémentaire — Nature (§21bis.2)
-    DefenseUp,      // Augmentation de défense — Fortify — Terre (§21bis.2)
-    DodgeUp,        // Augmentation d'esquive
+    Shield,         // Bouclier — absorbe les dégâts en priorité avant les HP (§3.1.1.2)
+    Barrier,        // Bouclier HP + résistance élémentaire — Nature (§3.1.1.2)
+    DefenseUp,      // Augmentation de défense — Fortify — Terre (§3.1.1.2)
+    DodgeUp,        // Augmentation d'esquive (§3.1.1.2)
+    PrecisionUp,    // Augmentation de précision (§
+
 
     // Offensif
-    AttackUp,       // Augmentation d'attaque
-    Haste,          // Augmentation vitesse déplacement + attackSpeed — Foudre (§21bis.2)
-    CritChanceUp,   // Augmentation de chance de critique
-    CritDamageUp,   // Augmentation de dégâts critiques
+    AttackUp,       // Augmentation d'attaque (§3.1.1.2)
+    Haste,          // Augmentation vitesse déplacement + attackSpeed — Foudre (§3.1.1.2)
+    CritChanceUp,   // Augmentation de chance de critique (§3.1.1.2)
+    CritDamageUp,   // Augmentation de dégâts critiques (§3.1.1.2)
 
     // Spéciaux
-    Purified,       // Suppression de tous les debuffs actifs — Lumière (§21bis.2)
-    Invincible,     // Invincibilité temporaire — post-respawn 3s (§21bis.3)
-    Stealth,        // Furtivité — interrompue par attaque/dégât reçu (§21bis.3)
-    Taunt,          // Force les mobs proches à cibler le lanceur — PvE only (§21bis.3)
-    Dispel,         // Supprime un buff spécifique sur la cible ennemie (§21bis.3)
-    Stats,          // Augmentation de stat spécifique (utilise BuffStatType)
+    Purified,       // Suppression de tous les debuffs actifs — Lumière (§3.1.1.2)
+    Invincible,     // Invincibilité temporaire — post-respawn 3s (§3.1.1.3)
+    Stealth,        // Furtivité — interrompue par attaque/dégât reçu (§3.1.1.3)
+    Dispel,         // Supprime un buff spécifique sur la cible ennemie (§3.1.1.3)
+    Stats,          // Augmentation de stat spécifique (utilise StatModifierType)
     Other,          // Effet spécial custom
 }
 
-// ── Stat ciblée par un buff Stats ─────────────────────────────
-public enum BuffStatType
+// ── Stat ciblée par un modificateur de buff ou debuff ─────────
+// v3.5 — Fusion de BuffStatType + DebuffStatType en un seul enum.
+// Utilisé par BuffData (buffType = Stats) et DebuffData (debuffType = Stats).
+public enum StatModifierType
 {
     MaxHP, MaxMana, RegenHP, RegenMana,
     AttackDamage, AttackSpeed, MoveSpeed,
     MeleeDefense, RangedDefense, MagicDefense,
     CritChance, CritDamage,
-    ElementalPoint, Dodge,
-    FireResistance, WaterResistance, EarthResistance,
-    NatureResistance, LightningResistance,
-    DarknessResistance, LightResistance,
-    AllResistances,
-}
-
-// ── Stat ciblée par un debuff Stats ───────────────────────────
-public enum DebuffStatType
-{
-    MaxHP, MaxMana, RegenHP, RegenMana,
-    AttackDamage, AttackSpeed, MoveSpeed,
-    MeleeDefense, RangedDefense, MagicDefense,
-    CritChance, CritDamage,
-    ElementalPoint, Dodge,
+    ElementalPoint, Dodge, Precision,
     FireResistance, WaterResistance, EarthResistance,
     NatureResistance, LightningResistance,
     DarknessResistance, LightResistance,
@@ -125,7 +117,7 @@ public abstract class StatusEffectData : ScriptableObject
     public Sprite icon;
 
     [Header("Durée")]
-    [Tooltip("Durée de base de l'effet en secondes.\n§21bis.4 : durée et chance d'application définitives sur SkillData.")]
+    [Tooltip("Durée de base de l'effet en secondes.\n§3.1.1.4 : durée et chance d'application définitives sur SkillData.")]
     public float duration = 3f;
 
     /// <summary>Crée une instance runtime de cet effet.</summary>

@@ -4,69 +4,76 @@ using System.Collections.Generic;
 // =============================================================
 // HelmetData — ScriptableObject template de casque
 // Path : Assets/Scripts/Data/Inventory/Equipment/HelmetData.cs
-// AetherTree GDD v30 — Section 5.1
+// AetherTree GDD v3.5 — §5.3
 //
-// Règles GDD :
-//   - Pas de grade, pas d'upgrade, pas de rune (section 5.1)
-//   - Pas de restriction ArmorType — tout joueur peut équiper
-//   - Stats toutes fixes (pas de roll)
-//   - Toutes les stats passent par List<StatBonus>
+// Pas de rareté, pas d'upgrade, pas de rune (GDD §5.0).
+// Pas de restriction ArmorType — tout joueur peut équiper.
+// Obtenu par drop, craft ou condition in-game.
 //
-// 4 slots de configuration (uniformes sur tous les équipements) :
-//   bonuses           → StatBonus (défense, crit, résistances, HP...)
-//   statusEffects     → StatusEffectEntry (debuffs/buffs à l'attaque)
-//   debuffResistances → DebuffResistanceEntry (résistance aux debuffs)
-//   onHitEffects      → OnHitEffectEntry (effets quand on reçoit un coup)
+// Stats fixes sur le SO (GDD §5.3) :
+//   meleeDefense, rangedDefense, magicDefense  — fixes, pas de roll
+//   requiredLevel                              — niveau minimum requis
+//   unlockCondition                            — optionnel
 //
-// Assets > Create > AetherTree > Equipment > HelmetData
+// Pool de stats disponibles dans config.bonuses (GDD §5.3) :
+//   MaxHP, MaxMana, RegenHP, RegenMana, Precision, Dodge
+//   Résistances élémentaires (plafond 75% par élément — GDD §3.2)
+//   ⚠ Pas de CritChance, CritMultiplier ni Points élémentaires sur le casque.
+//
+// Effets et bonus via EquipmentConfig (champ unique) :
+//   config.bonuses, config.statusEffects,
+//   config.debuffResistances, config.onHitEffects
 // =============================================================
 
 [CreateAssetMenu(fileName = "NewHelmet", menuName = "AetherTree/Equipment/HelmetData")]
 public class HelmetData : ScriptableObject
 {
+    // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
     public string     helmetName = "Helmet";
     public Sprite     icon;
     public GameObject helmetPrefab;
 
-    [Header("Niveau")]
-    [Tooltip("Niveau minimum requis pour équiper cette arme.")]
+    // ── Niveau & Condition ────────────────────────────────────
+    [Header("Niveau & Condition")]
+    [Tooltip("Niveau minimum du joueur requis pour équiper ce casque.")]
     [Min(1)] public int requiredLevel = 1;
 
-    // ── 4 slots de configuration ──────────────────────────────
+    [Tooltip("Condition de déblocage optionnelle — certains casques ne s'obtiennent\n" +
+             "que via une condition in-game (IConditionChecker). Null = toujours disponible.")]
+    public ConditionEntry unlockCondition;
 
-    [Header("① Bonus fixes (stats passives)")]
-    [Tooltip("Bonus supplémentaires de ce casque.\n" +
-             "Ex: MeleeDefense 30 | CritChance 0.05 | BonusHP 150\n" +
-             "Ces bonus sont fixes — identiques sur toutes les instances.")]
-    public List<StatBonus> bonuses = new List<StatBonus>();
+    // ── Défenses fixes ────────────────────────────────────────
+    [Header("Défenses fixes (identiques sur toutes les instances — pas de roll)")]
+    [Tooltip("Défense contre les attaques de type Melee — fixe, pas de modificateur de rareté.")]
+    public float meleeDefense  = 0f;
 
-    [Header("② Effets de statut (appliqués à chaque attaque)")]
-    [Tooltip("Effets appliqués lors d'une attaque selon leur probabilité.\n" +
-             "Glisse un DebuffData ou BuffData + règle la chance.")]
-    public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
+    [Tooltip("Défense contre les attaques de type Ranged — fixe.")]
+    public float rangedDefense = 0f;
 
-    [Header("③ Résistances aux debuffs")]
-    [Tooltip("Chances de résister à un debuff spécifique.\n" +
-             "Ex: Stun 0.10 = 10% de chance de résister à l'étourdissement.")]
-    public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
+    [Tooltip("Défense contre les attaques de type Magic — fixe.")]
+    public float magicDefense  = 0f;
 
-    [Header("④ Effets On-Hit (déclenchés quand on reçoit un coup)")]
-    [Tooltip("Effets déclenchés quand le porteur reçoit un coup.\n" +
-             "Ex: CounterFreeze 10% | HealOnHit 1% MaxHP\n" +
-             "Glisse un OnHitEffectData + ajuste la chance si besoin.")]
-    public List<OnHitEffectEntry> onHitEffects = new List<OnHitEffectEntry>();
+    // ── Configuration — effets et bonus ───────────────────────
+    [Header("Configuration (bonus, effets de statut, résistances, on-hit)")]
+    [Tooltip("Bonus passifs fixes (HP, Mana, Précision, Esquive, Résistances élémentaires),\n" +
+             "effets appliqués à l'attaque, résistances aux debuffs et effets On-Hit.\n" +
+             "GDD §5.3 — pas de CritChance, CritMultiplier ni Points élémentaires autorisés.")]
+    public EquipmentConfig config;
 
+    // ── Description ───────────────────────────────────────────
     [Header("Description")]
     [TextArea]
-    public string       description  = "";
+    public string description = "";
 
+    // ── Utilitaires ───────────────────────────────────────────
 
     public HelmetInstance CreateInstance() => new HelmetInstance(this);
 }
 
 // =============================================================
 // HelmetInstance — wrapper runtime d'un casque équipé
+// GDD v3.5 — §5.3
 // =============================================================
 [System.Serializable]
 public class HelmetInstance
@@ -75,11 +82,19 @@ public class HelmetInstance
 
     public HelmetInstance(HelmetData source) { data = source; }
 
-    // ── Raccourcis SO (4 slots) ───────────────────────────────
-    public string                       HelmetName        => data?.helmetName ?? "Helmet";
-    public Sprite                       Icon              => data?.icon;
-    public List<StatBonus>              Bonuses           => data?.bonuses;
-    public List<StatusEffectEntry>      StatusEffects     => data?.statusEffects;
-    public List<DebuffResistanceEntry>  DebuffResistances => data?.debuffResistances;
-    public List<OnHitEffectEntry>       OnHitEffects      => data?.onHitEffects;
+    // ── Défenses (lues directement sur le SO) ─────────────────
+    public float MeleeDefense  => data != null ? data.meleeDefense  : 0f;
+    public float RangedDefense => data != null ? data.rangedDefense : 0f;
+    public float MagicDefense  => data != null ? data.magicDefense  : 0f;
+
+    // ── Raccourcis SO ─────────────────────────────────────────
+    public string HelmetName    => data != null ? data.helmetName    : "Helmet";
+    public Sprite Icon          => data != null ? data.icon          : null;
+    public int    RequiredLevel => data != null ? data.requiredLevel : 1;
+
+    // ── Raccourcis config (4 slots fusionnés) ─────────────────
+    public List<StatBonus>             Bonuses           => data?.config?.bonuses;
+    public List<StatusEffectEntry>     StatusEffects     => data?.config?.statusEffects;
+    public List<DebuffResistanceEntry> DebuffResistances => data?.config?.debuffResistances;
+    public List<OnHitEffectEntry>      OnHitEffects      => data?.config?.onHitEffects;
 }

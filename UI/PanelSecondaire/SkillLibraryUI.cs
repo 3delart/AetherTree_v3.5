@@ -148,31 +148,13 @@ public class SkillLibraryUI : MonoBehaviour
         if (_player == null) _player = FindObjectOfType<Player>();
         if (panel != null) panel.SetActive(true);
         ClearDetail();
-        StartCoroutine(OpenNextFrame());
+
+        // Pas de coroutine — refresh direct
+        var tabToLoad = currentTab;
+        currentTab = (SkillLibraryTab)(-1);
+        SwitchTab(tabToLoad);
     }
 
-    private System.Collections.IEnumerator OpenNextFrame()
-    {
-        // Attend deux frames pour que Unity active le panel,
-        // calcule les layouts, et que Player soit complètement initialisé.
-        yield return null;
-        yield return null;
-
-        // Tentative de récupération tardive du Player si nécessaire
-        if (_player == null) _player = FindObjectOfType<Player>();
-
-        if (_player == null)
-        {
-            Debug.LogWarning("[SkillLibraryUI] Aucun Player trouvé dans la scène.");
-            yield break;
-        }
-
-        if (_player.unlockedSkills == null || _player.unlockedSkills.Count == 0)
-            Debug.LogWarning("[SkillLibraryUI] unlockedSkills est vide — vérifie que des skills sont assignés au Player.");
-
-        RebuildFilterBars();
-        RefreshGrid();
-    }
 
     public void Close()
     {

@@ -4,19 +4,25 @@ using System.Collections.Generic;
 // =============================================================
 // WeaponData — ScriptableObject template d'arme
 // Path : Assets/Scripts/Data/Inventory/Equipment/WeaponData.cs
-// AetherTree GDD v30 — Section 5.1 / 5.2 / 5.3 / 5.4
+// AetherTree GDD v3.5 — §5.1
 //
-// Stats affectées par rareté + upgrade :
-//   damageMin, damageMax, precision
+// Stats fixes sur le SO (identiques sur toutes les instances) :
+//   weaponType, attackSpeed, weaponLevel, requiredLevel
+//   critChance             → fixe sur le SO — absent (0) sur les armes Magic
+//   critMultiplier         → fixe sur le SO — s'additionne à la base 1.5
 //
-// Stats fixes (jamais modifiées par rareté/upgrade) :
-//   critChance, critDamage, attackSpeed, attackGrade
+// Stats rollées au drop / craft (fixées sur l'instance) :
+//   damageMin, damageMax   → affectées par rareté + upgrade
+//   precision              → affectée par rareté + upgrade
 //
-// 4 slots de configuration (uniformes sur tous les équipements) :
-//   bonuses           → StatBonus (points élémentaires, crit, BonusAttack...)
-//   statusEffects     → StatusEffectEntry (debuffs/buffs appliqués à l'attaque)
-//   debuffResistances → DebuffResistanceEntry (résistance aux debuffs du porteur)
-//   onHitEffects      → OnHitEffectEntry (effets quand le porteur reçoit un coup)
+// Systèmes applicables (GDD §5.1) :
+//   Rareté   r-2 → r+7 — modificateur % sur dmgMin/dmgMax
+//   Upgrade  +0  → +10  — bonus cumulatif sur les dégâts
+//   Rune     1 slot Rune Weapon — rune.runeLevel ≤ weaponLevel
+//
+// Effets et bonus via EquipmentConfig (champ unique) :
+//   config.bonuses, config.statusEffects,
+//   config.debuffResistances, config.onHitEffects
 // =============================================================
 
 [CreateAssetMenu(fileName = "NewWeapon", menuName = "AetherTree/Equipment/WeaponData")]
@@ -24,107 +30,89 @@ public class WeaponData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string     weaponName   = "Weapon";
-    public WeaponType weaponType   = WeaponType.ShortSword;
+    public string     weaponName = "Weapon";
+    public WeaponType weaponType = WeaponType.ShortSword;
     public Sprite     icon;
     public GameObject weaponPrefab;
 
+    // ── Niveau ────────────────────────────────────────────────
     [Header("Niveau")]
-    [Tooltip("Niveau minimum requis pour équiper cette arme.")]
+    [Tooltip("Niveau de l'arme — détermine le niveau maximum de rune pouvant être insérée.\n" +
+             "Règle GDD §5.7 : rune.runeLevel ≤ weaponLevel")]
+    [Min(1)] public int weaponLevel = 1;
+
+    [Tooltip("Niveau minimum du joueur requis pour équiper cette arme.")]
     [Min(1)] public int requiredLevel = 1;
 
-    // ── Stats variables — rollées au drop, affectées par rareté/upgrade ───
-    [Header("Stats variables (rollées au drop — affectées par rareté + upgrade)")]
-
-    [Tooltip("Borne basse du roll pour damageMin")]
-    public float baseDamageMinLow  = 8f;
-    [Tooltip("Borne haute du roll pour damageMin")]
-    public float baseDamageMinHigh = 12f;
-
-    [Tooltip("Borne basse du roll pour damageMax")]
-    public float baseDamageMaxLow  = 13f;
-    [Tooltip("Borne haute du roll pour damageMax")]
-    public float baseDamageMaxHigh = 18f;
-
-    [Tooltip("Borne basse du roll pour la précision")]
-    public float basePrecisionMin = 85f;
-    [Tooltip("Borne haute du roll pour la précision")]
-    public float basePrecisionMax = 95f;
-
-    // ── Stats fixes — jamais modifiées par rareté/upgrade ─────
-    [Header("Stats fixes (inchangées par rareté/upgrade)")]
-
-    [Tooltip("Attaques par seconde")]
+    // ── Stats fixes (identiques sur toutes les instances) ─────
+    [Header("Stats fixes (identiques sur toutes les instances)")]
+    [Tooltip("Cadence d'attaque de base — attaques par seconde.\n" +
+             "Gouverne uniquement le Slot 0 (BasicAttack) — jamais bloqué par le GCD.")]
     public float attackSpeed = 1f;
 
-    [Tooltip("Chance de critique en % — fixe, indépendante de la rareté")]
+    // ── Stats rollées — fourchettes définies sur le SO ────────
+    [Header("Stats rollées au drop / craft")]
+    [Tooltip("Borne basse du roll pour les dégâts minimum (avant rareté + upgrade).")]
+    public float baseDamageMinLow  = 8f;
+    [Tooltip("Borne haute du roll pour les dégâts minimum.")]
+    public float baseDamageMinHigh = 12f;
+
+    [Tooltip("Borne basse du roll pour les dégâts maximum (avant rareté + upgrade).")]
+    public float baseDamageMaxLow  = 13f;
+    [Tooltip("Borne haute du roll pour les dégâts maximum.")]
+    public float baseDamageMaxHigh = 18f;
+
+    [Tooltip("Borne basse du roll pour la précision (avant rareté + upgrade).")]
+    public float basePrecisionMin = 85f;
+    [Tooltip("Borne haute du roll pour la précision.")]
+    public float basePrecisionMax = 95f;
+
+    public float critChance = 0.1f; // 10% de chance de critique par défaut — GDD §5.1.
+    [Tooltip("Forcé à 0 si weaponCategory == Magic — GDD §5.1.")]
     [Range(0f, 1f)]
-    public float critChance  = 0.05f;
 
-    [Tooltip("Multiplicateur de dégâts critiques.\nEx: 1.50 = +50% dégâts | 1.20 = +20% dégâts")]
-    public float critDamage  = 1.50f;
+    public float critMultiplier = 0.20f; // +20% de dégâts critiques par défaut — s'additionne à la base 1 du joueur. GDD §5.1.
+    [Tooltip("S'additionne à la base 1 du joueur. Ex: 0.20 → mult effectif = 1.20")]
+    // ── Configuration — effets et bonus ───────────────────────
+    [Header("Configuration (bonus, effets de statut, résistances, on-hit)")]
+    public EquipmentConfig config;
+    [Tooltip("Bonus passifs, effets appliqués à l'attaque, résistances aux debuffs\n" +
+             "et effets On-Hit reçus — regroupés dans un seul champ.\n" +
+             "Lus par CharacterStats.RecalculateStats() et Player.ApplyOnHitEffects().")]
+    
 
-    [Tooltip("Grade d'attaque (1–10) — utilisé dans CombatSystem étape ③ : bonus = (attackGrade − defenseGrade) × 5%")]
-    [Range(1, 10)]
-    public int attackGrade = 5;
-
-    // ── 4 slots de configuration ──────────────────────────────
-
-    [Header("① Bonus fixes (stats passives)")]
-    [Tooltip("Bonus supplémentaires de cette arme.\n" +
-             "Ex: PointsFire 10 | CritChance 0.05 | BonusAttack 15\n" +
-             "Ces bonus sont fixes — ils ne sont pas affectés par rareté/upgrade.")]
-    public List<StatBonus> bonuses = new List<StatBonus>();
-
-    [Header("② Effets de statut (appliqués à chaque attaque)")]
-    [Tooltip("Effets appliqués à chaque attaque selon leur probabilité.\n" +
-             "Glisse un DebuffData ou BuffData + règle la chance.\n" +
-             "Ex: Gel 2s à 3% | Brûlure 4s à 5%")]
-    public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
-
-    [Header("③ Résistances aux debuffs (porteur)")]
-    [Tooltip("Chances de résister à un debuff spécifique quand on est attaqué.\n" +
-             "Ex: Freeze 0.05 = 5% de chance de résister au gel.\n" +
-             "Chargées dans StatusEffectSystem via PlayerStats.RecalculateStats().")]
-    public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
-
-    [Header("④ Effets On-Hit (déclenchés quand le porteur reçoit un coup)")]
-    [Tooltip("Effets déclenchés quand le porteur reçoit un coup.\n" +
-             "Ex: Thorns 5 dmg à 100% | CounterPoison à 8% | HealOnHit 2% MaxHP\n" +
-             "Glisse un OnHitEffectData + ajuste la chance si besoin.")]
-    public List<OnHitEffectEntry> onHitEffects = new List<OnHitEffectEntry>();
-
+    // ── Description ───────────────────────────────────────────
     [Header("Description")]
     [TextArea]
-    public string       description  = "";
-
+    public string description = "";
 
     // ── Utilitaires ───────────────────────────────────────────
 
-    /// <summary>Catégorie déduite du WeaponType (Melee/Ranged/Magic).</summary>
+    /// <summary>Catégorie déduite du WeaponType (Melee / Ranged / Magic).</summary>
     public WeaponCategory Category => weaponType.GetCategory();
 
     /// <summary>ArmorType lié à cette catégorie d'arme.</summary>
     public ArmorType LinkedArmorType => weaponType.GetArmorType();
 
     /// <summary>
-    /// Crée une instance droppée avec stats rollées.
-    /// rarityRank : -2 à +7 | upgradeLevel : 0 à 10.
+    /// Crée une instance avec stats rollées.
+    /// rarityRank : -2 à +7 | upgradeLevel : 0 à +10.
     /// </summary>
     public WeaponInstance CreateDropInstance(int rarityRank = 0, int upgradeLevel = 0)
     {
-        float rolledDmgMin  = Random.Range(baseDamageMinLow,  baseDamageMinHigh);
-        float rolledDmgMax  = Random.Range(baseDamageMaxLow,  baseDamageMaxHigh);
-        float rolledPrec    = Random.Range(basePrecisionMin,  basePrecisionMax);
+        float dmgMin = Random.Range(baseDamageMinLow,  baseDamageMinHigh);
+        float dmgMax = Random.Range(baseDamageMaxLow,  baseDamageMaxHigh);
+        float prec   = Random.Range(basePrecisionMin,  basePrecisionMax);
 
-        if (rolledDmgMin > rolledDmgMax)
-            (rolledDmgMin, rolledDmgMax) = (rolledDmgMax, rolledDmgMin);
+        // Garantit dmgMin ≤ dmgMax
+        if (dmgMin > dmgMax) (dmgMin, dmgMax) = (dmgMax, dmgMin);
 
-        return new WeaponInstance(this, rolledDmgMin, rolledDmgMax, rolledPrec, rarityRank, upgradeLevel);
+        // critChance et critMultiplier sont fixes sur le SO — pas de roll. GDD §5.1.
+        return new WeaponInstance(this, dmgMin, dmgMax, prec, rarityRank, upgradeLevel);
     }
 
     /// <summary>
-    /// Roll la rareté au drop selon la table GDD v21 section 5.3.
+    /// Roll la rareté au drop selon la table GDD §5.8.
     /// r-2(8%) r-1(12%) r0(20.85%) r+1(18%) r+2(15.7%) r+3(11.5%)
     /// r+4(8.5%) r+5(4.1%) r+6(1%) r+7(0.35%)
     /// </summary>
@@ -145,37 +133,44 @@ public class WeaponData : ScriptableObject
 }
 
 // =============================================================
-// WeaponInstance — données runtime d'une arme droppée
-// Path : Assets/Scripts/Data/Inventory/Equipment/WeaponData.cs
-// AetherTree GDD v30 — Section 5.1 / 5.3 / 5.4
+// WeaponInstance — données runtime d'une arme droppée / craftée
+// GDD v3.5 — §5.1 / §5.8 / §5.9
 // =============================================================
 [System.Serializable]
 public class WeaponInstance
 {
     public WeaponData data;
 
+    // Stats rollées — fixées à la génération
     public float rolledDamageMin;
     public float rolledDamageMax;
     public float rolledPrecision;
 
-    public int rarityRank   = 0;
-    public int upgradeLevel = 0;
+    // Modificateurs appliqués après drop
+    public int rarityRank   = 0;   // -2 à +7 — GDD §5.8
+    public int upgradeLevel = 0;   // 0 à +10 — GDD §5.9
 
+    // Slot rune — 1 par arme, irréversible via Antiquaire
     public RuneInstance equippedRune = null;
 
-    public WeaponInstance(WeaponData source, float dmgMin, float dmgMax,
-                          float precision, int rarity = 0, int upgrade = 0)
+    public WeaponInstance(WeaponData source,
+                          float dmgMin, float dmgMax, float precision,
+                          int rarity = 0, int upgrade = 0)
     {
-        data             = source;
-        rolledDamageMin  = dmgMin;
-        rolledDamageMax  = dmgMax;
-        rolledPrecision  = precision;
-        rarityRank       = rarity;
-        upgradeLevel     = upgrade;
+        data            = source;
+        rolledDamageMin = dmgMin;
+        rolledDamageMax = dmgMax;
+        rolledPrecision = precision;
+        rarityRank      = rarity;
+        upgradeLevel    = upgrade;
     }
 
+    // ── Modificateurs ─────────────────────────────────────────
+
+    /// <summary>Modificateur de rareté (+10% par rang, négatif si rang < 0). GDD §5.8.</summary>
     private float RarityBonus => rarityRank * 0.10f;
 
+    /// <summary>Modificateur d'upgrade — croissance triangulaire. GDD §5.9.</summary>
     private float UpgradeBonus
     {
         get
@@ -185,27 +180,39 @@ public class WeaponInstance
         }
     }
 
+    // ── Stats finales — affectées par rareté + upgrade ────────
     public float FinalDamageMin => rolledDamageMin * (1f + RarityBonus) * (1f + UpgradeBonus);
     public float FinalDamageMax => rolledDamageMax * (1f + RarityBonus) * (1f + UpgradeBonus);
     public float FinalPrecision => rolledPrecision * (1f + RarityBonus) * (1f + UpgradeBonus);
 
-    public float CritChance  => data.critChance;
-    public float CritDamage  => data.critDamage;
-    public float AttackSpeed => data.attackSpeed;
-    public int   AttackGrade => data.attackGrade;
+    // ── Stats fixes — lues directement sur le SO ──────────────
+    // critChance et critMultiplier sont définis une fois sur WeaponData. GDD §5.1.
+    public float CritChance     => data != null ? data.critChance    : 0f;
+    public float CritMultiplier => data != null ? data.critMultiplier : 0f;
+    public float AttackSpeed    => data != null ? data.attackSpeed    : 1f;
 
-    // ── Raccourcis SO (4 slots) ───────────────────────────────
-    public WeaponType                   WeaponType        => data.weaponType;
-    public WeaponCategory               Category          => data.Category;
-    public string                       WeaponName        => data?.weaponName ?? "Weapon";
-    public Sprite                       Icon              => data?.icon;
-    public List<StatBonus>              Bonuses           => data?.bonuses;
-    public List<StatusEffectEntry>      StatusEffects     => data?.statusEffects;
-    public List<DebuffResistanceEntry>  DebuffResistances => data?.debuffResistances;
-    public List<OnHitEffectEntry>       OnHitEffects      => data?.onHitEffects;
-    public string                       RarityLabel       => rarityRank >= 0 ? $"r+{rarityRank}" : $"r{rarityRank}";
+    // ── Raccourcis SO ─────────────────────────────────────────
+    public WeaponType     WeaponType   => data != null ? data.weaponType : global::WeaponType.ShortSword;
+    public WeaponCategory Category     => data != null ? data.Category   : WeaponCategory.Melee;
+    public string         WeaponName   => data != null ? data.weaponName : "Weapon";
+    public Sprite         Icon         => data != null ? data.icon       : null;
+    public int            WeaponLevel  => data != null ? data.weaponLevel  : 1;
+    public int            RequiredLevel => data != null ? data.requiredLevel : 1;
+    public string         RarityLabel  => rarityRank >= 0 ? $"r+{rarityRank}" : $"r{rarityRank}";
+
+    // ── Raccourcis config (4 slots fusionnés) ─────────────────
+    public List<StatBonus>             Bonuses           => data?.config?.bonuses;
+    public List<StatusEffectEntry>     StatusEffects     => data?.config?.statusEffects;
+    public List<DebuffResistanceEntry> DebuffResistances => data?.config?.debuffResistances;
+    public List<OnHitEffectEntry>      OnHitEffects      => data?.config?.onHitEffects;
 
     // ── Rune ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Tente d'insérer une rune Weapon.
+    /// Règle GDD §5.7 : rune.Category == Weapon ET rune.runeLevel ≤ weaponLevel.
+    /// L'ancienne rune est écrasée (détruite) — irréversible sans item spécial.
+    /// </summary>
     public bool TryInsertRune(RuneInstance rune)
     {
         if (rune == null)
@@ -218,9 +225,10 @@ public class WeaponInstance
             Debug.LogWarning($"[WeaponInstance] {rune.RuneName} est une rune Armor — incompatible avec une arme.");
             return false;
         }
-        if (!rune.CanInsertInto(rarityRank))
+        if (!rune.CanInsertInto(WeaponLevel))
         {
-            Debug.LogWarning($"[WeaponInstance] Rune {rune.RarityLabel} trop haute pour cette arme ({RarityLabel}).");
+            Debug.LogWarning($"[WeaponInstance] Rune {rune.RarityLabel} (lv{rune.runeLevel}) " +
+                             $"trop haute pour cette arme (weaponLevel {WeaponLevel}).");
             return false;
         }
         if (equippedRune != null)

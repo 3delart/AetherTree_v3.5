@@ -378,7 +378,7 @@ public class PassiveSkillSystem : MonoBehaviour
             {
                 if (_player.equippedWeaponInstance == null && effect.damageMultiplier <= 0f) break;
 
-                float baseDmg = _player.stats.RollBaseAttack() * effect.damageMultiplier;
+                float baseDmg = UnityEngine.Random.Range(_player.AttackDamageMin, _player.AttackDamageMax) * effect.damageMultiplier;
 
                 Collider[] hits = Physics.OverlapSphere(
                     _player.transform.position, effect.aoeRadius,

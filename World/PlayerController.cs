@@ -28,7 +28,7 @@ public class PlayerController : MonoBehaviour
         // Vitesse — base depuis player.moveSpeed (RecalculateStats) × Slow × Haste
         if (_player != null)
         {
-            float baseSpeed = _player.moveSpeed; // toujours à jour via RecalculateStats
+            float baseSpeed = _player.MoveSpeed; // toujours à jour via RecalculateStats
             float slow  = _player.statusEffects != null ? _player.statusEffects.slowMultiplier      : 1f;
             float haste = _player.statusEffects != null ? _player.statusEffects.buffSpeedMultiplier : 1f;
             agent.speed = baseSpeed * slow * haste;

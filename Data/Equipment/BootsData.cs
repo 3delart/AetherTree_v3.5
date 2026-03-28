@@ -4,49 +4,56 @@ using System.Collections.Generic;
 // =============================================================
 // BootsData — ScriptableObject template de bottes
 // Path : Assets/Scripts/Data/Inventory/Equipment/BootsData.cs
-// AetherTree GDD v30 — Section 5.1
+// AetherTree GDD v3.5 — §5.4
 //
-// Règles GDD :
-//   - Pas de grade, pas d'upgrade, pas de rune
-//   - Fusion N'importe quelles bottes → nouvelles bottes (via PNJ)
-//   - Stats fixes sur le SO : défenses physique, distance, magique
-//   - Résistances élémentaires : sur l'instance (additionnées à la fusion)
-//   - Palier de fusion S1→S6 stocké sur l'instance
+// Même structure que GlovesData — mêmes règles de fusion S0→S6.
+// Pas de rareté, pas d'upgrade, pas de rune (GDD §5.0).
 //
-// 4 slots de configuration (uniformes sur tous les équipements) :
-//   bonuses           → StatBonus (précision, MoveSpeed, BonusHP...)
-//   statusEffects     → StatusEffectEntry (debuffs/buffs à l'attaque)
-//   debuffResistances → DebuffResistanceEntry (résistance aux debuffs)
-//   onHitEffects      → OnHitEffectEntry (effets quand on reçoit un coup)
+// Stats fixes sur le SO :
+//   meleeDefense, rangedDefense, magicDefense — fixes sur le SO
+//   elementalResist[7]                        — fixes sur le SO
+//   requiredLevel
 //
-// Assets > Create > AetherTree > Equipment > BootsData
+// Bottes uniquement (GDD §5.4) :
+//   Certaines bottes apportent un bonus de MoveSpeed fixe défini
+//   via config.bonuses (StatType.MoveSpeed) — contribue à moveSpeed
+//   via CharacterStats.RecalculateStats().
+//
+// Fusion (GDD §5.4) — identique aux gants :
+//   fusionLevel = max(slot1, slot2) + 1 — plafonné à S6
+//   Résistances plafonnées à 75% par élément — GDD §3.2
+//   Irréversible — Slot 1 détruite définitivement
+//
+// Effets et bonus via EquipmentConfig (champ unique) :
+//   config.bonuses, config.statusEffects,
+//   config.debuffResistances, config.onHitEffects
 // =============================================================
 
 [CreateAssetMenu(fileName = "NewBoots", menuName = "AetherTree/Equipment/BootsData")]
 public class BootsData : ScriptableObject
 {
+    // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
     public string     bootsName = "Boots";
     public Sprite     icon;
     public GameObject bootsPrefab;
 
-
+    // ── Niveau ────────────────────────────────────────────────
     [Header("Niveau")]
-    [Tooltip("Niveau minimum requis pour équiper cette arme.")]
+    [Tooltip("Niveau minimum du joueur requis pour équiper ces bottes.")]
     [Min(1)] public int requiredLevel = 1;
 
-    [Header("Défenses (fixes — identiques sur toutes les instances)")]
-    [Tooltip("Défense contre les attaques de mêlée.")]
+    // ── Défenses fixes ────────────────────────────────────────
+    [Header("Défenses fixes (identiques sur toutes les instances)")]
     public float meleeDefense  = 0f;
-
-    [Tooltip("Défense contre les attaques à distance.")]
     public float rangedDefense = 0f;
-
-    [Tooltip("Défense contre les attaques magiques.")]
     public float magicDefense  = 0f;
 
+    // ── Résistances élémentaires de base ─────────────────────
     [Header("Résistances élémentaires de base (ratio 0.01 = 1%)")]
-    [Tooltip("Résistances de départ de ces bottes. Ex: 0.05 = 5%. Additionnées à la fusion.")]
+    [Tooltip("Résistances de départ de ces bottes.\n" +
+             "Additionnées à la fusion — plafonnées à 0.75 (75%) par élément.\n" +
+             "GDD §5.4 / §3.2.")]
     public float baseResistFire      = 0f;
     public float baseResistWater     = 0f;
     public float baseResistLightning = 0f;
@@ -55,34 +62,17 @@ public class BootsData : ScriptableObject
     public float baseResistDarkness  = 0f;
     public float baseResistLight     = 0f;
 
-    // ── 4 slots de configuration ──────────────────────────────
+    // ── Configuration — effets et bonus ───────────────────────
+    [Header("Configuration (bonus, effets de statut, résistances, on-hit)")]
+    [Tooltip("Bonus passifs fixes (dont MoveSpeed flat si applicable),\n" +
+             "effets appliqués à l'attaque, résistances aux debuffs et effets On-Hit.\n" +
+             "GDD §5.4 — MoveSpeed via StatType.MoveSpeed dans config.bonuses.")]
+    public EquipmentConfig config;
 
-    [Header("① Bonus secondaires (stats passives)")]
-    [Tooltip("Bonus supplémentaires de ces bottes.\n" +
-             "Ex: Precision 20 | MoveSpeed 0.5 | BonusHP 100\n" +
-             "Ces bonus sont fixes — non affectés par la fusion.")]
-    public List<StatBonus> bonuses = new List<StatBonus>();
-
-    [Header("② Effets de statut (appliqués à chaque attaque)")]
-    [Tooltip("Effets appliqués lors d'une attaque selon leur probabilité.\n" +
-             "Glisse un DebuffData ou BuffData + règle la chance.")]
-    public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
-
-    [Header("③ Résistances aux debuffs")]
-    [Tooltip("Chances de résister à un debuff spécifique.\n" +
-             "Ex: Root 0.10 = 10% de chance de résister à l'immobilisation.")]
-    public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
-
-    [Header("④ Effets On-Hit (déclenchés quand on reçoit un coup)")]
-    [Tooltip("Effets déclenchés quand le porteur reçoit un coup.\n" +
-             "Ex: Reflect 10% | CounterSlow 15%\n" +
-             "Glisse un OnHitEffectData + ajuste la chance si besoin.")]
-    public List<OnHitEffectEntry> onHitEffects = new List<OnHitEffectEntry>();
-
+    // ── Description ───────────────────────────────────────────
     [Header("Description")]
     [TextArea]
-    public string       description  = "";
-
+    public string description = "";
 
     // ── Utilitaires ───────────────────────────────────────────
 
@@ -100,16 +90,19 @@ public class BootsData : ScriptableObject
 
 // =============================================================
 // BootsInstance — wrapper runtime d'une paire de bottes équipée
+// GDD v3.5 — §5.4
 // =============================================================
 [System.Serializable]
 public class BootsInstance
 {
     public BootsData data;
 
-    [Tooltip("Palier de fusion : 0 = S0 (base) … 6 = S6 (max)")]
+    // ── Fusion ────────────────────────────────────────────────
+    [Tooltip("Palier de fusion : 0 = S0 (base) … 6 = S6 (max). GDD §5.4.")]
     public int fusionLevel = 0;
 
-    [Tooltip("Résistances élémentaires accumulées via la fusion.")]
+    // ── Résistances élémentaires (cumulées à la fusion) ───────
+    [Tooltip("Résistances élémentaires accumulées via la fusion — sans plafond.")]
     public float resistFire      = 0f;
     public float resistWater     = 0f;
     public float resistLightning = 0f;
@@ -121,18 +114,20 @@ public class BootsInstance
     public BootsInstance(BootsData source) { data = source; }
 
     // ── Défenses (lues sur le SO) ─────────────────────────────
-    public float MeleeDefense  => data?.meleeDefense  ?? 0f;
-    public float RangedDefense => data?.rangedDefense ?? 0f;
-    public float MagicDefense  => data?.magicDefense  ?? 0f;
+    public float MeleeDefense  => data != null ? data.meleeDefense  : 0f;
+    public float RangedDefense => data != null ? data.rangedDefense : 0f;
+    public float MagicDefense  => data != null ? data.magicDefense  : 0f;
 
-    // ── Raccourcis SO (4 slots) ───────────────────────────────
-    public string                       BootsName         => data?.bootsName ?? "Boots";
-    public Sprite                       Icon              => data?.icon;
-    public List<StatBonus>              Bonuses           => data?.bonuses;
-    public List<StatusEffectEntry>      StatusEffects     => data?.statusEffects;
-    public List<DebuffResistanceEntry>  DebuffResistances => data?.debuffResistances;
-    public List<OnHitEffectEntry>       OnHitEffects      => data?.onHitEffects;
-    public string                       FusionLabel       => $"S{fusionLevel}";
+    // ── Raccourcis SO ─────────────────────────────────────────
+    public string BootsName     => data != null ? data.bootsName     : "Boots";
+    public Sprite Icon          => data != null ? data.icon          : null;
+    public string FusionLabel   => $"S{fusionLevel}";
+
+    // ── Raccourcis config (4 slots fusionnés) ─────────────────
+    public List<StatBonus>             Bonuses           => data?.config?.bonuses;
+    public List<StatusEffectEntry>     StatusEffects     => data?.config?.statusEffects;
+    public List<DebuffResistanceEntry> DebuffResistances => data?.config?.debuffResistances;
+    public List<OnHitEffectEntry>      OnHitEffects      => data?.config?.onHitEffects;
 
     // ── Résistance par ElementType ────────────────────────────
     public float GetResistance(ElementType element)
@@ -151,29 +146,36 @@ public class BootsInstance
     }
 
     // ── Fusion ────────────────────────────────────────────────
-    public static BootsInstance Fuse(BootsInstance a, BootsInstance b)
+
+    /// <summary>
+    /// Fusionne deux paires de bottes. GDD §5.4.
+    /// Slot1 (sacrifiée) est détruite — ses résistances s'additionnent à Slot2.
+    /// fusionLevel = max(slot1, slot2) + 1 — plafonné à S6.
+    /// Résistances sans plafond — un joueur peut dépasser 100%.
+    /// </summary>
+    public static BootsInstance Fuse(BootsInstance slot1, BootsInstance slot2)
     {
-        if (a == null || b == null)
+        if (slot1 == null || slot2 == null)
         {
-            UnityEngine.Debug.LogWarning("[BootsInstance] Fuse : une des deux instances est null.");
-            return a ?? b;
+            Debug.LogWarning("[BootsInstance] Fuse : une des deux instances est null.");
+            return slot1 ?? slot2;
         }
 
-        BootsInstance result = new BootsInstance(a.data)
+BootsInstance result = new BootsInstance(slot2.data)
         {
-            fusionLevel     = Mathf.Min(6, Mathf.Max(a.fusionLevel, b.fusionLevel) + 1),
-            resistFire      = a.resistFire      + b.resistFire,
-            resistWater     = a.resistWater     + b.resistWater,
-            resistLightning = a.resistLightning + b.resistLightning,
-            resistEarth     = a.resistEarth     + b.resistEarth,
-            resistNature    = a.resistNature    + b.resistNature,
-            resistDarkness  = a.resistDarkness  + b.resistDarkness,
-            resistLight     = a.resistLight     + b.resistLight,
+            fusionLevel     = Mathf.Min(6, Mathf.Max(slot1.fusionLevel, slot2.fusionLevel) + 1),
+            resistFire      = slot1.resistFire      + slot2.resistFire,
+            resistWater     = slot1.resistWater     + slot2.resistWater,
+            resistLightning = slot1.resistLightning + slot2.resistLightning,
+            resistEarth     = slot1.resistEarth     + slot2.resistEarth,
+            resistNature    = slot1.resistNature    + slot2.resistNature,
+            resistDarkness  = slot1.resistDarkness  + slot2.resistDarkness,
+            resistLight     = slot1.resistLight     + slot2.resistLight,
         };
 
-        UnityEngine.Debug.Log($"[BootsInstance] Fusion → S{result.fusionLevel} | " +
-                              $"Fire {result.resistFire:P0} | " +
-                              $"Water {result.resistWater:P0} | Lightning {result.resistLightning:P0}");
+        Debug.Log($"[BootsInstance] Fusion → {result.FusionLabel} | " +
+                  $"Fire {result.resistFire:P0} | Water {result.resistWater:P0} | " +
+                  $"Lightning {result.resistLightning:P0}");
         return result;
     }
 }

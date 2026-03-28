@@ -333,8 +333,12 @@ public class SaveSystem : MonoBehaviour
             saved = new SavedItem { category = "Gem",        soName = item.GemInstance.data.name };
         else if (item.RuneInstance?.data       != null)
             saved = new SavedItem { category = "Rune",       soName = item.RuneInstance.data.name };
-        else if (item.CosmeticInstance?.data   != null)
-            saved = new SavedItem { category = "Cosmetic",   soName = item.CosmeticInstance.data.name };
+        else if (item.CosmeticInstanceHead?.data != null)
+            saved = new SavedItem { category = "CosmeticHead", soName = item.CosmeticInstanceHead.data.name };
+        else if (item.CosmeticInstanceBody?.data != null)
+            saved = new SavedItem { category = "CosmeticBody", soName = item.CosmeticInstanceBody.data.name };
+        else if (item.CardInstance?.data         != null)
+            saved = new SavedItem { category = "Card",          soName = item.CardInstance.data.name };
 
         if (saved != null) { saved.isEquipped = false; p.items.Add(saved); }
     }
@@ -645,9 +649,15 @@ public class SaveSystem : MonoBehaviour
             case "Rune":
                 var runeD = FindSOByName<RuneData>(saved.soName);
                 return runeD != null ? new InventoryItem(runeD.CreateDropInstance()) : null;
-            case "Cosmetic":
-                var cos = FindSOByName<CosmeticData>(saved.soName);
-                return cos != null ? new InventoryItem(new CosmeticInstance(cos)) : null;
+            case "CosmeticHead":
+                var cosH = FindSOByName<CosmeticDataHead>(saved.soName);
+                return cosH != null ? new InventoryItem(new CosmeticInstanceHead(cosH)) : null;
+            case "CosmeticBody":
+                var cosB = FindSOByName<CosmeticDataBody>(saved.soName);
+                return cosB != null ? new InventoryItem(new CosmeticInstanceBody(cosB)) : null;
+            case "Card":
+                var card = FindSOByName<CardData>(saved.soName);
+                return card != null ? new InventoryItem(new CardInstance(card)) : null;
             default:
                 Debug.LogWarning($"[LOAD] Catégorie inconnue : '{saved.category}'");
                 return null;

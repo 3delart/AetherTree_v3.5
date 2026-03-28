@@ -6,19 +6,22 @@ using UnityEngine.AI;
 // =============================================================
 // SKILLBAR.CS — Barre de sorts runtime
 // Path : Assets/Scripts/Core/SkillBar.cs
-// AetherTree GDD v30 — Section 8.1
+// AetherTree GDD v3.5 — Section 8.1 / §8.7
 //
 // Structure slots (§8.1) :
-//   Slot 0     : BasicAttack — jamais bloqué par le GCD
-//   Slots 1-8  : Actifs — soumis au GCD (1s) + cooldown individuel
-//   Slot 9     : Ultime — soumis au GCD + cooldown ultime
-//   P1, P2, P3 : Passifs utilitaires — proc automatique, pas de GCD
+//   Slot 0     : BasicAttack — GCD = skill.cooldown (propre à l'arme)
+//   Slots 1-8  : Actifs — soumis au GCD global de 1s + cooldown individuel
+//   Slot 9     : Ultime — soumis au GCD global + cooldown ultime
+//   P1, P2, P3 : Passifs utilitaires — proc automatique, pas de GCD (backlog §44)
 //
-// ⚠ TODO §8.7 (backlog §44) : GCD non implémenté
-//   Le GDD §8.7 / §5.4 définit un GCD global de 1s sur slots 1-9.
-//   Déclenché à chaque skill utilisé — verrouille tous les slots 1-9.
-//   Slot 0 jamais bloqué.
-//   À implémenter : _gcdTimer float + vérification dans TryUseSlot()
+// GCD (§8.7) :
+//   Slot 0 → pas de GCD global, cooldown = skill.cooldown de la BasicAttack équipée.
+//   Slots 1-9 → GCD_DURATION (1s) déclenché après chaque cast actif.
+//   _basicAttackLockTimer SUPPRIMÉ — le slot 0 est naturellement protégé
+//   par _cooldownTimers[0] qui est posé à skill.cooldown lors du cast.
+//
+// Calls SkillSystem.Execute(skill, caster, target) — target peut être null
+//   pour Self, AoE_Self, GroundTarget, Direction, Skillshot, LineTarget, Cone.
 //
 // ⚠ TODO §8.1 (backlog §44) : slots passifs P1/P2/P3 manquants
 //   Passifs utilitaires : proc via condition (HP < 30%, crit...) — §8.6
@@ -38,15 +41,9 @@ public class SkillBar : MonoBehaviour
 
     // ── GCD §8.7 ──────────────────────────────────────────────
     // GCD de 1s sur slots 1-9 (actifs + ultime), déclenché par tout skill actif.
-    // Slot 0 (BasicAttack) jamais bloqué par le GCD... sauf si un actif vient d'être lancé
-    // (voir _basicAttackLock) pour éviter la basic simultanée.
+    // Slot 0 (BasicAttack) utilise uniquement son propre _cooldownTimers[0].
     private const float GCD_DURATION = 1f;
     private float       _gcdTimer    = 0f;
-
-    // Durée pendant laquelle la basic attack est bloquée après un actif (slots 1-9).
-    // Valeur = GCD_DURATION : la basic est locked pour toute la durée du GCD.
-    private const float BASIC_LOCK_DURATION = 1f;
-    private float       _basicAttackLockTimer = 0f;
 
     // Lock total tous les slots pendant un MultiHit (coroutine en cours).
     // Durée = somme des delays du hitSteps. Alimenté par LockForMultiHit().
@@ -93,13 +90,9 @@ public class SkillBar : MonoBehaviour
             if (_cooldownTimers[i] > 0f)
                 _cooldownTimers[i] -= Time.deltaTime;
 
-        // GCD — slots 1-9
+        // GCD — slots 1-9 uniquement
         if (_gcdTimer > 0f)
             _gcdTimer -= Time.deltaTime;
-
-        // Lock basic attack après un actif
-        if (_basicAttackLockTimer > 0f)
-            _basicAttackLockTimer -= Time.deltaTime;
 
         // Lock total pendant un MultiHit
         if (_multiHitLockTimer > 0f)
@@ -163,8 +156,8 @@ public class SkillBar : MonoBehaviour
     {
         if (slot < 0 || slot >= 10) return false;
         var skill = _slots[slot];
-        if (skill == null)              return false;
-        if (_player == null)            return false;
+        if (skill == null)   return false;
+        if (_player == null) return false;
 
         // ── Vérification status effects bloquants ────────────
         var fx = _player.statusEffects;
@@ -190,15 +183,15 @@ public class SkillBar : MonoBehaviour
 
         if (slot == 0)
         {
-            // Basic attack : bloquée par son propre CD + par _basicAttackLockTimer
-            if (_cooldownTimers[0] > 0f)      return false;
-            if (_basicAttackLockTimer > 0f)   return false;
+            // Basic attack : cooldown propre à l'arme équipée (skill.cooldown).
+            // Pas de GCD global — _cooldownTimers[0] suffit.
+            if (_cooldownTimers[0] > 0f) return false;
         }
         else
         {
-            // Actifs / ultime : bloqués par leur CD individuel ET par le GCD
-            if (_cooldownTimers[slot] > 0f)   return false;
-            if (_gcdTimer > 0f)               return false;
+            // Actifs / ultime : bloqués par leur CD individuel ET par le GCD global.
+            if (_cooldownTimers[slot] > 0f) return false;
+            if (_gcdTimer > 0f)             return false;
         }
 
         // Vérification mana
@@ -208,14 +201,16 @@ public class SkillBar : MonoBehaviour
             return false;
         }
 
-        // Récupère la cible
+        // Récupère la cible courante
         Entity target = TargetingSystem.Instance?.GetEngagedTarget()
                      ?? TargetingSystem.Instance?.GetSelectedTarget();
 
-        // Vérification portée pour les skills qui nécessitent une cible
+        // ── Vérification portée pour les skills qui nécessitent une cible ──
+        // Inclut tous les TargetType nécessitant une Entity valide au cast.
         bool needsTarget = skill.targetType == TargetType.Target
                         || skill.targetType == TargetType.AoE_Target
-                        || skill.targetType == TargetType.Dash_Target;
+                        || skill.targetType == TargetType.Dash_Target
+                        || skill.targetType == TargetType.LineTarget;
 
         if (needsTarget)
         {
@@ -272,7 +267,7 @@ public class SkillBar : MonoBehaviour
             _comboStep  = 1; // prochain appui = comboSteps[0]
 
             _player.SpendMana(skill.manaCost);
-            SkillSystem.Instance?.Execute(skill, target);
+            SkillSystem.Instance?.Execute(skill, _player, target);
             if (target != null) TargetingSystem.Instance?.EngageFromSkill(target);
 
             // Ouvre la fenêtre combo — aucun lock sur les autres slots
@@ -296,7 +291,7 @@ public class SkillBar : MonoBehaviour
         if (stepSkill == null) { ResetCombo(); return true; }
 
         _player.SpendMana(stepSkill.manaCost);
-        SkillSystem.Instance?.Execute(stepSkill, target);
+        SkillSystem.Instance?.Execute(stepSkill, _player, target);
         if (target != null) TargetingSystem.Instance?.EngageFromSkill(target);
 
         _comboStep++;
@@ -306,7 +301,7 @@ public class SkillBar : MonoBehaviour
             // Dernier step complété — CD sur le slot + reset
             Debug.Log($"[SKILLBAR] Combo terminé sur slot {slot}.");
             _cooldownTimers[slot] = _comboSkill.cooldown;
-            if (slot >= 1) { _gcdTimer = GCD_DURATION; _basicAttackLockTimer = BASIC_LOCK_DURATION; }
+            if (slot >= 1) _gcdTimer = GCD_DURATION;
             ResetCombo();
             SkillBarUI.Instance?.RefreshSlot(slot);
         }
@@ -332,8 +327,6 @@ public class SkillBar : MonoBehaviour
 
         if (_agent != null)
             _agent.SetDestination(target.transform.position);
-
-    
     }
 
     private void CheckApproach()
@@ -369,33 +362,32 @@ public class SkillBar : MonoBehaviour
         _cooldownTimers[slot] = skill.cooldown;
 
         // ── GCD §8.7 ──────────────────────────────────────────
-        // Un actif ou l'ultime (slots 1-9) déclenche le GCD sur tous les slots 1-9
-        // ET verrouille temporairement la basic attack pour éviter un cast simultané.
+        // Un actif ou l'ultime (slots 1-9) déclenche le GCD global sur tous les slots 1-9.
+        // Le slot 0 (BasicAttack) ne déclenche PAS de GCD — son CD vient de skill.cooldown.
         if (slot >= 1)
-        {
-            _gcdTimer             = GCD_DURATION;
-            _basicAttackLockTimer = BASIC_LOCK_DURATION;
-        }
-        // La basic attack (slot 0) ne déclenche PAS de GCD mais a son propre CD via skill.cooldown.
- 
-        // Engage la cible → passe orange → rouge dans TargetingSystem.
-        // Uniquement si le skill a une cible ET que ce n'est pas déjà la cible engagée.
-        if (target != null && skill.targetType != TargetType.Self
-                           && skill.targetType != TargetType.AoE_Self
-                           && skill.targetType != TargetType.GroundTarget)
+            _gcdTimer = GCD_DURATION;
+
+        // Engage la cible dans TargetingSystem (outline rouge, auto-attaque).
+        // Uniquement pour les skills qui ciblent une Entity.
+        if (target != null
+            && skill.targetType != TargetType.Self
+            && skill.targetType != TargetType.AoE_Self
+            && skill.targetType != TargetType.GroundTarget
+            && skill.targetType != TargetType.Direction
+            && skill.targetType != TargetType.Skillshot
+            && skill.targetType != TargetType.Cone)
         {
             TargetingSystem.Instance?.EngageFromSkill(target);
         }
- 
-        // GroundTarget — passe par TargetingSystem.TryExecuteSkill
-        // pour le raycast sol au moment du cast (lancer rapide).
-        // Tous les autres targetTypes passent par SkillSystem.Execute directement.
+
+        // GroundTarget — passe par TargetingSystem.TryExecuteSkill pour
+        // le raycast sol au moment du cast (lancer rapide, position curseur).
+        // Tous les autres targetTypes passent directement par SkillSystem.Execute.
         if (skill.targetType == TargetType.GroundTarget)
             TargetingSystem.Instance?.TryExecuteSkill(skill);
         else
-            SkillSystem.Instance?.Execute(skill, target);
+            SkillSystem.Instance?.Execute(skill, _player, target);
     }
- 
 
     // ── Portée par défaut selon arme ──────────────────────────
     private float GetDefaultRange()
@@ -415,24 +407,21 @@ public class SkillBar : MonoBehaviour
     public float GetCooldownRemaining(int slot)
     {
         if (slot < 0 || slot >= 10) return 0f;
-        // Pour les slots actifs/ultime, on renvoie le max entre le CD individuel et le GCD
-        // afin que l'overlay UI reflète toujours le temps de blocage réel.
+        // Slot 0 : CD individuel seulement (pas de GCD global sur la basic).
+        // Slots 1-9 : max entre le CD individuel et le GCD restant.
         float individual = Mathf.Max(0f, _cooldownTimers[slot]);
         if (slot >= 1)
             return Mathf.Max(individual, Mathf.Max(0f, _gcdTimer));
-        // Slot 0 : CD individuel + basicAttackLock
-        return Mathf.Max(individual, Mathf.Max(0f, _basicAttackLockTimer));
+        return individual;
     }
 
     public float GetCooldownTotal(int slot)
     {
         if (slot < 0 || slot >= 10 || _slots[slot] == null) return 0f;
-        // Pour l'overlay radial, on utilise le total pertinent :
-        // si le GCD est en cours et supérieur au CD individuel, on base sur GCD_DURATION.
-        if (slot >= 1 && _gcdTimer > (_cooldownTimers[slot]))
+        // Slots 1-9 : si le GCD est plus long que le CD individuel, on base sur GCD_DURATION.
+        // Slot 0 : toujours le cooldown de la BasicAttack équipée.
+        if (slot >= 1 && _gcdTimer > _cooldownTimers[slot])
             return GCD_DURATION;
-        if (slot == 0 && _basicAttackLockTimer > _cooldownTimers[0])
-            return BASIC_LOCK_DURATION;
         return _slots[slot].cooldown;
     }
 
@@ -456,9 +445,9 @@ public class SkillBar : MonoBehaviour
             total += step.delay;
         // Ajoute une petite marge pour couvrir le dernier hit
         total += 0.3f;
-        _multiHitLockTimer    = total;
-        _basicAttackLockTimer = total; // bloque aussi la basic
-        _gcdTimer             = total; // bloque aussi les actifs
+        _multiHitLockTimer = total;
+        _gcdTimer          = Mathf.Max(_gcdTimer, total); // bloque aussi les actifs
+        // Slot 0 bloqué via _multiHitLockTimer — pas de _gcdTimer sur slot 0
         Debug.Log($"[SKILLBAR] MultiHit lock {total:F2}s pour {skill.skillName}");
     }
 }

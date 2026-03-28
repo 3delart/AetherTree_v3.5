@@ -5,11 +5,25 @@ using UnityEngine;
 // =============================================================
 // ELEMENTALSYSTEM.CS — Jauge d'affinité élémentaire
 // Path : Assets/Scripts/Data/Elements/ElementalSystem.cs
-// AetherTree GDD v30 — Section 7
+// AetherTree GDD v3.5 — §6.1 / §6.2 / §6.3 / §6.4
 //
 // Logique : dilution ÉGALE
 //   Quand on ajoute du poids à un élément A, l'excédent est retiré
 //   ÉQUITABLEMENT sur tous les autres éléments présents (> 0).
+//
+// Modes élémentaires (GDD §6.3) :
+//   Mono        — 1 élément ≥25% (Neutre pur inclus — affinité Neutral ≥99%)
+//   Dual        — 2 éléments ≥20%, écart <10%, sort combo équipé
+//   Équilibriste — aucun élément ≥25% mais plusieurs actifs
+//   Neutral     — état de départ pur, aucune affinité non-neutre active
+//
+// Rangs d'affinité (GDD §6.2) :
+//   0 — 0%      : aucun bonus
+//   1 — >0%     : +5%
+//   2 — ≥25%    : +10%  (seuil Mono)
+//   3 — ≥50%    : +15%
+//   4 — ≥75%    : +20%
+//   5 — ≥90%    : +25%
 // =============================================================
 
 public enum TitleMode { Neutral, Mono, Dual, Equilibriste }
@@ -30,7 +44,10 @@ public class ElementalSystem : MonoBehaviour
     {
         _weightCounts = new Dictionary<ElementType, float>();
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
+        {
+            if (t == ElementType.Any) continue;
             _weightCounts[t] = 0f;
+        }
     }
 
     private void Start()
@@ -38,11 +55,17 @@ public class ElementalSystem : MonoBehaviour
         InitNeutralWindow();
     }
 
+    // =========================================================
+    // INITIALISATION
+    // =========================================================
+
     public void InitNeutralWindow()
     {
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
+        {
+            if (t == ElementType.Any) continue;
             _weightCounts[t] = 0f;
-
+        }
         _weightCounts[ElementType.Neutral] = _windowSize;
         _totalCasts = 0;
     }
@@ -63,19 +86,19 @@ public class ElementalSystem : MonoBehaviour
             return;
         }
 
-        // Remet tout à zéro
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
+        {
+            if (t == ElementType.Any) continue;
             _weightCounts[t] = 0f;
+        }
 
-        // Applique les poids sauvegardés
         foreach (var entry in affinities)
         {
             if (Enum.TryParse(entry.element, out ElementType type)
-                && type != ElementType.Any)   // ignore la valeur sentinelle Any = -1
+                && type != ElementType.Any)
                 _weightCounts[type] = Mathf.Max(0f, entry.weight);
         }
 
-        // Renormalise
         Renormalize();
     }
 
@@ -85,13 +108,15 @@ public class ElementalSystem : MonoBehaviour
 
     public void RegisterCast(ElementType element, bool isBasicAttack = false)
     {
+        if (element == ElementType.Any) return;
+
         float weight = isBasicAttack ? BASIC_ATTACK_WEIGHT : SKILL_WEIGHT;
         _totalCasts++;
 
         // 1. Ajoute le poids à l'élément entrant
         _weightCounts[element] += weight;
 
-        // 2. Retire le même poids équitablement sur les autres éléments présents
+        // 2. Retire équitablement sur les autres éléments présents
         float toDistribute = weight;
 
         while (toDistribute > 0.0001f)
@@ -153,18 +178,22 @@ public class ElementalSystem : MonoBehaviour
     // AFFINITÉS
     // =========================================================
 
+    /// <summary>Affinité [0..1] pour un élément. GDD §6.2.</summary>
     public float GetAffinity(ElementType element)
     {
+        if (element == ElementType.Any) return 0f;
         float w = 0f;
         _weightCounts.TryGetValue(element, out w);
         return Mathf.Clamp01(w / _windowSize);
     }
 
+    /// <summary>Liste triée des affinités actives (> 0.1%).</summary>
     public List<ElementAffinityPair> GetActiveAffinities()
     {
         var result = new List<ElementAffinityPair>();
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
         {
+            if (t == ElementType.Any) continue;
             float aff = GetAffinity(t);
             if (aff > 0.001f)
                 result.Add(new ElementAffinityPair(t, aff));
@@ -173,6 +202,10 @@ public class ElementalSystem : MonoBehaviour
         return result;
     }
 
+    /// <summary>
+    /// Élément dominant (hors Neutral si un élément non-neutre domine).
+    /// Retourne Neutral si aucun élément non-neutre ne dépasse l'affinité Neutral.
+    /// </summary>
     public ElementType GetDominantElement()
     {
         ElementType dominant = ElementType.Neutral;
@@ -180,7 +213,7 @@ public class ElementalSystem : MonoBehaviour
 
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
         {
-            if (t == ElementType.Neutral) continue;
+            if (t == ElementType.Any || t == ElementType.Neutral) continue;
             float aff = GetAffinity(t);
             if (aff > maxAff) { maxAff = aff; dominant = t; }
         }
@@ -189,34 +222,45 @@ public class ElementalSystem : MonoBehaviour
     }
 
     // =========================================================
-    // RANG D'AFFINITÉ (0–5)
+    // RANG D'AFFINITÉ — GDD §6.2
+    // Rang 0 : 0%     | Rang 1 : >0%  | Rang 2 : ≥25%
+    // Rang 3 : ≥50%   | Rang 4 : ≥75% | Rang 5 : ≥90%
     // =========================================================
 
     public int GetElementRank(ElementType element)
     {
         float aff = GetAffinity(element);
-        if (aff <= 0f)   return 0;
-        if (aff < 0.25f) return 1;
-        if (aff < 0.50f) return 2;
-        if (aff < 0.75f) return 3;
-        if (aff < 0.90f) return 4;
+        if (aff <= 0f)    return 0;
+        if (aff < 0.25f)  return 1;
+        if (aff < 0.50f)  return 2;
+        if (aff < 0.75f)  return 3;
+        if (aff < 0.90f)  return 4;
         return 5;
     }
 
     // =========================================================
-    // TITRE MODE
+    // TITRE MODE — GDD §6.3
     // =========================================================
 
+    /// <summary>
+    /// Détermine le mode élémentaire actif. GDD §6.3.
+    /// hasDualSkillEquipped : true si un sort combo Dual est placé dans la SkillBar.
+    /// </summary>
     public TitleMode GetTitleMode(bool hasDualSkillEquipped = false)
     {
+        // Cas Neutre pur — affinité Neutral ≥99% (fenêtre quasi-intacte)
+        if (GetAffinity(ElementType.Neutral) >= 0.99f)
+            return TitleMode.Mono;   // Mono Neutre — bonus Neutre actif §6.3
+
         ElementType dominant = GetDominantElement();
         float domAff = GetAffinity(dominant);
 
+        // Aucune affinité non-neutre significative
         if (dominant == ElementType.Neutral || domAff < 0.01f)
             return TitleMode.Neutral;
 
+        // Dual — 2 éléments ≥20%, écart <10%, sort combo équipé
         List<ElementType> dualCandidates = GetDualCandidates();
-
         if (dualCandidates.Count >= 2 && hasDualSkillEquipped)
         {
             float aff1 = GetAffinity(dualCandidates[0]);
@@ -225,18 +269,24 @@ public class ElementalSystem : MonoBehaviour
                 return TitleMode.Dual;
         }
 
+        // Mono — élément dominant ≥25%
         if (domAff >= 0.25f)
             return TitleMode.Mono;
 
+        // Équilibriste — plusieurs éléments actifs mais aucun ≥25%
         return TitleMode.Equilibriste;
     }
 
+    /// <summary>
+    /// Candidats Dual : éléments non-neutres avec affinité ≥20%.
+    /// Triés par affinité décroissante. GDD §6.3.
+    /// </summary>
     public List<ElementType> GetDualCandidates()
     {
         var result = new List<ElementType>();
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
         {
-            if (t == ElementType.Neutral) continue;
+            if (t == ElementType.Any || t == ElementType.Neutral) continue;
             if (GetAffinity(t) >= 0.20f) result.Add(t);
         }
         result.Sort((a, b) => GetAffinity(b).CompareTo(GetAffinity(a)));
@@ -244,9 +294,14 @@ public class ElementalSystem : MonoBehaviour
     }
 
     // =========================================================
-    // BONUS DÉGÂTS
+    // BONUS DÉGÂTS ÉLÉMENTAIRES — GDD §6.2 / §6.3
+    // Retourne le multiplicateur total (1.0 = pas de bonus).
     // =========================================================
 
+    /// <summary>
+    /// Multiplicateur de dégâts élémentaires pour un élément donné.
+    /// Prend en compte le rang d'affinité et le mode actif (§6.2 / §6.3).
+    /// </summary>
     public float GetElementalDamageBonus(ElementType element)
     {
         int rank = GetElementRank(element);
@@ -255,30 +310,41 @@ public class ElementalSystem : MonoBehaviour
         float bonus;
         switch (rank)
         {
-            case 1:  bonus = 0.05f; break;
-            case 2:  bonus = 0.10f; break;
-            case 3:  bonus = 0.15f; break;
-            case 4:  bonus = 0.20f; break;
-            case 5:  bonus = 0.25f; break;
+            case 1:  bonus = 0.05f; break;  // +5%
+            case 2:  bonus = 0.10f; break;  // +10%
+            case 3:  bonus = 0.15f; break;  // +15%
+            case 4:  bonus = 0.20f; break;  // +20%
+            case 5:  bonus = 0.25f; break;  // +25%
             default: bonus = 0.00f; break;
         }
 
+        // Dual : 75% du bonus Mono sur chaque élément. GDD §6.3.
         if (mode == TitleMode.Dual)
             bonus *= 0.75f;
 
+        // Équilibriste : +5% supplémentaires sur tous les éléments actifs. GDD §6.3.
         if (mode == TitleMode.Equilibriste && rank > 0)
             bonus += 0.05f;
 
         return 1f + bonus;
     }
 
+    /// <summary>
+    /// Bonus Neutre pur — +20% dégâts si l'affinité Neutral ≥99%. GDD §6.3.
+    /// Lire avec GetTitleMode() == Mono ET GetDominantElement() == Neutral.
+    /// </summary>
     public float GetNeutralBonus()
         => GetAffinity(ElementType.Neutral) >= 0.99f ? 1.20f : 1.00f;
 
     // =========================================================
-    // VULNÉRABILITÉ
+    // VULNÉRABILITÉ — GDD §6.3
+    // Retourne le multiplicateur de dégâts reçus depuis le contre-élément.
     // =========================================================
 
+    /// <summary>
+    /// Multiplicateur de dégâts reçus si incomingElement est le contre-élément du joueur.
+    /// Neutre : aucune vulnérabilité. Équilibriste : aucune vulnérabilité. GDD §6.3.
+    /// </summary>
     public float GetVulnerability(ElementType incomingElement)
     {
         TitleMode mode = GetTitleMode();
@@ -286,6 +352,8 @@ public class ElementalSystem : MonoBehaviour
         if (mode == TitleMode.Mono)
         {
             ElementType dominant = GetDominantElement();
+            // Neutre pur — pas de vulnérabilité. GDD §6.3.
+            if (dominant == ElementType.Neutral) return 1f;
             if (incomingElement != dominant.GetCounter()) return 1f;
             return GetMonoVulnerability(GetAffinity(dominant));
         }
@@ -305,6 +373,7 @@ public class ElementalSystem : MonoBehaviour
             return 1f + maxBonus;
         }
 
+        // Neutral / Équilibriste : pas de vulnérabilité
         return 1f;
     }
 
@@ -328,18 +397,91 @@ public class ElementalSystem : MonoBehaviour
     }
 
     // =========================================================
+    // TITRE — GDD §6.4
+    // =========================================================
+
+    /// <summary>
+    /// Construit le titre actif complet du joueur selon le mode et l'arme équipée.
+    /// Format GDD §6.4 : "[Épithète]" (l'appelant préfixe le nom de classe si besoin).
+    /// Retourne "Équilibriste" si mode Équilibriste (nom temp — §14.1).
+    /// </summary>
+    public string BuildTitle(WeaponType equippedWeapon, bool hasDualSkillEquipped = false)
+    {
+        TitleMode mode = GetTitleMode(hasDualSkillEquipped);
+
+        switch (mode)
+        {
+            case TitleMode.Mono:
+            {
+                ElementType dominant = GetDominantElement();
+                string ep = dominant.GetEpithet(equippedWeapon);
+                return string.IsNullOrEmpty(ep) ? dominant.GetLabel() : ep;
+            }
+
+            case TitleMode.Dual:
+            {
+                List<ElementType> candidates = GetDualCandidates();
+                if (candidates.Count >= 2)
+                {
+                    string ep1 = candidates[0].GetEpithet(equippedWeapon);
+                    string ep2 = candidates[1].GetEpithet(equippedWeapon);
+                    if (string.IsNullOrEmpty(ep1)) ep1 = candidates[0].GetLabel();
+                    if (string.IsNullOrEmpty(ep2)) ep2 = candidates[1].GetLabel();
+                    return $"{ep1} et {ep2}";
+                }
+                goto case TitleMode.Mono;
+            }
+
+            case TitleMode.Equilibriste:
+                return "Équilibriste";   // Nom temp — §14.1
+
+            default:  // Neutral
+            {
+                // Mode Neutre pur → épithète Neutre de l'arme. GDD §6.4.
+                string ep = ElementType.Neutral.GetEpithet(equippedWeapon);
+                return string.IsNullOrEmpty(ep) ? "Aventurier" : ep;
+            }
+        }
+    }
+
+    // =========================================================
     // UTILITAIRES
     // =========================================================
 
     public int   GetTotalCasts()   => _totalCasts;
-    public int   GetHistoryCount() => 0;
     public float GetTotalWeight()  => _windowSize;
     public float GetWindowSize()   => _windowSize;
+
+    /// <summary>
+    /// Snapshot des affinités courantes pour la sauvegarde.
+    /// Appelé par SaveSystem avant une sérialisation.
+    /// </summary>
+    public List<SavedElementAffinity> GetAffinitySnapshot()
+    {
+        var result = new List<SavedElementAffinity>();
+        foreach (var kvp in _weightCounts)
+        {
+            if (kvp.Value > 0f)
+                result.Add(new SavedElementAffinity { element = kvp.Key.ToString(), weight = kvp.Value });
+        }
+        return result;
+    }
 }
+
+// =============================================================
+// STRUCTS UTILITAIRES
+// =============================================================
 
 public struct ElementAffinityPair
 {
     public ElementType element;
     public float       affinity;
     public ElementAffinityPair(ElementType e, float a) { element = e; affinity = a; }
+}
+
+[System.Serializable]
+public class SavedElementAffinity
+{
+    public string element;
+    public float  weight;
 }

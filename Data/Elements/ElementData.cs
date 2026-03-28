@@ -5,7 +5,7 @@ using UnityEngine;
 // =============================================================
 // ELEMENTDATA.CS — Data-driven, zéro switch à maintenir
 // Path : Assets/Scripts/Data/Elements/ElementData.cs
-// AetherTree GDD v30 — Section 7
+// AetherTree GDD v3.5 — §6.1 / §6.4
 //
 // Pour ajouter un élément :
 //   1. Ajouter la valeur dans ElementType
@@ -14,13 +14,14 @@ using UnityEngine;
 //
 // DÉMO : Neutral, Fire, Water, Earth, Nature (5 éléments)
 // FINAL : + Lightning, Darkness, Light (8 éléments total)
-//         Glace supprimée v30 — Wind supprimé v21
+//         Glace supprimée v3.0 — Wind supprimé v3.0
 //
-// Cycle : 🌊 Eau → 🔥 Feu → 🌿 Nature → 🌍 Terre → ⚡ Foudre → 🌊 Eau
-// Duo   : ☀ Lumière ↔ 🌑 Ténèbres
-// Neutre : seul, ne contre rien, rien ne le contre
+// Cycle élémentaire (GDD §6.1) :
+//   🔥 Feu → 🌊 Eau → ⚡ Foudre → 🌍 Terre → 🌿 Nature → 🔥 Feu
+//   ☀ Lumière ↔ 🌑 Ténèbres (duo miroir)
+//   ⚪ Neutre : ne contre rien, rien ne le contre
 //
-// Poison = DebuffType uniquement — JAMAIS ElementType
+// Poison = DebuffType uniquement — JAMAIS ElementType (§3.1.1.1)
 // =============================================================
 
 [AttributeUsage(AttributeTargets.Field)]
@@ -30,7 +31,7 @@ public class ElementInfoAttribute : Attribute
     public float       R       { get; }
     public float       G       { get; }
     public float       B       { get; }
-    public ElementType Counter { get; }  // Élément contre lequel on est vulnérable
+    public ElementType Counter { get; }  // Contre-élément selon GDD §6.1
     public bool        IsDemo  { get; }  // Disponible en démo
 
     public ElementInfoAttribute(string label, float r, float g, float b,
@@ -47,36 +48,36 @@ public class ElementInfoAttribute : Attribute
 
 // =============================================================
 // ENUM ELEMENTTYPE
-// Ajouter un élément = ajouter une ligne + son attribut
+// Ajouter un élément = ajouter une ligne + son attribut [ElementInfo]
+// Cycle GDD §6.1 : Feu→Eau→Foudre→Terre→Nature→Feu | Lumière↔Ténèbres
 // =============================================================
 public enum ElementType
 {
-    [ElementInfo("— Any —",  0f, 0f, 0f, ElementType.Any)]
+    [ElementInfo("— Any —",   0f,    0f,    0f,    ElementType.Any)]
     Any = -1,
 
-    [ElementInfo("Neutre",   0.75f, 0.75f, 0.75f, ElementType.Neutral, isDemo: true)]
+    [ElementInfo("Neutre",    0.75f, 0.75f, 0.75f, ElementType.Neutral, isDemo: true)]
     Neutral,
 
-
-    [ElementInfo("Feu",      1.0f,  0.35f, 0.0f,  ElementType.Water,    isDemo: true)]
+    [ElementInfo("Feu",       1.0f,  0.35f, 0.0f,  ElementType.Water,   isDemo: true)]
     Fire,
 
-    [ElementInfo("Eau",      0.1f,  0.5f,  1.0f,  ElementType.Earth,    isDemo: true)]
+    [ElementInfo("Eau",       0.1f,  0.5f,  1.0f,  ElementType.Lightning, isDemo: true)]
     Water,
 
-    [ElementInfo("Terre",    0.6f,  0.4f,  0.1f,  ElementType.Nature,   isDemo: true)]
-    Earth,
-
-    [ElementInfo("Nature",   0.15f, 0.75f, 0.2f,  ElementType.Fire,     isDemo: true)]
-    Nature,
-
-    [ElementInfo("Foudre",   0.8f,  0.6f,  1.0f,  ElementType.Water)]
+    [ElementInfo("Foudre",    0.8f,  0.6f,  1.0f,  ElementType.Earth)]
     Lightning,
 
-    [ElementInfo("Ténèbres", 0.3f,  0.1f,  0.4f,  ElementType.Light)]
+    [ElementInfo("Terre",     0.6f,  0.4f,  0.1f,  ElementType.Nature,  isDemo: true)]
+    Earth,
+
+    [ElementInfo("Nature",    0.15f, 0.75f, 0.2f,  ElementType.Fire,    isDemo: true)]
+    Nature,
+
+    [ElementInfo("Ténèbres",  0.3f,  0.1f,  0.4f,  ElementType.Light)]
     Darkness,
 
-    [ElementInfo("Lumière",  1.0f,  0.95f, 0.5f,  ElementType.Darkness)]
+    [ElementInfo("Lumière",   1.0f,  0.95f, 0.5f,  ElementType.Darkness)]
     Light,
 }
 
@@ -109,12 +110,237 @@ public static class ElementDataExtensions
         return info != null ? new Color(info.R, info.G, info.B) : Color.white;
     }
 
-    /// <summary>Tous les éléments (avec ou sans Neutre).</summary>
+    /// <summary>
+    /// Épithète du titre selon l'élément et la famille d'arme. GDD v3.5 §6.4.
+    /// Retourne la chaîne vide si la combinaison est inconnue.
+    /// </summary>
+    public static string GetEpithet(this ElementType element, WeaponType weapon)
+    {
+        // Remonte à la famille de départ (ex: LongSword → ShortSword)
+        WeaponType family = weapon.GetStartingFamily();
+
+        if (_epithetTable.TryGetValue((family, element), out string ep))
+            return ep;
+
+        return string.Empty;
+    }
+
+    // ── Table des épithètes — GDD v3.5 §6.4 — 20 armes × 8 éléments ──────────
+    // (WeaponType famille, ElementType) → épithète
+    private static readonly Dictionary<(WeaponType, ElementType), string> _epithetTable
+        = new Dictionary<(WeaponType, ElementType), string>
+    {
+        // ── Short Sword (Lame) ────────────────────────────────
+        { (WeaponType.ShortSword, ElementType.Neutral),   "Pur"           },
+        { (WeaponType.ShortSword, ElementType.Fire),      "Embrasé"       },
+        { (WeaponType.ShortSword, ElementType.Water),     "Déferlant"     },
+        { (WeaponType.ShortSword, ElementType.Earth),     "Tellurique"    },
+        { (WeaponType.ShortSword, ElementType.Nature),    "Sauvage"       },
+        { (WeaponType.ShortSword, ElementType.Lightning), "Fulgurant"     },
+        { (WeaponType.ShortSword, ElementType.Darkness),  "Maudit"        },
+        { (WeaponType.ShortSword, ElementType.Light),     "Sacré"         },
+
+        // ── Long Sword (Chevalier) ────────────────────────────
+        { (WeaponType.LongSword,  ElementType.Neutral),   "Impassible"    },
+        { (WeaponType.LongSword,  ElementType.Fire),      "Incandescent"  },
+        { (WeaponType.LongSword,  ElementType.Water),     "Ondoyant"      },
+        { (WeaponType.LongSword,  ElementType.Earth),     "Immuable"      },
+        { (WeaponType.LongSword,  ElementType.Nature),    "Primordial"    },
+        { (WeaponType.LongSword,  ElementType.Lightning), "Foudroyant"    },
+        { (WeaponType.LongSword,  ElementType.Darkness),  "Abyssal"       },
+        { (WeaponType.LongSword,  ElementType.Light),     "Radieux"       },
+
+        // ── Double Sword (Duelliste) ──────────────────────────
+        { (WeaponType.DoubleSword, ElementType.Neutral),  "Martial"       },
+        { (WeaponType.DoubleSword, ElementType.Fire),     "Ardent"        },
+        { (WeaponType.DoubleSword, ElementType.Water),    "Déferlant"     },
+        { (WeaponType.DoubleSword, ElementType.Earth),    "Granitique"    },
+        { (WeaponType.DoubleSword, ElementType.Nature),   "Féroce"        },
+        { (WeaponType.DoubleSword, ElementType.Lightning),"Électrisé"     },
+        { (WeaponType.DoubleSword, ElementType.Darkness), "Crépusculaire" },
+        { (WeaponType.DoubleSword, ElementType.Light),    "Étincelant"    },
+
+        // ── Great Axe (Berserker) ─────────────────────────────
+        { (WeaponType.GreatAxe,   ElementType.Neutral),   "Endurci"       },
+        { (WeaponType.GreatAxe,   ElementType.Fire),      "Volcanique"    },
+        { (WeaponType.GreatAxe,   ElementType.Water),     "Torrentiel"    },
+        { (WeaponType.GreatAxe,   ElementType.Earth),     "Rocheux"       },
+        { (WeaponType.GreatAxe,   ElementType.Nature),    "Bestial"       },
+        { (WeaponType.GreatAxe,   ElementType.Lightning), "Tonnant"       },
+        { (WeaponType.GreatAxe,   ElementType.Darkness),  "Ténébreux"     },
+        { (WeaponType.GreatAxe,   ElementType.Light),     "Céleste"       },
+
+        // ── Scythe (Faucheur) ─────────────────────────────────
+        { (WeaponType.Scythe,     ElementType.Neutral),   "Austère"       },
+        { (WeaponType.Scythe,     ElementType.Fire),      "Torride"       },
+        { (WeaponType.Scythe,     ElementType.Water),     "Diluvien"      },
+        { (WeaponType.Scythe,     ElementType.Earth),     "Fossile"       },
+        { (WeaponType.Scythe,     ElementType.Nature),    "Sylvestre"     },
+        { (WeaponType.Scythe,     ElementType.Lightning), "Orageux"       },
+        { (WeaponType.Scythe,     ElementType.Darkness),  "Ombral"        },
+        { (WeaponType.Scythe,     ElementType.Light),     "Auroral"       },
+
+        // ── Mace (Briseur) ────────────────────────────────────
+        { (WeaponType.Mace,       ElementType.Neutral),   "Forgé"         },
+        { (WeaponType.Mace,       ElementType.Fire),      "Flamboyant"    },
+        { (WeaponType.Mace,       ElementType.Water),     "Torrentiel"    },
+        { (WeaponType.Mace,       ElementType.Earth),     "Tellurique"    },
+        { (WeaponType.Mace,       ElementType.Nature),    "Verdoyant"     },
+        { (WeaponType.Mace,       ElementType.Lightning), "Galvanique"    },
+        { (WeaponType.Mace,       ElementType.Darkness),  "Sinistre"      },
+        { (WeaponType.Mace,       ElementType.Light),     "Lumineux"      },
+
+        // ── Hammer (Écraseur) ─────────────────────────────────
+        { (WeaponType.Hammer,     ElementType.Neutral),   "Trempé"        },
+        { (WeaponType.Hammer,     ElementType.Fire),      "Brasier"       },
+        { (WeaponType.Hammer,     ElementType.Water),     "Submergé"      },
+        { (WeaponType.Hammer,     ElementType.Earth),     "Lithique"      },
+        { (WeaponType.Hammer,     ElementType.Nature),    "Racinaire"     },
+        { (WeaponType.Hammer,     ElementType.Lightning), "Magnétique"    },
+        { (WeaponType.Hammer,     ElementType.Darkness),  "Lugubre"       },
+        { (WeaponType.Hammer,     ElementType.Light),     "Divin"         },
+
+        // ── Dagger (Assassin) ─────────────────────────────────
+        { (WeaponType.Dagger,     ElementType.Neutral),   "Résolu"        },
+        { (WeaponType.Dagger,     ElementType.Fire),      "Ardent"        },
+        { (WeaponType.Dagger,     ElementType.Water),     "Déferlant"     },
+        { (WeaponType.Dagger,     ElementType.Earth),     "Tellurique"    },
+        { (WeaponType.Dagger,     ElementType.Nature),    "Sylvestre"     },
+        { (WeaponType.Dagger,     ElementType.Lightning), "Fulgurant"     },
+        { (WeaponType.Dagger,     ElementType.Darkness),  "Maudit"        },
+        { (WeaponType.Dagger,     ElementType.Light),     "Sacré"         },
+
+        // ── Double Dagger (Traqueur) ──────────────────────────
+        { (WeaponType.DoubleDagger, ElementType.Neutral),  "Acéré"        },
+        { (WeaponType.DoubleDagger, ElementType.Fire),     "Scorché"      },
+        { (WeaponType.DoubleDagger, ElementType.Water),    "Lacustre"     },
+        { (WeaponType.DoubleDagger, ElementType.Earth),    "Sédimentaire" },
+        { (WeaponType.DoubleDagger, ElementType.Nature),   "Âpre"         },
+        { (WeaponType.DoubleDagger, ElementType.Lightning),"Plasma"       },
+        { (WeaponType.DoubleDagger, ElementType.Darkness), "Voilé"        },
+        { (WeaponType.DoubleDagger, ElementType.Light),    "Béni"         },
+
+        // ── Shield (Sentinelle) ───────────────────────────────
+        { (WeaponType.Shield,     ElementType.Neutral),   "Inaltéré"      },
+        { (WeaponType.Shield,     ElementType.Fire),      "Incandescent"  },
+        { (WeaponType.Shield,     ElementType.Water),     "Engloutissant" },
+        { (WeaponType.Shield,     ElementType.Earth),     "Granitique"    },
+        { (WeaponType.Shield,     ElementType.Nature),    "Ancestral"     },
+        { (WeaponType.Shield,     ElementType.Lightning), "Foudroyant"    },
+        { (WeaponType.Shield,     ElementType.Darkness),  "Spectral"      },
+        { (WeaponType.Shield,     ElementType.Light),     "Éthéré"        },
+
+        // ── Bow (Archer) ──────────────────────────────────────
+        { (WeaponType.Bow,        ElementType.Neutral),   "Discipliné"    },
+        { (WeaponType.Bow,        ElementType.Fire),      "Flamboyant"    },
+        { (WeaponType.Bow,        ElementType.Water),     "Fluvial"       },
+        { (WeaponType.Bow,        ElementType.Earth),     "Minéral"       },
+        { (WeaponType.Bow,        ElementType.Nature),    "Frondaison"    },
+        { (WeaponType.Bow,        ElementType.Lightning), "Volatil"       },
+        { (WeaponType.Bow,        ElementType.Darkness),  "Funèbre"       },
+        { (WeaponType.Bow,        ElementType.Light),     "Solaire"       },
+
+        // ── Crossbow (Arbalétrier) ────────────────────────────
+        { (WeaponType.Crossbow,   ElementType.Neutral),   "Inflexible"    },
+        { (WeaponType.Crossbow,   ElementType.Fire),      "Pyrique"       },
+        { (WeaponType.Crossbow,   ElementType.Water),     "Marin"         },
+        { (WeaponType.Crossbow,   ElementType.Earth),     "Calcaire"      },
+        { (WeaponType.Crossbow,   ElementType.Nature),    "Enraciné"      },
+        { (WeaponType.Crossbow,   ElementType.Lightning), "Statique"      },
+        { (WeaponType.Crossbow,   ElementType.Darkness),  "Obscur"        },
+        { (WeaponType.Crossbow,   ElementType.Light),     "Illuminé"      },
+
+        // ── Pistol (Tireur) ───────────────────────────────────
+        { (WeaponType.Pistol,     ElementType.Neutral),   "Épuré"         },
+        { (WeaponType.Pistol,     ElementType.Fire),      "Ardent"        },
+        { (WeaponType.Pistol,     ElementType.Water),     "Ondoyant"      },
+        { (WeaponType.Pistol,     ElementType.Earth),     "Tellurique"    },
+        { (WeaponType.Pistol,     ElementType.Nature),    "Tribal"        },
+        { (WeaponType.Pistol,     ElementType.Lightning), "Arc"           },
+        { (WeaponType.Pistol,     ElementType.Darkness),  "Nocturne"      },
+        { (WeaponType.Pistol,     ElementType.Light),     "Zénith"        },
+
+        // ── Shotgun (Gunner) ──────────────────────────────────
+        { (WeaponType.Shotgun,    ElementType.Neutral),   "Brut"          },
+        { (WeaponType.Shotgun,    ElementType.Fire),      "Embrasé"       },
+        { (WeaponType.Shotgun,    ElementType.Water),     "Déferlant"     },
+        { (WeaponType.Shotgun,    ElementType.Earth),     "Tectonique"    },
+        { (WeaponType.Shotgun,    ElementType.Nature),    "Farouche"      },
+        { (WeaponType.Shotgun,    ElementType.Lightning), "Électrisé"     },
+        { (WeaponType.Shotgun,    ElementType.Darkness),  "Abyssal"       },
+        { (WeaponType.Shotgun,    ElementType.Light),     "Céleste"       },
+
+        // ── Sniper (Précisionniste) ───────────────────────────
+        { (WeaponType.Sniper,     ElementType.Neutral),   "Tempéré"       },
+        { (WeaponType.Sniper,     ElementType.Fire),      "Incandescent"  },
+        { (WeaponType.Sniper,     ElementType.Water),     "Glaciaire"     },
+        { (WeaponType.Sniper,     ElementType.Earth),     "Cristallin"    },
+        { (WeaponType.Sniper,     ElementType.Nature),    "Primordial"    },
+        { (WeaponType.Sniper,     ElementType.Lightning), "Foudroyant"    },
+        { (WeaponType.Sniper,     ElementType.Darkness),  "Ombral"        },
+        { (WeaponType.Sniper,     ElementType.Light),     "Auroral"       },
+
+        // ── Whip (non présent dans la table GDD — entrées vides par sécurité) ──
+        // À compléter si ajouté à la table §6.4
+
+        // ── Staff (Mage) ──────────────────────────────────────
+        { (WeaponType.Staff,      ElementType.Neutral),   "Originel"      },
+        { (WeaponType.Staff,      ElementType.Fire),      "Incandescent"  },
+        { (WeaponType.Staff,      ElementType.Water),     "Torrentiel"    },
+        { (WeaponType.Staff,      ElementType.Earth),     "Tellurique"    },
+        { (WeaponType.Staff,      ElementType.Nature),    "Primordial"    },
+        { (WeaponType.Staff,      ElementType.Lightning), "Foudroyant"    },
+        { (WeaponType.Staff,      ElementType.Darkness),  "Abyssal"       },
+        { (WeaponType.Staff,      ElementType.Light),     "Céleste"       },
+
+        // ── Scepter (Arcaniste) ───────────────────────────────
+        { (WeaponType.Scepter,    ElementType.Neutral),   "Stoïque"       },
+        { (WeaponType.Scepter,    ElementType.Fire),      "Ignifuge"      },
+        { (WeaponType.Scepter,    ElementType.Water),     "Aquatique"     },
+        { (WeaponType.Scepter,    ElementType.Earth),     "Lithique"      },
+        { (WeaponType.Scepter,    ElementType.Nature),    "Sylvestre"     },
+        { (WeaponType.Scepter,    ElementType.Lightning), "Galvanique"    },
+        { (WeaponType.Scepter,    ElementType.Darkness),  "Crépusculaire" },
+        { (WeaponType.Scepter,    ElementType.Light),     "Divin"         },
+
+        // ── Orb (Gardien de l'Âme) ───────────────────────────
+        { (WeaponType.Orb,        ElementType.Neutral),   "Équilibré"     },
+        { (WeaponType.Orb,        ElementType.Fire),      "Ardent"        },
+        { (WeaponType.Orb,        ElementType.Water),     "Ondoyant"      },
+        { (WeaponType.Orb,        ElementType.Earth),     "Immuable"      },
+        { (WeaponType.Orb,        ElementType.Nature),    "Verdoyant"     },
+        { (WeaponType.Orb,        ElementType.Lightning), "Magnétique"    },
+        { (WeaponType.Orb,        ElementType.Darkness),  "Voilé"         },
+        { (WeaponType.Orb,        ElementType.Light),     "Radieux"       },
+
+        // ── Tome (Bibliomancien) ──────────────────────────────
+        { (WeaponType.Tome,       ElementType.Neutral),   "Inébranlable"  },
+        { (WeaponType.Tome,       ElementType.Fire),      "Torride"       },
+        { (WeaponType.Tome,       ElementType.Water),     "Diluvien"      },
+        { (WeaponType.Tome,       ElementType.Earth),     "Pétrifié"      },
+        { (WeaponType.Tome,       ElementType.Nature),    "Racinaire"     },
+        { (WeaponType.Tome,       ElementType.Lightning), "Orageux"       },
+        { (WeaponType.Tome,       ElementType.Darkness),  "Lugubre"       },
+        { (WeaponType.Tome,       ElementType.Light),     "Éthéré"        },
+
+        // ── Wand (Enchanteur) ─────────────────────────────────
+        { (WeaponType.Wand,       ElementType.Neutral),   "Raffiné"       },
+        { (WeaponType.Wand,       ElementType.Fire),      "Brasier"       },
+        { (WeaponType.Wand,       ElementType.Water),     "Lacustre"      },
+        { (WeaponType.Wand,       ElementType.Earth),     "Fossile"       },
+        { (WeaponType.Wand,       ElementType.Nature),    "Feuillu"       },
+        { (WeaponType.Wand,       ElementType.Lightning), "Tonnant"       },
+        { (WeaponType.Wand,       ElementType.Darkness),  "Spectral"      },
+        { (WeaponType.Wand,       ElementType.Light),     "Lumineux"      },
+    };
+
+    /// <summary>Tous les éléments non-sentinelles, avec ou sans Neutre.</summary>
     public static List<ElementType> GetAllElements(bool includeNeutral = false)
     {
         var result = new List<ElementType>();
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
         {
+            if (t == ElementType.Any) continue;
             if (!includeNeutral && t == ElementType.Neutral) continue;
             result.Add(t);
         }
@@ -127,6 +353,7 @@ public static class ElementDataExtensions
         var result = new List<ElementType>();
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
         {
+            if (t == ElementType.Any) continue;
             if (!includeNeutral && t == ElementType.Neutral) continue;
             if (t.IsDemo()) result.Add(t);
         }
@@ -135,7 +362,7 @@ public static class ElementDataExtensions
 }
 
 // =============================================================
-// ELEMENTDATA SO — config par élément
+// ELEMENTDATA SO — config par élément (données designer)
 // =============================================================
 [CreateAssetMenu(fileName = "Element_", menuName = "AetherTree/Elemental/ElementData")]
 public class ElementData : ScriptableObject
@@ -148,38 +375,21 @@ public class ElementData : ScriptableObject
     [TextArea] public string advancedEffect;
 
     [Header("Contenu associé")]
-    public List<MobData>   associatedMobs  = new List<MobData>();
-    public SkillData       firstSkill;
+    public List<MobData> associatedMobs = new List<MobData>();
+    public SkillData     firstSkill;
 
     // ── API statique (proxy vers extensions) ─────────────────
-    public static string      GetLabel(ElementType t)   => t.GetLabel();
-    public static Color       GetColor(ElementType t)   => t.GetColor();
-    public static ElementType GetCounter(ElementType t) => t.GetCounter();
-    public static bool        IsNeutral(ElementType t)  => t.IsNeutral();
+    public static string      GetLabel(ElementType t)              => t.GetLabel();
+    public static Color       GetColor(ElementType t)              => t.GetColor();
+    public static ElementType GetCounter(ElementType t)            => t.GetCounter();
+    public static bool        IsNeutral(ElementType t)             => t.IsNeutral();
+    public static string      GetEpithet(ElementType t, WeaponType w) => t.GetEpithet(w);
 }
 
 // =============================================================
-// STATUS EFFECT — séparé d'ElementType
-// Poison est un DebuffType, jamais un élément
-// Freeze supprimé v30 — lié à Glace (élément supprimé v30)
+// ELEMENTAFFINITYREQ — condition de déblocage par affinité
+// Utilisée par IConditionChecker pour vérifier l'affinité minimale.
 // =============================================================
-public enum StatusEffect
-{
-    Burn,        // DoT Feu
-    Slow,        // Ralentissement Eau
-    Stun,        // Étourdissement Foudre
-    Paralysis,   // Paralysie Foudre
-    Root,        // Enracinement Terre/Nature
-    Fear,        // Peur Ténèbres
-    ManaDrain,   // Drain mana Ténèbres
-    Poison,      // DoT Nature/Ténèbres — DebuffType, PAS ElementType
-    Blinded,     // Lumière
-    Knockback,   // Eau
-    // Silenced supprimé — lié à Wind (élément supprimé v21)
-    // Freeze supprimé — lié à Glace (élément supprimé v30)
-}
-
-
 public class ElementAffinityReq
 {
     public ElementType element;

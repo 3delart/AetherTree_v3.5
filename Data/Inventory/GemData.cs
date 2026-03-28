@@ -4,13 +4,22 @@ using System.Collections.Generic;
 // =============================================================
 // GemData — ScriptableObject template de gemme
 // Path : Assets/Scripts/Data/Inventory/Equipment/GemData.cs
-// AetherTree GDD v30 — Section 6.8
+// AetherTree GDD v3.5 — §5.5
 //
-// Règles GDD :
+// Règles GDD §5.5 :
 //   - gemLevel fixé sur le SO (identique sur toutes les instances)
 //   - Chaque stat autorisée a sa propre range min/max
 //   - Au drop, un GemStatEntry est tiré aléatoirement parmi allowedStats
 //   - La valeur est rollée entre entry.valueMin et entry.valueMax
+//   - Insertion irréversible dans un slot de bijou — aucun moyen d'extraire
+//   - gemLevel plafonné par maxGemLevel du bijou cible
+//
+// Pool de stats gemmes (§5.5) :
+//   HP / Mana / RegenHP / RegenMana
+//   Défenses (Melee/Ranged/Magic)
+//   CritChance / CritMultiplier
+//   Précision / Esquive
+//   Résistances élémentaires / Points élémentaires
 //
 // Assets > Create > AetherTree > Equipment > GemData
 // =============================================================

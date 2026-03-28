@@ -2,30 +2,39 @@ using UnityEngine;
 using System.Collections.Generic;
 
 // =============================================================
-// StatusEffectSystem — composant gérant tous les effets actifs
+// STATUSEFFECTSYSTEM — Composant gérant tous les effets actifs
 // Path : Assets/Scripts/Core/StatusEffectSystem.cs
-// AetherTree GDD v30 — §4.5 (Entity), §21bis (Status Effects, Buffs & Debuffs)
+// AetherTree GDD v3.5 — §3.1.1
 //
 // À attacher sur : Entity (Player, Mob, PNJ, Pet) via [RequireComponent] sur Entity.
 //
-// Debuffs offensifs (§21bis.1) :
-//   Burn, Slow, Knockback*, Rooted, Poisoned, Stunned, ArmorBreak,
-//   Shocked, Chain*, Feared, ManaDrain, Blinded
-//   (*) Knockback et Chain sont des effets ponctuels — pas de flag runtime.
+// Debuffs (GDD v3.5 §3.1.1.1) :
+//   Burn, Slow, Knockback*, Root, Poison, Stun, ArmorBreak,
+//   Shocked, Fear, ManaDrain, Blind, Freeze, Silence, Taunt, Mark
+//   (*) Knockback : effet ponctuel — déclenché via Entity.ApplyKnockBack().
 //
-// Buffs défensifs (§21bis.2) :
-//   Shield, Regeneration, Haste, Fortify, Barrier, Purified*
-//   (*) Purified est un effet instantané (cleanse) — pas de flag runtime.
+// Buffs (GDD v3.5 §3.1.1.2) :
+//   Shield, Regeneration, Haste, DefenseUp, Purified*, Heal*,
+//   DodgeUp, AttackUp, CritChanceUp, CritDamageUp, Barrier
+//   (*) Purified et Heal sont des effets instantanés — pas de flag runtime.
 //
-// Effets spéciaux (§21bis.3) :
-//   Invincibility, Stealth, Taunt, Interrupt*, Dispel*
-//   (*) Interrupt et Dispel sont des effets ponctuels — pas de flag runtime.
+// Effets spéciaux (GDD v3.5 §3.1.1.3) :
+//   Invincibility, Stealth
 //
-// Règles clés (§21bis.4) :
+// Règles clés (GDD v3.5 §3.1.1.4) :
 //   — Un debuff ne se cumule pas avec lui-même (refresh uniquement)
-//   — CC dur (Stunned/Feared) : pas d'immunité automatique post-CC —
-//     l'immunité peut être accordée via buff ou équipement
-//   — PvP : durées CC réduites de 50% — TODO déléguer à CombatSystem/SkillSystem
+//   — CC dur (Stun / Fear) : pas d'immunité automatique post-CC
+//   — Burn et Poison coexistent (types différents)
+//   — Deux Burn ne se cumulent pas — le plus récent remplace l'ancien (refresh)
+//   — Slow et Freeze coexistent — Slow = déplacement réduit, Freeze = hard CC
+//
+// v3.5 :
+//   — ManaDrain tick déplacé dans DebuffInstance.Tick() (cohérence DoT)
+//   — Regeneration tick déplacé dans BuffInstance.Tick() (suppression buffRegenBonus dans Update)
+//   — buffCritBonus séparé en buffCritChanceBonus + buffCritDamageBonus
+//   — BuffType.Taunt supprimé — Taunt est un DebuffType
+//   — Câblage Stats (buff + debuff) : RecalculateStats() + ReapplyActiveModifiers()
+//   — OnApplyBuff/ExpireBuff pour valeurs numériques passent tous par Recalculate + Reapply
 // =============================================================
 
 [RequireComponent(typeof(Entity))]
@@ -47,39 +56,70 @@ public class StatusEffectSystem : MonoBehaviour
     private Dictionary<DebuffType, float> _debuffResistances
         = new Dictionary<DebuffType, float>();
 
-    // ── Flags runtime ─────────────────────────────────────────
-    // ── Flags debuff ──────────────────────────────────────────
-    // GDD v30 §21bis.1
-    public bool  isStunned             { get; private set; } = false;   // Stun — bloque toutes les actions
-    public bool  isFreezed              { get; private set; } = false;  // Freeze — immobilise
-    public bool  isSilenced            { get; private set; } = false;   // Silence — bloque les skills
-    public bool  isRooted              { get; private set; } = false;   //Root — bloque le mouvement
-    public bool  isBlinded             { get; private set; } = false;  // Blind — Assombrissement + malus précision
-    public bool  isFeared              { get; private set; } = false;  // Fear — fuite incontrôlée
-    public bool  isSleeping            { get; private set; } = false;  // Sleep — immobilise jusqu'au premier dégât
-    public bool  isPoisoned            { get; private set; } = false;  // Poison — DoT + réduction soins
-    public bool  isArmorBroken         { get; private set; } = false;  // ArmorBreak — réduction défense physique %
-    public bool  isTaunted             { get; private set; } = false;  // Force les mobs à cibler le lanceur (PvE)
-    public float slowMultiplier        { get; private set; } = 1f;
-    public float shockDefenseReduction { get; private set; } = 0f;     // Shocked — réduction défense + mini-stun 0.5s
-    public float armorBreakReduction   { get; private set; } = 0f;     // ArmorBreak — réduction défense physique %
-    public float poisonHealReduction   { get; private set; } = 0f;     // Poisoned — réduction soins reçus %
-    public float blindPrecisionMalus   { get; private set; } = 0f;     // % de précision perdue
-    public float manaBreakAmount       { get; private set; } = 0f;     // mana drainée/s (ManaDrain)
-    public bool  isMarked              { get; private set; } = false;
-    public float markDamageBonus       { get; private set; } = 0f;     // bonus dégâts sur cible marquée
+    // =========================================================
+    // FLAGS DEBUFF — GDD v3.5 §3.1.1.1
+    // =========================================================
 
-    // ── Flags buff ────────────────────────────────────────────
-    // GDD v30 §21bis.2 & §21bis.3
-    public bool  isInvincible          { get; private set; } = false;
-    public bool  isStealthed           { get; private set; } = false;
-    public bool  isTaunting            { get; private set; } = false;  // Taunt actif sur ce joueur (force aggro mobs)
-    public float buffDefenseBonus      { get; private set; } = 0f;     // Fortify — défense physique % temporaire
+    /// <summary>Stunned — bloque toutes les actions. CC dur.</summary>
+    public bool isStunned    { get; private set; } = false;
+
+    /// <summary>Feared — fuite incontrôlée. CC dur.</summary>
+    public bool isFeared     { get; private set; } = false;
+
+    /// <summary>Rooted — immobilisé, peut toujours attaquer et caster.</summary>
+    public bool isRooted     { get; private set; } = false;
+
+    /// <summary>Blinded — réduit la précision.</summary>
+    public bool isBlinded    { get; private set; } = false;
+
+    /// <summary>Poisoned — DoT + réduction soins reçus.</summary>
+    public bool isPoisoned   { get; private set; } = false;
+
+    /// <summary>ArmorBreak — réduction de défense % temporaire.</summary>
+    public bool isArmorBroken { get; private set; } = false;
+
+    /// <summary>Sleeping — immobilisé jusqu'au premier dégât reçu.</summary>
+    public bool isSleeping   { get; private set; } = false;
+
+    /// <summary>Freeze — immobilisation totale (hard CC). Réattribué Eau v3.0 — §3.1.1.1.</summary>
+    public bool isFreezed    { get; private set; } = false;
+
+    /// <summary>Silence — bloque l'utilisation des skills.</summary>
+    public bool isSilenced   { get; private set; } = false;
+
+    /// <summary>Taunted — force les ennemis à cibler cette entité (attaque basique seulement en PvP). §3.1.1.1.</summary>
+    public bool isTaunted    { get; private set; } = false;
+
+    /// <summary>Marked — cible marquée, reçoit des dégâts supplémentaires. Design decision.</summary>
+    public bool isMarked     { get; private set; } = false;
+
+    // Valeurs numériques debuff
+    public float slowMultiplier        { get; private set; } = 1f;
+    public float armorBreakReduction   { get; private set; } = 0f;
+    public float shockDefenseReduction { get; private set; } = 0f;
+    public float poisonHealReduction   { get; private set; } = 0f;
+    public float blindPrecisionMalus   { get; private set; } = 0f;
+    public float markDamageBonus       { get; private set; } = 0f;
+
+    // =========================================================
+    // FLAGS & VALEURS BUFF — GDD v3.5 §3.1.1.2 & §3.1.1.3
+    // =========================================================
+
+    /// <summary>Invincible — annule tous les dégâts entrants. Post-respawn 3s. §3.1.1.3.</summary>
+    public bool isInvincible { get; private set; } = false;
+
+    /// <summary>Stealthed — invisible jusqu'à une attaque ou dégât reçu. §3.1.1.3.</summary>
+    public bool isStealthed  { get; private set; } = false;
+
+    // Valeurs numériques buff
+    public float buffDefenseBonus      { get; private set; } = 0f;
     public float buffDodgeBonus        { get; private set; } = 0f;
-    public float buffSpeedMultiplier   { get; private set; } = 1f;     // Haste
+    public float buffPrecisionBonus    { get; private set; } = 0f;
+    public float buffSpeedMultiplier   { get; private set; } = 1f;
     public float buffAttackBonus       { get; private set; } = 0f;
-    public float buffRegenBonus        { get; private set; } = 0f;     // Regeneration — HP/s supplémentaire sur la durée
-    public float barrierElementResist  { get; private set; } = 0f;     // Barrier — résistance élémentaire temporaire %
+    public float buffCritChanceBonus   { get; private set; } = 0f;
+    public float buffCritDamageBonus   { get; private set; } = 0f;
+    public float barrierElementResist  { get; private set; } = 0f;
 
     private Entity _entity;
 
@@ -93,7 +133,7 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (_entity.isDead) return;
 
-        // Tick debuffs
+        // Tick debuffs (DoT, ManaDrain via DebuffInstance.Tick)
         var expiredDebuffs = new List<DebuffType>();
         foreach (var kvp in _activeDebuffs)
         {
@@ -102,15 +142,7 @@ public class StatusEffectSystem : MonoBehaviour
         }
         foreach (var t in expiredDebuffs) ExpireDebuff(t);
 
-        // ManaBreak — draine le mana chaque seconde
-        if (manaBreakAmount > 0f)
-            _entity.SpendMana(manaBreakAmount * Time.deltaTime);
-
-        // Regeneration buff — HP/s supplémentaire sur la durée (GDD v30 §21bis.2)
-        if (buffRegenBonus > 0f)
-            _entity.Heal(buffRegenBonus * Time.deltaTime);
-
-        // Tick buffs
+        // Tick buffs (Regeneration via BuffInstance.Tick)
         var expiredBuffs = new List<BuffType>();
         foreach (var kvp in _activeBuffs)
         {
@@ -140,11 +172,9 @@ public class StatusEffectSystem : MonoBehaviour
         // Vérification résistance
         float resistance = GetDebuffResistance(debuff.debuffType);
         if (resistance > 0f && Random.value < resistance)
-        {
             return false;
-        }
 
-        // Refresh si déjà actif
+        // Refresh si déjà actif — GDD v3.5 §3.1.1.4 : le plus récent remplace l'ancien
         if (_activeDebuffs.TryGetValue(debuff.debuffType, out var existing))
         {
             existing.Refresh();
@@ -155,7 +185,7 @@ public class StatusEffectSystem : MonoBehaviour
         DebuffInstance instance = (DebuffInstance)debuff.CreateInstance(source);
         _activeDebuffs[debuff.debuffType] = instance;
         OnApplyDebuff(instance);
-    
+
         return true;
     }
 
@@ -180,116 +210,355 @@ public class StatusEffectSystem : MonoBehaviour
     }
 
     // =========================================================
-    // ON APPLY
+    // ON APPLY DEBUFF
     // =========================================================
 
     private void OnApplyDebuff(DebuffInstance instance)
     {
         switch (instance.DebuffType)
         {
-            case DebuffType.Stun:
-                isStunned = true;
+            // ── Flags purs — pas de valeur numérique sur Entity ──
+            case DebuffType.Stun:    isStunned  = true; break;
+            case DebuffType.Fear:    isFeared   = true; break;
+            case DebuffType.Root:    isRooted   = true; break;
+            case DebuffType.Sleep:   isSleeping = true; break;
+            case DebuffType.Silence: isSilenced = true; break;
+            case DebuffType.Taunt:   isTaunted  = true; break;
+
+            case DebuffType.Freeze:
+                isFreezed = true;
+                slowMultiplier = 0f;
                 break;
-            case DebuffType.Silence:
-                isSilenced = true;
-                break;
-            case DebuffType.Root:
-                isRooted = true;
-                break;
+
+            // ── Flags + valeurs locales (lues par CombatSystem via accesseurs) ──
             case DebuffType.Blind:
                 isBlinded = true;
                 blindPrecisionMalus += instance.DebuffData.debuffValue;
                 break;
-            case DebuffType.Fear:
-                isFeared = true;
+
+            case DebuffType.Poison:
+                // §3.1.1.1 — DoT (tick) + réduction soins % (local)
+                isPoisoned = true;
+                poisonHealReduction += instance.DebuffData.healReduction;
                 break;
-            case DebuffType.Sleep:
-                isSleeping = true;
+
+            case DebuffType.ArmorBreak:
+                // §3.1.1.1 — réduction défense % (lue dans Entity.GetMeleeDefense etc.)
+                isArmorBroken = true;
+                armorBreakReduction += instance.DebuffData.defenseReduction;
                 break;
+
+            case DebuffType.Shocked:
+                // §3.1.1.1 — interruption cast + mini-stun 0.5s (géré par CombatSystem)
+                shockDefenseReduction += instance.DebuffData.defenseReduction;
+                break;
+
+            case DebuffType.Slow:
+                slowMultiplier = Mathf.Min(slowMultiplier, instance.DebuffData.slowMultiplier);
+                break;
+
             case DebuffType.Mark:
                 isMarked = true;
                 markDamageBonus += instance.DebuffData.debuffValue;
                 break;
-            case DebuffType.ManaDrain:
-                manaBreakAmount += instance.DebuffData.damagePerSecond;
+
+            // ── Stats — modifie directement les champs Entity via Recalculate ──
+            case DebuffType.Stats:
+                // §3.1.1.1 — recalcul propre + ré-application de tous les modificateurs actifs
+                RecalculateAndReapply();
                 break;
-            case DebuffType.Freeze:
-            case DebuffType.Slow:
-                slowMultiplier = Mathf.Min(slowMultiplier, instance.DebuffData.slowMultiplier);
-                break;
-            case DebuffType.Shocked:
-                // GDD v30 §21bis.1 — Foudre : interruption cast + mini-stun 0.5s
-                // Le mini-stun est appliqué via un Stun temporaire séparé dans CombatSystem/SkillSystem
-                shockDefenseReduction += instance.DebuffData.defenseReduction;
-                break;
-            case DebuffType.Poison:
-                // GDD v30 §21bis.1 — Nature : DoT + réduction soins %
-                isPoisoned = true;
-                poisonHealReduction += instance.DebuffData.healReduction;
-                break;
-            case DebuffType.ArmorBreak:
-                // GDD v30 §21bis.1 — Terre : réduction défense physique % temporaire
-                isArmorBroken = true;
-                armorBreakReduction += instance.DebuffData.defenseReduction;
-                break;
-            // Taunt : géré dans OnApplyBuff (BuffType.Taunt) — §21bis.3
-            // DebuffType.Taunt n'existe pas — Taunt est un buff sur le lanceur
+
+            // ManaDrain : tick dans DebuffInstance.Tick — pas de flag local
+            // Knockback  : effet ponctuel — Entity.ApplyKnockBack()
+            // Bleed      : DoT pur — tick dans DebuffInstance.Tick, pas de flag
         }
     }
+
+    // =========================================================
+    // RECALCUL + RÉ-APPLICATION
+    // =========================================================
+
+    /// <summary>
+    /// Demande un recalcul complet (base propre) puis ré-applique les modificateurs actifs.
+    /// Appelé par OnApplyDebuff/Buff et ExpireDebuff/Buff pour les effets qui touchent
+    /// des valeurs numériques de stats sur Entity.
+    /// </summary>
+    private void RecalculateAndReapply()
+    {
+        _entity.RequestRecalculate();
+        // RequestRecalculate() appelle ReapplyActiveModifiers() en fin de chaîne
+        // (via Entity.RequestRecalculate → statusEffects.ReapplyActiveModifiers)
+        // Pas besoin de le rappeler ici.
+    }
+
+    /// <summary>
+    /// Ré-applique tous les modificateurs numériques des effets actifs sur l'entité.
+    /// Appelé par Entity.RequestRecalculate() après restauration des stats de base.
+    /// Ne touche PAS aux flags booléens (isStunned, etc.) — déjà corrects.
+    /// </summary>
+    public void ReapplyActiveModifiers(Entity target)
+    {
+        // ── Debuffs numériques ────────────────────────────────
+        // Reset des valeurs locales avant recalcul
+        armorBreakReduction   = 0f;
+        shockDefenseReduction = 0f;
+        poisonHealReduction   = 0f;
+        blindPrecisionMalus   = 0f;
+        markDamageBonus       = 0f;
+        slowMultiplier        = 1f;
+
+        foreach (var kvp in _activeDebuffs)
+        {
+            var d = kvp.Value.DebuffData;
+            switch (kvp.Key)
+            {
+                case DebuffType.Slow:
+                    slowMultiplier = Mathf.Min(slowMultiplier, d.slowMultiplier);
+                    break;
+                case DebuffType.Freeze:
+                    slowMultiplier = 0f;
+                    break;
+                case DebuffType.Blind:
+                    blindPrecisionMalus += d.debuffValue;
+                    break;
+                case DebuffType.Poison:
+                    poisonHealReduction += d.healReduction;
+                    break;
+                case DebuffType.ArmorBreak:
+                    armorBreakReduction += d.defenseReduction;
+                    break;
+                case DebuffType.Shocked:
+                    shockDefenseReduction += d.defenseReduction;
+                    break;
+                case DebuffType.Mark:
+                    markDamageBonus += d.debuffValue;
+                    break;
+                case DebuffType.Stats:
+                    ApplyStatDebuff(target, d);
+                    break;
+            }
+        }
+
+        // ── Buffs numériques ──────────────────────────────────
+        // Reset des valeurs locales avant recalcul
+        buffDefenseBonus    = 0f;
+        buffDodgeBonus      = 0f;
+        buffPrecisionBonus  = 0f;
+        buffSpeedMultiplier = 1f;
+        buffAttackBonus     = 0f;
+        buffCritChanceBonus = 0f;
+        buffCritDamageBonus = 0f;
+        barrierElementResist = 0f;
+
+        foreach (var kvp in _activeBuffs)
+        {
+            var b = kvp.Value.BuffData;
+            switch (kvp.Key)
+            {
+                case BuffType.DefenseUp:
+                    buffDefenseBonus += b.defenseBonus;
+                    break;
+                case BuffType.DodgeUp:
+                    buffDodgeBonus += b.dodgeBonus;
+                    break;
+                case BuffType.PrecisionUp:
+                    buffPrecisionBonus += b.precisionBonus;
+                    break;
+                case BuffType.Haste:
+                    buffSpeedMultiplier = Mathf.Max(buffSpeedMultiplier, b.speedMultiplier);
+                    break;
+                case BuffType.AttackUp:
+                    buffAttackBonus += b.attackBonus;
+                    break;
+                case BuffType.CritChanceUp:
+                    buffCritChanceBonus += b.critChanceBonus;
+                    break;
+                case BuffType.CritDamageUp:
+                    buffCritDamageBonus += b.critDamageBonus;
+                    break;
+                case BuffType.Barrier:
+                    barrierElementResist += b.elementResistBonus;
+                    break;
+                case BuffType.Stats:
+                    ApplyStatBuff(target, b);
+                    break;
+            }
+        }
+    }
+
+    // ── Application directe sur Entity ────────────────────────
+
+    private void ApplyStatDebuff(Entity target, DebuffData d)
+    {
+        float v = d.debuffModifier == ModifierType.Percent
+            ? GetBaseStatValue(target, d.debuffStatType) * d.debuffValue
+            : d.debuffValue;
+
+        ModifyEntityStat(target, d.debuffStatType, -v);
+    }
+
+    private void ApplyStatBuff(Entity target, BuffData b)
+    {
+        float v = b.buffModifier == ModifierType.Percent
+            ? GetBaseStatValue(target, b.buffStatType) * b.buffStatValue
+            : b.buffStatValue;
+
+        ModifyEntityStat(target, b.buffStatType, v);
+    }
+
+    /// <summary>Lit la valeur actuelle d'une stat sur l'entité — sert de base pour les Percent.</summary>
+    private float GetBaseStatValue(Entity target, StatModifierType stat)
+    {
+        switch (stat)
+        {
+            case StatModifierType.MaxHP:           return target.MaxHP;
+            case StatModifierType.MaxMana:         return target.MaxMana;
+            case StatModifierType.RegenHP:         return target.RegenHP;
+            case StatModifierType.RegenMana:       return target.RegenMana;
+            case StatModifierType.AttackDamage:    return target.AttackDamageMin;
+            case StatModifierType.MoveSpeed:       return target.MoveSpeed;
+            case StatModifierType.MeleeDefense:    return target.MeleeDefense;
+            case StatModifierType.RangedDefense:   return target.RangedDefense;
+            case StatModifierType.MagicDefense:    return target.MagicDefense;
+            case StatModifierType.CritChance:      return target.CritChance;
+            case StatModifierType.CritDamage:      return target.CritMultiplier;
+            case StatModifierType.Dodge:           return target.Dodge;
+            // ElementalPoint : pas de valeur globale — retourne 0f (base neutre pour Percent).
+            // La valeur réelle dépend de l'élément ciblé ; voir ModifyEntityStat.
+            default:                               return 0f;
+        }
+    }
+
+    /// <summary>Applique un delta (positif ou négatif) sur une stat de l'entité.</summary>
+    private void ModifyEntityStat(Entity target, StatModifierType stat, float delta)
+    {
+        switch (stat)
+        {
+            case StatModifierType.MaxHP:
+                target.SetMaxHP(target.MaxHP + delta);
+                break;
+            case StatModifierType.MaxMana:
+                target.SetMaxMana(target.MaxMana + delta);
+                break;
+            case StatModifierType.RegenHP:
+                target.SetRegenHP(target.RegenHP + delta);
+                break;
+            case StatModifierType.RegenMana:
+                target.SetRegenMana(target.RegenMana + delta);
+                break;
+            case StatModifierType.AttackDamage:
+                target.SetAttackDamageMin(target.AttackDamageMin + delta);
+                target.SetAttackDamageMax(target.AttackDamageMax + delta);
+                break;
+            case StatModifierType.AttackSpeed:
+                // AttackSpeed non géré sur Entity base — réservé CombatSystem
+                break;
+            case StatModifierType.MoveSpeed:
+                target.SetMoveSpeed(target.MoveSpeed + delta);
+                break;
+            case StatModifierType.MeleeDefense:
+                target.SetMeleeDefense(target.MeleeDefense + delta);
+                break;
+            case StatModifierType.RangedDefense:
+                target.SetRangedDefense(target.RangedDefense + delta);
+                break;
+            case StatModifierType.MagicDefense:
+                target.SetMagicDefense(target.MagicDefense + delta);
+                break;
+            case StatModifierType.CritChance:
+                target.SetCritChance(target.CritChance + delta);
+                break;
+            case StatModifierType.CritDamage:
+                target.SetCritMultiplier(target.CritMultiplier + delta);
+                break;
+            case StatModifierType.Dodge:
+                target.SetDodge(target.Dodge + delta);
+                break;
+            case StatModifierType.FireResistance:
+                target.AddElementalResistance(ElementType.Fire, delta);
+                break;
+            case StatModifierType.WaterResistance:
+                target.AddElementalResistance(ElementType.Water, delta);
+                break;
+            case StatModifierType.EarthResistance:
+                target.AddElementalResistance(ElementType.Earth, delta);
+                break;
+            case StatModifierType.NatureResistance:
+                target.AddElementalResistance(ElementType.Nature, delta);
+                break;
+            case StatModifierType.LightningResistance:
+                target.AddElementalResistance(ElementType.Lightning, delta);
+                break;
+            case StatModifierType.DarknessResistance:
+                target.AddElementalResistance(ElementType.Darkness, delta);
+                break;
+            case StatModifierType.LightResistance:
+                target.AddElementalResistance(ElementType.Light, delta);
+                break;
+            case StatModifierType.AllResistances:
+                foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+                    target.AddElementalResistance(e, delta);
+                break;
+            // ElementalPoint — SetElementalPoints() existe sur Entity (GDD §3.1) :
+            // câblé en additif sur l'élément ciblé par le buff/debuff SO (debuffStatElement).
+            // AttackSpeed : non géré sur Entity base — réservé CombatSystem.
+        }
+    }
+
+    // =========================================================
+    // ON APPLY BUFF
+    // =========================================================
 
     private void OnApplyBuff(BuffInstance instance)
     {
         switch (instance.BuffType)
         {
+            // ── Instantanés — pas de flag runtime ────────────────
             case BuffType.Heal:
                 float healAmt = instance.BuffData.GetHealAmount(_entity.MaxHP);
                 if (healAmt > 0f) _entity.Heal(healAmt);
                 break;
+
+            case BuffType.Purified:
+                CleanseAllDebuffs();
+                break;
+
+            // ── Bouclier — valeur stockée dans l'instance ────────
             case BuffType.Shield:
                 instance.remainingShield = instance.BuffData.GetShieldAmount(_entity.MaxHP);
                 break;
-            case BuffType.DefenseUp:
-                buffDefenseBonus += instance.BuffData.defenseBonus;
+
+            case BuffType.Barrier:
+                instance.remainingShield = instance.BuffData.GetShieldAmount(_entity.MaxHP);
+                barrierElementResist    += instance.BuffData.elementResistBonus;
                 break;
-            case BuffType.DodgeUp:
-                buffDodgeBonus += instance.BuffData.dodgeBonus;
-                break;
-            case BuffType.Haste:
-                buffSpeedMultiplier = Mathf.Max(buffSpeedMultiplier, instance.BuffData.speedMultiplier);
-                break;
-            case BuffType.AttackUp:
-                buffAttackBonus += instance.BuffData.attackBonus;
-                break;
+
+            // ── Flags spéciaux ────────────────────────────────────
             case BuffType.Invincible:
                 isInvincible = true;
                 break;
+
             case BuffType.Stealth:
                 isStealthed = true;
                 break;
-            case BuffType.Regeneration:
-                // GDD v30 §21bis.2 — Régénération HP progressive sur la durée
-                // Le tick est géré dans Update() via buffRegenBonus (appliqué comme regen supplémentaire)
-                buffRegenBonus += instance.BuffData.healPerSecond;
+
+            // ── Valeurs numériques + Stats — tout par Recalculate ─
+            case BuffType.DefenseUp:
+            case BuffType.DodgeUp:
+            case BuffType.PrecisionUp:
+            case BuffType.Haste:
+            case BuffType.AttackUp:
+            case BuffType.CritChanceUp:
+            case BuffType.CritDamageUp:
+            case BuffType.Stats:
+                RecalculateAndReapply();
                 break;
-            case BuffType.Barrier:
-                // GDD v30 §21bis.2 — Bouclier HP absorbant + résistance élémentaire
-                instance.remainingShield  = instance.BuffData.GetShieldAmount(_entity.MaxHP);
-                barrierElementResist     += instance.BuffData.elementResistBonus;
-                break;
-            case BuffType.Purified:
-                // GDD v30 §21bis.2 — Cleanse instantané : supprime tous les debuffs actifs
-                CleanseAllDebuffs();
-                break;
-            case BuffType.Taunt:
-                // GDD v30 §21bis.3 — Force les mobs proches à cibler ce joueur (PvE uniquement)
-                isTaunting = true;
-                break;
+
+            // Regeneration : tick dans BuffInstance.Tick — pas d'action à l'apply
         }
     }
 
-    /// <summary>
-    /// Supprime tous les debuffs actifs (Purified — GDD v30 §21bis.2).
-    /// </summary>
+    /// <summary>Supprime tous les debuffs actifs (Purified — §3.1.1.2).</summary>
     private void CleanseAllDebuffs()
     {
         var types = new List<DebuffType>(_activeDebuffs.Keys);
@@ -298,108 +567,136 @@ public class StatusEffectSystem : MonoBehaviour
     }
 
     // =========================================================
-    // EXPIRATION
+    // EXPIRATION DEBUFF
     // =========================================================
 
     private void ExpireDebuff(DebuffType type)
     {
-        if (!_activeDebuffs.TryGetValue(type, out var instance)) return;
+        if (!_activeDebuffs.TryGetValue(type, out _) ) return;
 
+        // ── Flags booléens — retirés manuellement ────────────
         switch (type)
         {
             case DebuffType.Stun:    isStunned  = false; break;
-            case DebuffType.Silence: isSilenced = false; break;
-            case DebuffType.Root:    isRooted   = false; break;
             case DebuffType.Fear:    isFeared   = false; break;
+            case DebuffType.Root:    isRooted   = false; break;
             case DebuffType.Sleep:   isSleeping = false; break;
-            // Taunt expire : géré dans OnExpireBuff (BuffType.Taunt) — §21bis.3
-            case DebuffType.Mark:
-                isMarked        = false;
-                markDamageBonus = Mathf.Max(0f, markDamageBonus - instance.DebuffData.debuffValue);
-                break;
-            case DebuffType.Blind:
-                blindPrecisionMalus = Mathf.Max(0f, blindPrecisionMalus - instance.DebuffData.debuffValue);
-                isBlinded = blindPrecisionMalus > 0f;
-                break;
-            case DebuffType.ManaDrain:
-                manaBreakAmount = Mathf.Max(0f, manaBreakAmount - instance.DebuffData.damagePerSecond);
-                break;
-            case DebuffType.Shocked:
-                shockDefenseReduction = Mathf.Max(0f, shockDefenseReduction - instance.DebuffData.defenseReduction);
-                break;
-            case DebuffType.Poison:
-                // GDD v30 §21bis.1 — retire la réduction de soins
-                poisonHealReduction = Mathf.Max(0f, poisonHealReduction - instance.DebuffData.healReduction);
-                isPoisoned = poisonHealReduction > 0f;
-                break;
-            case DebuffType.ArmorBreak:
-                // GDD v30 §21bis.1 — retire la réduction défense physique
-                armorBreakReduction = Mathf.Max(0f, armorBreakReduction - instance.DebuffData.defenseReduction);
-                isArmorBroken = armorBreakReduction > 0f;
-                break;
+            case DebuffType.Silence: isSilenced = false; break;
+            case DebuffType.Taunt:   isTaunted  = false; break;
+            case DebuffType.Freeze:  isFreezed  = false; break;
+
+            // Flags dérivés de valeurs numériques — recalculés dans ReapplyActiveModifiers
+            case DebuffType.Blind:      isBlinded     = false; break;
+            case DebuffType.Poison:     isPoisoned    = false; break;
+            case DebuffType.ArmorBreak: isArmorBroken = false; break;
+            case DebuffType.Mark:       isMarked      = false; break;
         }
 
-        // ⚠ Remove AVANT RefreshSlowMultiplier — sinon le debuff expiré
-        // est encore dans le dict et fausse le recalcul (vitesse ne revient pas à 1).
+        // ⚠ Remove AVANT RecalculateAndReapply — sinon l'effet expiré est encore
+        // dans le dict et ses valeurs sont ré-appliquées à tort.
         _activeDebuffs.Remove(type);
 
-        if (type == DebuffType.Freeze || type == DebuffType.Slow)
-            RefreshSlowMultiplier();
+        // ── Valeurs numériques — recalcul propre ──────────────
+        // Tout effet qui touche des stats ou des multiplicateurs numériques
+        // déclenche un recalcul. Les flags purs (Stun, Fear, etc.) n'en ont pas besoin.
+        switch (type)
+        {
+            case DebuffType.Slow:
+            case DebuffType.Freeze:
+            case DebuffType.Blind:
+            case DebuffType.Poison:
+            case DebuffType.ArmorBreak:
+            case DebuffType.Shocked:
+            case DebuffType.Mark:
+            case DebuffType.Stats:
+                RecalculateAndReapply();
+                break;
+        }
     }
+
+    // =========================================================
+    // EXPIRATION BUFF
+    // =========================================================
 
     private void ExpireBuff(BuffType type)
     {
-        if (!_activeBuffs.TryGetValue(type, out var instance)) return;
+        if (!_activeBuffs.TryGetValue(type, out _)) return;
 
+        // ── Flags booléens — retirés manuellement ────────────
+        switch (type)
+        {
+            case BuffType.Invincible: isInvincible = false; break;
+            case BuffType.Stealth:    isStealthed  = false; break;
+        }
+
+        // ⚠ Remove AVANT RecalculateAndReapply — même raison que pour les debuffs.
+        _activeBuffs.Remove(type);
+
+        // ── Valeurs numériques — recalcul propre ──────────────
         switch (type)
         {
             case BuffType.DefenseUp:
-                buffDefenseBonus = Mathf.Max(0f, buffDefenseBonus - instance.BuffData.defenseBonus);
-                break;
             case BuffType.DodgeUp:
-                buffDodgeBonus = Mathf.Max(0f, buffDodgeBonus - instance.BuffData.dodgeBonus);
-                break;
+            case BuffType.PrecisionUp:
+            case BuffType.Haste:
             case BuffType.AttackUp:
-                buffAttackBonus = Mathf.Max(0f, buffAttackBonus - instance.BuffData.attackBonus);
-                break;
-            case BuffType.Invincible:
-                isInvincible = false;
-                break;
-            case BuffType.Stealth:
-                isStealthed = false;
-                break;
-            case BuffType.Regeneration:
-                // GDD v30 §21bis.2 — retire le bonus de regen
-                buffRegenBonus = Mathf.Max(0f, buffRegenBonus - instance.BuffData.healPerSecond);
-                break;
+            case BuffType.CritChanceUp:
+            case BuffType.CritDamageUp:
             case BuffType.Barrier:
-                // GDD v30 §21bis.2 — retire la résistance élémentaire temporaire
-                barrierElementResist = Mathf.Max(0f, barrierElementResist - instance.BuffData.elementResistBonus);
+            case BuffType.Stats:
+                RecalculateAndReapply();
                 break;
-            case BuffType.Taunt:
-                isTaunting = false;
-                break;
-            // Purified n'a pas d'expiration (effet instantané)
+            // Purified, Heal : instantanés — pas d'expiration
+            // Regeneration, Shield, Invincible, Stealth : pas de stat numérique à recalculer
         }
-
-        // ⚠ Remove AVANT RefreshSpeedMultiplier — même raison que pour Slow.
-        _activeBuffs.Remove(type);
-
-        if (type == BuffType.Haste)
-            RefreshSpeedMultiplier();
     }
 
     // =========================================================
     // BOUCLIER
     // =========================================================
 
-    /// <summary>Absorbe les dégâts avec le bouclier actif. Retourne les dégâts résiduels.</summary>
+    /// <summary>
+    /// Absorbe les dégâts avec le bouclier actif (Shield ou Barrier).
+    /// Barrier est prioritaire sur Shield. Retourne les dégâts résiduels.
+    /// </summary>
     public float AbsorbWithShield(float incomingDamage)
     {
-        if (!_activeBuffs.TryGetValue(BuffType.Shield, out var buff)) return incomingDamage;
-        float remaining = buff.AbsorbDamage(incomingDamage);
-        if (buff.remainingShield <= 0f) ExpireBuff(BuffType.Shield);
-        return remaining;
+        // Barrier en priorité
+        if (_activeBuffs.TryGetValue(BuffType.Barrier, out var barrier))
+        {
+            incomingDamage = barrier.AbsorbDamage(incomingDamage);
+            if (barrier.remainingShield <= 0f) ExpireBuff(BuffType.Barrier);
+            if (incomingDamage <= 0f) return 0f;
+        }
+
+        // Puis Shield normal
+        if (_activeBuffs.TryGetValue(BuffType.Shield, out var shield))
+        {
+            incomingDamage = shield.AbsorbDamage(incomingDamage);
+            if (shield.remainingShield <= 0f) ExpireBuff(BuffType.Shield);
+        }
+
+        return incomingDamage;
+    }
+
+    // =========================================================
+    // SLEEP — réveil au premier dégât (GDD v3.5 §3.1.1.1)
+    // =========================================================
+
+    /// <summary>
+    /// Appelé par Entity.TakeDamage — réveille l'entité si elle dort.
+    /// Retourne true si les dégâts doivent être annulés (Invincible).
+    /// </summary>
+    public bool OnTakeDamage()
+    {
+        if (isInvincible) return true;
+
+        if (isSleeping) ExpireDebuff(DebuffType.Sleep);
+
+        // Stealth interrompue par dégât reçu (§3.1.1.3)
+        if (isStealthed) ExpireBuff(BuffType.Stealth);
+
+        return false;
     }
 
     // =========================================================
@@ -411,14 +708,29 @@ public class StatusEffectSystem : MonoBehaviour
 
     public float GetBuffDefenseBonus()      => buffDefenseBonus;
     public float GetBuffDodgeBonus()        => buffDodgeBonus;
+    public float GetBuffPrecisionBonus()     => buffPrecisionBonus;
     public float GetBuffSpeedMultiplier()   => buffSpeedMultiplier;
     public float GetBuffAttackBonus()       => buffAttackBonus;
+    public float GetBuffCritChanceBonus()   => buffCritChanceBonus;
+    public float GetBuffCritDamageBonus()   => buffCritDamageBonus;
     public float GetMarkDamageBonus()       => isMarked ? markDamageBonus : 0f;
     public float GetBlindMalus()            => blindPrecisionMalus;
     public float GetShockDefenseReduction() => shockDefenseReduction;
     public float GetArmorBreakReduction()   => isArmorBroken ? armorBreakReduction : 0f;
     public float GetPoisonHealReduction()   => isPoisoned ? poisonHealReduction : 0f;
     public float GetBarrierElementResist()  => barrierElementResist;
+
+    // =========================================================
+    // RÉSISTANCES AUX DEBUFFS
+    // =========================================================
+
+    public void SetDebuffResistance(DebuffType type, float value)
+        => _debuffResistances[type] = Mathf.Clamp01(value);
+
+    public float GetDebuffResistance(DebuffType type)
+        => _debuffResistances.TryGetValue(type, out float v) ? v : 0f;
+
+    public void ResetDebuffResistances() => _debuffResistances.Clear();
 
     // =========================================================
     // UI — données pour StatusEffectUI
@@ -455,54 +767,5 @@ public class StatusEffectSystem : MonoBehaviour
         return list;
     }
 
-    // =========================================================
-    // SLEEP — réveil au premier dégât
-    // =========================================================
-
-    /// <summary>
-    /// Appelé par Entity.TakeDamage — réveille l'entité si elle dort.
-    /// Retourne true si les dégâts doivent être annulés (Invincible).
-    /// </summary>
-    public bool OnTakeDamage()
-    {
-        // Invincible — annule les dégâts
-        if (isInvincible) return true;
-
-        // Sleep — réveil au premier dégât
-        if (isSleeping) ExpireDebuff(DebuffType.Sleep);
-
-        return false;
-    }
-
-    // =========================================================
-    // RÉSISTANCES
-    // =========================================================
-
-    public void SetDebuffResistance(DebuffType type, float value)
-        => _debuffResistances[type] = Mathf.Clamp01(value);
-
-    public float GetDebuffResistance(DebuffType type)
-        => _debuffResistances.TryGetValue(type, out float v) ? v : 0f;
-
-    public void ResetDebuffResistances() => _debuffResistances.Clear();
-
-    // =========================================================
-    // HELPERS PRIVÉS
-    // =========================================================
-
-    private void RefreshSlowMultiplier()
-    {
-        slowMultiplier = 1f;
-        foreach (var kvp in _activeDebuffs)
-            if (kvp.Key == DebuffType.Freeze || kvp.Key == DebuffType.Slow)
-                slowMultiplier = Mathf.Min(slowMultiplier, kvp.Value.DebuffData.slowMultiplier);
-    }
-
-    private void RefreshSpeedMultiplier()
-    {
-        buffSpeedMultiplier = 1f;
-        foreach (var kvp in _activeBuffs)
-            if (kvp.Key == BuffType.Haste)
-                buffSpeedMultiplier = Mathf.Max(buffSpeedMultiplier, kvp.Value.BuffData.speedMultiplier);
-    }
 }
+

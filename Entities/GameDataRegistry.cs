@@ -3,7 +3,7 @@ using UnityEngine;
 // =============================================================
 // GAMEDATAREGISTRY — Référence centrale des ScriptableObjects globaux
 // Path : Assets/Scripts/Core/GameDataRegistry.cs
-// AetherTree GDD v30
+// AetherTree GDD v3.5
 //
 // À attacher sur le GameObject _Managers dans la scène.
 // Initialise les instances statiques de tous les SO globaux

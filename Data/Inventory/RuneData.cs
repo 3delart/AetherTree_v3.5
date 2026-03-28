@@ -4,18 +4,18 @@ using System.Collections.Generic;
 // =============================================================
 // RuneData — ScriptableObject template de rune
 // Path : Assets/Scripts/Data/Inventory/Equipment/RuneData.cs
-// AetherTree GDD v30 — Section 6.7
+// AetherTree GDD v3.5 — §5.7
 //
-// Règles GDD §6.7 :
+// Règles GDD §5.7 :
 //   - 1 slot rune sur l'arme, 1 slot sur l'armure corps
 //   - Rune Weapon → arme uniquement | Rune Armor → armure uniquement
 //   - Identification obligatoire via l'Antiquaire avant insertion
 //   - Insertion irréversible — extractible uniquement via item spécial (Antiquaire)
-//   - runeLevel : aléatoire par tranche de 5, minimum lv50 (50/55/60/.../100)
+//   - runeLevel : aléatoire, minimum lv50
 //   - weaponLevel (défini sur le SO arme/armure) = niveau maximum de rune équipable
-//     Ex : arme lv63 → rune max lv60 (tranche de 5 inférieure ou égale)
+//     Ex : arme lv63 → rune max lv63 (runeLevel ≤ weaponLevel)
 //   - Rareté : r0 minimum → r+7 maximum
-//   - Nombre de lignes déterminé par la combinaison runeLevel × rareté (tableau §6.7) :
+//   - Nombre de lignes déterminé par la combinaison runeLevel × rareté (tableau §5.7) :
 //
 //     Niveau \ Rareté   r0   r+2   r+4   r+6   r+7
 //     lv50              1    2     3     5     6
@@ -79,9 +79,9 @@ public class RuneData : ScriptableObject
     // ── Utilitaires ───────────────────────────────────────────
 
     /// <summary>
-    /// Roll le niveau de rune au drop — tranche de 5, minimum lv50, maximum lv100.
+    /// Roll le niveau de rune au drop — minimum lv50, maximum lv100.
     /// Distribution uniforme sur les tranches disponibles.
-    /// §6.7 : "Niveau aléatoire par tranche de 5 — minimum lv50"
+    /// §5.7 : "Niveau aléatoire — minimum lv50"
     /// </summary>
     public static int RollRuneLevel()
     {
@@ -92,7 +92,7 @@ public class RuneData : ScriptableObject
 
     /// <summary>
     /// Roll la rareté au drop — r0 minimum, r+7 maximum.
-    /// §6.7 : "Chaque rune a une rareté (r0 → r+7)"
+    /// §5.7 : "Chaque rune a une rareté (r0 → r+7)"
     /// Distribution : r0(25%) r+1(22%) r+2(18%) r+3(14%) r+4(10%) r+5(6%) r+6(4%) r+7(1%)
     /// </summary>
     public static int RollRarity()
@@ -109,13 +109,13 @@ public class RuneData : ScriptableObject
     }
 
     /// <summary>
-    /// Nombre de lignes de stats selon le tableau GDD §6.7 (runeLevel × rarityRank).
+    /// Nombre de lignes de stats selon le tableau GDD §5.7 (runeLevel × rarityRank).
     /// Interpolation linéaire entre les 4 paliers de niveau (50/65/80/95).
     /// Rareté interpolée entre r0, r+2, r+4, r+6, r+7.
     /// </summary>
     public static int GetLineCount(int runeLevel, int rarityRank)
     {
-        // Tableau GDD §6.7 — [niveau][rareté]
+        // Tableau GDD §5.7 — [niveau][rareté]
         // Lignes : niveaux lv50/lv65/lv80/lv95 × raretés r0/r+2/r+4/r+6/r+7
         int[,] table = {
             { 1, 2, 3, 5,  6  }, // lv50
@@ -262,8 +262,8 @@ public class RuneInstance
     /// </summary>
     public bool CanInsertInto(int equipmentLevel)
     {
-        // Tranche de 5 inférieure ou égale au niveau d'équipement
-        int maxRuneLevel = (equipmentLevel / 5) * 5;
-        return runeLevel <= maxRuneLevel;
+        // GDD §5.7 : runeLevel ≤ weaponLevel (comparaison directe — pas d'arrondi par tranche).
+        // Ex : arme lv63 → rune lv63 acceptée, rune lv64 refusée.
+        return runeLevel <= equipmentLevel;
     }
 }

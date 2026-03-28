@@ -62,11 +62,27 @@ public class InventorySystem : MonoBehaviour
         return result;
     }
 
-    public List<InventoryItem> GetCosmetiques()
+    public List<InventoryItem> GetCosmetiquesHead()
     {
         var result = new List<InventoryItem>();
         foreach (var item in _items)
-            if (item.ItemCategory == InventoryCategory.Cosmetique) result.Add(item);
+            if (item.ItemCategory == InventoryCategory.CosmeticHead) result.Add(item);
+        return result;
+    }
+
+    public List<InventoryItem> GetCosmetiquesBody()
+    {
+        var result = new List<InventoryItem>();
+        foreach (var item in _items)
+            if (item.ItemCategory == InventoryCategory.CosmeticBody) result.Add(item);
+        return result;
+    }
+
+    public List<InventoryItem> GetCards()
+    {
+        var result = new List<InventoryItem>();
+        foreach (var item in _items)
+            if (item.ItemCategory == InventoryCategory.Card) result.Add(item);
         return result;
     }
 
@@ -83,15 +99,18 @@ public class InventorySystem : MonoBehaviour
         if (instance == null) return null;
         foreach (var item in _items)
         {
-            if (item.WeaponInstance    == instance) return item;
-            if (item.ArmorInstance     == instance) return item;
-            if (item.HelmetInstance    == instance) return item;
-            if (item.GlovesInstance    == instance) return item;
-            if (item.BootsInstance     == instance) return item;
-            if (item.JewelryInstance   == instance) return item;
-            if (item.SpiritInstance    == instance) return item;
-            if (item.ConsumableInstance == instance) return item;
-            if (item.ResourceInstance  == instance) return item;
+            if (item.WeaponInstance       == instance) return item;
+            if (item.ArmorInstance        == instance) return item;
+            if (item.HelmetInstance       == instance) return item;
+            if (item.GlovesInstance       == instance) return item;
+            if (item.BootsInstance        == instance) return item;
+            if (item.JewelryInstance      == instance) return item;
+            if (item.SpiritInstance       == instance) return item;
+            if (item.ConsumableInstance   == instance) return item;
+            if (item.ResourceInstance     == instance) return item;
+            if (item.CosmeticInstanceHead == instance) return item;
+            if (item.CosmeticInstanceBody == instance) return item;
+            if (item.CardInstance         == instance) return item;
         }
         return null;
     }
@@ -111,7 +130,6 @@ public class InventorySystem : MonoBehaviour
                 int overflow = existing.ResourceInstance.Add(item.ResourceInstance.quantity);
                 OnInventoryChanged?.Invoke();
 
-                // S'il reste un overflow (stack plein), on crée un nouveau slot
                 if (overflow > 0)
                     return AddItem(new InventoryItem(item.ResourceInstance.data.CreateInstance(overflow)));
 
@@ -205,22 +223,22 @@ public class InventorySystem : MonoBehaviour
 
             case EquipmentSlot.Helmet:
                 if (item.HelmetInstance == null) return false;
-                if (player.equippedHelmetInstance != null)
-                    if (player.equippedHelmetInstance?.data != null) AddItem(new InventoryItem(player.equippedHelmetInstance));
+                if (player.equippedHelmetInstance?.data != null)
+                    AddItem(new InventoryItem(player.equippedHelmetInstance));
                 player.EquipHelmet(item.HelmetInstance);
                 break;
 
             case EquipmentSlot.Gloves:
                 if (item.GlovesInstance == null) return false;
-                if (player.equippedGlovesInstance != null)
-                    if (player.equippedGlovesInstance?.data != null) AddItem(new InventoryItem(player.equippedGlovesInstance));
+                if (player.equippedGlovesInstance?.data != null)
+                    AddItem(new InventoryItem(player.equippedGlovesInstance));
                 player.EquipGloves(item.GlovesInstance);
                 break;
 
             case EquipmentSlot.Boots:
                 if (item.BootsInstance == null) return false;
-                if (player.equippedBootsInstance != null)
-                    if (player.equippedBootsInstance?.data != null) AddItem(new InventoryItem(player.equippedBootsInstance));
+                if (player.equippedBootsInstance?.data != null)
+                    AddItem(new InventoryItem(player.equippedBootsInstance));
                 player.EquipBoots(item.BootsInstance);
                 break;
 
@@ -228,13 +246,12 @@ public class InventorySystem : MonoBehaviour
             case EquipmentSlot.Necklace:
             case EquipmentSlot.Bracelet:
                 if (item.JewelryInstance == null) return false;
-                // Cherche le bijou du même slot déjà équipé
-                JewelryInstance existing = player.equippedJewelryInstances?.Find(
+                JewelryInstance existingJewelry = player.equippedJewelryInstances?.Find(
                     j => j != null && j.Slot == item.JewelryInstance.Slot);
-                if (existing != null)
+                if (existingJewelry != null)
                 {
-                    player.UnequipJewelry(existing);
-                    AddItem(new InventoryItem(existing));
+                    player.UnequipJewelry(existingJewelry);
+                    AddItem(new InventoryItem(existingJewelry));
                 }
                 player.EquipJewelry(item.JewelryInstance);
                 break;
@@ -250,12 +267,32 @@ public class InventorySystem : MonoBehaviour
                 player.EquipSpirit(item.SpiritInstance);
                 break;
 
+            case EquipmentSlot.Card:
+                if (item.CardInstance == null) return false;
+                if (player.equippedCardInstance?.data != null)
+                    AddItem(new InventoryItem(player.equippedCardInstance));
+                player.EquipCard(item.CardInstance);
+                break;
+
+            case EquipmentSlot.CosmeticHead:
+                if (item.CosmeticInstanceHead == null) return false;
+                if (player.equippedCosmeticHeadInstance?.data != null)
+                    AddItem(new InventoryItem(player.equippedCosmeticHeadInstance));
+                player.EquipCosmeticHead(item.CosmeticInstanceHead);
+                break;
+
+            case EquipmentSlot.CosmeticBody:
+                if (item.CosmeticInstanceBody == null) return false;
+                if (player.equippedCosmeticBodyInstance?.data != null)
+                    AddItem(new InventoryItem(player.equippedCosmeticBodyInstance));
+                player.EquipCosmeticBody(item.CosmeticInstanceBody);
+                break;
+
             default:
                 Debug.LogWarning($"[INVENTORY] Slot {item.Slot} non géré.");
                 return false;
         }
 
-        // Retire l'item de l'inventaire — cherche par référence puis par contenu
         if (!RemoveItem(item))
             RemoveItemByContent(item);
 
@@ -273,15 +310,18 @@ public class InventorySystem : MonoBehaviour
 
         foreach (var existing in _items)
         {
-            if (item.WeaponInstance   != null && existing.WeaponInstance   == item.WeaponInstance)   { toRemove = existing; break; }
-            if (item.ArmorInstance    != null && existing.ArmorInstance    == item.ArmorInstance)    { toRemove = existing; break; }
-            if (item.HelmetInstance   != null && existing.HelmetInstance   == item.HelmetInstance)   { toRemove = existing; break; }
-            if (item.GlovesInstance   != null && existing.GlovesInstance   == item.GlovesInstance)   { toRemove = existing; break; }
-            if (item.BootsInstance    != null && existing.BootsInstance    == item.BootsInstance)    { toRemove = existing; break; }
-            if (item.JewelryInstance  != null && existing.JewelryInstance  == item.JewelryInstance)  { toRemove = existing; break; }
-            if (item.SpiritInstance   != null && existing.SpiritInstance   == item.SpiritInstance)   { toRemove = existing; break; }
-            if (item.ConsumableInstance != null && existing.ConsumableInstance == item.ConsumableInstance) { toRemove = existing; break; }
-            if (item.ResourceInstance != null && existing.ResourceInstance == item.ResourceInstance)  { toRemove = existing; break; }
+            if (item.WeaponInstance       != null && existing.WeaponInstance       == item.WeaponInstance)       { toRemove = existing; break; }
+            if (item.ArmorInstance        != null && existing.ArmorInstance        == item.ArmorInstance)        { toRemove = existing; break; }
+            if (item.HelmetInstance       != null && existing.HelmetInstance       == item.HelmetInstance)       { toRemove = existing; break; }
+            if (item.GlovesInstance       != null && existing.GlovesInstance       == item.GlovesInstance)       { toRemove = existing; break; }
+            if (item.BootsInstance        != null && existing.BootsInstance        == item.BootsInstance)        { toRemove = existing; break; }
+            if (item.JewelryInstance      != null && existing.JewelryInstance      == item.JewelryInstance)      { toRemove = existing; break; }
+            if (item.SpiritInstance       != null && existing.SpiritInstance       == item.SpiritInstance)       { toRemove = existing; break; }
+            if (item.ConsumableInstance   != null && existing.ConsumableInstance   == item.ConsumableInstance)   { toRemove = existing; break; }
+            if (item.ResourceInstance     != null && existing.ResourceInstance     == item.ResourceInstance)     { toRemove = existing; break; }
+            if (item.CosmeticInstanceHead != null && existing.CosmeticInstanceHead == item.CosmeticInstanceHead) { toRemove = existing; break; }
+            if (item.CosmeticInstanceBody != null && existing.CosmeticInstanceBody == item.CosmeticInstanceBody) { toRemove = existing; break; }
+            if (item.CardInstance         != null && existing.CardInstance         == item.CardInstance)         { toRemove = existing; break; }
         }
 
         if (toRemove != null) _items.Remove(toRemove);
@@ -314,6 +354,18 @@ public class InventorySystem : MonoBehaviour
                 if (player.equippedBootsInstance != null)
                 { AddItem(new InventoryItem(player.equippedBootsInstance)); player.UnequipBoots(); }
                 break;
+            case EquipmentSlot.Card:
+                if (player.equippedCardInstance != null)
+                { AddItem(new InventoryItem(player.equippedCardInstance)); player.UnequipCard(); }
+                break;
+            case EquipmentSlot.CosmeticHead:
+                if (player.equippedCosmeticHeadInstance != null)
+                { AddItem(new InventoryItem(player.equippedCosmeticHeadInstance)); player.UnequipCosmeticHead(); }
+                break;
+            case EquipmentSlot.CosmeticBody:
+                if (player.equippedCosmeticBodyInstance != null)
+                { AddItem(new InventoryItem(player.equippedCosmeticBodyInstance)); player.UnequipCosmeticBody(); }
+                break;
         }
     }
 
@@ -333,23 +385,23 @@ public class InventorySystem : MonoBehaviour
         player.UnequipHelmet();
         player.UnequipGloves();
         player.UnequipBoots();
+        player.UnequipCard();
+        player.UnequipCosmeticHead();
+        player.UnequipCosmeticBody();
 
-        // Bijoux — copie de la liste pour éviter de modifier pendant l'itération
         if (player.equippedJewelryInstances != null)
         {
-            var copy = new System.Collections.Generic.List<JewelryInstance>(player.equippedJewelryInstances);
+            var copy = new List<JewelryInstance>(player.equippedJewelryInstances);
             foreach (var j in copy)
                 if (j != null) player.UnequipJewelry(j);
         }
 
-        // Esprits
         if (player.equippedSpiritInstances != null)
         {
-            var copy = new System.Collections.Generic.List<SpiritInstance>(player.equippedSpiritInstances);
+            var copy = new List<SpiritInstance>(player.equippedSpiritInstances);
             foreach (var s in copy)
                 if (s != null) player.UnequipSpirit(s);
         }
-
     }
 
     /// <summary>
@@ -360,7 +412,6 @@ public class InventorySystem : MonoBehaviour
     {
         _items.Clear();
         OnInventoryChanged?.Invoke();
-
     }
 }
 
@@ -369,10 +420,12 @@ public class InventorySystem : MonoBehaviour
 // =============================================================
 public enum InventoryCategory
 {
-    Equipement,  // Weapon, Armor, Helmet, Gloves, Boots, Jewelry, Spirit
-    Consommable, // Potion, Pierre de donjon, Téléportation
-    Ressource,   // Matériaux craft, Ingrédients cuisine, Drops mobs
-    Cosmetique,  // HeadSkin, BodySkin
+    Equipement,   // Weapon, Armor, Helmet, Gloves, Boots, Jewelry, Spirit
+    Consommable,  // Potion, Pierre de donjon, Téléportation
+    Ressource,    // Matériaux craft, Ingrédients cuisine, Drops mobs
+    CosmeticHead, // Cosmétique tête
+    CosmeticBody, // Cosmétique corps
+    Card,         // Cartes
 }
 
 // =============================================================
@@ -393,12 +446,14 @@ public class InventoryItem
     public ConsumableInstance ConsumableInstance { get; private set; }
     public RuneInstance       RuneInstance       { get; private set; }
     public GemInstance        GemInstance        { get; private set; }
+    public CardInstance       CardInstance       { get; private set; }
 
     // ── Instances ressources ──────────────────────────────────
     public ResourceInstance   ResourceInstance   { get; private set; }
 
     // ── Instances cosmétiques ─────────────────────────────────
-    public CosmeticInstance   CosmeticInstance   { get; private set; }
+    public CosmeticInstanceHead CosmeticInstanceHead { get; private set; }
+    public CosmeticInstanceBody CosmeticInstanceBody { get; private set; }
 
     // ── Catégorie & Slot ──────────────────────────────────────
     public InventoryCategory ItemCategory { get; private set; }
@@ -409,18 +464,20 @@ public class InventoryItem
     {
         get
         {
-            if (WeaponInstance     != null) return WeaponInstance.WeaponName;
-            if (ArmorInstance      != null) return ArmorInstance.ArmorName;
-            if (HelmetInstance     != null) return HelmetInstance.HelmetName;
-            if (GlovesInstance     != null) return GlovesInstance.GlovesName;
-            if (BootsInstance      != null) return BootsInstance.BootsName;
-            if (JewelryInstance    != null) return JewelryInstance.JewelryName;
-            if (SpiritInstance     != null) return SpiritInstance.SpiritName;
-            if (ConsumableInstance != null) return ConsumableInstance.Name;
-            if (RuneInstance       != null) return RuneInstance.RuneName;
-            if (GemInstance        != null) return GemInstance.GemName;
-            if (ResourceInstance   != null) return ResourceInstance.Name;
-            if (CosmeticInstance   != null) return CosmeticInstance.Name;
+            if (WeaponInstance       != null) return WeaponInstance.WeaponName;
+            if (ArmorInstance        != null) return ArmorInstance.ArmorName;
+            if (HelmetInstance       != null) return HelmetInstance.HelmetName;
+            if (GlovesInstance       != null) return GlovesInstance.GlovesName;
+            if (BootsInstance        != null) return BootsInstance.BootsName;
+            if (JewelryInstance      != null) return JewelryInstance.JewelryName;
+            if (SpiritInstance       != null) return SpiritInstance.SpiritName;
+            if (ConsumableInstance   != null) return ConsumableInstance.Name;
+            if (RuneInstance         != null) return RuneInstance.RuneName;
+            if (GemInstance          != null) return GemInstance.GemName;
+            if (ResourceInstance     != null) return ResourceInstance.Name;
+            if (CosmeticInstanceHead != null) return CosmeticInstanceHead.CosmeticName;
+            if (CosmeticInstanceBody != null) return CosmeticInstanceBody.CosmeticName;
+            if (CardInstance         != null) return CardInstance.CardName;
             return "???";
         }
     }
@@ -430,18 +487,20 @@ public class InventoryItem
     {
         get
         {
-            if (WeaponInstance?.data     != null) return WeaponInstance.Icon;
-            if (ArmorInstance?.data      != null) return ArmorInstance.Icon;
-            if (HelmetInstance?.data     != null) return HelmetInstance.Icon;
-            if (GlovesInstance?.data     != null) return GlovesInstance.Icon;
-            if (BootsInstance?.data      != null) return BootsInstance.Icon;
-            if (JewelryInstance?.data    != null) return JewelryInstance.Icon;
-            if (SpiritInstance?.data     != null) return SpiritInstance.Icon;
-            if (ConsumableInstance?.data != null) return ConsumableInstance.Icon;
-            if (RuneInstance?.data       != null) return RuneInstance.Icon;
-            if (GemInstance?.data        != null) return GemInstance.Icon;
-            if (ResourceInstance?.data   != null) return ResourceInstance.Icon;
-            if (CosmeticInstance?.data   != null) return CosmeticInstance.Icon;
+            if (WeaponInstance?.data       != null) return WeaponInstance.Icon;
+            if (ArmorInstance?.data        != null) return ArmorInstance.Icon;
+            if (HelmetInstance?.data       != null) return HelmetInstance.Icon;
+            if (GlovesInstance?.data       != null) return GlovesInstance.Icon;
+            if (BootsInstance?.data        != null) return BootsInstance.Icon;
+            if (JewelryInstance?.data      != null) return JewelryInstance.Icon;
+            if (SpiritInstance?.data       != null) return SpiritInstance.Icon;
+            if (ConsumableInstance?.data   != null) return ConsumableInstance.Icon;
+            if (RuneInstance?.data         != null) return RuneInstance.Icon;
+            if (GemInstance?.data          != null) return GemInstance.Icon;
+            if (ResourceInstance?.data     != null) return ResourceInstance.Icon;
+            if (CosmeticInstanceHead?.data != null) return CosmeticInstanceHead.Icon;
+            if (CosmeticInstanceBody?.data != null) return CosmeticInstanceBody.Icon;
+            if (CardInstance?.data         != null) return CardInstance.Icon;
             return null;
         }
     }
@@ -451,14 +510,15 @@ public class InventoryItem
     {
         get
         {
-            if (WeaponInstance     != null) return WeaponInstance.RarityLabel;
-            if (ArmorInstance      != null) return ArmorInstance.RarityLabel;
-            if (RuneInstance       != null) return RuneInstance.RarityLabel;
-            if (GemInstance        != null) return $"Lv{GemInstance.GemLevel}";
-            if (ConsumableInstance != null) return ConsumableInstance.quantity > 1
-                                                   ? $"x{ConsumableInstance.quantity}" : "";
-            if (ResourceInstance   != null) return ResourceInstance.quantity > 1
-                                                   ? $"x{ResourceInstance.quantity}" : "";
+            if (WeaponInstance       != null) return WeaponInstance.RarityLabel;
+            if (ArmorInstance        != null) return ArmorInstance.RarityLabel;
+            if (RuneInstance         != null) return RuneInstance.RarityLabel;
+            if (GemInstance          != null) return $"Lv{GemInstance.GemLevel}";
+            if (CosmeticInstanceHead != null) return "";   // pas de rareté sur les cosmétiques
+            if (CosmeticInstanceBody != null) return "";
+            if (CardInstance         != null) return "";   // TODO: rareté carte à définir
+            if (ConsumableInstance   != null) return ConsumableInstance.quantity > 1 ? $"x{ConsumableInstance.quantity}" : "";
+            if (ResourceInstance     != null) return ResourceInstance.quantity   > 1 ? $"x{ResourceInstance.quantity}"   : "";
             return "";
         }
     }
@@ -473,7 +533,7 @@ public class InventoryItem
         {
             if (ConsumableInstance != null) return ConsumableInstance.quantity > 1 ? $"x{ConsumableInstance.quantity}" : "";
             if (ResourceInstance   != null) return ResourceInstance.quantity   > 1 ? $"x{ResourceInstance.quantity}"   : "";
-            return ""; // équipements, gemmes, runes — rien
+            return "";
         }
     }
 
@@ -507,23 +567,28 @@ public class InventoryItem
 
     // ── Constructeurs consommables ────────────────────────────
     public InventoryItem(ConsumableInstance i)
-    { ConsumableInstance = i; Slot = EquipmentSlot.Cosmetic; ItemCategory = InventoryCategory.Consommable; }
+    { ConsumableInstance = i; Slot = EquipmentSlot.Weapon; ItemCategory = InventoryCategory.Consommable; }
+    // ⚠ EquipmentSlot n'a pas de valeur Consommable/Resource — on réutilise Weapon comme slot neutre
+    // pour les non-équipements. Le filtre se fait via ItemCategory, pas Slot.
 
     public InventoryItem(RuneInstance i)
-    { RuneInstance = i; Slot = EquipmentSlot.Cosmetic; ItemCategory = InventoryCategory.Consommable; }
+    { RuneInstance = i; Slot = EquipmentSlot.Weapon; ItemCategory = InventoryCategory.Consommable; }
 
     public InventoryItem(GemInstance i)
-    { GemInstance = i; Slot = EquipmentSlot.Cosmetic; ItemCategory = InventoryCategory.Consommable; }
+    { GemInstance = i; Slot = EquipmentSlot.Weapon; ItemCategory = InventoryCategory.Consommable; }
 
     // ── Constructeurs ressources ──────────────────────────────
     public InventoryItem(ResourceInstance i)
-    { ResourceInstance = i; Slot = EquipmentSlot.Cosmetic; ItemCategory = InventoryCategory.Ressource; }
+    { ResourceInstance = i; Slot = EquipmentSlot.Weapon; ItemCategory = InventoryCategory.Ressource; }
 
     // ── Constructeurs cosmétiques ─────────────────────────────
-    public InventoryItem(CosmeticInstance i)
-    {
-        CosmeticInstance = i;
-        Slot             = EquipmentSlot.Cosmetic;
-        ItemCategory     = InventoryCategory.Cosmetique;
-    }
+    public InventoryItem(CosmeticInstanceHead i)
+    { CosmeticInstanceHead = i; Slot = EquipmentSlot.CosmeticHead; ItemCategory = InventoryCategory.CosmeticHead; }
+
+    public InventoryItem(CosmeticInstanceBody i)
+    { CosmeticInstanceBody = i; Slot = EquipmentSlot.CosmeticBody; ItemCategory = InventoryCategory.CosmeticBody; }
+
+    // ── Constructeur carte ────────────────────────────────────
+    public InventoryItem(CardInstance i)
+    { CardInstance = i; Slot = EquipmentSlot.Card; ItemCategory = InventoryCategory.Card; }
 }

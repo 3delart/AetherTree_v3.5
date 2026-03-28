@@ -6,9 +6,9 @@ using System.Collections.Generic;
 // =============================================================
 // PNJ — Entité PNJ (Non-Player Character)
 // Path : Assets/Scripts/Core/PNJ.cs
-// AetherTree GDD v30 — §13 (PNJ Données Techniques), §19 (PNJ & Dialogues)
+// AetherTree GDD v3.5 — §3.4 (PNJ)
 //
-// Types gérés (GDD v30 §19.2) :
+// Types gérés (GDD v3.5 §3.4) :
 //   Merchant     → ShopUI
 //   Blacksmith   → ForgeUI (TODO Phase 6)
 //   Antiquarian  → RuneUI (TODO Phase 6)
@@ -18,13 +18,34 @@ using System.Collections.Generic;
 //   Mayor        → Dialogue conditionnel + création guilde
 //   FactionNPC   → Services faction Solthars / Umbrans (TODO Phase 9)
 //   HarborMaster → Navigation bateau (TODO Phase 8)
-//   Guard        → IA combat mobs (rayon 200) + dialogue neutre
+//   Guard        → IA combat mobs + dialogue neutre
 //   Decorative   → Dialogue lore/ambiance uniquement
 //
 // Mémoire joueur : le PNJ se souvient des joueurs connus via SaveSystem.
-// Dialogue : SO DialogueData — stages numérotés + options cliquables (GDD §19.1).
+// Dialogue : SO DialogueData — stages numérotés + options cliquables.
+//
+// Combat (SkillSystem) :
+//   Tout PNJ avec data.canFight == true et data.basicAttackSkill assigné
+//   peut combattre — pas seulement les Gardes.
+//   HandleCombatAI() est actif pour tout PNJ canFight, quel que soit
+//   son pnjType. Un marchand itinérant, un garde, un PNJ de faction
+//   utilisent tous le même chemin via SkillSystem.Execute().
+//   Champs PNJData requis pour le combat :
+//     canFight          : active l'IA de combat
+//     basicAttackSkill  : SkillData de l'attaque de base (obligatoire si canFight)
+//     skills            : liste de skills secondaires (optionnel)
+//     aggroRadius       : rayon de détection des mobs
+//     attackRange       : portée d'attaque (fallback = skill.range)
+//     attackCooldown    : cooldown de l'attaque de base
+//     combatMoveSpeed   : vitesse en mode combat (0 = utilise moveSpeed)
+//
+// Die() :
+//   Tout PNJ avec data.canDie == true peut mourir et respawner.
+//   data.canDie == false → invulnérable (civils, décoratifs).
+//   Remplace l'ancienne condition if (pnjType != Guard).
 // =============================================================
 
+[RequireComponent(typeof(SkillSystem))]
 public class PNJ : Entity
 {
     // ── Data ──────────────────────────────────────────────────
@@ -37,7 +58,7 @@ public class PNJ : Entity
     public float interactionRadius = 3f;
 
     // ── Mémoire joueurs connus ────────────────────────────────
-    // Persisté via SaveSystem — GDD v21 section 14
+    // Persisté via SaveSystem — GDD v3.5 §3.4
     private HashSet<string> knownPlayerIDs = new HashSet<string>();
 
     // ── Dialogue actif ────────────────────────────────────────
@@ -45,11 +66,17 @@ public class PNJ : Entity
     private DialogueStage currentStage   = null;
     private Player        talkingTo      = null;
 
-    // ── Garde — IA NavMesh ────────────────────────────────────
-    private NavMeshAgent guardAgent;
-    private Entity       guardTarget;
-    private float        guardAttackTimer = 0f;
-    private Vector3      guardSpawnPos;
+    // ── Combat — commun à tous les PNJ canFight ───────────────
+    // NavMeshAgent et spawnPos disponibles dès que canFight est actif,
+    // pas seulement pour les Gardes.
+    private NavMeshAgent _agent;
+    private SkillSystem  _skillSystem;
+    private Entity       _combatTarget;
+    private float        _attackTimer  = 0f;
+    private Vector3      _spawnPos;
+
+    // Cooldowns des skills secondaires — même pattern que Mob.cs
+    private Dictionary<SkillData, float> _skillCooldowns = new Dictionary<SkillData, float>();
 
     // =========================================================
     // INITIALISATION
@@ -59,40 +86,47 @@ public class PNJ : Entity
     {
         if (data != null)
         {
-            entityName = data.pnjName;
+            entityName     = data.pnjName;
+            entityType     = EntityType.PNJ;
+            weaponCategory = data.weaponCategory;
 
-            // Stats uniquement pour les Gardes
-            if (data.pnjType == PNJType.Guard)
+            // Défenses — tous les PNJ (GDD v3.5 §3.4 : tous peuvent mourir si canDie)
+            SetMeleeDefense (data.meleeDefense);
+            SetRangedDefense(data.rangedDefense);
+            SetMagicDefense (data.magicDefense);
+            SetPrecision    (data.precision);
+            SetDodge        (data.dodge);
+
+            // HP / Mana / attaque — tous les PNJ canFight, pas seulement les Gardes
+            if (data.canFight)
             {
-                maxHP   = data.baseMaxHP;
-                maxMana = data.baseMaxMana;
-                regenHP = data.baseRegenHP;
+                SetMaxHP          (data.baseMaxHP);
+                SetMaxMana        (data.baseMaxMana);
+                SetRegenHP        (data.baseRegenHP);
+                SetAttackDamageMin(data.attackDamage);
+                SetAttackDamageMax(data.attackDamage);
+                SetMoveSpeed      (data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed);
             }
         }
 
         base.Awake();
 
-        // Charge la mémoire joueurs depuis PlayerPrefs
+        // Fige le snapshot — RequestRecalculate() repartira de ces valeurs
+        SnapshotBaseStats();
+
         LoadKnownPlayersFromPrefs();
 
-        // Setup Garde
-        if (data != null && data.pnjType == PNJType.Guard)
+        // Cache des composants combat
+        _skillSystem = GetComponent<SkillSystem>();
+        _spawnPos    = transform.position;
+
+        if (data != null && data.canFight)
         {
-            guardAgent    = GetComponent<NavMeshAgent>();
-            guardSpawnPos = transform.position;
-            if (guardAgent != null)
-                guardAgent.speed = data.guardMoveSpeed;
+            _agent = GetComponent<NavMeshAgent>();
+            if (_agent != null)
+                _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
         }
     }
-
-    // =========================================================
-    // DÉFENSES — PNJ non-combat : 0 par défaut
-    // Les Gardes n'ont pas de stats de défense différenciées.
-    // =========================================================
-
-    public override float GetMeleeDefense()  => 0f;
-    public override float GetRangedDefense() => 0f;
-    public override float GetMagicDefense()  => 0f;
 
     // =========================================================
     // UPDATE
@@ -103,8 +137,8 @@ public class PNJ : Entity
         base.Update();
         if (isDead) return;
 
-        if (data != null && data.pnjType == PNJType.Guard)
-            HandleGuardAI();
+        if (data != null && data.canFight)
+            HandleCombatAI();
     }
 
     // =========================================================
@@ -138,54 +172,44 @@ public class PNJ : Entity
             case PNJType.HarborMaster: InteractHarborMaster(player); break;
         }
 
-        // Mémorise le joueur après interaction — GDD v30 §19.1
+        // Mémorise le joueur après interaction — GDD v3.5 §3.4
         RegisterKnownPlayer(player);
     }
 
     // ── Marchand ──────────────────────────────────────────────
     private void InteractMerchant(Player player)
     {
-        DialogueData dialogue = SelectDialogue(player);
-        StartDialogue(dialogue, player);
-        // ShopUI s'ouvre via DialogueAction.OpenShop depuis une option de dialogue
+        StartDialogue(SelectDialogue(player), player);
     }
 
     // ── Forgeron ──────────────────────────────────────────────
-    // GDD v30 §19.3 — upgrade arme/armure, limité par data.maxUpgradeLevel
     private void InteractBlacksmith(Player player)
     {
-        DialogueData dialogue = SelectDialogue(player);
-        StartDialogue(dialogue, player);
+        StartDialogue(SelectDialogue(player), player);
         // TODO Phase 6 : ForgeUI.Instance?.Open(data, player)
         Debug.Log($"[PNJ/Forgeron] {data.pnjName} — upgrade max +{data.maxUpgradeLevel} (ForgeUI Phase 6)");
     }
 
     // ── Antiquaire ────────────────────────────────────────────
-    // GDD v30 §19.3 — identification + insertion de runes
     private void InteractAntiquarian(Player player)
     {
-        DialogueData dialogue = SelectDialogue(player);
-        StartDialogue(dialogue, player);
+        StartDialogue(SelectDialogue(player), player);
         // TODO Phase 6 : RuneUI.Instance?.Open(data, player)
         Debug.Log($"[PNJ/Antiquaire] {data.pnjName} — identification:{data.canIdentifyRunes} insertion:{data.canInsertRunes} (RuneUI Phase 6)");
     }
 
     // ── PNJ Fusion ────────────────────────────────────────────
-    // GDD v30 §19.3 — fusion Gants & Bottes S0→S6
     private void InteractFusionNPC(Player player)
     {
-        DialogueData dialogue = SelectDialogue(player);
-        StartDialogue(dialogue, player);
+        StartDialogue(SelectDialogue(player), player);
         // TODO Phase 6 : FusionUI.Instance?.Open(player)
         Debug.Log("[PNJ/Fusion] FusionUI Phase 6");
     }
 
     // ── Maître de Métier ──────────────────────────────────────
-    // GDD v30 §19.2 — déblocage activités (Bûcheron, Pêcheur...)
     private void InteractCraftMaster(Player player)
     {
-        DialogueData dialogue = SelectDialogue(player);
-        StartDialogue(dialogue, player);
+        StartDialogue(SelectDialogue(player), player);
         // TODO Phase 7 : MetierUI.Instance?.Open(player)
         Debug.Log("[PNJ/MaîtreMétier] MetierUI Phase 7");
     }
@@ -194,8 +218,7 @@ public class PNJ : Entity
     private void InteractQuest(Player player)
     {
         DialogueData dialogue = SelectDialogue(player);
-        if (dialogue != null)
-            StartDialogue(dialogue, player);
+        if (dialogue != null) StartDialogue(dialogue, player);
     }
 
     // ── Garde ─────────────────────────────────────────────────
@@ -209,67 +232,39 @@ public class PNJ : Entity
     private void InteractDecorative(Player player)
     {
         DialogueData dialogue = SelectDialogue(player);
-        if (dialogue != null)
-            StartDialogue(dialogue, player);
+        if (dialogue != null) StartDialogue(dialogue, player);
     }
 
     // ── Maire ─────────────────────────────────────────────────
-    // GDD v30 §19.5 — dialogue conditionnel en 4 stages
     private void InteractMayor(Player player)
     {
-        if (player.CanCreateGuild())
-        {
-            DialogueData dialogue = data.guildUnlockDialogue != null
-                ? data.guildUnlockDialogue
-                : data.defaultDialogue;
-            StartDialogue(dialogue, player);
-        }
-        else
-        {
-            DialogueData dialogue = data.guildNotReadyDialogue != null
-                ? data.guildNotReadyDialogue
-                : data.defaultDialogue;
-            StartDialogue(dialogue, player);
-        }
+        DialogueData dialogue = player.CanCreateGuild()
+            ? (data.guildUnlockDialogue   ?? data.defaultDialogue)
+            : (data.guildNotReadyDialogue ?? data.defaultDialogue);
+        StartDialogue(dialogue, player);
     }
 
     // ── PNJ Faction ───────────────────────────────────────────
-    // GDD v30 §19.6 — Solthars / Umbrans, hostile si faction adverse
     private void InteractFactionNPC(Player player)
     {
         // TODO Phase 9 : vérifier player.faction vs data.faction
-        // Si faction adverse → hostileDialogue, sinon → SelectDialogue normal
-        if (data.hostileDialogue != null)
-        {
-            // Placeholder — toujours le dialogue hostile tant que FactionSystem n'existe pas
-            // TODO : if (player.faction != data.faction) StartDialogue(data.hostileDialogue, player); else ...
-        }
-        DialogueData dialogue = SelectDialogue(player);
-        StartDialogue(dialogue, player);
+        StartDialogue(SelectDialogue(player), player);
         Debug.Log($"[PNJ/Faction] {data.pnjName} ({data.faction}) — FactionSystem Phase 9");
     }
 
     // ── Capitaine de Port ─────────────────────────────────────
-    // GDD v30 §19.3 — navigation bateau, départ toutes les 5-15 min
     private void InteractHarborMaster(Player player)
     {
-        DialogueData dialogue = SelectDialogue(player);
-        StartDialogue(dialogue, player);
+        StartDialogue(SelectDialogue(player), player);
         // TODO Phase 8 : HarborUI.Instance?.Open(data.availableDestinations, player)
         Debug.Log("[PNJ/Capitaine] HarborUI Phase 8");
     }
 
     // =========================================================
     // SÉLECTION DU DIALOGUE
-    // GDD v30 §19.1 — dialogue selon mémoire + réputation
+    // GDD v3.5 §3.4 — dialogue selon réputation + mémoire
     // =========================================================
 
-    /// <summary>
-    /// Sélectionne le dialogue approprié selon :
-    /// 1. Réputation Monde si seuil atteint (prioritaire)
-    /// 2. Joueur connu (déjà parlé)
-    /// 3. Dialogue par défaut
-    /// </summary>
     private DialogueData SelectDialogue(Player player)
     {
         if (data == null) return null;
@@ -306,12 +301,10 @@ public class PNJ : Entity
             return;
         }
 
-        // Saute les stages "skipIfKnown" si le joueur est déjà connu
         if (IsKnownPlayer(player))
         {
             while (currentStage != null && currentStage.skipIfKnown)
             {
-                // Avance vers le premier stage non-skip via la première option disponible
                 if (currentStage.options != null && currentStage.options.Count > 0)
                 {
                     int nextID = currentStage.options[0].nextStageID;
@@ -328,24 +321,15 @@ public class PNJ : Entity
         }
 
         DialogueUI.Instance?.OpenDialogue(this, currentStage, player);
-        Debug.Log($"[PNJ] {data.pnjName} → Stage {currentStage.stageID} : {currentStage.text}");
     }
 
-    /// <summary>
-    /// Avance vers le stage suivant selon l'option choisie par le joueur.
-    /// Appelé par DialogueUI quand le joueur clique sur une option.
-    /// </summary>
     public void SelectOption(DialogueOption option, Player player)
     {
         if (option == null || activeDialogue == null) return;
 
         HandleDialogueAction(option.action, player);
 
-        if (option.nextStageID == -1)
-        {
-            EndDialogue();
-            return;
-        }
+        if (option.nextStageID == -1) { EndDialogue(); return; }
 
         DialogueStage nextStage = activeDialogue.GetStage(option.nextStageID);
         if (nextStage == null)
@@ -356,105 +340,48 @@ public class PNJ : Entity
         }
 
         currentStage = nextStage;
-
-        // GDD v30 §19.1 — distribue les récompenses à l'entrée du stage
         GrantStageRewards(currentStage, player);
 
         if (currentStage.options == null || currentStage.options.Count == 0)
         {
             DialogueUI.Instance?.ShowStage(currentStage);
-            // Ne ferme que si ce n'est PAS un stage dynamique
-            if (!currentStage.isDynamicQuestStage)
-                EndDialogue();
+            if (!currentStage.isDynamicQuestStage) EndDialogue();
             return;
         }
 
         DialogueUI.Instance?.ShowStage(currentStage);
-        Debug.Log($"[PNJ] → Stage {currentStage.stageID} : {currentStage.text}");
     }
 
-    /// <summary>
-    /// Distribue les récompenses définies sur le stage — GDD v30 §19.1.
-    /// Appelé une fois par visite du stage (à chaque SelectOption qui y mène).
-    /// </summary>
     private void GrantStageRewards(DialogueStage stage, Player player)
     {
         if (stage == null || player == null) return;
 
         if (stage.rewardXP > 0)
-        {
             player.AddCombatXP(stage.rewardXP);
-            Debug.Log($"[PNJ] Récompense XP : +{stage.rewardXP}");
-        }
 
         if (stage.rewardAeris > 0)
-        {
-            // TODO : player.AddAeris(stage.rewardAeris) — via CurrencySystem Phase 5
             Debug.Log($"[PNJ] Récompense Aeris : +{stage.rewardAeris} (CurrencySystem Phase 5)");
-        }
 
         if (!string.IsNullOrEmpty(stage.rewardItemID))
-        {
-            // TODO : InventorySystem.Instance?.AddItem(player, stage.rewardItemID) Phase 5
             Debug.Log($"[PNJ] Récompense item : {stage.rewardItemID} (InventorySystem Phase 5)");
-        }
 
         if (stage.rewardWorldRep != 0)
-        {
             player.AddWorldReputation(stage.rewardWorldRep);
-            Debug.Log($"[PNJ] Récompense réputation : {stage.rewardWorldRep:+#;-#;0}");
-        }
     }
 
     private void HandleDialogueAction(DialogueAction action, Player player)
     {
         switch (action)
         {
-            case DialogueAction.OpenShop:
-                ShopUI.Instance?.OpenShop(data, player);
-                break;
-
-            case DialogueAction.OpenForge:
-                // TODO Phase 6 : ForgeUI.Instance?.Open(data, player)
-                Debug.Log("[PNJ] OpenForge — ForgeUI Phase 6");
-                break;
-
-            case DialogueAction.OpenRuneUI:
-                // TODO Phase 6 : RuneUI.Instance?.Open(data, player)
-                Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");
-                break;
-
-            case DialogueAction.OpenFusionUI:
-                // TODO Phase 6 : FusionUI.Instance?.Open(player)
-                Debug.Log("[PNJ] OpenFusionUI — FusionUI Phase 6");
-                break;
-
-            case DialogueAction.OpenMetierUI:
-                // TODO Phase 7 : MetierUI.Instance?.Open(player)
-                Debug.Log("[PNJ] OpenMetierUI — MetierUI Phase 7");
-                break;
-
-            case DialogueAction.OpenQuestLog:
-                // TODO Phase 7 : QuestUI.Instance?.OpenQuestLog(data.availableQuests, player)
-                Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");
-                break;
-
-            case DialogueAction.OpenHarborUI:
-                // TODO Phase 8 : HarborUI.Instance?.Open(data.availableDestinations, player)
-                Debug.Log("[PNJ] OpenHarborUI — HarborUI Phase 8");
-                break;
-
-            case DialogueAction.TriggerGuildCreation:
-                TryCreateGuild(player);
-                break;
-
-            case DialogueAction.CloseDialogue:
-                EndDialogue();
-                break;
-
-            case DialogueAction.None:
-            default:
-                break;
+            case DialogueAction.OpenShop:           ShopUI.Instance?.OpenShop(data, player); break;
+            case DialogueAction.OpenForge:          Debug.Log("[PNJ] OpenForge — ForgeUI Phase 6");   break;
+            case DialogueAction.OpenRuneUI:         Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");   break;
+            case DialogueAction.OpenFusionUI:       Debug.Log("[PNJ] OpenFusionUI — FusionUI Phase 6"); break;
+            case DialogueAction.OpenMetierUI:       Debug.Log("[PNJ] OpenMetierUI — MetierUI Phase 7"); break;
+            case DialogueAction.OpenQuestLog:       Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");  break;
+            case DialogueAction.OpenHarborUI:       Debug.Log("[PNJ] OpenHarborUI — HarborUI Phase 8"); break;
+            case DialogueAction.TriggerGuildCreation: TryCreateGuild(player); break;
+            case DialogueAction.CloseDialogue:      EndDialogue(); break;
         }
     }
 
@@ -467,7 +394,7 @@ public class PNJ : Entity
     }
 
     // =========================================================
-    // CRÉATION DE GUILDE — GDD v30 §19.5
+    // CRÉATION DE GUILDE — GDD v3.5 §3.4
     // =========================================================
 
     private void TryCreateGuild(Player player)
@@ -477,18 +404,15 @@ public class PNJ : Entity
             Debug.Log("[PNJ/Maire] Condition non remplie — 20 membres uniques requis.");
             return;
         }
-
-        int cost = data.guildCreationCost;
-        // TODO: vérifier Aeris joueur >= cost
-        // TODO: GuildSystem.Instance?.CreateGuild(player, cost)
-        Debug.Log($"[PNJ/Maire] Création de guilde débloquée — Coût : {cost} Aeris (à implémenter Phase 9)");
+        // TODO: vérifier Aeris joueur >= data.guildCreationCost
+        // TODO: GuildSystem.Instance?.CreateGuild(player, data.guildCreationCost)
+        Debug.Log($"[PNJ/Maire] Création de guilde débloquée — Coût : {data.guildCreationCost} Aeris (Phase 9)");
     }
 
     // =========================================================
-    // MÉMOIRE JOUEURS — GDD v30 §19.1
+    // MÉMOIRE JOUEURS — GDD v3.5 §3.4
     // =========================================================
 
-    /// <summary>Enregistre un joueur comme connu par ce PNJ.</summary>
     public void RegisterKnownPlayer(Player player)
     {
         if (player == null) return;
@@ -500,13 +424,11 @@ public class PNJ : Entity
         }
     }
 
-    // ── Persistance PlayerPrefs ────────────────────────────────
     private string PrefsKey => $"PNJ_Known_{data?.name ?? gameObject.name}";
 
     private void SaveKnownPlayersToPrefs()
     {
-        string joined = string.Join("|", knownPlayerIDs);
-        PlayerPrefs.SetString(PrefsKey, joined);
+        PlayerPrefs.SetString(PrefsKey, string.Join("|", knownPlayerIDs));
         PlayerPrefs.Save();
     }
 
@@ -519,66 +441,130 @@ public class PNJ : Entity
             if (!string.IsNullOrEmpty(id)) knownPlayerIDs.Add(id);
     }
 
-    /// <summary>True si ce PNJ a déjà rencontré ce joueur.</summary>
     public bool IsKnownPlayer(Player player)
     {
         if (player == null) return false;
         return knownPlayerIDs.Contains(player.entityName); // TODO: player.playerID
     }
 
-    /// <summary>Charge la mémoire depuis le SaveSystem. Appelé à l'init.</summary>
     public void LoadKnownPlayers(List<string> savedIDs)
     {
         knownPlayerIDs.Clear();
-        foreach (string id in savedIDs)
-            knownPlayerIDs.Add(id);
+        foreach (string id in savedIDs) knownPlayerIDs.Add(id);
     }
 
     // =========================================================
-    // IA GARDE — GDD v30 §19.2
-    // Cible les mobs proches dans un rayon de 200 unités
+    // IA COMBAT — commun à tous les PNJ canFight
+    // GDD v3.5 §3.4
+    //
+    // Comportement :
+    //   1. Cherche la cible la plus proche dans aggroRadius
+    //   2. Se déplace vers elle (si NavMeshAgent présent)
+    //   3. À portée : tente d'abord un skill secondaire,
+    //      sinon utilise basicAttackSkill via SkillSystem.Execute()
+    //   4. Sans cible : retourne au spawnPos
+    //
+    // Cibles : Mobs uniquement (les PNJ ne s'attaquent pas entre eux
+    // sauf cas spéciaux futurs — FactionNPC vs FactionNPC en PvP).
     // =========================================================
 
-    private void HandleGuardAI()
+    private void HandleCombatAI()
     {
-        if (guardAgent == null) return;
+        if (_skillSystem == null) return;
 
-        guardAttackTimer -= Time.deltaTime;
+        _attackTimer -= Time.deltaTime;
 
-        if (guardTarget == null || guardTarget.isDead)
-            guardTarget = FindClosestMob();
+        // Actualise la cible si nécessaire
+        if (_combatTarget == null || _combatTarget.isDead)
+            _combatTarget = FindClosestEnemy();
 
-        if (guardTarget == null || guardTarget.isDead)
+        // Pas de cible → retour au spawn
+        if (_combatTarget == null || _combatTarget.isDead)
         {
-            if (Vector3.Distance(transform.position, guardSpawnPos) > 2f)
-                guardAgent.SetDestination(guardSpawnPos);
-            else
-                guardAgent.ResetPath();
+            ReturnToSpawn();
             return;
         }
 
-        float distToTarget = Vector3.Distance(transform.position, guardTarget.transform.position);
+        float dist = Vector3.Distance(transform.position, _combatTarget.transform.position);
 
-        if (distToTarget <= data.guardAttackRange)
+        // Portée d'attaque : data.attackRange, ou celle du basicAttackSkill si 0
+        float attackRange = data.attackRange > 0f
+            ? data.attackRange
+            : (data.basicAttackSkill != null ? data.basicAttackSkill.range : 2f);
+
+        if (dist <= attackRange)
         {
-            guardAgent.ResetPath();
-            LookAt(guardTarget.transform);
+            // À portée — on stoppe le déplacement et on attaque
+            _agent?.ResetPath();
+            LookAt(_combatTarget.transform);
 
-            if (guardAttackTimer <= 0f)
+            // Tente d'abord un skill secondaire
+            if (TryUseSecondarySkill(_combatTarget)) return;
+
+            // Attaque de base
+            if (_attackTimer <= 0f && data.basicAttackSkill != null)
             {
-                guardTarget.TakeDamage(data.guardAttackDamage, ElementType.Neutral, this);
-                guardAttackTimer = data.guardAttackCooldown;
+                if (!isDead && !_combatTarget.isDead)
+                    _skillSystem.Execute(data.basicAttackSkill, this, _combatTarget);
+
+                _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             }
         }
         else
         {
-            guardAgent.SetDestination(guardTarget.transform.position);
+            // Hors portée — on se déplace vers la cible
+            _agent?.SetDestination(_combatTarget.transform.position);
         }
     }
 
-    private Entity FindClosestMob()
+    /// <summary>
+    /// Tente d'utiliser le premier skill secondaire disponible (cooldown + portée + mana).
+    /// Même logique que Mob.TryUseSkill().
+    /// </summary>
+    private bool TryUseSecondarySkill(Entity target)
     {
-        Collider[] hits    = Physics.OverlapSphere(transform.position, data.guardAggroRadius);
+        if (data.skills == null || data.skills.Count == 0) return false;
+
+        // Tick des cooldowns
+        foreach (var skill in data.skills)
+        {
+            if (skill == null) continue;
+            if (_skillCooldowns.ContainsKey(skill))
+                _skillCooldowns[skill] -= Time.deltaTime;
+        }
+
+        foreach (var skill in data.skills)
+        {
+            if (skill == null) continue;
+            float cd = _skillCooldowns.ContainsKey(skill) ? _skillCooldowns[skill] : 0f;
+            if (cd > 0f) continue;
+
+            float range = skill.range > 0f ? skill.range : data.attackRange;
+            if (Vector3.Distance(transform.position, target.transform.position) > range) continue;
+            if (skill.manaCost > 0f && !HasMana(skill.manaCost)) continue;
+
+            if (skill.manaCost > 0f) SpendMana(skill.manaCost);
+
+            LookAt(target.transform);
+            _skillSystem.Execute(skill, this, target);
+            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
+            _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Cherche l'entité ennemie la plus proche dans aggroRadius.
+    /// Cibles actuelles : Mobs uniquement.
+    /// À étendre pour FactionNPC vs FactionNPC (Phase 9).
+    /// </summary>
+    private Entity FindClosestEnemy()
+    {
+        if (data == null) return null;
+
+        Collider[] hits    = Physics.OverlapSphere(transform.position, data.aggroRadius);
         Entity     closest = null;
         float      minDist = float.MaxValue;
 
@@ -588,28 +574,34 @@ public class PNJ : Entity
             if (mob == null || mob.isDead) continue;
 
             float dist = Vector3.Distance(transform.position, mob.transform.position);
-            if (dist < minDist)
-            {
-                minDist = dist;
-                closest = mob;
-            }
+            if (dist < minDist) { minDist = dist; closest = mob; }
         }
         return closest;
     }
 
+    private void ReturnToSpawn()
+    {
+        if (_agent == null) return;
+        if (Vector3.Distance(transform.position, _spawnPos) > 2f)
+            _agent.SetDestination(_spawnPos);
+        else
+            _agent.ResetPath();
+    }
+
     // =========================================================
-    // MORT & RESPAWN — GDD v30 §19.2
+    // MORT & RESPAWN — GDD v3.5 §3.4
+    // data.canDie contrôle qui peut mourir — plus de hardcode pnjType.
     // =========================================================
 
     protected override void Die()
     {
-        // Seuls les Gardes meurent — les autres types de PNJ sont invulnérables
-        if (data == null || data.pnjType != PNJType.Guard) return;
+        // PNJ sans canDie (civils, décoratifs) → invulnérables
+        if (data == null || !data.canDie) return;
 
         base.Die();
 
-        if (guardAgent != null)
-            guardAgent.ResetPath();
+        _agent?.ResetPath();
+        _combatTarget = null;
 
         if (data.respawnDelay > 0f)
             StartCoroutine(RespawnCoroutine());
@@ -617,28 +609,23 @@ public class PNJ : Entity
         Debug.Log($"[PNJ] {data.pnjName} mort — respawn dans {data.respawnDelay}s");
     }
 
-    /// <summary>
-    /// Coroutine de respawn — désactive le rendu et la collision sans désactiver
-    /// le GameObject, car les coroutines s'arrêtent si SetActive(false) est appelé.
-    /// GDD v30 §19.2.
-    /// </summary>
     private IEnumerator RespawnCoroutine()
     {
-        // Masque le PNJ sans désactiver le GameObject (sinon la coroutine s'arrête)
-        foreach (Renderer r in GetComponentsInChildren<Renderer>())   r.enabled = false;
-        foreach (Collider c in GetComponentsInChildren<Collider>())   c.enabled = false;
-        if (guardAgent != null) guardAgent.enabled = false;
+        foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = false;
+        foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
+        if (_agent != null) _agent.enabled = false;
 
         yield return new WaitForSeconds(data.respawnDelay);
 
-        // Respawn
         isDead             = false;
         currentHP          = maxHP;
-        transform.position = guardSpawnPos;
+        currentMana        = maxMana;
+        transform.position = _spawnPos;
+        _skillCooldowns.Clear();
 
-        foreach (Renderer r in GetComponentsInChildren<Renderer>())   r.enabled = true;
-        foreach (Collider c in GetComponentsInChildren<Collider>())   c.enabled = true;
-        if (guardAgent != null) { guardAgent.enabled = true; guardAgent.Warp(guardSpawnPos); }
+        foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = true;
+        foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = true;
+        if (_agent != null) { _agent.enabled = true; _agent.Warp(_spawnPos); }
 
         Debug.Log($"[PNJ] {data.pnjName} respawné.");
     }
@@ -660,10 +647,10 @@ public class PNJ : Entity
     // ACCESSEURS
     // =========================================================
 
-    public PNJType        PNJType       => data != null ? data.pnjType : global::PNJType.Decorative;
-    public string         PNJName       => data != null ? data.pnjName : entityName;
-    public bool           IsTalking     => talkingTo != null;
-    public DialogueStage  CurrentStage  => currentStage;
+    public PNJType       PNJType      => data != null ? data.pnjType : global::PNJType.Decorative;
+    public string        PNJName      => data != null ? data.pnjName : entityName;
+    public bool          IsTalking    => talkingTo != null;
+    public DialogueStage CurrentStage => currentStage;
 
     // =========================================================
     // GIZMOS
@@ -674,12 +661,14 @@ public class PNJ : Entity
         Gizmos.color = Color.cyan;
         Gizmos.DrawWireSphere(transform.position, interactionRadius);
 
-        if (data != null && data.pnjType == PNJType.Guard)
+        if (data != null && data.canFight)
         {
             Gizmos.color = new Color(1f, 0.5f, 0f, 0.4f);
-            Gizmos.DrawWireSphere(transform.position, data.guardAggroRadius);
+            Gizmos.DrawWireSphere(transform.position, data.aggroRadius);
             Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(transform.position, data.guardAttackRange);
+            Gizmos.DrawWireSphere(transform.position, data.attackRange > 0f
+                ? data.attackRange
+                : (data.basicAttackSkill != null ? data.basicAttackSkill.range : 2f));
         }
     }
 }

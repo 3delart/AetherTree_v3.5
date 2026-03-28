@@ -34,6 +34,7 @@ public class UIManager : MonoBehaviour
     public GameObject settingsPanel;
     public GameObject mapPanel;
     public GameObject recipePanel;      // Panel unique — onglets gérés par RecipeUI
+    public GameObject statPointPanel;   // Panel StatPoints §3.2.1
 
     // ── Panels secondaires overlay (non bloquants) ───────────
     [Header("Panels secondaires — Overlay (non bloquants)")]
@@ -82,6 +83,7 @@ public class UIManager : MonoBehaviour
         if (GameControls.OpenSettings)     TogglePanel("Settings");
         if (GameControls.OpenMap)          TogglePanel("Map");
         if (GameControls.OpenRecipe)       TogglePanel("Recipe");
+        if (GameControls.OpenStatPoints)   TogglePanel("StatPoints");
 
         // Onglets Social — ouvrent SocialPanel sur l'onglet correspondant
         if (GameControls.OpenMail)  SocialUI.Instance?.ToggleTab(SocialUI.SocialTab.Mail);
@@ -109,6 +111,12 @@ public class UIManager : MonoBehaviour
                 return;
             case "quests":
                 QuestJournalUI.Instance?.Toggle();
+                return;
+            case "statpoints":
+                StatPointUI.Instance?.gameObject.SetActive(
+                    StatPointUI.Instance != null && !StatPointUI.Instance.gameObject.activeSelf);
+                if (StatPointUI.Instance != null && StatPointUI.Instance.gameObject.activeSelf)
+                    StatPointUI.Instance.Refresh();
                 return;
             
         }
@@ -166,6 +174,8 @@ public class UIManager : MonoBehaviour
         CharacterPanelUI.Instance?.Close();
         InventoryUI.Instance?.Close();
         QuestJournalUI.Instance?.Close();   // ← AJOUTER
+        if (StatPointUI.Instance != null)
+            StatPointUI.Instance.gameObject.SetActive(false);
 
 
         // Panels sans controller — SetActive directement
@@ -223,6 +233,7 @@ public class UIManager : MonoBehaviour
             { "settings",     settingsPanel     },
             { "map",          mapPanel          },
             { "recipe",       recipePanel       },
+            { "statpoints",   statPointPanel    },
         };
     }
 }

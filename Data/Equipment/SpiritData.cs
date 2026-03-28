@@ -4,19 +4,34 @@ using System.Collections.Generic;
 // =============================================================
 // SpiritData — ScriptableObject template d'esprit élémentaire
 // Path : Assets/Scripts/Data/Inventory/Equipment/SpiritData.cs
-// AetherTree GDD v30 — Section 6.9
+// AetherTree GDD v3.5 — §5.6
 //
-// Règles :
-//   - 8 esprits au total — 7 élémentaires (Feu/Eau/Terre/Nature/Foudre/Ténèbres/Lumière)
-//     + 1 Esprit Neutre (ElementType.Neutral)
-//   - Esprit Neutre : bonus phys/crit/HP au lieu de points élémentaires (paliers distincts)
-//   - 1 seul esprit actif à la fois — changement libre depuis l'inventaire
-//   - Niveau max 50 — bonus aux paliers 10, 20, 30, 40, 50
-//   - XP = mobs tués dans la plage ±15 niveaux du joueur
-//   - Source principale de points élémentaires du joueur (§5.2)
-//   - Esprit Neutre : même slot, même mécanique XP/niveau, bonus différents (§6.9)
+// 8 Esprits au total :
+//   7 Esprits élémentaires — Feu, Eau, Terre, Nature, Foudre,
+//     Ténèbres, Lumière — source principale de points élémentaires.
+//   1 Esprit Neutre — bonus phys/crit/HP au lieu de pts élémentaires.
 //
-// Assets > Create > AetherTree > Equipment > SpiritData
+// Règles générales (GDD §5.6) :
+//   1 seul esprit actif à la fois — changement libre depuis inventaire.
+//   XP accordée par mobs dans la plage ±15 niveaux du joueur.
+//   Niveau max 50 — bonus aux paliers 10, 20, 30, 40, 50.
+//   Obtention principale : conditions in-game (IConditionChecker).
+//
+// Esprit Neutre (GDD §5.6) :
+//   Équipé à la place d'un esprit élémentaire.
+//   N'apporte aucun point élémentaire.
+//   Bonus via config.bonuses : BonusAttack%, CritChance, MaxHP.
+//
+// Stats fixes sur le SO :
+//   element        — détermine quels points élémentaires sont apportés
+//   elementalPoints — base de points élémentaires au niveau 1
+//   maxLevel (50)  — niveau maximum de l'esprit
+//
+// Paliers de bonus via SpiritMilestone.config (GDD §5.6) :
+//   Lv10, 20, 30, 40, 50 — valeurs à calibrer en test (§14.2)
+//
+// Effets et bonus de l'esprit lui-même via EquipmentConfig :
+//   config.bonuses — bonus passifs fixes activés à l'équipement
 // =============================================================
 
 [CreateAssetMenu(fileName = "NewSpirit", menuName = "AetherTree/Equipment/SpiritData")]
@@ -24,67 +39,75 @@ public class SpiritData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string      spiritName = "Spirit";
-    public Sprite      icon;
-    public GameObject  spiritPrefab;
+    public string     spiritName = "Spirit";
+    public Sprite     icon;
+    public GameObject spiritPrefab;
 
+    // ── Niveau ────────────────────────────────────────────────
     [Header("Niveau")]
-    [Tooltip("Niveau minimum requis pour équiper cette arme.")]
+    [Tooltip("Niveau minimum du joueur requis pour équiper cet esprit.")]
     [Min(1)] public int requiredLevel = 1;
 
+    // ── Élément ───────────────────────────────────────────────
     [Header("Élément")]
-    [Tooltip("Élément fixe de cet esprit — 1 esprit par élément")]
+    [Tooltip("Élément fixe de cet esprit — 1 esprit par élément non-Neutre.\n" +
+             "ElementType.Neutral = Esprit Neutre (bonus phys/crit/HP — pas de pts élémentaires).")]
     public ElementType element = ElementType.Fire;
+
+    // ── Points élémentaires ───────────────────────────────────
+    [Header("Points élémentaires (ignoré si element = Neutral — GDD §5.6)")]
+    [Tooltip("Points élémentaires apportés au niveau 1.")]
+    public int pointsAtLevel1 = 1;
+
+    [Tooltip("Points élémentaires apportés au niveau maximum.")]
+    public int pointsAtMaxLevel = 20;
+
+    [Tooltip("Exposant de la courbe de progression (1.0 = linéaire, 1.5 = progressive).\n" +
+             "Recommandé : 1.5")]
+    public float pointsCurveExponent = 1.5f;
 
     // ── Progression ───────────────────────────────────────────
     [Header("Progression")]
-    [Tooltip("Niveau maximum de l'esprit (défaut 50)")]
+    [Tooltip("Niveau maximum de l'esprit (défaut 50 — GDD §5.6).")]
     public int maxLevel = 50;
 
-    [Tooltip("Points élémentaires donnés au niveau 1")]
-    public int pointsAtLevel1 = 1;
-
-    [Tooltip("Points élémentaires donnés au niveau max")]
-    public int pointsAtMaxLevel = 20;
-
-    [Tooltip("Exposant de la courbe de progression (1 = linéaire, 2 = exponentielle).\n" +
-             "Recommandé : 1.5 pour une progression progressive")]
-    public float pointsCurveExponent = 1.5f;
-
-    // ── Paliers ───────────────────────────────────────────────
-    [Header("Bonus aux paliers")]
+    // ── Paliers de bonus ──────────────────────────────────────
+    [Header("Paliers de bonus (Lv10, 20, 30, 40, 50 — GDD §5.6)")]
     [Tooltip("Bonus débloqués à certains niveaux.\n" +
-             "Recommandé : PointsFire (flat) ou Element Bonus Fire (ratio 0.05 = +5% pts feu).\n" +
-             "Défaut : paliers 10, 20, 30, 40, 50")]
-
-    [Header("Description")]
-    [TextArea]
-    public string       description  = "";
+             "⚠ Valeurs à calibrer en test — §14.2.\n" +
+             "Esprits élémentaires : recommandé PointsFire/etc. ou ElementBonusFire/etc.\n" +
+             "Esprit Neutre : recommandé BonusAttack, CritChance, BonusHP.")]
     public List<SpiritMilestone> milestones = new List<SpiritMilestone>();
 
+    // ── Configuration — bonus passifs de base ─────────────────
+    [Header("Configuration (bonus passifs actifs à l'équipement)")]
+    [Tooltip("Bonus fixes apportés dès que cet esprit est actif — indépendants du niveau.\n" +
+             "Lus par CharacterStats.RecalculateStats().")]
+    public EquipmentConfig config;
+
+    // ── Description ───────────────────────────────────────────
+    [Header("Description")]
+    [TextArea]
+    public string description = "";
 
     // ── Utilitaires ───────────────────────────────────────────
 
     /// <summary>
-    /// Points élémentaires donnés au niveau N.
-    /// Interpolation progressive entre pointsAtLevel1 et pointsAtMaxLevel.
+    /// Points élémentaires apportés au niveau N.
+    /// Retourne 0 si element == Neutral (Esprit Neutre).
     /// </summary>
     public int GetPointsAtLevel(int level)
     {
-        if (maxLevel <= 0) return pointsAtLevel1;
-        float t     = Mathf.Clamp01((float)(level - 1) / (maxLevel - 1));
-        float tPow  = Mathf.Pow(t, pointsCurveExponent);
+        if (element == ElementType.Neutral) return 0;
+        if (maxLevel <= 1) return pointsAtLevel1;
+        float t    = Mathf.Clamp01((float)(level - 1) / (maxLevel - 1));
+        float tPow = Mathf.Pow(t, pointsCurveExponent);
         return Mathf.RoundToInt(Mathf.Lerp(pointsAtLevel1, pointsAtMaxLevel, tPow));
     }
 
-    /// <summary>
-    /// XP requis pour passer du niveau N au niveau N+1.
-    /// Formule automatique : croissance progressive.
-    /// </summary>
+    /// <summary>XP requis pour passer du niveau N au niveau N+1.</summary>
     public int GetXPRequired(int level)
-    {
-        return Mathf.RoundToInt(100 * Mathf.Pow(level, 1.3f));
-    }
+        => Mathf.RoundToInt(100 * Mathf.Pow(level, 1.3f));
 
     /// <summary>Points élémentaires cumulés de niveau 1 à N.</summary>
     public int GetTotalPointsAtLevel(int level)
@@ -99,7 +122,7 @@ public class SpiritData : ScriptableObject
     public SpiritMilestone GetMilestone(int level)
     {
         if (milestones == null) return null;
-        foreach (SpiritMilestone m in milestones)
+        foreach (var m in milestones)
             if (m.level == level) return m;
         return null;
     }
@@ -107,55 +130,62 @@ public class SpiritData : ScriptableObject
 
 // =============================================================
 // SpiritMilestone — Bonus débloqué à un palier de niveau
+// GDD v3.5 — §5.6 (valeurs à calibrer §14.2)
 // =============================================================
 [System.Serializable]
 public class SpiritMilestone
 {
-    [Tooltip("Niveau auquel ce bonus est débloqué (ex: 10, 20, 30, 40, 50)")]
+    [Tooltip("Niveau auquel ce palier est débloqué (ex: 10, 20, 30, 40, 50).")]
     public int level;
 
-    [Tooltip("Bonus débloqué à ce palier — recommandé : points ou % dégâts élémentaires")]
+    [Tooltip("Bonus débloqués à ce palier.\n" +
+             "⚠ Valeurs à calibrer — §14.2.\n" +
+             "Esprits élémentaires : PointsFire/etc. ou ElementBonusFire/etc.\n" +
+             "Esprit Neutre : BonusAttack, CritChance, BonusHP.")]
     public List<StatBonus> bonuses = new List<StatBonus>();
 }
 
 // =============================================================
-// SpiritInstance — données runtime d'un esprit équipé
+// SpiritInstance — données runtime d'un esprit équipé / en stock
+// GDD v3.5 — §5.6
 // =============================================================
 [System.Serializable]
 public class SpiritInstance
 {
     public SpiritData data;
 
-    // ── Progression runtime ───────────────────────────────────
-    public int level = 1;
+    public int level     = 1;
     public int currentXP = 0;
 
     public SpiritInstance(SpiritData source)
     {
-        data  = source;
-        level = 1;
+        data      = source;
+        level     = 1;
         currentXP = 0;
     }
 
     // ── Accesseurs ────────────────────────────────────────────
-    public string      SpiritName  => data?.spiritName ?? "Spirit";
-    public Sprite      Icon        => data?.icon;
-    public ElementType Element     => data != null ? data.element : ElementType.Neutral;
-    public int         MaxLevel    => data != null ? data.maxLevel : 50;
+    public string      SpiritName  => data != null ? data.spiritName : "Spirit";
+    public Sprite      Icon        => data != null ? data.icon       : null;
+    public ElementType Element     => data != null ? data.element    : ElementType.Neutral;
+    public int         MaxLevel    => data != null ? data.maxLevel   : 50;
     public bool        IsMaxLevel  => level >= MaxLevel;
 
-    /// <summary>Points élémentaires cumulés apportés par cet esprit à son niveau actuel.</summary>
+    /// <summary>Points élémentaires cumulés apportés à ce niveau (0 si Esprit Neutre).</summary>
     public int TotalElementalPoints => data != null ? data.GetTotalPointsAtLevel(level) : 0;
 
     /// <summary>XP requis pour le prochain niveau.</summary>
     public int XPRequired => data != null ? data.GetXPRequired(level) : 100;
+
+    // ── Raccourcis config ─────────────────────────────────────
+    public List<StatBonus> Bonuses => data?.config?.bonuses;
 
     // ── XP & Level Up ─────────────────────────────────────────
 
     /// <summary>
     /// Ajoute de l'XP à l'esprit.
     /// Retourne true si un level up s'est produit.
-    /// Le mob tué doit être dans la plage ±15 niveaux du joueur — vérifié par SpiritSystem.
+    /// Le mob doit être dans la plage ±15 niveaux du joueur — vérifié par SpiritSystem.
     /// </summary>
     public bool AddXP(int amount)
     {

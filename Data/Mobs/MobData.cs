@@ -4,13 +4,13 @@ using System.Collections.Generic;
 // =============================================================
 // MOBDATA — ScriptableObject template de mob
 // Path : Assets/Scripts/Data/Mobs/MobData.cs
-// AetherTree GDD v30 — Section 12 / 18
+// AetherTree GDD v3.5 — 
 //
 // Changements v30 :
 // — mobType : MobType (Normal, Elite, BossZone, BossDungeon, BossRaid, Nocturnal, Capturable)
-// — dodge (ex-evasion) — §6.10
-// — isNocturnal — §18.1 / §20
-// — Aeris : géré dans LootTable (minAeris/maxAeris) — §33.2
+// — dodge (ex-evasion) — §3.3
+// — isNocturnal — §3.3
+// — Aeris : géré dans LootTable (minAeris/maxAeris)
 // — MobAIType conservé pour Passive/Aggressive (logique IA Mob.cs)
 // =============================================================
 
@@ -44,6 +44,12 @@ public class MobData : ScriptableObject
     public float attackDamage    = 10f;
     public float attackRange     = 1.5f;
     public float attackCooldown  = 1.5f;
+    [Tooltip("Chance de critique [0..1]. Poussé sur Entity via SetCritChance() dans Mob.ApplyData().")]
+    public float critChance      = 0.05f;
+    [Tooltip("Multiplicateur dégâts critique. Base 1.5f. Poussé via SetCritMultiplier() dans Mob.ApplyData().")]
+    public float critMultiplier  = 1.5f;
+    [Tooltip("Catégorie d'arme — détermine quelle défense du joueur/PNJ s'applique dans CombatSystem. GDD §3.1.")]
+    public WeaponCategory weaponCategory = WeaponCategory.Melee;
 
 
 
@@ -190,7 +196,7 @@ public enum MobType
     BossDungeon,  // Fixe en donjon — reset à chaque instance
     BossRaid,     // Fixe en donjon raid — reset à chaque instance
     Nocturnal,    // Actif uniquement la nuit (§18.1 / §20)
-    Capturable,   // Peut devenir un pet (§14)
+    Capturable,   // Peut devenir un pet (§3.5 (famillier))
 }
 
 // ── IA du mob — logique d'aggro dans Mob.cs ───────────────────
@@ -198,7 +204,7 @@ public enum MobAIType
 {
     Passive,      // N'attaque que si agressé
     Aggressive,   // Attaque les joueurs à portée
-    Boss,         // IA scriptée — phases de combat (§18.4)
+    Boss,         // IA scriptée — phases de combat (§3.3 phase boss)
 }
 
 // ── Type de pet potentiel ─────────────────────────────────────

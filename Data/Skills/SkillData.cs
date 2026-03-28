@@ -212,7 +212,7 @@ public enum AnimationType { Melee, Ranged, Magic, Special }
 public enum TargetType
 {
     Target, Self, AoE_Self, AoE_Target, Skillshot,
-    LineTarget, GroundTarget, Cone, Dash_Target, Dash_Direction
+    LineTarget, GroundTarget, Cone, Direction, Dash_Target, Dash_Direction
 }
 
 // =============================================================

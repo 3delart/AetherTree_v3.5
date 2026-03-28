@@ -321,7 +321,7 @@ public class TooltipSystem : MonoBehaviour
         SetText(weaponDamageText,    $"Dégâts : {Mathf.RoundToInt(w.FinalDamageMin)} – {Mathf.RoundToInt(w.FinalDamageMax)}");
         SetText(weaponPrecisionText, $"Précision : {Mathf.RoundToInt(w.FinalPrecision)}");
         SetText(weaponSpeedText,     $"Vitesse : {w.AttackSpeed:F1} att/s");
-        SetText(weaponCritText,      $"Critique : {w.CritChance * 100f:F0}% / x{w.CritDamage:F2}");
+        SetText(weaponCritText,      $"Critique : {w.CritChance * 100f:F0}% / x{w.CritMultiplier:F2}");
         SetText(weaponUpgradeText,   w.upgradeLevel > 0 ? $"Upgrade : +{w.upgradeLevel}" : "");
         SetText(weaponRuneText, w.equippedRune != null
             ? (w.equippedRune.isIdentified ? $"Rune : {w.equippedRune.Label}" : "Rune : ???")
@@ -437,7 +437,7 @@ public class TooltipSystem : MonoBehaviour
         SetText(jewelryNameText,      j.JewelryName);
         SetText(jewelryLevelText,     j.data != null ? LevelTag(j.data.requiredLevel) : "");
         SetText(jewelrySlotText,      j.Slot.ToString());
-        SetText(jewelryItemLevelText, $"Niveau bijou : {j.JewelryLevel}");
+        SetText(jewelryItemLevelText, $"Niveau bijou : {j.MaxGemLevel}");
         SetText(jewelryMeleeText,     j.MeleeDefense  > 0f ? $"Déf. mêlée : {j.MeleeDefense}"    : "");
         SetText(jewelryRangedText,    j.RangedDefense > 0f ? $"Déf. distance : {j.RangedDefense}" : "");
         SetText(jewelryMagicText,     j.MagicDefense  > 0f ? $"Déf. magie : {j.MagicDefense}"     : "");
@@ -655,7 +655,7 @@ public class TooltipSystem : MonoBehaviour
         var sb = new System.Text.StringBuilder();
         foreach (var b in bonuses)
         {
-            bool isRatio = b.statType == StatType.CritChance || b.statType == StatType.CritDamage
+            bool isRatio = b.statType == StatType.CritChance || b.statType == StatType.CritMultiplier
                         || b.statType.ToString().StartsWith("Resist")
                         || b.statType.ToString().StartsWith("Element");
             sb.AppendLine(isRatio

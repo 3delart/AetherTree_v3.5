@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // =============================================================
 // WEAPONTYPEREGISTRY — ScriptableObject global
 // Path : Assets/Scripts/Data/Inventory/Equipment/WeaponTypeRegistry.cs
-// AetherTree GDD v30 — Section 4 / 5.1
+// AetherTree GDD v3.5 — §5.1 (WeaponTypeRegistry)
 //
 // Mappe chaque WeaponType (famille de départ) vers son skill
 // d'attaque de base. Les variantes héritent automatiquement

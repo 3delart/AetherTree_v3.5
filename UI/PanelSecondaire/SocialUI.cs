@@ -145,6 +145,15 @@ public class SocialUI : MonoBehaviour
     {
         _isOpen = true;
         if (socialPanel != null) socialPanel.SetActive(true);
+
+        // Si même onglet Mail déjà actif → refresh quand même
+        if (tab == SocialTab.Mail && currentTab == SocialTab.Mail)
+        {
+            RefreshMailList();
+            ClearMailDetail();
+            return;
+        }
+
         SwitchTab(tab);
     }
 

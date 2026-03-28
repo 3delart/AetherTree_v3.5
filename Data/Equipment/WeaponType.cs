@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // =============================================================
 // WEAPONTYPE.CS — Data-driven, zéro switch à maintenir
 // Path : Assets/Scripts/Data/Inventory/Equipment/WeaponType.cs
-// AetherTree GDD v30 — Section 2.1 / 2.3
+// AetherTree GDD v3.5 — §5.1 (WeaponType / WeaponCategory)
 //
 // Pour ajouter une nouvelle arme :
 //   1. Ajouter la valeur dans WeaponType

@@ -6,23 +6,23 @@ using System.Linq;
 // =============================================================
 // MOB — Entité ennemie avec IA NavMesh 4 états
 // Path : Assets/Scripts/Core/Mob.cs
-// AetherTree GDD v30 — §12 (Mobs)
+// AetherTree GDD v3.5 — §3.3 (Mobs)
 //
-// IA : Patrol → Chase → Attack → Return (avec Leash) — GDD v30 §12.1
+// IA : Patrol → Chase → Attack → Return (avec Leash) — GDD v3.5 §3.3
 //
 // Points clés :
-// — enemyList<Entity> : joueurs + pets à portée de détection — §12.2
-// — damageContributions<Player, float> : éligibilité loot ≥10% — §12.7
-// — Cible = entité la plus proche dans enemyList (réévaluée à chaque tick) — §12.2
-// — Die() calcule eligiblePlayers avant de publier MobKilledEvent — §12.7
-// — Pet : dégâts attribués à son owner dans ResolveAttacker() — §12.7
-// — Pas de regen HP/Mana (GDD §4.2 — joueur uniquement)
+// — enemyList<Entity> : joueurs + pets à portée de détection — §3.3
+// — damageContributions<Player, float> : éligibilité loot ≥10% — §3.3
+// — Cible = entité la plus proche dans enemyList (réévaluée à chaque tick) — §3.3
+// — Die() calcule eligiblePlayers avant de publier MobKilledEvent — §3.3
+// — Pet : dégâts attribués à son owner dans ResolveAttacker() — §3.5
+// — Pas de regen HP/Mana (GDD §3.1 — joueur uniquement)
 // =============================================================
 
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(StatusEffectSystem))]
 [RequireComponent(typeof(CapsuleCollider))]
-[RequireComponent(typeof(MobSkillSystem))]
+[RequireComponent(typeof(SkillSystem))]
 public class Mob : Entity
 {
     [Header("Data")]
@@ -33,11 +33,11 @@ public class Mob : Entity
     protected Vector3      spawnPos;
     protected MobState     currentState = MobState.Patrol;
 
-    // ── enemyList — GDD v30 §12.2 ────────────────────────────
+    // ── enemyList — GDD v3.5 §3.3 ────────────────────────────
     // Contient joueurs ET pets à portée
     protected List<Entity> enemyList = new List<Entity>();
 
-    // ── Contributions aux dégâts — GDD v30 §12.7 ────────────
+    // ── Contributions aux dégâts — GDD v3.5 §3.3 ────────────
     // Clé = Player, Valeur = dégâts totaux infligés
     // Les dégâts du Pet sont attribués à son owner
     protected Dictionary<Player, float>    damageContributions = new Dictionary<Player, float>();
@@ -58,8 +58,8 @@ public class Mob : Entity
     private bool  isWaiting       = false;
     private float waitTimer       = 0f;
 
-    // Skills
-    private MobSkillSystem _mobSkillSystem;
+    // Skills — cache du SkillSystem porté par ce GameObject
+    private SkillSystem _skillSystem;
 
     // Aggro
     private Vector3     aggroPos;
@@ -73,7 +73,7 @@ public class Mob : Entity
     {
         base.Awake();
         agent           = GetComponent<NavMeshAgent>();
-        _mobSkillSystem = GetComponent<MobSkillSystem>();
+        _skillSystem    = GetComponent<SkillSystem>();
         spawnPos = transform.position;
         ApplyData();
     }
@@ -81,22 +81,40 @@ public class Mob : Entity
     private void ApplyData()
     {
         if (data == null) return;
-        entityName  = data.mobName;
-        maxHP       = data.maxHP;
-        maxMana     = data.maxMana;
-        // GDD v30 §4.2 — Mobs ne régénèrent pas (regenHP/regenMana restent à 0f, défaut Entity)
-        agent.speed = data.moveSpeed;
+        entityName     = data.mobName;
+        entityType     = EntityType.Mob;
+        // GDD v3.5 §3.1 — weaponCategory du mob détermine quelle défense du joueur s'applique
+        weaponCategory = data.weaponCategory;
+
+        // Pousse toutes les stats via les setters Entity
+        SetMaxHP          (data.maxHP);
+        SetMaxMana        (data.maxMana);
+        SetMoveSpeed      (data.moveSpeed);
+        SetAttackDamageMin(data.attackDamage);
+        SetAttackDamageMax(data.attackDamage);
+        SetPrecision      (data.precision);
+        SetCritChance     (data.critChance);
+        SetCritMultiplier (data.critMultiplier);
+        SetDodge          (data.dodge);
+        SetMeleeDefense   (data.meleeDefense);
+        SetRangedDefense  (data.rangedDefense);
+        SetMagicDefense   (data.magicDefense);
+
+        // Regen — 0f par défaut, poussé uniquement si défini sur le SO (boss, cas spéciaux) — GDD §3.1
+        if (data.regenHP   > 0f) SetRegenHP  (data.regenHP);
+        if (data.regenMana > 0f) SetRegenMana(data.regenMana);
+
         currentHP   = maxHP;
         currentMana = maxMana;
+        agent.speed = data.moveSpeed;
+
+        // Résistances élémentaires depuis MobData SO
+        foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+            SetElementalResistance(e, data.GetElementalResistance(e));
+
+        // Fige le snapshot — RequestRecalculate() repartira de ces valeurs
+        SnapshotBaseStats();
     }
-
-    // =========================================================
-    // DÉFENSES
-    // =========================================================
-
-    public override float GetMeleeDefense()  => data != null ? data.meleeDefense : 0f;
-    public override float GetRangedDefense() => data != null ? data.rangedDefense : 0f;
-    public override float GetMagicDefense()  => data != null ? data.magicDefense  : 0f;
 
     // =========================================================
     // UPDATE — machine à états
@@ -128,7 +146,7 @@ public class Mob : Entity
 
     // =========================================================
     // ENEMYLIST — détection & nettoyage
-    // GDD v30 §12.2 — enemyList<Entity> joueurs + pets
+    // GDD v3.5 §3.3 — enemyList<Entity> joueurs + pets
     // =========================================================
 
     /// <summary>
@@ -157,7 +175,7 @@ public class Mob : Entity
             // if (pet != null && !pet.isDead && !enemyList.Contains(pet))
             //     enemyList.Add(pet);
 
-            // PNJ — les mobs ciblent tous les PNJ (GDD v31 §19.2)
+            // PNJ — les mobs ciblent tous les PNJ (GDD v3.5 §3.4 : tous peuvent mourir)
             // Guards protègent le village en priorité, mais tous peuvent mourir
             // (ex: village envahi — marchands, décoratifs etc. sont attaquables)
             PNJ pnj = col.GetComponentInParent<PNJ>();
@@ -171,7 +189,7 @@ public class Mob : Entity
 
     /// <summary>
     /// Retourne l'entité la plus proche dans enemyList.
-    /// Réévaluée à chaque tick — GDD v30 §12.2.
+    /// Réévaluée à chaque tick — GDD v3.5 §3.3.
     /// </summary>
     private Entity GetClosestEnemy()
     {
@@ -303,7 +321,7 @@ public class Mob : Entity
             // Double vérification avant de lancer l'attaque
             if (!isDead && !target.isDead && data.basicAttackSkill != null)
             {
-                _mobSkillSystem?.Execute(data.basicAttackSkill, this, target);
+                _skillSystem?.Execute(data.basicAttackSkill, this, target);
             }
             else if (data.basicAttackSkill == null)
                 Debug.LogWarning($"[MOB] {data.mobName} n'a pas de basicAttackSkill — assigne un SkillData dans MobData.");
@@ -343,7 +361,7 @@ public class Mob : Entity
             if (skill.manaCost > 0f) SpendMana(skill.manaCost);
 
             LookAt(target.transform);
-            _mobSkillSystem?.Execute(skill, this, target);
+            _skillSystem?.Execute(skill, this, target);
             _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
             attackTimer = data.attackCooldown;
             return true;
@@ -394,11 +412,15 @@ public class Mob : Entity
         enemyList.Clear();
         damageContributions.Clear();
         lastSkillByAttacker.Clear();
+
+        // Nettoie tous les effets actifs — un mob qui rentre au spawn repart sans debuffs. GDD v3.5 §3.3.
+        statusEffects?.ResetDebuffResistances();
+        RequestRecalculate();
     }
 
     // =========================================================
     // DÉGÂTS — aggro + contributions
-    // GDD v30 §12.2 & §12.7
+    // GDD v3.5 §3.3
     // =========================================================
 
     public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null)
@@ -424,7 +446,7 @@ public class Mob : Entity
         base.TakeDamage(amount, sourceElement, source);
         lastDamageElement = sourceElement;
 
-        // ── Aggro automatique — GDD v30 §12.1 ────────────────
+        // ── Aggro automatique — GDD v3.5 §3.3 ────────────────
         // Tout mob agressé entre en Chase même s'il est Passif
         if (!isDead &&
             currentState != MobState.Chase  &&
@@ -456,7 +478,7 @@ public class Mob : Entity
 
     // =========================================================
     // MORT — éligibilité loot ≥10%
-    // GDD v30 §12.7
+    // GDD v3.5 §3.3
     // =========================================================
 
     protected override void Die()

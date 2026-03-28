@@ -3,7 +3,11 @@ using UnityEngine;
 // =============================================================
 // StatusEffectInstance — base runtime d'un effet actif sur une entité
 // Path : Assets/Scripts/Data/StatusEffect/StatusEffectInstance.cs
-// AetherTree GDD v30 — Section 21bis
+// AetherTree GDD v3.5 — §3.1.1
+//
+// v3.5 — BuffInstance.Tick() gère Regeneration directement (suppression du
+//         chemin buffRegenBonus dans StatusEffectSystem.Update()).
+//         critChanceBonus et critDamageBonus gérés séparément.
 // =============================================================
 
 public abstract class StatusEffectInstance
@@ -47,17 +51,29 @@ public class DebuffInstance : StatusEffectInstance
         switch (DebuffType)
         {
             case DebuffType.Burn:
-            case DebuffType.Poison:
             case DebuffType.Bleed:
                 float dmg = DebuffData.damagePerSecond * deltaTime;
                 if (dmg > 0f)
                     target.TakeDamage(dmg, DebuffData.damageElement, source);
                 break;
 
-            // Freeze, Slow, Root, Stun, Fear, Sleep, Shocked, Silence :
+            case DebuffType.Poison:
+                // DoT — le flag healReduction est géré via OnApply/OnExpire dans StatusEffectSystem
+                float poisonDmg = DebuffData.damagePerSecond * deltaTime;
+                if (poisonDmg > 0f)
+                    target.TakeDamage(poisonDmg, DebuffData.damageElement, source);
+                break;
+
+            case DebuffType.ManaDrain:
+                // Drain de mana progressif sur la durée (§3.1.1.1)
+                float drain = DebuffData.manaDrainPerSecond * deltaTime;
+                if (drain > 0f)
+                    target.SpendMana(drain);
+                break;
+
+            // Freeze, Slow, Root, Stun, Fear, Sleep, Shocked, Silence, Taunt :
             // gérés via flags sur StatusEffectSystem (OnApply / OnExpire)
-            // Knockback, Blind, ManaDrain, ArmorBreak :
-            // gérés via flags sur StatusEffectSystem (OnApply / OnExpire)
+            // Knockback : effet ponctuel — géré via Entity.ApplyKnockBack()
         }
     }
 }
@@ -85,17 +101,19 @@ public class BuffInstance : StatusEffectInstance
 
         switch (BuffType)
         {
-            case BuffType.RegenHP:
-                float heal = BuffData.healPerSecond * deltaTime;
+            case BuffType.Regeneration:
+                // HoT — soin progressif sur la durée (§3.1.1.2)
+                // GetHealPerSecond supporte Flat et Percent (% MaxHP)
+                float heal = BuffData.GetHealPerSecond(target.MaxHP) * deltaTime;
                 if (heal > 0f) target.Heal(heal);
                 break;
 
-            // Shield, DefenseUp, DodgeUp, Haste, AttackUp :
-            // gérés via flags sur StatusEffectSystem (OnApply / OnExpire)
+            // Shield, DefenseUp, DodgeUp, Haste, AttackUp, CritChanceUp, CritDamageUp, Barrier :
+            // gérés via flags/valeurs dans StatusEffectSystem (OnApply / OnExpire)
         }
     }
 
-    /// <summary>Absorbe des dégâts. Retourne les dégâts résiduels.</summary>
+    /// <summary>Absorbe des dégâts avec le bouclier actif. Retourne les dégâts résiduels.</summary>
     public float AbsorbDamage(float incomingDamage)
     {
         if (remainingShield <= 0f) return incomingDamage;

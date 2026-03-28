@@ -40,13 +40,6 @@ public class SavedQuest
     public List<int>  objectiveCounts = new List<int>();
 }
 
-// ── Affinité élémentaire ──────────────────────────────────────
-[System.Serializable]
-public class SavedElementAffinity
-{
-    public string element;
-    public float  weight;
-}
 
 // ── Progression d'une condition en cours ─────────────────────
 [System.Serializable]

@@ -3,19 +3,23 @@ using UnityEngine;
 // =============================================================
 // COMBATSYSTEM.CS — Calcul des dégâts
 // Path : Assets/Scripts/Systems/CombatSystem.cs
-// AetherTree GDD v30 — Section 21
+// AetherTree GDD v3.5 — Section 21
 //
 // Pipeline deux branches indépendantes (§21.1) :
-//   Branche Physique   : base → rareté → upgrade → ×ratio skill → réduction def (brut²/(brut+def×1.5))
-//   Branche Élémentaire: pts fixes → +bonus rang fixes → ×mult rang → ×ratio skill → -résistance → ×vulnérabilité
+//   Branche Physique   : base → ×ratio skill → réduction def (brut²/(brut+def×1.5))
+//   Branche Élémentaire: pts fixes → ×affinité → ×ratio skill → -résistance → ×vulnérabilité
 //   Total = physique + élémentaire
 //
 // Réduction physique (§21.2) : brut² / (brut + def × 1.5)
 //   → def = brut/2 : ~40% réduit | def = brut : ~50% | def = brut×2 : ~67%
 //
 // Miss% (§6.10) : Esquive^6 / (Esquive^6 + Précision^6) × 100
+//   Les deux valeurs sont effectives (après buffs/debuffs) — GDD §3.1.1.2.
 //
-// Grade PvP uniquement (§6.3) : bonus = (attackGrade − defenseGrade) × 5%
+// Sources d'attaque par entité :
+//   Player → CalculateDamage()    (WeaponInstance — FinalDamageMin/Max)
+//   Mob    → CalculateMobDamage() (MobData.attackDamage)
+//   PNJ    → CalculateMobDamage() (même pipeline — source = PNJData.attackDamage via Entity)
 // =============================================================
 
 public class CombatSystem : MonoBehaviour
@@ -29,7 +33,7 @@ public class CombatSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Calcule les dégâts d'une attaque.
+    /// Calcule les dégâts d'une attaque du joueur.
     /// </summary>
     public float CalculateDamage(
         WeaponInstance weapon,
@@ -39,7 +43,6 @@ public class CombatSystem : MonoBehaviour
         Entity target)
     {
         // 1. Dégâts bruts de l'arme — roll entre FinalDamageMin et FinalDamageMax
-        // (valeurs déjà intégrant rareté + upgrade de l'instance droppée)
         float baseDamage = Random.Range(weapon.FinalDamageMin, weapon.FinalDamageMax);
         baseDamage *= skill.damageMultiplier;
 
@@ -60,7 +63,6 @@ public class CombatSystem : MonoBehaviour
                 gDef = Mathf.Max(0f, gDef - targetStatus.armorBreakReduction);
             }
 
-            // Formule GDD §21.2 : brut² / (brut + def × 1.5)
             float mRed = (baseDamage * baseDamage) / (baseDamage + mDef * 1.5f);
             float rRed = (baseDamage * baseDamage) / (baseDamage + rDef * 1.5f);
             float gRed = (baseDamage * baseDamage) / (baseDamage + gDef * 1.5f);
@@ -74,30 +76,25 @@ public class CombatSystem : MonoBehaviour
             physDamage = baseDamage;
         }
 
-        // TODO : Pénétration d'armure — sera ajouté comme effet de debuff (Phase combat)
-
         // 3. Partie élémentaire — s'ajoute aux dégâts physiques (ratio indépendant)
         float elemDamage = baseDamage * skill.elementalRatio;
 
         if (skill.PrimaryElement != ElementType.Neutral && elemental != null && attacker != null)
         {
-            // Points élémentaires en flat (avant les %)
             float elemPoints = attacker.GetElementPoints(skill.PrimaryElement);
             float flatBonus  = 1f + (elemPoints * 0.001f); // 1000 pts = +100%
 
-            // Bonus affinité
             float affinityBonus = elemental.GetElementalDamageBonus(skill.PrimaryElement);
 
             elemDamage *= flatBonus * affinityBonus * skill.elementalMultiplier;
         }
         else
         {
-            // Sort neutre : bonus neutre si 100% neutre
             if (elemental != null)
                 elemDamage *= elemental.GetNeutralBonus();
         }
 
-        // 4. Vulnérabilité de la cible
+        // 4. Vulnérabilité de la cible (Player)
         if (target != null)
         {
             Player targetPlayer = target.GetComponent<Player>();
@@ -122,9 +119,9 @@ public class CombatSystem : MonoBehaviour
 
         float totalDamage = physDamage + elemDamage;
 
-        // 6. Critique — CritChance [0..1] | CritDamage [0..1+] (ex: 1.5 = ×1.5)
+        // 6. Critique — CritChance [0..1] | CritMultiplier [1+]
         if (Random.value < weapon.CritChance)
-            totalDamage *= weapon.CritDamage;
+            totalDamage *= weapon.CritMultiplier;
 
         // 7. Mark — bonus dégâts sur cible marquée
         if (target?.statusEffects != null && target.statusEffects.isMarked)
@@ -138,12 +135,18 @@ public class CombatSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Calcule les dégâts d'un skill de mob.
-    /// Basé sur attackDamage du mob × damageMultiplier.
+    /// Overload Mob → Entity pour compatibilité avec les appels existants.
     /// </summary>
     public float CalculateMobDamage(SkillData skill, Mob caster, Entity target)
+        => CalculateMobDamage(skill, (Entity)caster, target);
+
+    /// <summary>
+    /// Pipeline dégâts commun Mob / PNJ — GDD §21.2.
+    /// Lit Entity.AttackDamageMin, applique la défense pondérée et la résistance élémentaire.
+    /// </summary>
+    public float CalculateMobDamage(SkillData skill, Entity caster, Entity target)
     {
-        float baseDamage = caster.data != null ? caster.data.attackDamage : 10f;
+        float baseDamage = caster.AttackDamageMin > 0f ? caster.AttackDamageMin : 10f;
         baseDamage *= skill.damageMultiplier * Random.Range(0.9f, 1.1f);
 
         // Défense pondérée — formule §21.2 : brut² / (brut + def × 1.5)
@@ -171,12 +174,11 @@ public class CombatSystem : MonoBehaviour
                       + rRed * skill.damageRangedRatio
                       + gRed * skill.damageMagicRatio;
 
-            // Normalise la réduction en ratio [0..1] par rapport aux dégâts bruts
             if (baseDamage > 0f)
                 reduction /= baseDamage;
         }
 
-        // Résistance élémentaire
+        // Résistance élémentaire de la cible
         float elemResist = 0f;
         if (target != null)
         {
@@ -195,59 +197,32 @@ public class CombatSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Calcule les dégâts d'une attaque de PNJ (Guard, ou tout PNJ combattant).
-    /// Même pipeline que CalculateMobDamage — source = guardAttackDamage du PNJData.
-    /// Miss/Dodge vérifié en amont dans HandleGuardAI.
-    /// </summary>
-    public float CalculatePNJDamage(PNJ guard, Entity target)
-    {
-        if (guard?.data == null) return 1f;
-
-        float baseDamage = guard.data.guardAttackDamage * Random.Range(0.9f, 1.1f);
-
-        if (target == null) return Mathf.Max(1f, baseDamage);
-
-        // Défense pondérée — formule §21.2 : brut² / (brut + def × 1.5)
-        float mDef = target.GetMeleeDefense();
-        float rDef = target.GetRangedDefense();
-        float gDef = target.GetMagicDefense();
-
-        // ArmorBreak
-        StatusEffectSystem targetStatus = target.GetComponent<StatusEffectSystem>();
-        if (targetStatus != null && targetStatus.armorBreakReduction > 0f)
-        {
-            mDef = Mathf.Max(0f, mDef - targetStatus.armorBreakReduction);
-            rDef = Mathf.Max(0f, rDef - targetStatus.armorBreakReduction);
-            gDef = Mathf.Max(0f, gDef - targetStatus.armorBreakReduction);
-        }
-
-        // Garde = attaque physique mêlée pure
-        float def    = mDef;
-        float dmg    = (baseDamage * baseDamage) / (baseDamage + def * 1.5f);
-
-        return Mathf.Max(1f, dmg);
-    }
-
-    /// <summary>
     /// Roll de dodge selon la formule GDD §6.10 :
     /// Miss% = Esquive^6 / (Esquive^6 + Précision^6) × 100
+    /// Les deux valeurs sont effectives (après buffs/debuffs) — GDD §3.1.1.2.
     /// </summary>
-    public bool RollDodge(float dodge, float precision)
+    public bool RollDodge(float effectiveDodge, float effectivePrecision)
     {
-        if (dodge <= 0f) return false;
-        float d6 = Mathf.Pow(dodge,     6f);
-        float p6 = Mathf.Pow(precision, 6f);
+        if (effectiveDodge <= 0f) return false;
+        float d6 = Mathf.Pow(effectiveDodge,     6f);
+        float p6 = Mathf.Pow(effectivePrecision, 6f);
         float missChance = d6 / (d6 + p6);
         return Random.value < missChance;
     }
 
-    /// <summary>Roll de toucher — tient compte de Blind sur l'attaquant.</summary>
-    public static bool RollHit(float precision, Entity attacker)
+    /// <summary>
+    /// Roll de toucher — tient compte de Blind sur l'attaquant (GDD §3.1.1.2).
+    /// Utilise la précision effective de l'attaquant (après buffs/debuffs).
+    /// </summary>
+    public static bool RollHit(Entity attacker)
     {
-        float effectivePrecision = precision;
+        if (attacker == null) return true;
+
+        // Précision effective : inclut les bonus de buff (PrecisionUp) et malus de debuff (Blind)
+        float effectivePrecision = attacker.GetEffectivePrecision();
 
         // Blind — réduit la précision de l'attaquant
-        if (attacker?.statusEffects != null && attacker.statusEffects.isBlinded)
+        if (attacker.statusEffects != null && attacker.statusEffects.isBlinded)
             effectivePrecision *= (1f - attacker.statusEffects.GetBlindMalus());
 
         return Random.value <= effectivePrecision / 100f;
