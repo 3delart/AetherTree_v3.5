@@ -87,9 +87,6 @@ public class DialogueUI : MonoBehaviour
 
         if (panelDialogue != null) panelDialogue.SetActive(true);
 
-        // Notifie les objectifs TalkTo dans tous les cas
-        QuestSystem.Instance?.NotifyTalkTo(pnj.data?.pnjName, player);
-
         ShowStage(stage);
     }
 

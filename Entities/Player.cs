@@ -490,6 +490,14 @@ public class Player : Entity
     {
         float hpBefore = currentHP;
 
+        // Réduction de dégâts reçus Neutre rang 4+ — GDD §6.3
+        if (elementalSystem != null)
+        {
+            float neutralReduction = elementalSystem.GetNeutralDamageReduction();
+            if (neutralReduction > 0f)
+                amount *= (1f - neutralReduction);
+        }
+
         base.TakeDamage(amount, sourceElement, source);
 
         activityCounter.Increment("DAMAGE_TAKEN_TOTAL", (int)amount);
@@ -630,6 +638,7 @@ public class Player : Entity
         else
             elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic);
 
+        stats.RecalculateStats(this);
         RefreshTitle();
     }
 
@@ -641,18 +650,57 @@ public class Player : Entity
     {
         if (elementalSystem == null) return;
 
-        bool        hasDual  = SkillBar.Instance?.HasDualElementSkillEquipped() ?? false;
-        TitleMode   mode     = elementalSystem.GetTitleMode(hasDual);
-        ElementType dominant = elementalSystem.GetDominantElement();
+        bool       hasDual  = SkillBar.Instance?.HasDualElementSkillEquipped() ?? false;
+        WeaponType wt       = equippedWeapon?.weaponType ?? WeaponType.UnArmed;
+        TitleMode  mode     = elementalSystem.GetTitleMode(hasDual);
 
-        activeTitle = mode switch
+        string weaponLabel = wt.GetWeaponLabel();  // ex: "Lame", "Berserker"...
+
+        switch (mode)
         {
-            TitleMode.Neutral      => "Aventurier",
-            TitleMode.Equilibriste => "Équilibriste",
-            TitleMode.Mono         => dominant.GetLabel(),
-            TitleMode.Dual         => "Dual",
-            _                      => "Aventurier"
-        };
+            case TitleMode.Mono:
+            {
+                string epithet = elementalSystem.BuildTitle(wt, hasDual);
+                activeTitle = string.IsNullOrEmpty(weaponLabel)
+                    ? epithet
+                    : $"{weaponLabel} {epithet}";
+                break;
+            }
+
+            case TitleMode.Dual:
+            {
+                var candidates = elementalSystem.GetDualCandidates();
+                if (candidates.Count >= 2)
+                {
+                    string ep1 = candidates[0].GetEpithet(wt);
+                    string ep2 = candidates[1].GetEpithet(wt);
+                    if (string.IsNullOrEmpty(ep1)) ep1 = candidates[0].GetLabel();
+                    if (string.IsNullOrEmpty(ep2)) ep2 = candidates[1].GetLabel();
+
+                    activeTitle = string.IsNullOrEmpty(weaponLabel)
+                        ? $"{ep1} et {ep2}"
+                        : $"{weaponLabel} {ep1} et {ep2}";
+                }
+                else
+                {
+                    goto case TitleMode.Mono;  // fallback
+                }
+                break;
+            }
+
+            case TitleMode.Equilibriste:
+                activeTitle = string.IsNullOrEmpty(weaponLabel)
+                    ? "Équilibriste"
+                    : $"{weaponLabel} Équilibriste";
+                break;
+
+            default:  // Neutral
+                string neutralEp = ElementType.Neutral.GetEpithet(wt);
+                activeTitle = string.IsNullOrEmpty(weaponLabel)
+                    ? (string.IsNullOrEmpty(neutralEp) ? "Aventurier" : neutralEp)
+                    : $"{weaponLabel} {(string.IsNullOrEmpty(neutralEp) ? "Pur" : neutralEp)}";
+                break;
+        }
     }
 
     // =========================================================

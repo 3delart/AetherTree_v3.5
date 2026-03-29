@@ -17,13 +17,15 @@ using UnityEngine;
 //   Équilibriste — aucun élément ≥25% mais plusieurs actifs
 //   Neutral     — état de départ pur, aucune affinité non-neutre active
 //
-// Rangs d'affinité (GDD §6.2) :
-//   0 — 0%      : aucun bonus
-//   1 — >0%     : +5%
-//   2 — ≥25%    : +10%  (seuil Mono)
-//   3 — ≥50%    : +15%
-//   4 — ≥75%    : +20%
-//   5 — ≥90%    : +25%
+// Rangs Neutre (GDD §6.3) — cumulatifs, basés sur affinité Neutral :
+//   1 ≥25% : +10% dégâts base
+//   2 ≥50% : + +5% CritChance + 10% dégâts base
+//   3 ≥75% : + +10% CritMult + 10% dégâts base + 5% CritChance
+//   4 ≥90% : + −10% dégâts reçus + 10% dégâts base + 5% CritChance + 10% CritMult
+//   5 100% : dégâts base →+20% · CritMult →+30% · −15% déf ennemie · −10% dégâts reçus + 5% CritChance
+//
+// Rangs d'affinité élémentaire (GDD §6.2) :
+//
 // =============================================================
 
 public enum TitleMode { Neutral, Mono, Dual, Equilibriste }
@@ -37,22 +39,33 @@ public class ElementalSystem : MonoBehaviour
     public const float BASIC_ATTACK_WEIGHT = 0.25f;
     public const float SKILL_WEIGHT        = 1.0f;
 
-    private Dictionary<ElementType, float> _weightCounts;
+    private Dictionary<ElementType, float> _weightCounts
+        = new Dictionary<ElementType, float>();
     private int _totalCasts = 0;
 
     private void Awake()
     {
-        _weightCounts = new Dictionary<ElementType, float>();
-        foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
-        {
-            if (t == ElementType.Any) continue;
-            _weightCounts[t] = 0f;
-        }
+        EnsureInitialized();
     }
 
     private void Start()
     {
         InitNeutralWindow();
+    }
+
+    /// <summary>
+    /// Garantit que _weightCounts contient une entrée pour chaque ElementType.
+    /// Sûr à appeler avant Awake() — utilisé par GetAffinity() si appelé tôt
+    /// (ex: CharacterStats.RecalculateStats depuis Player.Awake). GDD §6.1.
+    /// </summary>
+    private void EnsureInitialized()
+    {
+        foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
+        {
+            if (t == ElementType.Any) continue;
+            if (!_weightCounts.ContainsKey(t))
+                _weightCounts[t] = 0f;
+        }
     }
 
     // =========================================================
@@ -182,6 +195,7 @@ public class ElementalSystem : MonoBehaviour
     public float GetAffinity(ElementType element)
     {
         if (element == ElementType.Any) return 0f;
+        EnsureInitialized();
         float w = 0f;
         _weightCounts.TryGetValue(element, out w);
         return Mathf.Clamp01(w / _windowSize);
@@ -223,20 +237,28 @@ public class ElementalSystem : MonoBehaviour
 
     // =========================================================
     // RANG D'AFFINITÉ — GDD §6.2
-    // Rang 0 : 0%     | Rang 1 : >0%  | Rang 2 : ≥25%
-    // Rang 3 : ≥50%   | Rang 4 : ≥75% | Rang 5 : ≥90%
+    // Rang 0 : 0%     | Rang 1 : >25%  | Rang 2 : ≥50%
+    // Rang 3 : ≥75%   | Rang 4 : ≥90% | Rang 5 : ≥99%
     // =========================================================
 
     public int GetElementRank(ElementType element)
     {
         float aff = GetAffinity(element);
-        if (aff <= 0f)    return 0;
-        if (aff < 0.25f)  return 1;
-        if (aff < 0.50f)  return 2;
-        if (aff < 0.75f)  return 3;
-        if (aff < 0.90f)  return 4;
-        return 5;
+        if (aff >= 0.999f) return 5;
+        if (aff >= 0.899f) return 4;
+        if (aff >= 0.749f) return 3;
+        if (aff >= 0.499f) return 2;
+        if (aff >= 0.249f) return 1;
+        return 0;       
     }
+
+
+    /// <summary>
+    /// True si l'élément a au moins un peu d'affinité (>0%) — débloque les sorts rang 1.
+    /// Distinct de GetElementRank() qui commence à ≥25%.
+    /// </summary>
+    public bool HasAnyAffinity(ElementType element)
+        => GetAffinity(element) > 0f;
 
     // =========================================================
     // TITRE MODE — GDD §6.3
@@ -298,43 +320,139 @@ public class ElementalSystem : MonoBehaviour
     // Retourne le multiplicateur total (1.0 = pas de bonus).
     // =========================================================
 
+
     /// <summary>
-    /// Multiplicateur de dégâts élémentaires pour un élément donné.
-    /// Prend en compte le rang d'affinité et le mode actif (§6.2 / §6.3).
+    /// Bonus flat cumulé jusqu'au rang actuel. GDD §6.2.
+    /// Rang 1: +10 | Rang 2: +30 | Rang 3: +60 | Rang 4: +100 | Rang 5: +200
     /// </summary>
-    public float GetElementalDamageBonus(ElementType element)
+    public float GetRankFlatBonus(ElementType element)
     {
-        int rank = GetElementRank(element);
-        TitleMode mode = GetTitleMode();
-
-        float bonus;
-        switch (rank)
+        return GetElementRank(element) switch
         {
-            case 1:  bonus = 0.05f; break;  // +5%
-            case 2:  bonus = 0.10f; break;  // +10%
-            case 3:  bonus = 0.15f; break;  // +15%
-            case 4:  bonus = 0.20f; break;  // +20%
-            case 5:  bonus = 0.25f; break;  // +25%
-            default: bonus = 0.00f; break;
-        }
-
-        // Dual : 75% du bonus Mono sur chaque élément. GDD §6.3.
-        if (mode == TitleMode.Dual)
-            bonus *= 0.75f;
-
-        // Équilibriste : +5% supplémentaires sur tous les éléments actifs. GDD §6.3.
-        if (mode == TitleMode.Equilibriste && rank > 0)
-            bonus += 0.05f;
-
-        return 1f + bonus;
+            1 => 10f,
+            2 => 30f,
+            3 => 60f,
+            4 => 100f,
+            5 => 200f,
+            _ => 0f
+        };
     }
 
     /// <summary>
-    /// Bonus Neutre pur — +20% dégâts si l'affinité Neutral ≥99%. GDD §6.3.
-    /// Lire avec GetTitleMode() == Mono ET GetDominantElement() == Neutral.
+    /// Multiplicateur % cumulé jusqu'au rang actuel. GDD §6.2.
+    /// Rangs 2 et 5 donnent chacun +10% — donc rang 5 = ×1.20, rangs 2-4 = ×1.10.
+    /// S'applique sur (pointsBase + flatBonus).
     /// </summary>
-    public float GetNeutralBonus()
-        => GetAffinity(ElementType.Neutral) >= 0.99f ? 1.20f : 1.00f;
+    public float GetRankPercentMultiplier(ElementType element)
+    {
+        int rank = GetElementRank(element);
+        if (rank >= 5) return 1.20f;
+        if (rank >= 2) return 1.10f;
+        return 1.00f;
+    }
+
+
+    /// <summary>
+    /// Points élémentaires effectifs = brut (Entity) + bonus de rang flat+% (GDD §6.2).
+    /// Source unique partagée entre CombatSystem et l'UI (RefreshCardElemental).
+    /// Le rang s'applique uniquement en Mono (non-Neutre) ou Dual sur les candidats.
+    /// </summary>
+    public float GetEffectiveElementPoints(ElementType element)
+    {
+        // Récupère le joueur depuis ce GameObject
+        Player player = GetComponent<Player>();
+        if (player == null) return 0f;
+
+        float basePoints = player.GetElementPoints(element);
+
+        // Le rang ne s'applique qu'en Mono (élément non-Neutre) ou Dual (candidat)
+        TitleMode mode = GetTitleMode();
+        bool rankApplies = (mode == TitleMode.Mono && element != ElementType.Neutral)
+                        || (mode == TitleMode.Dual && GetDualCandidates().Contains(element));
+
+        if (!rankApplies) return basePoints;
+
+        float rankFlat = GetRankFlatBonus(element);
+        float rankMult = GetRankPercentMultiplier(element);
+        return (basePoints + rankFlat) * rankMult;
+    }
+
+    /// <summary>
+    /// Rang 5 uniquement — réduction locale de résistance ennemie sur les dégâts élémentaires.
+    /// À appeler dans CombatSystem au moment du calcul : dégâts * (1 - (resistCible - 0.1)).
+    /// Retourne 0.1f si rang 5, 0f sinon.
+    /// </summary>
+    public float GetRank5ResistPenetration(ElementType element)
+        => GetElementRank(element) == 5 ? 0.1f : 0f;
+
+    // =========================================================
+    // RANGS NEUTRE — GDD §6.3
+    // Progression cumulative, s'applique uniquement si Neutral pur (≥99%).
+    //
+    // Rang 1 ≥25% : +10% dégâts base
+    // Rang 2 ≥50% : +10% dégâts base · +5% CritChance
+    // Rang 3 ≥75% : +10% dégâts base · +5% CritChance · +10% CritMult
+    // Rang 4 ≥90% : +10% dégâts base · +5% CritChance · +10% CritMult · −10% dégâts reçus
+    // Rang 5 100% : +20% dégâts base · +5% CritChance · +30% CritMult · −10% dégâts reçus · −15% déf ennemie
+    // =========================================================
+
+    /// <summary>
+    /// Rang Neutre actif [0..5]. Basé sur l'affinité Neutral.
+    /// Distinct de GetElementRank() qui s'applique aux éléments non-neutres.
+    /// </summary>
+    public int GetNeutralRank()
+    {
+        float aff = GetAffinity(ElementType.Neutral);
+        if (aff >= 0.999f) return 5;
+        if (aff >= 0.899f) return 4;
+        if (aff >= 0.749f) return 3;
+        if (aff >= 0.499f) return 2;
+        if (aff >= 0.249f) return 1;
+        return 0;
+    }
+
+    /// <summary>
+    /// Multiplicateur de dégâts base Neutre (appliqué sur baseDamage avant réduction défense).
+    /// Rang 1-4 : ×1,10 | Rang 5 : ×1,20 | Sinon : ×1,00.
+    /// </summary>
+    public float GetNeutralDamageMultiplier()
+    {
+        int rank = GetNeutralRank();
+        if (rank >= 5) return 1.20f;
+        if (rank >= 1) return 1.10f;
+        return 1.00f;
+    }
+
+    /// <summary>
+    /// Bonus de CritChance Neutre (additif). Rang 2+ : +0,07. Sinon : 0.
+    /// </summary>
+    public float GetNeutralCritChanceBonus()
+        => GetNeutralRank() >= 2 ? 0.07f : 0f;
+
+    /// <summary>
+    /// Bonus de CritMultiplier Neutre (additif). Rang 3 : +0,10 | Rang 5 : +0,20 | Sinon : 0.
+    /// </summary>
+    public float GetNeutralCritMultBonus()
+    {
+        int rank = GetNeutralRank();
+        if (rank >= 5) return 0.20f;
+        if (rank >= 3) return 0.10f;
+        return 0f;
+    }
+
+    /// <summary>
+    /// Réduction des dégâts reçus Neutre. Rang 4+ : 0,10 (10%). Sinon : 0.
+    /// À appliquer côté réception des dégâts : dmg * (1 - GetNeutralDamageReduction()).
+    /// </summary>
+    public float GetNeutralDamageReduction()
+        => GetNeutralRank() >= 4 ? 0.10f : 0f;
+
+    /// <summary>
+    /// Pénétration d'armure Neutre — réduction % des défenses ennemies. Rang 5 : 0,07. Sinon : 0.
+    /// À appliquer dans CombatSystem : def * (1 - GetNeutralArmorPenetration()).
+    /// </summary>
+    public float GetNeutralArmorPenetration()
+        => GetNeutralRank() >= 5 ? 0.07f : 0f;
 
     // =========================================================
     // VULNÉRABILITÉ — GDD §6.3
@@ -415,6 +533,7 @@ public class ElementalSystem : MonoBehaviour
             {
                 ElementType dominant = GetDominantElement();
                 string ep = dominant.GetEpithet(equippedWeapon);
+                Debug.Log($"Mono mode : dominant = {dominant}, épithète = '{ep}'");
                 return string.IsNullOrEmpty(ep) ? dominant.GetLabel() : ep;
             }
 
@@ -485,3 +604,5 @@ public class SavedElementAffinity
     public string element;
     public float  weight;
 }
+
+

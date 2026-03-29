@@ -134,6 +134,9 @@ public class PNJData : ScriptableObject
     [Tooltip("Rayon de détection des ennemis (Mobs). Équivalent de detectionRange sur MobData.")]
     public float aggroRadius = 15f;
 
+    [Tooltip("Distance max depuis le spawn avant de lâcher la cible et rentrer. 0 = illimité.")]
+    public float leashRadius = 10f;
+
     [Tooltip("Portée d'attaque. 0 = utilise basicAttackSkill.range.")]
     public float attackRange = 0f;
 

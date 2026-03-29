@@ -5,7 +5,7 @@ using UnityEngine;
 // =============================================================
 // WEAPONTYPE.CS — Data-driven, zéro switch à maintenir
 // Path : Assets/Scripts/Data/Inventory/Equipment/WeaponType.cs
-// AetherTree GDD v3.5 — §5.1 (WeaponType / WeaponCategory / WeaponTypeRegistry)
+// AetherTree GDD v3.5 — §5.1 (WeaponType / WeaponCategory)
 //
 // Pour ajouter une nouvelle arme :
 //   1. Ajouter la valeur dans WeaponType
@@ -14,15 +14,16 @@ using UnityEngine;
 //   C'est tout. Catégorie, famille, isStarting → auto-détectés.
 //   Le basicAttackSkill est assigné dans WeaponTypeRegistry (Inspector).
 //
-// Armes de départ (démo) : ShortSword, Bow, Staff
-// Armes de départ (final) : ShortSword, GreatAxe, Scythe,
-//   Mace, Dagger, Shield, Bow, Pistol, Whip, Staff, Orb,
-//   Tome, Wand
+// Titre d'arme (GetWeaponLabel) :
+//   Chaque WeaponType a un titre lisible utilisé dans le titre élémentaire.
+//   Ex: ShortSword → "Lame" | GreatAxe → "Berserker" | Staff → "Mage"
+//   Les variantes ont leur propre titre (LongSword → "Chevalier").
+//   Utilisé par Player.RefreshTitle() pour construire "Lame Embrasée".
 // =============================================================
 
 
 // =============================================================
-// WEAPONINFОATTRIBUTE
+// WEAPONINFOATTRIBUTE
 // =============================================================
 [AttributeUsage(AttributeTargets.Field)]
 public class WeaponInfoAttribute : Attribute
@@ -31,7 +32,6 @@ public class WeaponInfoAttribute : Attribute
     public bool           IsStarting { get; }
     public WeaponType     Family     { get; }
 
-    /// <summary>Arme de départ.</summary>
     public WeaponInfoAttribute(WeaponCategory category)
     {
         Category   = category;
@@ -39,7 +39,6 @@ public class WeaponInfoAttribute : Attribute
         Family     = WeaponType.Any;
     }
 
-    /// <summary>Variante in-game d'une famille de départ.</summary>
     public WeaponInfoAttribute(WeaponCategory category, WeaponType family)
     {
         Category   = category;
@@ -54,98 +53,82 @@ public class WeaponInfoAttribute : Attribute
 // =============================================================
 public enum WeaponType
 {
-    Any,    // Joker — aucune restriction
+    Any,
 
-
-    // ── Unarmed ─────────────────────────────────────────────────
     [WeaponInfo(WeaponCategory.Unarmed)]
     UnArmed,
 
-
     // ── Mêlée ───────────────────────────────────────────────────
-
-    // Épée courte — départ démo + final
     [WeaponInfo(WeaponCategory.Melee)]
     ShortSword,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.ShortSword)]
-    LongSword,          // Épée longue
+    LongSword,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.ShortSword)]
-    DoubleSword,        // Double épée
+    DoubleSword,
 
-    // Hache — départ final uniquement
     [WeaponInfo(WeaponCategory.Melee)]
-    GreatAxe,           // Pas de variante pour l'instant
+    GreatAxe,
 
-    // Faux — départ final uniquement
     [WeaponInfo(WeaponCategory.Melee)]
-    Scythe,             // Pas de variante pour l'instant
+    Scythe,
 
-    // Massue — départ final uniquement
     [WeaponInfo(WeaponCategory.Melee)]
     Mace,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.Mace)]
-    Hammer,             // Marteau (variante de la massue)
+    Hammer,
 
-    // Dague — départ final uniquement
     [WeaponInfo(WeaponCategory.Melee)]
     Dagger,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.Dagger)]
-    DoubleDagger,       // Double dague
+    DoubleDagger,
 
-    // Bouclier — départ final uniquement (pas de variante)
     [WeaponInfo(WeaponCategory.Melee)]
     Shield,
 
-
     // ── Distance ────────────────────────────────────────────────
-
-    // Arc — départ démo + final
     [WeaponInfo(WeaponCategory.Ranged)]
     Bow,
 
     [WeaponInfo(WeaponCategory.Ranged, WeaponType.Bow)]
-    Crossbow,           // Arbalète
+    Crossbow,
 
-    // Pistolet — départ final uniquement
     [WeaponInfo(WeaponCategory.Ranged)]
     Pistol,
 
     [WeaponInfo(WeaponCategory.Ranged, WeaponType.Pistol)]
-    Shotgun,            // Pompe
+    Shotgun,
 
     [WeaponInfo(WeaponCategory.Ranged, WeaponType.Pistol)]
-    Sniper,             // Sniper
-
-    // Fouet — départ final uniquement (pas de variante)
-    [WeaponInfo(WeaponCategory.Ranged)]
-    Whip,
+    Sniper,
 
 
     // ── Magique ─────────────────────────────────────────────────
-
-    // Bâton — départ démo + final
     [WeaponInfo(WeaponCategory.Magic)]
     Staff,
 
     [WeaponInfo(WeaponCategory.Magic, WeaponType.Staff)]
-    Scepter,            // Sceptre
+    Scepter,
 
-    // Orbe — départ final uniquement (pas de variante)
     [WeaponInfo(WeaponCategory.Magic)]
     Orb,
 
-    // Tome — départ final uniquement (pas de variante)
     [WeaponInfo(WeaponCategory.Magic)]
     Tome,
 
-    // Baguette — départ final uniquement (pas de variante)
     [WeaponInfo(WeaponCategory.Magic)]
     Wand,
 }
+
+
+// =============================================================
+// ENUMS LIÉS
+// =============================================================
+public enum WeaponCategory { Unarmed, Melee, Ranged, Magic }
+public enum ArmorType      { Melee, Ranged, Magic }
 
 
 // =============================================================
@@ -166,7 +149,7 @@ public static class WeaponTypeExtensions
         return info;
     }
 
-    /// <summary>Catégorie de l'arme (Melee/Ranged/Magic).</summary>
+    /// <summary>Catégorie de l'arme (Unarmed/Melee/Ranged/Magic).</summary>
     public static WeaponCategory GetCategory(this WeaponType type)
         => GetInfo(type)?.Category ?? WeaponCategory.Melee;
 
@@ -214,8 +197,8 @@ public static class WeaponTypeExtensions
         return result;
     }
 
-    /// <summary>Toutes les armes de départ sélectionnables à la création (13 familles — version finale).
-    /// Exclut WeaponType.UnArmed (Unarmed) qui n'est pas un choix de départ.</summary>
+    /// <summary>Toutes les armes de départ sélectionnables à la création.
+    /// Exclut WeaponType.Any et WeaponType.UnArmed.</summary>
     public static List<WeaponType> GetAllStartingWeapons()
     {
         var result = new List<WeaponType>();
@@ -241,86 +224,48 @@ public static class WeaponTypeExtensions
     /// <summary>True si cette arme est une variante débloquable (pas une arme de départ).</summary>
     public static bool IsVariant(this WeaponType type)
         => type != WeaponType.Any && !type.IsStartingWeapon();
-}
 
-
-// =============================================================
-// WEAPONTYPEREGISTRY — ScriptableObject global
-// Mappe chaque WeaponType (famille de départ) vers son skill
-// d'attaque de base. Les variantes héritent automatiquement
-// via WeaponTypeExtensions.GetStartingFamily().
-//
-// Ex: LongSword → famille ShortSword → ShortSword_Skill_01
-//
-// Usage : WeaponTypeRegistry.Instance.GetBasicAttackSkill(weaponType)
-//
-// Setup : créer via Assets > Create > AetherTree > Weapons > WeaponTypeRegistry
-//         et assigner dans GameDataRegistry sur le GameObject _Managers.
-// =============================================================
-[CreateAssetMenu(fileName = "WeaponTypeRegistry", menuName = "AetherTree/Weapons/WeaponTypeRegistry")]
-public class WeaponTypeRegistry : ScriptableObject
-{
-    public static WeaponTypeRegistry Instance { get; internal set; }
-
-    [System.Serializable]
-    public class WeaponSkillEntry
-    {
-        [Tooltip("Type d'arme de départ (famille). Ex: ShortSword, Bow, Staff...")]
-        public WeaponType weaponType;
-        [Tooltip("Skill d'attaque de base assigné à cette famille.")]
-        public SkillData  basicAttackSkill;
-    }
-
-    [Header("Mapping WeaponType (famille) → Skill d'attaque de base")]
-    [Tooltip("N'assigner que les armes de départ (familles).\n" +
-             "Les variantes (LongSword, DoubleSword...) héritent automatiquement.")]
-    public List<WeaponSkillEntry> entries = new List<WeaponSkillEntry>();
-
-    // Cache pour éviter une recherche linéaire à chaque appel
-    private Dictionary<WeaponType, SkillData> _cache;
-
-    private void OnEnable()
-    {
-        Instance = this;
-        BuildCache();
-    }
-
-    private void BuildCache()
-    {
-        _cache = new Dictionary<WeaponType, SkillData>();
-        foreach (var entry in entries)
-        {
-            if (entry.basicAttackSkill == null)
-            {
-                Debug.LogWarning($"[WeaponTypeRegistry] {entry.weaponType} : basicAttackSkill non assigné !");
-                continue;
-            }
-            _cache[entry.weaponType] = entry.basicAttackSkill;
-        }
-    }
+    // =============================================================
+    // TITRE D'ARME — utilisé dans Player.RefreshTitle()
+    // Indépendant du weaponName SO (ex: "Épée du Dragon").
+    // Chaque WeaponType a son propre titre de classe.
+    // Ex: ShortSword → "Lame" | LongSword → "Chevalier" | Staff → "Mage"
+    // =============================================================
 
     /// <summary>
-    /// Retourne le skill d'attaque de base pour un WeaponType donné.
-    /// Les variantes remontent automatiquement à leur famille de départ.
-    /// Retourne null si introuvable — l'appelant doit logger l'erreur.
+    /// Titre de classe de l'arme — utilisé pour construire le titre élémentaire complet.
+    /// Ex: "Lame Embrasée", "Chevalier Radieux", "Berserker Volcanique".
+    /// Retourne "" pour Any / UnArmed.
     /// </summary>
-    public SkillData GetBasicAttackSkill(WeaponType weaponType)
+    public static string GetWeaponLabel(this WeaponType wt)
     {
-        if (_cache == null) BuildCache();
-
-        // Remonte à la famille de départ si c'est une variante
-        WeaponType family = weaponType.GetStartingFamily();
-
-        if (_cache.TryGetValue(family, out SkillData skill))
-            return skill;
-
-        return null;
+        return wt switch
+        {
+            // ── Mêlée ──────────────────────────────────────────
+            WeaponType.ShortSword   => "Lame",
+            WeaponType.LongSword    => "Chevalier",
+            WeaponType.DoubleSword  => "Duelliste",
+            WeaponType.GreatAxe     => "Berserker",
+            WeaponType.Scythe       => "Faucheur",
+            WeaponType.Mace         => "Briseur",
+            WeaponType.Hammer       => "Écraseur",
+            WeaponType.Dagger       => "Assassin",
+            WeaponType.DoubleDagger => "Traqueur",
+            WeaponType.Shield       => "Sentinelle",
+            // ── Distance ───────────────────────────────────────
+            WeaponType.Bow          => "Archer",
+            WeaponType.Crossbow     => "Arbalétrier",
+            WeaponType.Pistol       => "Tireur",
+            WeaponType.Shotgun      => "Gunner",
+            WeaponType.Sniper       => "Précisionniste",
+            // ── Magique ────────────────────────────────────────
+            WeaponType.Staff        => "Mage",
+            WeaponType.Scepter      => "Arcaniste",
+            WeaponType.Orb          => "Gardien de l'Âme",
+            WeaponType.Tome         => "Bibliomancien",
+            WeaponType.Wand         => "Enchanteur",
+            // ── Fallback ───────────────────────────────────────
+            _                       => ""
+        };
     }
 }
-
-
-// =============================================================
-// ENUMS LIÉS
-// =============================================================
-public enum WeaponCategory { Unarmed, Melee, Ranged, Magic }
-public enum ArmorType      { Melee, Ranged, Magic }

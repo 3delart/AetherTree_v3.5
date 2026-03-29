@@ -275,7 +275,7 @@ public class SkillSystem : MonoBehaviour
         proxy.damageMeleeRatio  = step.damageMeleeRatio;
         proxy.damageRangedRatio = step.damageRangedRatio;
         proxy.damageMagicRatio  = step.damageMagicRatio;
-        proxy.elementalRatio    = step.elementalRatio;
+        proxy.elementalMultiplier = step.elementalMultiplier;
         proxy.elements          = new List<ElementType> { step.element };
 
         float dmg = CalculateDamage(proxy, caster, target);
@@ -638,6 +638,19 @@ public class SkillSystem : MonoBehaviour
 
                 if (target is Mob mobDmg && caster is Player pDmg)
                     mobDmg.RegisterLastSkill(pDmg, skill);
+                
+                // ── Hit / Dodge check ──────────────────────────────
+                float effectivePrecision = caster.GetEffectivePrecision();
+                if (caster.statusEffects != null && caster.statusEffects.isBlinded)
+                    effectivePrecision *= (1f - caster.statusEffects.GetBlindMalus());
+
+                float effectiveDodge = target.GetEffectiveDodge();
+
+                if (CombatSystem.Instance.RollDodge(effectiveDodge, effectivePrecision))
+                {
+                    FloatingText.Spawn("Miss", target.transform.position, Color.gray, heightOffset: 1.8f);
+                    break;
+                }
 
                 target.TakeDamage(dmg, skill.PrimaryElement, caster);
 
@@ -680,7 +693,7 @@ public class SkillSystem : MonoBehaviour
         if (CombatSystem.Instance == null)
         {
             float baseFallback = caster is Mob fallbackMob && fallbackMob.data != null
-                ? fallbackMob.data.attackDamage
+                ? fallbackMob.data.baseAtkMin
                 : 10f;
             return baseFallback * skill.damageMultiplier * Random.Range(0.9f, 1.1f);
         }

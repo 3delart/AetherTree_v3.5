@@ -67,12 +67,14 @@ public class WeaponData : ScriptableObject
     [Tooltip("Borne haute du roll pour la précision.")]
     public float basePrecisionMax = 95f;
 
+    [Range(0f, 1f)]
     public float critChance = 0.1f; // 10% de chance de critique par défaut — GDD §5.1.
     [Tooltip("Forcé à 0 si weaponCategory == Magic — GDD §5.1.")]
-    [Range(0f, 1f)]
-
+    
+    [Range(0f, 5f)]
     public float critMultiplier = 0.20f; // +20% de dégâts critiques par défaut — s'additionne à la base 1 du joueur. GDD §5.1.
     [Tooltip("S'additionne à la base 1 du joueur. Ex: 0.20 → mult effectif = 1.20")]
+    
     // ── Configuration — effets et bonus ───────────────────────
     [Header("Configuration (bonus, effets de statut, résistances, on-hit)")]
     public EquipmentConfig config;

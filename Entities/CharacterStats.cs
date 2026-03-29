@@ -21,6 +21,9 @@ using UnityEngine;
 //   ⑧ Esprits (SpiritData) → points élémentaires + milestones.bonuses + config.bonuses
 //   ⑨ Skills permanents    → StatBonus + DebuffResistances
 //   ⑩ StatPointSystem      → bonus paliers investis — GDD §3.2.1
+//   ⑪ Rang d'affinité élém → appliqué à la volée dans CombatSystem (Mono/Dual) — GDD §6.2
+//   ⑫ Rang Neutre          → CritChance + CritMult cumulatifs — GDD §6.3
+//                            (dégâts base, armure, dégâts reçus → CombatSystem / TakeDamage)
 //
 // Chaque équipement expose ses bonus via EquipmentConfig (champ unique) :
 //   config.bonuses / config.statusEffects /
@@ -74,6 +77,12 @@ public class CharacterStats
     /// </summary>
     public float cooldownReduction { get; private set; } = 0f;
 
+    /// <summary>
+    /// Résistances élémentaires cumulées depuis équipements + permanents + StatPoints.
+    /// </summary>
+    public Dictionary<ElementType, float> elementalResistances { get; private set; }
+    = new Dictionary<ElementType, float>();
+
     // =========================================================
     // CONSTRUCTEUR
     // =========================================================
@@ -84,6 +93,7 @@ public class CharacterStats
         {
             elementalPoints[e]            = 0f;
             elementalPointsMultipliers[e] = 0f;
+            elementalResistances[e]       = 0f;
         }
     }
 
@@ -151,7 +161,7 @@ public class CharacterStats
             accAttackMax      = weapon.FinalDamageMax;
             accPrecision      = weapon.FinalPrecision;
             accCritChance     = weapon.CritChance;
-            accCritMultiplier = weapon.CritMultiplier; // GDD §5.1 — rollé, s additionne à la base 1.5
+            accCritMultiplier += weapon.CritMultiplier;
             AccumulateStatBonuses(weapon.Bonuses, ref accAttackMin, ref accAttackMax,
                 ref accPrecision, ref accCritChance, ref accCritMultiplier,
                 ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
@@ -378,11 +388,33 @@ public class CharacterStats
         }
 
         // =========================================================
-        // MULTIPLICATEURS ÉLÉMENTAIRES
+        // BONUS DE RANG D'AFFINITÉ — GDD §6.2
+        // Les bonus flat + % de rang élémentaire (Mono/Dual) sont appliqués
+        // à la volée dans CombatSystem, comme les bonus Neutre.
+        // Les elementalPoints poussés ici sont donc toujours la valeur BRUTE
+        // d'équipement — le rang booste au moment du calcul en combat.
         // =========================================================
-        foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
-            if (elementalPointsMultipliers[e] > 0f)
-                elementalPoints[e] *= (1f + elementalPointsMultipliers[e]);
+
+        // =========================================================
+        // BONUS DE RANG NEUTRE — GDD §6.3
+        // CritChance et CritMult poussés sur les accumulateurs.
+        // Dégâts base (×mult) poussés sur accAttackMin/Max → Entity stocke la valeur finale.
+        // CombatSystem ne multiplie plus baseDamage. GDD §6.3.
+        // =========================================================
+        var elemSys = player.GetElementalSystem();
+        if (elemSys != null)
+        {
+            accCritChance     += elemSys.GetNeutralCritChanceBonus();
+            accCritMultiplier += elemSys.GetNeutralCritMultBonus();
+
+            // Bonus dégâts Neutre — multiplié sur ATK avant push sur Entity
+            float neutralMult = elemSys.GetNeutralDamageMultiplier();
+            if (neutralMult > 1f)
+            {
+                accAttackMin *= neutralMult;
+                accAttackMax *= neutralMult;
+            }
+        }
 
         // =========================================================
         // BASE HP/MANA/REGEN depuis CharacterData + niveau + WeaponCategory
@@ -442,6 +474,9 @@ public class CharacterStats
         // Points élémentaires — poussés sur Entity pour lecture par CombatSystem / ElementalSystem
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
             player.SetElementalPoints(e, elementalPoints[e]);
+
+        foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+            elementalResistances[e] = accResist[e];
 
         // Résistances aux debuffs
         ApplyDebuffResistances(player);
@@ -605,6 +640,6 @@ public class CharacterStats
 
     /// <summary>Résistance élémentaire pour un élément donné [0..1].</summary>
     public float GetResistance(ElementType element)
-        => elementalPoints.TryGetValue(element, out float v) ? v : 0f;
+    => elementalResistances.TryGetValue(element, out float v) ? v : 0f;
        
 }

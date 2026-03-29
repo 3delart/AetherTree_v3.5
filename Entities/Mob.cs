@@ -78,41 +78,51 @@ public class Mob : Entity
         ApplyData();
     }
 
-    private void ApplyData()
+       private void ApplyData()
     {
         if (data == null) return;
+ 
         entityName     = data.mobName;
         entityType     = EntityType.Mob;
-        // GDD v3.5 §3.1 — weaponCategory du mob détermine quelle défense du joueur s'applique
         weaponCategory = data.weaponCategory;
-
-        // Pousse toutes les stats via les setters Entity
-        SetMaxHP          (data.maxHP);
-        SetMaxMana        (data.maxMana);
+ 
+        // ── Calcul des stats finales via MobStatCalculator ────
+        // mobLevel est assigné par SpawnManager avant Awake().
+        // Si le mob est placé directement en scène sans SpawnManager,
+        // mobLevel vaut 1 (valeur par défaut du champ public).
+        MobComputedStats s = MobStatCalculator.Calculate(data, mobLevel);
+ 
+        // ── Push sur Entity via les setters ──────────────────
+        SetMaxHP          (s.maxHP);
+        SetMaxMana        (s.maxMana);
+        SetAttackDamageMin(s.atkMin);
+        SetAttackDamageMax(s.atkMax);
+        SetMeleeDefense   (s.meleeDef);
+        SetRangedDefense  (s.rangedDef);
+        SetMagicDefense   (s.magicDef);
+        SetPrecision      (s.precision);
+        SetDodge          (s.dodge);
+        SetCritChance     (s.critChance);
+        SetCritMultiplier (s.critMultiplier);
         SetMoveSpeed      (data.moveSpeed);
-        SetAttackDamageMin(data.attackDamage);
-        SetAttackDamageMax(data.attackDamage);
-        SetPrecision      (data.precision);
-        SetCritChance     (data.critChance);
-        SetCritMultiplier (data.critMultiplier);
-        SetDodge          (data.dodge);
-        SetMeleeDefense   (data.meleeDefense);
-        SetRangedDefense  (data.rangedDefense);
-        SetMagicDefense   (data.magicDefense);
 
-        // Regen — 0f par défaut, poussé uniquement si défini sur le SO (boss, cas spéciaux) — GDD §3.1
-        if (data.regenHP   > 0f) SetRegenHP  (data.regenHP);
-        if (data.regenMana > 0f) SetRegenMana(data.regenMana);
-
+        // ── Points élémentaires ───────────────────────────────
+        // Poussés sur Entity pour que CombatSystem les lise via
+        // GetElementalPoints() — même pipeline que le joueur. GDD §6.2.
+        SetElementalPoints(data.elementType, s.elemPoints);
+ 
+        if (s.regenHP   > 0f) SetRegenHP  (s.regenHP);
+        if (s.regenMana > 0f) SetRegenMana(s.regenMana);
+ 
         currentHP   = maxHP;
         currentMana = maxMana;
         agent.speed = data.moveSpeed;
-
-        // Résistances élémentaires depuis MobData SO
+ 
+        // ── Résistances élémentaires — profil fixe du SO ─────
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
             SetElementalResistance(e, data.GetElementalResistance(e));
-
-        // Fige le snapshot — RequestRecalculate() repartira de ces valeurs
+ 
+        // ── Snapshot — base pour buffs/debuffs ────────────────
         SnapshotBaseStats();
     }
 

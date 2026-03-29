@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // =============================================================
 // SKILLDATA — ScriptableObject définissant un sort
 // Path : Assets/Scripts/Data/Skills/SkillData.cs
-// AetherTree GDD v30 — Section 4
+// AetherTree GDD v3.5 — Section 4
 //
 // Ordre Inspector :
 //   ① Identité      — nom, description, tags, skillType, icon, vfx, son
@@ -12,15 +12,27 @@ using System.Collections.Generic;
 //   ③ Effet principal — effectType, damageMultiplier, cooldown, castTime
 //   ④ Coût           — mana, HP, gold
 //   ⑤ Ciblage & Portée
-//   ⑥ Éléments & Ratios de dégâts
+//   ⑥ Éléments & Multiplicateur élémentaire
 //   ⑦ Effets secondaires (StatusEffects SO)
 //   ⑨ Visuel & Son
+//
+// Calcul des dégâts (GDD §6.2) :
+//   Physique  — baseDamage * damageMultiplier * ratio → réduit par défense
+//     mRed = (dmg*meleeRatio)²  / (dmg*meleeRatio  + def * 1.5)
+//     rRed = (dmg*rangedRatio)² / (dmg*rangedRatio + def * 1.5)
+//     gRed = (dmg*magicRatio)²  / (dmg*magicRatio  + def * 1.5)
+//     physDamage = mRed + rRed + gRed
+//
+//   Élémentaire — indépendant de l'arme, basé sur les elemPoints du joueur
+//     elemDamage = elemPoints * elementalMultiplier
+//     elemDamage *= (1 - résistance effective)
+//
+//   Total = physDamage + elemDamage
 //
 // Ratios de dégâts (damageMeleeRatio + damageRangedRatio + damageMagicRatio = 1.0) :
 //   Ex: skill mêlée pur      → Melee 1.0 / Ranged 0.0 / Magic 0.0
 //   Ex: skill hybride         → Melee 0.7 / Ranged 0.0 / Magic 0.3
 //   Ex: projectile magique    → Melee 0.0 / Ranged 0.3 / Magic 0.7
-// CombatSystem lit ces ratios pour appliquer la défense pondérée de la cible.
 //
 // ⚠ Les skills permanents (bonus stats définitifs) utilisent PermanentSkillData,
 //   un SO séparé — pas SkillData. SkillType.Permanent a été supprimé.
@@ -45,11 +57,14 @@ public class SkillData : ScriptableObject
     // ── ③ Effet principal ─────────────────────────────────────
     [Header("③ Effet principal")]
     [Tooltip("Effet principal du skill.\n" +
-             "Damage → inflige des dégâts (damageMultiplier × arme)\n" +
+             "Damage → inflige des dégâts physiques + élémentaires\n" +
              "Buff   → applique uniquement des buffs (via StatusEffects)\n" +
              "Debuff → applique uniquement des debuffs (via StatusEffects)\n" +
              "Other  → effet spécial (drain, téléport, invocation...)")]
     public SkillEffectType effectType       = SkillEffectType.Damage;
+
+    [Tooltip("Multiplicateur global sur les dégâts physiques.\n" +
+             "Ex: 1.0 = dégâts normaux | 2.0 = double dégâts physiques")]
     public float           damageMultiplier = 1f;
     public float           cooldown         = 1f;
     public float           castTime         = 0f;
@@ -72,8 +87,8 @@ public class SkillData : ScriptableObject
     [Tooltip("Durée de vie de l'invocation en secondes. 0 = permanent jusqu'à la mort.")]
     public float summonDuration = 30f;
 
-    // ── Ratios de dégâts — GDD v30 §4.2 ──────────────────────
-    [Header("③ Ratios de dégâts (somme doit = 1.0)")]
+    // ── ③ Ratios de dégâts physiques ──────────────────────────
+    [Header("③ Ratios de dégâts physiques (somme doit = 1.0)")]
     [Tooltip("Part des dégâts réduite par la défense Mêlée de la cible.\n" +
              "Ex: skill mêlée pur → 1.0 | skill hybride → 0.7")]
     [Range(0f, 1f)]
@@ -108,13 +123,19 @@ public class SkillData : ScriptableObject
 
     // ── ⑥ Éléments ────────────────────────────────────────────
     [Header("⑥ Éléments")]
-    [Tooltip("Vide = Neutre pur | 1 = élémentaire | 2+ = combo élémentaire")]
-    public List<ElementType> elements            = new List<ElementType>();
-    public float             elementalMultiplier = 1f;
-    [Range(0f, 1f)]
-    [Tooltip("Part élémentaire des dégâts (0–1). Ex: 0.3 = 30% élém + 70% physique.\n" +
-             "Utilisé par CombatSystem pipeline §6.1.")]
-    public float             elementalRatio      = 0.3f;
+    [Tooltip("Vide = Neutre pur (pas de dégâts élémentaires)\n" +
+             "1 élément = skill élémentaire\n" +
+             "2+ éléments = skill combo élémentaire")]
+    public List<ElementType> elements = new List<ElementType>();
+
+    [Range(0f, 5f)]
+    [Tooltip("Multiplicateur élémentaire appliqué sur les elemPoints du joueur. GDD §6.2.\n" +
+             "0   = pas de dégâts élémentaires (skill purement physique)\n" +
+             "1.0 = elemPoints × 1.0  (ex: 300 pts → 300 dégâts elem)\n" +
+             "2.5 = elemPoints × 2.5  (ex: 300 pts → 750 dégâts elem)\n" +
+             "5.0 = skill burst élémentaire maximum\n" +
+             "⚠ Ignoré automatiquement si elements est vide (skill Neutre)")]
+    public float elementalMultiplier = 1f;
 
     // ── ⑦ Effets secondaires (StatusEffects SO) ───────────────
     [Header("⑦ Effets secondaires (BuffData / DebuffData + chance)")]
@@ -152,9 +173,21 @@ public class SkillData : ScriptableObject
     public AudioClip  soundEffect;
 
     // ── Helpers ───────────────────────────────────────────────
-    public bool        IsNeutral      => elements == null || elements.Count == 0;
-    public bool        IsCombo        => elements != null && elements.Count >= 2;
+
+    /// <summary>True si le skill n'a aucun élément — pas de dégâts élémentaires.</summary>
+    public bool IsNeutral => elements == null || elements.Count == 0;
+
+    /// <summary>True si le skill a 2 éléments ou plus (combo élémentaire).</summary>
+    public bool IsCombo => elements != null && elements.Count >= 2;
+
+    /// <summary>Élément principal du skill. Neutral si aucun élément défini.</summary>
     public ElementType PrimaryElement => IsNeutral ? ElementType.Neutral : elements[0];
+
+    /// <summary>
+    /// Multiplicateur élémentaire effectif.
+    /// Retourne 0 si le skill est Neutre — éléments vides = pas de dégâts élémentaires.
+    /// </summary>
+    public float EffectiveElementalMultiplier => IsNeutral ? 0f : elementalMultiplier;
 
     public bool HasElement(ElementType e) => !IsNeutral && elements.Contains(e);
     public bool HasTag(SkillTag t)        => tags != null && tags.Contains(t);
@@ -174,12 +207,12 @@ public class SkillData : ScriptableObject
     /// <summary>
     /// Défense pondérée selon les ratios du skill.
     /// Ex: skill (meleeRatio=0.7, magicRatio=0.3) → meleeDefense×0.7 + magicDefense×0.3
-    /// Appelé par PlayerStats.GetWeightedDefense — GDD v30 §6.1.
+    /// Appelé par CombatSystem — GDD §6.2.
     /// </summary>
     public float GetWeightedDefense(float meleeDefense, float rangedDefense, float magicDefense)
-        => meleeDefense * damageMeleeRatio
+        => meleeDefense  * damageMeleeRatio
          + rangedDefense * damageRangedRatio
-         + magicDefense * damageMagicRatio;
+         + magicDefense  * damageMagicRatio;
 }
 
 // =============================================================
@@ -200,7 +233,7 @@ public enum SkillType
 
 public enum SkillEffectType
 {
-    Damage,  // Inflige des dégâts (damageMultiplier × arme)
+    Damage,  // Inflige des dégâts physiques + élémentaires
     Buff,    // Applique uniquement des buffs (via StatusEffects SO)
     Debuff,  // Applique uniquement des debuffs (via StatusEffects SO)
     Other,   // Effet spécial (drain, téléport, invocation, dash...)
@@ -280,16 +313,21 @@ public class HitStep
     [Min(0f)]
     public float delay = 0.3f;
 
-    [Header("Dégâts")]
+    [Header("Dégâts physiques")]
     public float damageMultiplier  = 1f;
     [Range(0f, 1f)] public float damageMeleeRatio  = 1f;
     [Range(0f, 1f)] public float damageRangedRatio = 0f;
     [Range(0f, 1f)] public float damageMagicRatio  = 0f;
 
     [Header("Élémentaire")]
-    public ElementType element        = ElementType.Neutral;
-    [Range(0f, 1f)]
-    public float       elementalRatio = 0f;
+    [Tooltip("Élément de ce hit. Neutral = pas de dégâts élémentaires sur ce hit.")]
+    public ElementType element             = ElementType.Neutral;
+
+    [Range(0f, 5f)]
+    [Tooltip("Multiplicateur élémentaire de ce hit.\n" +
+             "0 = pas de dégâts élémentaires | 1.0 = elemPoints × 1.0\n" +
+             "⚠ Ignoré si element = Neutral")]
+    public float       elementalMultiplier = 0f;
 
     [Header("Effets de statut — appliqués sur ce hit uniquement")]
     public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
@@ -297,4 +335,8 @@ public class HitStep
     [Header("VFX / Son (optionnel — utilise celui du skill parent si vide)")]
     public GameObject vfxPrefab;
     public AudioClip  soundEffect;
+
+    /// <summary>Multiplicateur élémentaire effectif — 0 si élément Neutral.</summary>
+    public float EffectiveElementalMultiplier
+        => element == ElementType.Neutral ? 0f : elementalMultiplier;
 }

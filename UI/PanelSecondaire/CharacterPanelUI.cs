@@ -382,7 +382,9 @@ public class CharacterPanelUI : MonoBehaviour
         float       affinity = _elemental.GetAffinity(dom);
         int         rank     = _elemental.GetElementRank(dom);
         // Points élémentaires lus sur Entity (SetElementalPoints appelé par RecalculateStats)
-        float       pts      = _player.GetElementalPoints(dom);
+        // Dans RefreshCardElemental et RefreshDetailElemental
+        float ptsBase = _player.GetElementalPoints(dom);
+        float ptsTotal = _elemental.GetEffectiveElementPoints(dom);
 
         if (elementActifText != null)
         {
@@ -392,7 +394,7 @@ public class CharacterPanelUI : MonoBehaviour
 
         SetText(elementRankText,     $"Rang {rank}");
         SetText(elementAffinityText, $"{affinity * 100f:F0}%");
-        SetText(elementPtsText,      $"{Mathf.RoundToInt(pts)} pts");
+        SetText(elementPtsText,      $"{Mathf.RoundToInt(ptsTotal)} pts");
         // cooldownReduction vit dans CharacterStats (non sur Entity — lue par SkillSystem)
         SetText(cooldownReductText,  $"{_player.stats.cooldownReduction * 100f:F1}%");
     }

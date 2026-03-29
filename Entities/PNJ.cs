@@ -478,45 +478,45 @@ public class PNJ : Entity
 
         _attackTimer -= Time.deltaTime;
 
+        // ── Vérification leash ────────────────────────────────
+        if (data.leashRadius > 0f &&
+            Vector3.Distance(transform.position, _spawnPos) > data.leashRadius)
+        {
+            // Trop loin du spawn — lâche la cible et rentre
+            _combatTarget = null;
+            ReturnToSpawn();
+            return;
+        }
+
         // Actualise la cible si nécessaire
         if (_combatTarget == null || _combatTarget.isDead)
             _combatTarget = FindClosestEnemy();
 
-        // Pas de cible → retour au spawn
         if (_combatTarget == null || _combatTarget.isDead)
         {
             ReturnToSpawn();
             return;
         }
 
-        float dist = Vector3.Distance(transform.position, _combatTarget.transform.position);
-
-        // Portée d'attaque : data.attackRange, ou celle du basicAttackSkill si 0
+        float dist        = Vector3.Distance(transform.position, _combatTarget.transform.position);
         float attackRange = data.attackRange > 0f
             ? data.attackRange
             : (data.basicAttackSkill != null ? data.basicAttackSkill.range : 2f);
 
         if (dist <= attackRange)
         {
-            // À portée — on stoppe le déplacement et on attaque
             _agent?.ResetPath();
             LookAt(_combatTarget.transform);
-
-            // Tente d'abord un skill secondaire
             if (TryUseSecondarySkill(_combatTarget)) return;
-
-            // Attaque de base
             if (_attackTimer <= 0f && data.basicAttackSkill != null)
             {
                 if (!isDead && !_combatTarget.isDead)
                     _skillSystem.Execute(data.basicAttackSkill, this, _combatTarget);
-
                 _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             }
         }
         else
         {
-            // Hors portée — on se déplace vers la cible
             _agent?.SetDestination(_combatTarget.transform.position);
         }
     }
