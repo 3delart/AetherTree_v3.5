@@ -38,17 +38,19 @@ public class QuestRewardItem
     {
         get
         {
-            if (weapon     != null) return weapon.weaponName;
-            if (armor      != null) return armor.armorName;
-            if (helmet     != null) return helmet.helmetName;
-            if (gloves     != null) return gloves.glovesName;
-            if (boots      != null) return boots.bootsName;
-            if (jewelry    != null) return jewelry.jewelryName;
-            if (spirit     != null) return spirit.spiritName;
-            if (consumable != null) return quantity > 1 ? $"{consumable.consumableName} ×{quantity}" : consumable.consumableName;
-            if (resource   != null) return quantity > 1 ? $"{resource.resourceName} ×{quantity}"    : resource.resourceName;
-            if (gem        != null) return gem.gemName;
-            if (rune       != null) return rune.runeName;
+            string lang(LocalizedText t) => t.Get(LocalizationManager.CurrentLanguage);
+
+            if (weapon     != null) return lang(weapon.displayName);
+            if (armor      != null) return lang(armor.displayName);
+            if (helmet     != null) return lang(helmet.displayName);
+            if (gloves     != null) return lang(gloves.displayName);
+            if (boots      != null) return lang(boots.displayName);
+            if (jewelry    != null) return lang(jewelry.displayName);
+            if (spirit     != null) return lang(spirit.displayName);
+            if (consumable != null) return quantity > 1 ? $"{lang(consumable.displayName)} ×{quantity}" : lang(consumable.displayName);
+            if (resource   != null) return quantity > 1 ? $"{lang(resource.displayName)} ×{quantity}"  : lang(resource.displayName);
+            if (gem        != null) return gem.gemName;   // RuneData/GemData hors scope — reste string brut
+            if (rune       != null) return rune.runeName; // idem
             return "";
         }
     }

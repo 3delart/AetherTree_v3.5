@@ -243,12 +243,12 @@ public class SpawnManager : MonoBehaviour
         }
         if (data.nodePrefab == null)
         {
-            Debug.LogWarning($"[SpawnManager] {data.resourceName} — nodePrefab non assigné !");
+            Debug.LogWarning($"[SpawnManager] {data.itemID} — nodePrefab non assigné !");
             return;
         }
         if (data.resourceType != ResourceType.Collectible)
         {
-            Debug.LogWarning($"[SpawnManager] {data.resourceName} — resourceType doit être Collectible !");
+            Debug.LogWarning($"[SpawnManager] {data.itemID} — resourceType doit être Collectible !");
             return;
         }
 

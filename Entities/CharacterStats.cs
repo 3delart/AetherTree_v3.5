@@ -194,7 +194,7 @@ public class CharacterStats
         var helmet = player.equippedHelmetInstance;
         if (helmet != null)
         {
-            // Défenses fixes définies sur HelmetData SO — pas de roll, pas de rareté. GDD §5.3.
+            // Défenses rollées (ratio, sans rareté/upgrade) définies sur HelmetData SO. GDD §5.5.
             accMeleeDefense  += helmet.MeleeDefense;
             accRangedDefense += helmet.RangedDefense;
             accMagicDefense  += helmet.MagicDefense;
@@ -484,7 +484,7 @@ public class CharacterStats
         // Fige le snapshot — RequestRecalculate() sur le joueur repartira de ces valeurs.
         // Appelé APRÈS tous les SetXxx pour que le snapshot reflète la base propre.
         player.SnapshotBaseStats();
-        GameEventBus.Publish(new StatsChangedEvent());
+        GameEventBus.Publish(new StatsChangedEvent { player = player });
     }
 
     // =========================================================

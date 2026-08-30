@@ -125,14 +125,17 @@ public class TargetingSystem : MonoBehaviour
         if (engagedTarget == null || engagedTarget.isDead) return;
         if (player.statusEffects != null && player.statusEffects.isStunned) return;
 
-        if (CombatSystem.Instance != null)
+        // ── Check de distance — avant tout ───────────────────
+        // Le RollDodge/Miss est géré dans ApplyEffectType (SkillSystem).
+        // On ne roll pas ici pour éviter d'afficher "ESQUIVE" hors range.
+        var basicAttackSkill = SkillBar.Instance.GetSkillAtSlot(0);
+        if (basicAttackSkill != null && basicAttackSkill.range > 0f)
         {
-            bool dodged = CombatSystem.Instance.RollDodge(
-                engagedTarget.GetEffectiveDodge(),
-                player.GetEffectivePrecision());
-            if (dodged)
+            float dist = Vector3.Distance(player.transform.position, engagedTarget.transform.position);
+            if (dist > basicAttackSkill.range * 1.1f)
             {
-                FloatingText.Spawn("ESQUIVE", engagedTarget.transform.position, Color.white);
+                // Hors range → approche automatique vers la cible
+                StartApproach(ApproachCombatTargetRoutine(engagedTarget, basicAttackSkill.range));
                 return;
             }
         }
@@ -392,7 +395,7 @@ public class TargetingSystem : MonoBehaviour
                 Entity target = engagedTarget ?? selectedTarget;
                 if (target == null || target.isDead)
                 {
-                    Debug.LogWarning($"[TARGETING] {skill.skillName} ({skill.targetType}) : aucune cible valide.");
+                    Debug.LogWarning($"[TARGETING] {skill.name} ({skill.targetType}) : aucune cible valide.");
                     return;
                 }
                 SkillSystem.Instance.Execute(skill, player, target);
@@ -468,6 +471,38 @@ public class TargetingSystem : MonoBehaviour
                 autoAttacking  = false;
             }
         }
+    }
+
+    // ── Routine Combat — approche vers cible engagée ─────────
+
+    private IEnumerator ApproachCombatTargetRoutine(Entity target, float attackRange)
+    {
+        if (_agent == null) yield break;
+
+        float elapsed = 0f;
+
+        while (elapsed < ApproachTimeout)
+        {
+            if (target == null || target.isDead) yield break;
+            if (engagedTarget != target)         yield break; // cible changée entre temps
+
+            _agent.SetDestination(target.transform.position);
+
+            float dist = Vector3.Distance(player.transform.position, target.transform.position);
+            if (dist <= attackRange * 1.1f)
+            {
+                // À portée — laisse TickAutoAttack reprendre
+                _agent.ResetPath();
+                _approachCoroutine = null;
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        _agent.ResetPath();
+        _approachCoroutine = null;
     }
 
     // ── Routine WorldPickupItem (item ou aeris) ───────────────

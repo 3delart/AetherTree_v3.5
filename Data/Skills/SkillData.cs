@@ -43,9 +43,12 @@ public class SkillData : ScriptableObject
 {
     // ── ① Identité ────────────────────────────────────────────
     [Header("① Identité")]
-    public string         skillName   = "SkillName";
-    [TextArea]
-    public string         description = "";
+    [Tooltip("Nom affiché au joueur (fr/en). Ne jamais utiliser dans un log/comparaison —\n" +
+             "utiliser le nom d'asset Unity (this.name, déjà la clé stable utilisée par\n" +
+             "SaveSystem.FindSOByName) pour ça.")]
+    public LocalizedText   skillName   = new LocalizedText();
+    [Tooltip("Description affichée au joueur (fr/en).")]
+    public LocalizedText   description = new LocalizedText();
     public List<SkillTag> tags        = new List<SkillTag>();
     public SkillType      skillType   = SkillType.Active;
 
@@ -172,6 +175,13 @@ public class SkillData : ScriptableObject
     public GameObject vfxPrefab;
     public AudioClip  soundEffect;
 
+    [Tooltip("Animation jouée par le caster à l'exécution du skill (PlayerAnimatorController.PlayAttack).\n" +
+             "Vide = pas d'animation dédiée (ex: buff pur, effet purement passif).\n" +
+             "⚠ Donnée visuelle — si SpellData est un jour séparé en gameplay/visuel pour le\n" +
+             "serveur-autoritaire (voir a implémenter/AetherTree_Recap_Reseau+refactor.md §Priorité 1),\n" +
+             "ce champ part du côté visuel, pas gameplay.")]
+    public AnimationClip attackAnimation;
+
     // ── Helpers ───────────────────────────────────────────────
 
     /// <summary>True si le skill n'a aucun élément — pas de dégâts élémentaires.</summary>
@@ -213,6 +223,36 @@ public class SkillData : ScriptableObject
         => meleeDefense  * damageMeleeRatio
          + rangedDefense * damageRangedRatio
          + magicDefense  * damageMagicRatio;
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        // MultiHit : SkillBar.LockForMultiHit() bloque l'auto-attaque pendant
+        // somme(hitSteps.delay) + 0.3s — si attackAnimation dure sensiblement plus
+        // longtemps, l'auto-attaque reprend la main avant la fin de l'anim et écrase
+        // le state Attack partagé en plein milieu (bug vécu — voir historique du projet).
+        // Avertissement plutôt que correction automatique : c'est aux delays ou à
+        // l'anim d'être ajustés, pas au lock de compenser en silence.
+        if (executionType == SkillExecutionType.MultiHit && attackAnimation != null
+            && hitSteps != null && hitSteps.Count > 0)
+        {
+            float totalDelay = 0f;
+            foreach (var step in hitSteps)
+                totalDelay += step.delay;
+            totalDelay += 0.3f;
+
+            float animLength = attackAnimation.length;
+            if (animLength - totalDelay > 0.15f)
+            {
+                Debug.LogWarning($"[SkillData:{name}] attackAnimation ({animLength:F2}s) dure " +
+                                  $"{(animLength - totalDelay):F2}s de plus que le lock MultiHit " +
+                                  $"({totalDelay:F2}s, somme des hitSteps.delay + marge) — l'auto-attaque " +
+                                  $"va reprendre la main avant la fin de l'animation. Allonge les delays " +
+                                  $"des hitSteps, ou raccourcis/retime l'animation.", this);
+            }
+        }
+    }
+#endif
 }
 
 // =============================================================

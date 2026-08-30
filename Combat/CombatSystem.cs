@@ -46,7 +46,8 @@ public class CombatSystem : MonoBehaviour
         SkillData      skill,
         ElementalSystem elemental,
         Player         attacker,
-        Entity         target)
+        Entity         target,
+        out bool       isCrit)
     {
         // ── 1. Base physique ──────────────────────────────────
         float baseDamage = Random.Range(attacker.AttackDamageMin, attacker.AttackDamageMax);
@@ -60,15 +61,9 @@ public class CombatSystem : MonoBehaviour
             rDef = target.GetRangedDefense();
             gDef = target.GetMagicDefense();
 
-            StatusEffectSystem targetStatus = target.GetComponent<StatusEffectSystem>();
-            if (targetStatus != null && targetStatus.armorBreakReduction > 0f)
-            {
-                mDef = Mathf.Max(0f, mDef - targetStatus.armorBreakReduction);
-                rDef = Mathf.Max(0f, rDef - targetStatus.armorBreakReduction);
-                gDef = Mathf.Max(0f, gDef - targetStatus.armorBreakReduction);
-            }
+            // ArmorBreak : déjà appliqué dans Entity.GetMeleeDefense/Ranged/Magic() — pas de double soustraction ici.
 
-            // Pénétration d'armure Neutre rang 5 — réduit les défenses de 15%
+            // Pénétration d'armure Neutre rang 5
             if (elemental != null)
             {
                 float armorPen = elemental.GetNeutralArmorPenetration();
@@ -117,8 +112,6 @@ public class CombatSystem : MonoBehaviour
                 ? attackerES.GetEffectiveElementPoints(skill.PrimaryElement)
                 : attacker.GetElementalPoints(skill.PrimaryElement); // fallback sans rang
 
-            Debug.Log($"[DEBUG ELEM] elemPoints={elemPoints} (effectifs) | multiplier={skill.EffectiveElementalMultiplier}");
-
             elemRaw    = elemPoints * skill.EffectiveElementalMultiplier;
             elemDamage = elemRaw;
 
@@ -140,8 +133,6 @@ public class CombatSystem : MonoBehaviour
             if (target != null)
             {
                 Mob targetMob = target.GetComponent<Mob>();
-                Debug.Log($"[DEBUG RESIST] targetMob={targetMob != null} | data={targetMob?.data != null} | " +
-                    $"elemResist avant pen={elemResist} | pen={elemental?.GetRank5ResistPenetration(skill.PrimaryElement)}");
 
                 // Mob → résistance sur MobData SO
                 // Joueur / PNJ / Familier → résistance poussée sur Entity par RecalculateStats
@@ -155,6 +146,10 @@ public class CombatSystem : MonoBehaviour
                     elemResist = Mathf.Max(0f, elemResist
                         - elemental.GetRank5ResistPenetration(skill.PrimaryElement));
 
+                // Barrier — résistance élémentaire du buff actif sur la cible. GDD §3.1.1.2.
+                if (target.statusEffects != null)
+                    elemResist += target.statusEffects.GetBarrierElementResist();
+
                 elemDamage *= (1f - elemResist);
             }
         }
@@ -164,7 +159,7 @@ public class CombatSystem : MonoBehaviour
         float elemFinal = elemDamage;
 
         // ── 5. Critique — appliqué sur la partie physique uniquement ──
-        bool isCrit = false;
+        isCrit = false;
         float effectiveCritChance = attacker.GetEffectiveCritChance();
         float effectiveCritMult   = attacker.CritMultiplier;
         // Note : bonus CritChance/CritMult Neutre (rangs 2+/3+) déjà inclus
@@ -206,9 +201,7 @@ public class CombatSystem : MonoBehaviour
                     - elemental.GetRank5ResistPenetration(skill.PrimaryElement));
         }
 
-        LogDamageReport("PLAYER", attacker, target, weapon, skill,
-            baseDamage, physDamage, elemRaw, elemFinal, elemResistLog,
-            totalDamage, isCrit, effectiveCritMult);
+        //LogDamageReport("PLAYER", attacker, target, weapon, skill, baseDamage, physDamage, elemRaw, elemFinal, elemResistLog, totalDamage, isCrit, effectiveCritMult);
 
         return Mathf.Max(1f, totalDamage);
     }
@@ -233,13 +226,7 @@ public class CombatSystem : MonoBehaviour
             rDef = target.GetRangedDefense();
             gDef = target.GetMagicDefense();
 
-            StatusEffectSystem targetStatus = target.GetComponent<StatusEffectSystem>();
-            if (targetStatus != null && targetStatus.armorBreakReduction > 0f)
-            {
-                mDef = Mathf.Max(0f, mDef - targetStatus.armorBreakReduction);
-                rDef = Mathf.Max(0f, rDef - targetStatus.armorBreakReduction);
-                gDef = Mathf.Max(0f, gDef - targetStatus.armorBreakReduction);
-            }
+            // ArmorBreak : déjà appliqué dans Entity.GetMeleeDefense/Ranged/Magic() — pas de double soustraction ici.
         }
 
         // ── Physique ──────────────────────────────────────────
@@ -277,6 +264,10 @@ public class CombatSystem : MonoBehaviour
                     ? targetMob.data.GetElementalResistance(skill.PrimaryElement)
                     : target.GetElementalResistance(skill.PrimaryElement);
 
+                // Barrier — résistance élémentaire du buff actif sur la cible. GDD §3.1.1.2.
+                if (target.statusEffects != null)
+                    elemResist += target.statusEffects.GetBarrierElementResist();
+
                 elemDamage *= (1f - elemResist);
             }
         }
@@ -286,9 +277,7 @@ public class CombatSystem : MonoBehaviour
         if (target?.statusEffects != null && target.statusEffects.isMarked)
             total *= (1f + target.statusEffects.GetMarkDamageBonus());
 
-        LogDamageReport("MOB/PNJ", caster, target, null, skill,
-            baseDamage, physDamage, elemRaw, elemDamage, 0f,
-            total, false);
+        //LogDamageReport("MOB/PNJ", caster, target, null, skill, baseDamage, physDamage, elemRaw, elemDamage, 0f,total, false);
 
         return Mathf.Max(1f, total);
     }
@@ -365,7 +354,7 @@ public class CombatSystem : MonoBehaviour
         // Skill
         if (skill != null)
         {
-            sb.AppendLine($"▶ SKILL : {skill.skillName}   x{skill.damageMultiplier:F2}");
+            sb.AppendLine($"▶ SKILL : {skill.name}   x{skill.damageMultiplier:F2}");
             sb.AppendLine($"  Ratios Phys  : Mêlée {skill.damageMeleeRatio:F2} | Dist {skill.damageRangedRatio:F2} | Mag {skill.damageMagicRatio:F2}");
             sb.AppendLine($"  Elem Mult    : x{skill.EffectiveElementalMultiplier:F2}   Élément : {elem}");
         }

@@ -1,10 +1,13 @@
 using UnityEngine;
-using System.Collections.Generic;
 
 // =============================================================
 // CONSUMABLEDATA.CS — ScriptableObject template de consommable
 // Path : Assets/Scripts/Data/Inventory/ConsumableData.cs
-// AetherTree GDD v30
+// AetherTree GDD v3.6
+//
+// Hérite de ItemData (itemID, displayName, description, icon,
+// isStackable, stackSize, requiredLevel... — voir ItemData). Pas de
+// EquipmentConfig — consommable pur, pas d'équipement.
 //
 // Types de consommables :
 //   Potion        — restaure HP/Mana, applique un BuffData
@@ -28,16 +31,12 @@ public enum ConsumableType
 }
 
 [CreateAssetMenu(fileName = "Consumable_", menuName = "AetherTree/Inventory/ConsumableData")]
-public class ConsumableData : ScriptableObject
+public class ConsumableData : ItemData
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string          consumableName = "Consumable";
     public ConsumableType  consumableType = ConsumableType.Potion;
-    public Sprite          icon;
     public GameObject      prefab;
-    [TextArea]
-    public string          description    = "";
 
     // ── Potion ────────────────────────────────────────────────
     [Header("Potion (si consumableType = Potion)")]
@@ -54,23 +53,22 @@ public class ConsumableData : ScriptableObject
     [Header("Pierre de donjon (si consumableType = DungeonStone)")]
     [Tooltip("ID du donjon accessible avec cette pierre.")]
     public string dungeonID = "";
-    [Tooltip("Niveau requis pour utiliser cette pierre.")]
-    public int    requiredLevel = 1;
 
     // ── Téléportation ─────────────────────────────────────────
     [Header("Téléportation (si consumableType = TeleportItem)")]
     [Tooltip("ID de la zone de destination.")]
     public string targetZoneID = "";
 
-    // ── Stackable ─────────────────────────────────────────────
-    [Header("Stack")]
-    [Tooltip("Quantité max par stack dans l'inventaire.")]
-    public int maxStack = 99;
-
-
     // ── Utilitaires ───────────────────────────────────────────
     public ConsumableInstance CreateInstance(int quantity = 1)
-        => new ConsumableInstance(this, Mathf.Clamp(quantity, 1, maxStack));
+        => new ConsumableInstance(this, Mathf.Clamp(quantity, 1, stackSize));
+
+#if UNITY_EDITOR
+    private void Reset()
+    {
+        isStackable = true; // toujours empilable — quantity/Add()/Remove() déjà en place sur l'instance
+    }
+#endif
 }
 
 // =============================================================
@@ -88,9 +86,10 @@ public class ConsumableInstance
         quantity = qty;
     }
 
-    public string Name      => data?.consumableName ?? "Consumable";
+    public string ItemId    => data != null ? data.itemID : "unknown_consumable";
+    public string Name      => data != null ? data.displayName.Get(LocalizationManager.CurrentLanguage) : "Consumable";
     public Sprite Icon      => data?.icon;
-    public int    MaxStack  => data?.maxStack ?? 99;
+    public int    MaxStack  => data?.stackSize ?? 99;
     public bool   IsEmpty   => quantity <= 0;
 
     /// <summary>Ajoute une quantité au stack. Retourne le surplus si dépassement.</summary>

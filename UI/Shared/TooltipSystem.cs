@@ -330,7 +330,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(weaponStatusSection, weaponStatusText, BuildStatusEffects(w.StatusEffects));
         ShowSection(weaponResistSection, weaponResistText, BuildDebuffResist(w.DebuffResistances));
         ShowSection(weaponOnHitSection,  weaponOnHitText,  BuildOnHitEffects(w.OnHitEffects));
-        SetText(weaponDescText, FormatDesc(w.data?.description));
+        SetText(weaponDescText, FormatDesc(w.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -358,7 +358,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(armorStatusSection, armorStatusText, BuildStatusEffects(a.StatusEffects));
         ShowSection(armorResistSection, armorResistText, BuildDebuffResist(a.DebuffResistances));
         ShowSection(armorOnHitSection,  armorOnHitText,  BuildOnHitEffects(a.OnHitEffects));
-        SetText(armorDescText, FormatDesc(a.data?.description));
+        SetText(armorDescText, FormatDesc(a.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -376,7 +376,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(helmetStatusSection, helmetStatusText, BuildStatusEffects(h.StatusEffects));
         ShowSection(helmetResistSection, helmetResistText, BuildDebuffResist(h.DebuffResistances));
         ShowSection(helmetOnHitSection,  helmetOnHitText,  BuildOnHitEffects(h.OnHitEffects));
-        SetText(helmetDescText, FormatDesc(h.data?.description));
+        SetText(helmetDescText, FormatDesc(h.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -399,7 +399,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(glovesStatusSection,       glovesStatusText,       BuildStatusEffects(g.StatusEffects));
         ShowSection(glovesDebuffResistSection, glovesDebuffResistText, BuildDebuffResist(g.DebuffResistances));
         ShowSection(glovesOnHitSection,        glovesOnHitText,        BuildOnHitEffects(g.OnHitEffects));
-        SetText(glovesDescText, FormatDesc(g.data?.description));
+        SetText(glovesDescText, FormatDesc(g.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -422,7 +422,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(bootsStatusSection,       bootsStatusText,       BuildStatusEffects(b.StatusEffects));
         ShowSection(bootsDebuffResistSection, bootsDebuffResistText, BuildDebuffResist(b.DebuffResistances));
         ShowSection(bootsOnHitSection,        bootsOnHitText,        BuildOnHitEffects(b.OnHitEffects));
-        SetText(bootsDescText, FormatDesc(b.data?.description));
+        SetText(bootsDescText, FormatDesc(b.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -452,7 +452,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(jewelryStatusSection, jewelryStatusText, BuildStatusEffects(j.StatusEffects));
         ShowSection(jewelryResistSection, jewelryResistText, BuildDebuffResist(j.DebuffResistances));
         ShowSection(jewelryOnHitSection,  jewelryOnHitText,  BuildOnHitEffects(j.OnHitEffects));
-        SetText(jewelryDescText, FormatDesc(j.data?.description));
+        SetText(jewelryDescText, FormatDesc(j.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -472,7 +472,7 @@ public class TooltipSystem : MonoBehaviour
         SetText(spiritXPText,       s.IsMaxLevel
             ? "Niveau maximum atteint"
             : $"XP : {s.currentXP} / {s.XPRequired}");
-        SetText(spiritDescText, FormatDesc(s.data?.description));
+        SetText(spiritDescText, FormatDesc(s.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -523,7 +523,7 @@ public class TooltipSystem : MonoBehaviour
         if (skill == null || tooltipPanel == null) return;
         ShowOnly(skillPanel);
         SetIcon(skillIcon, skill.icon);
-        SetText(skillNameText,     skill.skillName);
+        SetText(skillNameText,     skill.skillName.Get(LocalizationManager.CurrentLanguage));
         SetText(skillTypeText,     skill.skillType.ToString());
         SetText(skillCooldownText, skill.cooldown > 0f ? $"CD : {skill.cooldown:F1}s" : "Passif");
         string costStr = "";
@@ -537,7 +537,7 @@ public class TooltipSystem : MonoBehaviour
             foreach (var e in skill.elements)
                 if (e != ElementType.Neutral) elemLabel += e.GetLabel() + " ";
         SetText(skillElementText, elemLabel.TrimEnd());
-        SetText(skillDescText,    FormatDesc(skill.description));
+        SetText(skillDescText,    FormatDesc(skill.description.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -555,7 +555,7 @@ public class TooltipSystem : MonoBehaviour
         SetText(consumableHealManaText, c.data?.healMana > 0f ? $"Soin Mana : +{c.data.healMana}" : "");
         SetText(consumableCooldownText, c.data?.cooldown > 0f ? $"CD : {c.data.cooldown}s"        : "");
         SetText(consumableQuantityText, $"Quantité : {c.quantity} / {c.MaxStack}");
-        SetText(consumableDescText,     FormatDesc(c.data?.description));
+        SetText(consumableDescText,     FormatDesc(c.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
@@ -571,7 +571,7 @@ public class TooltipSystem : MonoBehaviour
         SetText(resourceTypeText,     r.Type.ToString());
         SetText(resourceQuantityText, $"Quantité : {r.quantity} / {r.MaxStack}");
         SetText(resourceValueText,    $"Valeur : {r.SellPrice} a");
-        SetText(resourceDescText,     FormatDesc(r.data?.description));
+        SetText(resourceDescText,     FormatDesc(r.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 

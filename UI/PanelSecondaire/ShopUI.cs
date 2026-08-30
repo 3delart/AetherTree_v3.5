@@ -413,6 +413,10 @@ public class ShopUI : MonoBehaviour
         SetText(detailPriceText, $"{unitPrice} × {_quantity} = +{total} ¤");
         if (detailPriceText != null)
             detailPriceText.color = new Color(0.4f, 0.9f, 0.4f);
+        // Toujours réactiver le bouton en mode Sell — RefreshBuyPrice peut l'avoir
+        // désactivé si le joueur n'avait pas assez d'Aeris lors du dernier Buy.
+        if (actionButton != null)
+            actionButton.interactable = true;
     }
 
     // =========================================================
@@ -583,17 +587,10 @@ public class ShopUI : MonoBehaviour
     {
         switch (entry.item)
         {
-            case WeaponData wd:     return wd.weaponName;
-            case ArmorData ad:      return ad.armorName;
-            case HelmetData hd:     return hd.helmetName;
-            case GlovesData gd:     return gd.glovesName;
-            case BootsData bd:      return bd.bootsName;
-            case JewelryData jd:    return jd.jewelryName;
-            case ConsumableData cd: return cd.consumableName;
-            case ResourceData rd:   return rd.resourceName;
-            case SkillData sd:      return sd.skillName;
-            case PermanentSkillData pd: return pd.skillName;
-            default:                return entry.item?.name ?? "???";
+            case ItemData id:           return id.displayName.Get(LocalizationManager.CurrentLanguage);
+            case SkillData sd:          return sd.skillName.Get(LocalizationManager.CurrentLanguage);
+            case PermanentSkillData pd: return pd.skillName.Get(LocalizationManager.CurrentLanguage);
+            default:                    return entry.item?.name ?? "???";
         }
     }
 
@@ -601,23 +598,26 @@ public class ShopUI : MonoBehaviour
     {
         switch (entry.item)
         {
-            case WeaponData wd:     return wd.description;
-            case ArmorData ad:      return ad.description;
-            case HelmetData hd:     return hd.description;
-            case GlovesData gd:     return gd.description;
-            case BootsData bd:      return bd.description;
-            case JewelryData jd:    return jd.description;
-            case ConsumableData cd: return cd.description;
-            case ResourceData rd:   return rd.description;
-            case SkillData sd:      return sd.description;
-            case PermanentSkillData pd: return !string.IsNullOrEmpty(pd.description) ? pd.description : pd.GetBonusSummary();
-            default:                return "";
+            case ItemData id:           return id.description.Get(LocalizationManager.CurrentLanguage);
+            case SkillData sd:          return sd.description.Get(LocalizationManager.CurrentLanguage);
+            case PermanentSkillData pd: return !pd.description.IsEmpty ? pd.description.Get(LocalizationManager.CurrentLanguage) : pd.GetBonusSummary();
+            default:                    return "";
         }
     }
 
     // =========================================================
     // PRIX DE VENTE
     // =========================================================
+
+    /// <summary>
+    /// Prix de revente d'une pièce d'équipement : vendorPrice (référence saisie sur
+    /// le SO) × la stat qui porte sa "puissance" (dégâts pour une arme, somme des
+    /// défenses pour le reste). Si la stat vaut 0 (ex: casque sans défense propre,
+    /// juste des bonus via config), retombe sur vendorPrice seul plutôt que sur 0 —
+    /// vendorPrice = 0 reste le seul moyen de rendre un item non vendable (GDD §5.1).
+    /// </summary>
+    private int EquipSellPrice(int vendorPrice, float powerStat)
+        => powerStat > 0f ? Mathf.RoundToInt(vendorPrice * powerStat) : vendorPrice;
 
     private int GetSellPrice(InventoryItem item)
     {
@@ -626,12 +626,21 @@ public class ShopUI : MonoBehaviour
         int basePrice = 0;
         if      (item.ResourceInstance   != null) basePrice = item.ResourceInstance.SellPrice;
         else if (item.ConsumableInstance != null) basePrice = Mathf.RoundToInt((item.ConsumableInstance.data?.healHP ?? 0) / 10f) + 5;
-        else if (item.WeaponInstance     != null) basePrice = Mathf.RoundToInt(item.WeaponInstance.FinalDamageMax * 5f);
-        else if (item.ArmorInstance      != null) basePrice = Mathf.RoundToInt(item.ArmorInstance.FinalMeleeDefense * 4f);
-        else if (item.HelmetInstance     != null) basePrice = 20;
-        else if (item.GlovesInstance     != null) basePrice = 15;
-        else if (item.BootsInstance      != null) basePrice = 15;
-        else if (item.JewelryInstance    != null) basePrice = 30;
+        else if (item.WeaponInstance     != null) basePrice = EquipSellPrice(item.WeaponInstance.data?.vendorPrice ?? 0, item.WeaponInstance.FinalDamageMax);
+        else if (item.ArmorInstance      != null) basePrice = EquipSellPrice(item.ArmorInstance.data?.vendorPrice ?? 0,
+                                                        item.ArmorInstance.FinalMeleeDefense + item.ArmorInstance.FinalRangedDefense + item.ArmorInstance.FinalMagicDefense);
+        else if (item.HelmetInstance     != null) basePrice = EquipSellPrice(item.HelmetInstance.data?.vendorPrice ?? 0,
+                                                        item.HelmetInstance.MeleeDefense + item.HelmetInstance.RangedDefense + item.HelmetInstance.MagicDefense);
+        else if (item.GlovesInstance     != null) basePrice = EquipSellPrice(item.GlovesInstance.data?.vendorPrice ?? 0,
+                                                        item.GlovesInstance.MeleeDefense + item.GlovesInstance.RangedDefense + item.GlovesInstance.MagicDefense);
+        else if (item.BootsInstance      != null) basePrice = EquipSellPrice(item.BootsInstance.data?.vendorPrice ?? 0,
+                                                        item.BootsInstance.MeleeDefense + item.BootsInstance.RangedDefense + item.BootsInstance.MagicDefense);
+        else if (item.JewelryInstance    != null) basePrice = EquipSellPrice(item.JewelryInstance.data?.vendorPrice ?? 0,
+                                                        item.JewelryInstance.MeleeDefense + item.JewelryInstance.RangedDefense + item.JewelryInstance.MagicDefense);
+        else if (item.SpiritInstance         != null) basePrice = item.SpiritInstance.data?.vendorPrice ?? 0;
+        else if (item.CosmeticInstanceHead   != null) basePrice = item.CosmeticInstanceHead.data?.vendorPrice ?? 0;
+        else if (item.CosmeticInstanceBody   != null) basePrice = item.CosmeticInstanceBody.data?.vendorPrice ?? 0;
+        else if (item.CardInstance           != null) basePrice = item.CardInstance.data?.vendorPrice ?? 0;
         else if (item.RuneInstance       != null) basePrice = item.RuneInstance.runeLevel * 2;
         else if (item.GemInstance        != null) basePrice = item.GemInstance.GemLevel * 5;
 
@@ -662,13 +671,14 @@ public class ShopUI : MonoBehaviour
     private string GetItemDescription(InventoryItem item)
     {
         if (item == null) return "";
-        if (item.WeaponInstance?.data     != null) return item.WeaponInstance.data.description;
-        if (item.ArmorInstance?.data      != null) return item.ArmorInstance.data.description;
-        if (item.HelmetInstance?.data     != null) return item.HelmetInstance.data.description;
-        if (item.GlovesInstance?.data     != null) return item.GlovesInstance.data.description;
-        if (item.BootsInstance?.data      != null) return item.BootsInstance.data.description;
-        if (item.ConsumableInstance?.data != null) return item.ConsumableInstance.data.description;
-        if (item.ResourceInstance?.data   != null) return item.ResourceInstance.data.description;
+        Language lang = LocalizationManager.CurrentLanguage;
+        if (item.WeaponInstance?.data     != null) return item.WeaponInstance.data.description.Get(lang);
+        if (item.ArmorInstance?.data      != null) return item.ArmorInstance.data.description.Get(lang);
+        if (item.HelmetInstance?.data     != null) return item.HelmetInstance.data.description.Get(lang);
+        if (item.GlovesInstance?.data     != null) return item.GlovesInstance.data.description.Get(lang);
+        if (item.BootsInstance?.data      != null) return item.BootsInstance.data.description.Get(lang);
+        if (item.ConsumableInstance?.data != null) return item.ConsumableInstance.data.description.Get(lang);
+        if (item.ResourceInstance?.data   != null) return item.ResourceInstance.data.description.Get(lang);
         return "";
     }
 

@@ -6,7 +6,11 @@ using UnityEngine;
 // AetherTree GDD v30 — Section 9.2
 //
 // Source unique pour le montant d'Aeris du joueur.
-// Sauvegardé en PlayerPrefs (sera remplacé par save system).
+// Persisté via SaveSystem (CharacterProgress.aeris), au même titre que
+// le reste de la progression — plus de PlayerPrefs séparé (ancien
+// mécanisme, désynchronisé du fichier de save JSON : supprimer la save
+// ne remettait pas l'Aeris à zéro). SetAeris() est appelé par
+// SaveSystem.ApplyProgress() au chargement.
 // S'abonne à OnMobKilled pour collecter les Aeris du loot.
 //
 // Setup : poser sur _Managers.
@@ -24,7 +28,6 @@ public class AerisSystem : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
-        _aeris = PlayerPrefs.GetInt("Aeris", 0);
     }
 
     // =========================================================
@@ -37,7 +40,6 @@ public class AerisSystem : MonoBehaviour
     {
         if (amount <= 0) return;
         _aeris += amount;
-        Save();
         OnAerisChanged?.Invoke(_aeris);
     }
 
@@ -45,10 +47,16 @@ public class AerisSystem : MonoBehaviour
     {
         if (amount > _aeris) return false;
         _aeris -= amount;
-        Save();
         OnAerisChanged?.Invoke(_aeris);
         return true;
     }
 
-    private void Save() => PlayerPrefs.SetInt("Aeris", _aeris);
+    /// <summary>Fixe directement le montant — appelé par SaveSystem.ApplyProgress() au
+    /// chargement, pour que la valeur sauvegardée fasse autorité (contrairement à
+    /// Add()/Spend(), relatifs et destinés au gameplay).</summary>
+    public void SetAeris(int amount)
+    {
+        _aeris = Mathf.Max(0, amount);
+        OnAerisChanged?.Invoke(_aeris);
+    }
 }

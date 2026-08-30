@@ -66,7 +66,7 @@ public class PassifBarUI : MonoBehaviour
         if (index < 0 || index >= _slotUIs.Length) return;
         _skills[index] = skill;
         _slotUIs[index]?.SetPassif(skill);
-        Debug.Log($"[PASSIF] Slot {index} → {skill?.skillName ?? "vide"}");
+        Debug.Log($"[PASSIF] Slot {index} → {skill?.name ?? "vide"}");
     }
 
     public SkillData GetPassifAtSlot(int index)

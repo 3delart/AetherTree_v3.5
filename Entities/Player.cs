@@ -134,12 +134,36 @@ public class Player : Entity
     [HideInInspector] public bool      isInStealth   = false;
     [HideInInspector] public string    currentZoneID = "";
 
+    [HideInInspector] public bool IsAFK = false;
+
+    /// <summary>
+    /// True dès qu'un skill est casté ou que le joueur subit des dégâts — repasse à
+    /// false après combatExitDelay secondes sans nouvelle action combat (même patron
+    /// que IsAFK/afkDelay). Piloté par RegisterCombatAction(), lu en polling par
+    /// l'Animator (course armée vs désarmée) — pas d'event, cohérent avec le reste.
+    /// </summary>
+    [HideInInspector] public bool CombatActive = false;
+
+    // ── AFK ───────────────────────────────────────────────────
+    [Header("AFK")]
+    [Tooltip("Délai d'inactivité en secondes avant de passer AFK.")]
+    public float afkDelay = 30f;
+    private float _lastActionTime = 0f;
+
+    // ── Combat ────────────────────────────────────────────────
+    [Header("Combat")]
+    [Tooltip("Délai sans action combat (cast, dégâts subis) avant de sortir de CombatActive.")]
+    public float combatExitDelay = 6f;
+    private float _lastCombatActionTime = -999f;
+
     // ── Guilde ────────────────────────────────────────────────
     [HideInInspector] public HashSet<string> uniqueGroupMembersLed = new HashSet<string>();
 
     // ── Composants ────────────────────────────────────────────
     private ActivityCounter activityCounter;
     private ElementalSystem elementalSystem;
+    private PlayerAnimatorController animatorController;
+    private WeaponVisual             weaponVisual;
 
     // =========================================================
     // INITIALISATION
@@ -153,9 +177,11 @@ public class Player : Entity
         if (unlockedPermanents       == null) unlockedPermanents       = new List<PermanentSkillData>();
         if (unlockedPassives         == null) unlockedPassives         = new List<PassiveSkillData>();
 
-        activityCounter = GetComponent<ActivityCounter>();
-        elementalSystem = GetComponent<ElementalSystem>();
-        statPoints      = GetComponent<StatPointSystem>();
+        activityCounter    = GetComponent<ActivityCounter>();
+        elementalSystem    = GetComponent<ElementalSystem>();
+        statPoints         = GetComponent<StatPointSystem>();
+        animatorController = GetComponent<PlayerAnimatorController>();
+        weaponVisual        = GetComponent<WeaponVisual>();
 
         // entityType assigné sur Entity (GDD §3.1)
         entityType = EntityType.Player;
@@ -185,10 +211,75 @@ public class Player : Entity
         base.Awake(); // currentHP/Mana initialisés avec maxHP/maxMana déjà poussés
     }
 
+    protected override void Update()
+    {
+        base.Update();   // tick de régénération passive (Entity.Update) — sans lui, regen joueur morte
+        UpdateAFK();
+        UpdateCombat();
+    }
+
+    // =========================================================
+    // AFK
+    // =========================================================
+
+    /// <summary>
+    /// Appelé par PlayerController, SkillBar, et tout système
+    /// qui représente une action volontaire du joueur.
+    /// </summary>
+    public void RegisterAction()
+    {
+        _lastActionTime = Time.time;
+        if (IsAFK)
+        {
+            IsAFK = false;
+            if (UnlockManager.Instance != null && UnlockManager.Instance.verboseLogs)
+                Debug.Log("[PLAYER] AFK terminé.");
+        }
+    }
+
+    private void UpdateAFK()
+    {
+        if (isDead) return;
+
+        bool shouldBeAFK = (Time.time - _lastActionTime) >= afkDelay;
+        if (shouldBeAFK != IsAFK)
+        {
+            IsAFK = shouldBeAFK;
+            if (UnlockManager.Instance != null && UnlockManager.Instance.verboseLogs)
+                Debug.Log(IsAFK ? "[PLAYER] Joueur AFK." : "[PLAYER] AFK terminé.");
+        }
+    }
+
+    // =========================================================
+    // COMBAT ACTIVE
+    // =========================================================
+
+    /// <summary>Appelé au cast d'un skill (UseSkill) et à la réception de dégâts (TakeDamage).</summary>
+    public void RegisterCombatAction()
+    {
+        _lastCombatActionTime = Time.time;
+        if (!CombatActive)
+        {
+            CombatActive = true;
+            if (UnlockManager.Instance != null && UnlockManager.Instance.verboseLogs)
+                Debug.Log("[PLAYER] Entrée en combat.");
+        }
+    }
+
+    private void UpdateCombat()
+    {
+        if (!CombatActive || isDead) return;
+
+        if ((Time.time - _lastCombatActionTime) >= combatExitDelay)
+        {
+            CombatActive = false;
+            if (UnlockManager.Instance != null && UnlockManager.Instance.verboseLogs)
+                Debug.Log("[PLAYER] Sortie de combat.");
+        }
+    }
+
     private void Start()
     {
-        UnlockStartingBasicAttack();
-
         var skills = (characterData != null && characterData.startingSkills.Count > 0)
             ? characterData.startingSkills : startingSkills;
         foreach (var skill in skills)
@@ -226,28 +317,62 @@ public class Player : Entity
         UnlockSkill(basicAttack);
     }
 
+    /// <summary>
+    /// Mis à true par SaveSystem après avoir restauré la SkillBar depuis la save.
+    /// Empêche SetStartingSkillBar d'écraser le slot 0 sauvegardé.
+    /// </summary>
+    [HideInInspector] public bool skillBarRestoredFromSave = false;
+
     private IEnumerator SetStartingSkillBar()
     {
-        yield return null;
+        // Attendre que WeaponTypeRegistry soit prêt
+        float elapsed = 0f;
+        while (WeaponTypeRegistry.Instance == null)
+        {
+            elapsed += Time.deltaTime;
+            if (elapsed >= 5f) { Debug.LogError("[PLAYER] WeaponTypeRegistry introuvable après 5s."); yield break; }
+            yield return null;
+        }
+
+        // ⚠ Attendre que SaveSystem ait eu le temps de charger et de lever le flag.
+        // 0.15s = LOAD_DELAY dans SaveSystem. On attend un peu plus pour être sûr.
+        float saveWait = 0f;
+        while (!skillBarRestoredFromSave && saveWait < 0.5f)
+        {
+            saveWait += Time.deltaTime;
+            yield return null;
+        }
+
         if (SkillBar.Instance == null) yield break;
 
-        var startingBasicAttack = unlockedSkills.Find(s =>
-            s != null && (s.skillType == SkillType.BasicAttack || s.HasTag(SkillTag.BasicAttack)));
-        if (startingBasicAttack != null)
-            SkillBar.Instance.SetSkillAtSlot(0, startingBasicAttack);
+        UnlockStartingBasicAttack();
 
-        var skills = (characterData != null && characterData.startingSkills.Count > 0)
-            ? characterData.startingSkills : startingSkills;
-
-        int slot = 1;
-        foreach (var skill in skills)
+        // Ne touche au slot 0 que si la save n'a PAS restauré la SkillBar
+        if (!skillBarRestoredFromSave)
         {
-            if (skill == null) continue;
-            if (skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack)) continue;
-            if (skill.skillType == SkillType.Ultimate)
-                SkillBar.Instance.SetSkillAtSlot(9, skill);
-            else if (slot <= 8)
-                SkillBar.Instance.SetSkillAtSlot(slot++, skill);
+            RefreshSlot0();
+            var startingBasicAttack = unlockedSkills.Find(s =>
+                s != null && (s.skillType == SkillType.BasicAttack || s.HasTag(SkillTag.BasicAttack)));
+            if (startingBasicAttack != null)
+                SkillBar.Instance.SetSkillAtSlot(0, startingBasicAttack);
+        }
+
+        // Slots 1-9 — uniquement pour un nouveau personnage sans save
+        if (!skillBarRestoredFromSave)
+        {
+            var skills = (characterData != null && characterData.startingSkills.Count > 0)
+                ? characterData.startingSkills : startingSkills;
+
+            int slot = 1;
+            foreach (var skill in skills)
+            {
+                if (skill == null) continue;
+                if (skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack)) continue;
+                if (skill.skillType == SkillType.Ultimate)
+                    SkillBar.Instance.SetSkillAtSlot(9, skill);
+                else if (slot <= 8)
+                    SkillBar.Instance.SetSkillAtSlot(slot++, skill);
+            }
         }
     }
 
@@ -270,6 +395,7 @@ public class Player : Entity
         equippedWeaponInstance = instance;
         stats.RecalculateStats(this);
         RefreshSlot0();
+        weaponVisual?.RefreshWeapon(instance.data);
     }
 
     public void UnequipWeapon()
@@ -277,6 +403,7 @@ public class Player : Entity
         equippedWeaponInstance = null;
         stats.RecalculateStats(this);
         RefreshSlot0();
+        weaponVisual?.RefreshWeapon(null);
     }
 
     public void EquipArmor(ArmorInstance instance)
@@ -390,7 +517,7 @@ public class Player : Entity
         unlockedPermanents.Add(permanent);
         stats.RecalculateStats(this);
         SkillLibraryUI.Instance?.RefreshIfOpen();
-        Debug.Log($"[PLAYER] Permanent débloqué : {permanent.skillName}");
+        Debug.Log($"[PLAYER] Permanent débloqué : {permanent.name}");
     }
 
     public void UnlockPassive(PassiveSkillData passive)
@@ -398,7 +525,7 @@ public class Player : Entity
         if (passive == null || unlockedPassives.Contains(passive)) return;
         unlockedPassives.Add(passive);
         SkillLibraryUI.Instance?.RefreshIfOpen();
-        Debug.Log($"[PLAYER] Passive débloquée : {passive.skillName}");
+        Debug.Log($"[PLAYER] Passive débloquée : {passive.name}");
     }
 
         // ── AJOUTER RefreshSlot0() ────────────────────────────────
@@ -412,6 +539,10 @@ public class Player : Entity
     private void RefreshSlot0()
     {
         if (SkillBar.Instance == null) return;
+
+        // Si la save a déjà restauré la SkillBar (ex: pendant LoadItemsDelayed),
+        // on ne touche pas au slot 0 — UnequipAll/EquipItem ne doivent pas écraser.
+        if (skillBarRestoredFromSave) return;
  
         // ── Pas d'arme → Unarmed ─────────────────────────────
         if (equippedWeapon == null)
@@ -455,12 +586,10 @@ public class Player : Entity
         if (chosen != null)
         {
             SkillBar.Instance.SetSkillAtSlot(0, chosen);
-            Debug.Log($"[PLAYER] Slot 0 → {chosen.skillName} ({family}).");
+            Debug.Log($"[PLAYER] Slot 0 → {chosen.name} ({family}).");
         }
-        else
-        {
-            Debug.LogWarning($"[PLAYER] RefreshSlot0 : aucune BasicAttack trouvée pour {family}.");
-        }
+        // Si chosen == null ici c'est que le registry n'est pas encore prêt (Awake trop tôt).
+        // SetStartingSkillBar() s'en occupe un frame après Start(), pas de warning parasite.
     }
  
 
@@ -500,7 +629,17 @@ public class Player : Entity
 
         base.TakeDamage(amount, sourceElement, source);
 
+        // Entrée en combat uniquement si une source réelle a infligé les dégâts (pas un
+        // coût HP de skill ou autre auto-infligé qui passerait par TakeDamage).
+        if (source != null) RegisterCombatAction();
+
         activityCounter.Increment("DAMAGE_TAKEN_TOTAL", (int)amount);
+
+        // isOneHit : ce seul coup a suffi à vider les HP (la cible était pleine ou presque,
+        // et tombe à 0). On considère "full HP" = hpBefore == maxHP pour coller au GDD.
+        // isCrit : non connu ici (calculé dans CombatSystem) — reste false côté réception ;
+        // les conditions isReceived+isCrit doivent être évaluées côté attaquant.
+        bool isOneHit = hpBefore >= maxHP && currentHP <= 0f;
 
         GameEventBus.Publish(new DamageDealtEvent
         {
@@ -509,7 +648,7 @@ public class Player : Entity
             source   = source,
             target   = this,
             isCrit   = false,
-            isOneHit = false,
+            isOneHit = isOneHit,
         });
 
         if (hpBefore > 1f && currentHP <= 1f)
@@ -629,6 +768,9 @@ public class Player : Entity
     {
         if (skill == null) return;
         lastSkillUsed = skill;
+        RegisterCombatAction();
+        Debug.Log($"[ANIM-DEBUG] UseSkill({skill.name}) à t={Time.time:F2} — CombatActive={CombatActive}"); // DEBUG temporaire
+        animatorController?.PlayAttack(skill.attackAnimation);
 
         bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
 

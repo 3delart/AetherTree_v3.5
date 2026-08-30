@@ -383,7 +383,7 @@ public class ElementalSystem : MonoBehaviour
     /// Retourne 0.1f si rang 5, 0f sinon.
     /// </summary>
     public float GetRank5ResistPenetration(ElementType element)
-        => GetElementRank(element) == 5 ? 0.1f : 0f;
+        => GetElementRank(element) == 5 ? 0.07f : 0f;
 
     // =========================================================
     // RANGS NEUTRE — GDD §6.3
@@ -533,7 +533,6 @@ public class ElementalSystem : MonoBehaviour
             {
                 ElementType dominant = GetDominantElement();
                 string ep = dominant.GetEpithet(equippedWeapon);
-                Debug.Log($"Mono mode : dominant = {dominant}, épithète = '{ep}'");
                 return string.IsNullOrEmpty(ep) ? dominant.GetLabel() : ep;
             }
 

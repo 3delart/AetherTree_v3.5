@@ -91,7 +91,7 @@ public class ResourceNode : MonoBehaviour
         _playerPosAtCollectStart  = player.transform.position;
 
         ProgressBarUI.Instance?.StartProgress(
-            label:        $"Récolte — {data.resourceName}",
+            label:        $"Récolte — {data.displayName.Get(LocalizationManager.CurrentLanguage)}",
             duration:     data.collectTime,
             onComplete:   () => OnCollectComplete(player),
             onCancel:     () => _isCollecting = false,
@@ -111,7 +111,7 @@ public class ResourceNode : MonoBehaviour
 
         if (added)
             FloatingText.Spawn(
-                $"+{qty} {data.resourceName}",
+                $"+{qty} {data.displayName.Get(LocalizationManager.CurrentLanguage)}",
                 transform.position + Vector3.up * 1.5f,
                 new Color(0.8f, 0.65f, 0.2f));
         else

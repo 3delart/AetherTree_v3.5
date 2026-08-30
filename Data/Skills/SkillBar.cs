@@ -49,6 +49,16 @@ public class SkillBar : MonoBehaviour
     // Durée = somme des delays du hitSteps. Alimenté par LockForMultiHit().
     private float _multiHitLockTimer = 0f;
 
+    // Cooldown du skill MultiHit — posé à la FIN du lock (skill.cooldown mesuré depuis
+    // la fin de l'exécution, pas depuis le cast) plutôt qu'immédiatement dans ExecuteSkill().
+    // Sinon un CD de 6s sur un skill qui dure 5s ne laisse qu'1s de vrai temps mort.
+    private int       _multiHitCooldownSlot  = -1;
+    private SkillData _multiHitCooldownSkill = null;
+
+    // Bloque le déplacement joueur pendant un MultiHit (immobile le temps du combo).
+    // ComboSequence n'utilise PAS ce lock — on peut se déplacer entre deux sorts du combo.
+    public bool IsMultiHitLocked => _multiHitLockTimer > 0f;
+
     private Player          _player;
     private ElementalSystem _elemental;
     private NavMeshAgent    _agent;
@@ -96,7 +106,17 @@ public class SkillBar : MonoBehaviour
 
         // Lock total pendant un MultiHit
         if (_multiHitLockTimer > 0f)
+        {
             _multiHitLockTimer -= Time.deltaTime;
+            if (_multiHitLockTimer <= 0f && _multiHitCooldownSlot >= 0)
+            {
+                // Le MultiHit vient de finir — le cooldown démarre maintenant, pas au cast.
+                _cooldownTimers[_multiHitCooldownSlot] = _multiHitCooldownSkill != null ? _multiHitCooldownSkill.cooldown : 0f;
+                Debug.Log($"[SKILLBAR] MultiHit terminé — cooldown {_cooldownTimers[_multiHitCooldownSlot]:F2}s démarré sur slot {_multiHitCooldownSlot}.");
+                _multiHitCooldownSlot  = -1;
+                _multiHitCooldownSkill = null;
+            }
+        }
 
         // ── Timer combo séquentiel ────────────────────────────
         if (_comboSlot >= 0 && _comboTimer > 0f)
@@ -197,7 +217,7 @@ public class SkillBar : MonoBehaviour
         // Vérification mana
         if (_player.CurrentMana < skill.manaCost)
         {
-            Debug.Log($"[SKILLBAR] Mana insuffisante pour {skill.skillName}");
+            Debug.Log($"[SKILLBAR] Mana insuffisante pour {skill.name}");
             return false;
         }
 
@@ -216,7 +236,7 @@ public class SkillBar : MonoBehaviour
         {
             if (target == null)
             {
-                Debug.Log($"[SKILLBAR] Aucune cible pour {skill.skillName}");
+                Debug.Log($"[SKILLBAR] Aucune cible pour {skill.name}");
                 return false;
             }
 
@@ -359,7 +379,23 @@ public class SkillBar : MonoBehaviour
         // NOTE : Ne PAS appeler player.UseSkill() ici.
         // SkillSystem.Execute() → player.UseSkill() s'en charge.
         // Double appel = RegisterCast() élémentaire × 2 → affinité doublée.
-        _cooldownTimers[slot] = skill.cooldown;
+
+        // MultiHit avec hitSteps : le cooldown démarre à la FIN de l'exécution (posé dans
+        // Update() quand _multiHitLockTimer expire, voir LockForMultiHit()), pas ici au cast —
+        // sinon un CD de 6s sur un skill qui dure 5s ne laisse qu'1s de vrai temps mort.
+        // Repli sur le comportement immédiat si le skill est mal configuré (pas de hitSteps),
+        // pour ne jamais laisser un skill sans cooldown du tout.
+        bool deferToMultiHitEnd = skill.executionType == SkillExecutionType.MultiHit
+                                && skill.hitSteps != null && skill.hitSteps.Count > 0;
+        if (deferToMultiHitEnd)
+        {
+            _multiHitCooldownSlot  = slot;
+            _multiHitCooldownSkill = skill;
+        }
+        else
+        {
+            _cooldownTimers[slot] = skill.cooldown;
+        }
 
         // ── GCD §8.7 ──────────────────────────────────────────
         // Un actif ou l'ultime (slots 1-9) déclenche le GCD global sur tous les slots 1-9.
@@ -436,6 +472,11 @@ public class SkillBar : MonoBehaviour
     /// <summary>
     /// Appelé par SkillSystem avant ExecuteMultiHit.
     /// Bloque tous les slots pendant la durée totale du MultiHit (somme des delays).
+    /// Cette durée doit correspondre à celle de skill.attackAnimation — sinon
+    /// l'auto-attaque (slot 0) reprend la main dès l'expiration du lock gameplay,
+    /// même si l'animation est encore en train de jouer, et écrase le state Attack
+    /// partagé en plein milieu. Avertissement éditeur sur ce mismatch : voir
+    /// SkillData.OnValidate() — à corriger côté données (delays ou anim), pas ici.
     /// </summary>
     public void LockForMultiHit(SkillData skill)
     {
@@ -448,6 +489,6 @@ public class SkillBar : MonoBehaviour
         _multiHitLockTimer = total;
         _gcdTimer          = Mathf.Max(_gcdTimer, total); // bloque aussi les actifs
         // Slot 0 bloqué via _multiHitLockTimer — pas de _gcdTimer sur slot 0
-        Debug.Log($"[SKILLBAR] MultiHit lock {total:F2}s pour {skill.skillName}");
+        Debug.Log($"[SKILLBAR] MultiHit lock {total:F2}s pour {skill.name}");
     }
 }

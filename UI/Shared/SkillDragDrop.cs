@@ -162,7 +162,7 @@ public class SkillDropTarget : MonoBehaviour, IDropHandler, IPointerEnterHandler
 
         if (!IsCompatible(dropped))
         {
-            Debug.LogWarning($"[DRAG] {dropped.skillName} ({dropped.skillType}) " +
+            Debug.LogWarning($"[DRAG] {dropped.name} ({dropped.skillType}) " +
                              $"incompatible avec slot {slotIndex} ({slotType}).");
             return;
         }
@@ -179,7 +179,7 @@ public class SkillDropTarget : MonoBehaviour, IDropHandler, IPointerEnterHandler
                     if (i == slotIndex) continue; // le slot de destination ne compte pas
                     if (SkillBar.Instance.GetSkillAtSlot(i) == dropped)
                     {
-                        Debug.LogWarning($"[DRAG] {dropped.skillName} est déjà équipé en slot {i} — drop annulé.");
+                        Debug.LogWarning($"[DRAG] {dropped.name} est déjà équipé en slot {i} — drop annulé.");
                         return;
                     }
                 }
@@ -199,7 +199,7 @@ public class SkillDropTarget : MonoBehaviour, IDropHandler, IPointerEnterHandler
                 break;
         }
 
-        Debug.Log($"[DRAG] {dropped.skillName} → {slotType} slot {slotIndex}");
+        Debug.Log($"[DRAG] {dropped.name} → {slotType} slot {slotIndex}");
     }
 
     // ── Highlight survol ──────────────────────────────────────

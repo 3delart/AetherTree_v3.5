@@ -182,6 +182,28 @@ public class StatPointSystem : MonoBehaviour
     }
 
     // =========================================================
+    // CHARGEMENT SAUVEGARDE
+    // =========================================================
+
+    /// <summary>
+    /// Restaure l'état StatPoints depuis une sauvegarde : rangs investis + pool de points.
+    /// Recalcule les bonus de paliers puis pousse sur Entity via RecalculateStats(). GDD §3.2.1.
+    /// À appeler APRÈS Player.OnLevelUp() au chargement (écrase le pool donné par le level-up).
+    /// </summary>
+    public void LoadFromSave(int atk, int def, int ele, int hp, int totalEarned, int available)
+    {
+        rankAttack    = Mathf.Clamp(atk, 0, 100);
+        rankDefense   = Mathf.Clamp(def, 0, 100);
+        rankElemental = Mathf.Clamp(ele, 0, 100);
+        rankHP        = Mathf.Clamp(hp,  0, 100);
+        totalPointsEarned = Mathf.Max(0, totalEarned);
+        availablePoints   = Mathf.Max(0, available);
+
+        RecalculateAllBonuses();
+        if (_player != null) _player.stats.RecalculateStats(_player);
+    }
+
+    // =========================================================
     // COÛT PAR RANG
     // =========================================================
 

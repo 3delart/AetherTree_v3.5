@@ -58,6 +58,14 @@ public class PlayerController : MonoBehaviour
         // Stun ou Root — bloque le mouvement
         if (fx != null && (fx.isStunned || fx.isRooted)) return;
 
+        // MultiHit en cours — immobile le temps du combo (ComboSequence exclu,
+        // on peut se déplacer entre deux sorts d'un ComboSequence).
+        if (SkillBar.Instance != null && SkillBar.Instance.IsMultiHitLocked)
+        {
+            if (_agent.hasPath) _agent.ResetPath();
+            return;
+        }
+
         // Fear — fuite vers direction opposée à la menace
         if (fx != null && fx.isFeared)
         {
@@ -76,12 +84,17 @@ public class PlayerController : MonoBehaviour
         if (UIManager.Instance != null && UIManager.Instance.IsAnyPanelOpen()) return;
 
         Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
-        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
+
+        // QueryTriggerInteraction.Ignore : ignore tous les colliders en mode Trigger
+        // (ZoneTrigger, SphereCollider des arbres, etc.) — seul le sol solide est touché
+        if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)) return;
 
         if (!hit.collider.CompareTag("Ground")) return;
 
         // Déplacement manuel — annule toute approche automatique en cours
         TargetingSystem.Instance?.StopApproach();
+        _player?.RegisterAction();
 
         _agent.SetDestination(hit.point);
 

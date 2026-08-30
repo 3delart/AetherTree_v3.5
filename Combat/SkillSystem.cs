@@ -210,14 +210,14 @@ public class SkillSystem : MonoBehaviour
                 break;
 
             default:
-                Debug.LogWarning($"[SKILL] TargetType '{skill.targetType}' non géré — {caster.entityName} / {skill.skillName}.");
+                Debug.LogWarning($"[SKILL] TargetType '{skill.targetType}' non géré — {caster.entityName} / {skill.name}.");
                 break;
         }
     }
 
     private void LogMissingTarget(SkillData skill, Entity caster)
     {
-        Debug.LogWarning($"[SKILL] {skill.skillName} ({skill.targetType}) depuis {caster.entityName} : cible null ou morte.");
+        Debug.LogWarning($"[SKILL] {skill.name} ({skill.targetType}) depuis {caster.entityName} : cible null ou morte.");
     }
 
     // =========================================================
@@ -232,7 +232,7 @@ public class SkillSystem : MonoBehaviour
 
             if (target == null || target.isDead) yield break;
 
-            float dmg = CalculateDamageForStep(step, skill, caster, target);
+            float dmg = CalculateDamageForStep(step, skill, caster, target, out bool stepCrit);
 
             if (target is Mob mobStep && caster is Player p)
                 mobStep.RegisterLastSkill(p, skill);
@@ -247,7 +247,7 @@ public class SkillSystem : MonoBehaviour
                     element  = step.element,
                     source   = playerStep,
                     target   = target,
-                    isCrit   = false,
+                    isCrit   = stepCrit,
                     isOneHit = target.isDead && dmg >= target.MaxHP,
                 });
             }
@@ -268,7 +268,7 @@ public class SkillSystem : MonoBehaviour
         }
     }
 
-    private float CalculateDamageForStep(HitStep step, SkillData parentSkill, Entity caster, Entity target)
+    private float CalculateDamageForStep(HitStep step, SkillData parentSkill, Entity caster, Entity target, out bool isCrit)
     {
         var proxy = ScriptableObject.CreateInstance<SkillData>();
         proxy.damageMultiplier  = step.damageMultiplier;
@@ -278,7 +278,7 @@ public class SkillSystem : MonoBehaviour
         proxy.elementalMultiplier = step.elementalMultiplier;
         proxy.elements          = new List<ElementType> { step.element };
 
-        float dmg = CalculateDamage(proxy, caster, target);
+        float dmg = CalculateDamage(proxy, caster, target, out isCrit);
         Destroy(proxy);
         return dmg;
     }
@@ -634,7 +634,7 @@ public class SkillSystem : MonoBehaviour
         {
             case SkillEffectType.Damage:
             {
-                float dmg = CalculateDamage(skill, caster, target);
+                float dmg = CalculateDamage(skill, caster, target, out bool isCrit);
 
                 if (target is Mob mobDmg && caster is Player pDmg)
                     mobDmg.RegisterLastSkill(pDmg, skill);
@@ -662,7 +662,7 @@ public class SkillSystem : MonoBehaviour
                         element  = skill.PrimaryElement,
                         source   = playerDmg,
                         target   = target,
-                        isCrit   = false,
+                        isCrit   = isCrit,
                         isOneHit = target.isDead && dmg >= target.MaxHP,
                     });
                 }
@@ -688,8 +688,10 @@ public class SkillSystem : MonoBehaviour
     // CALCUL DES DÉGÂTS
     // =========================================================
 
-    private float CalculateDamage(SkillData skill, Entity caster, Entity target)
+    private float CalculateDamage(SkillData skill, Entity caster, Entity target, out bool isCrit)
     {
+        isCrit = false;
+
         if (CombatSystem.Instance == null)
         {
             float baseFallback = caster is Mob fallbackMob && fallbackMob.data != null
@@ -709,7 +711,8 @@ public class SkillSystem : MonoBehaviour
                     skill,
                     p.GetElementalSystem(),
                     p,
-                    target);
+                    target,
+                    out isCrit);
 
             case EntityType.Mob:
                 return CombatSystem.Instance.CalculateMobDamage(skill, caster as Mob, target);
@@ -823,7 +826,7 @@ public class SkillSystem : MonoBehaviour
     {
         if (skill.specialEffect == SkillSpecialEffect.None)
         {
-            Debug.LogWarning($"[SKILL] {skill.skillName} ({caster.entityName}) : effectType=Other mais specialEffect=None.");
+            Debug.LogWarning($"[SKILL] {skill.name} ({caster.entityName}) : effectType=Other mais specialEffect=None.");
             return;
         }
 
@@ -919,7 +922,7 @@ public class SkillSystem : MonoBehaviour
             case SkillSpecialEffect.DrainHP:
             {
                 if (target == null || target.isDead) return;
-                float dmg = CalculateDamage(skill, caster, target);
+                float dmg = CalculateDamage(skill, caster, target, out bool isCrit);
 
                 if (target is Mob mobDrn && caster is Player pDrn)
                     mobDrn.RegisterLastSkill(pDrn, skill);
@@ -936,7 +939,7 @@ public class SkillSystem : MonoBehaviour
                         element  = skill.PrimaryElement,
                         source   = playerDrn,
                         target   = target,
-                        isCrit   = false,
+                        isCrit   = isCrit,
                         isOneHit = target.isDead && dmg >= target.MaxHP,
                     });
                 }

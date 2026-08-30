@@ -1,23 +1,46 @@
 #if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEditor;
 
 // =============================================================
-// CONDITIONDATAEDITOR.CS — Assets/Editor/ConditionDataEditor.cs
-// Custom Editor complet pour ConditionData SO.
-// Remplace le PropertyDrawer — EditorGUILayout gère la hauteur.
+// CONDITIONDATAEDITOR.CS
+// Path : Assets/_Game/Scripts/Progression/Conditions/Editor/ConditionDataEditor.cs
+//
+// Custom Inspector pour ConditionData.
+// Affiche le mode, les entries avec leur checker inline [SerializeReference],
+// et les récompenses.
 // =============================================================
 
 [CustomEditor(typeof(ConditionData))]
 public class ConditionDataEditor : Editor
 {
     private ConditionData _data;
-    private List<bool> _foldouts = new List<bool>();
+    private List<bool>    _foldouts = new List<bool>();
+
+    private static List<Type> _checkerTypes;
+    private static string[]   _checkerLabels;
 
     private void OnEnable()
     {
         _data = (ConditionData)target;
+        BuildCheckerList();
+    }
+
+    // Scanne tous les types concrets de ConditionCheckerBase
+    private static void BuildCheckerList()
+    {
+        if (_checkerTypes != null) return;
+
+        _checkerTypes = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a => { try { return a.GetTypes(); } catch { return Array.Empty<Type>(); } })
+            .Where(t => !t.IsAbstract && t.IsSubclassOf(typeof(ConditionCheckerBase)))
+            .OrderBy(t => t.Name)
+            .ToList();
+
+        _checkerLabels = _checkerTypes.Select(PrettyName).ToArray();
     }
 
     public override void OnInspectorGUI()
@@ -26,36 +49,61 @@ public class ConditionDataEditor : Editor
 
         // ── Identifiant ───────────────────────────────────────
         EditorGUILayout.Space(4);
-        SectionLabel("IDENTIFIANT UNIQUE");
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("conditionID"), new GUIContent("Condition ID"));
+        DrawSectionLabel("IDENTIFIANT");
+        EditorGUILayout.PropertyField(
+            serializedObject.FindProperty("conditionID"),
+            new GUIContent("Condition ID"));
 
-        // ── Conditions ────────────────────────────────────────
+        // ── Mode ──────────────────────────────────────────────
         EditorGUILayout.Space(8);
-        SectionLabel("SOUS-CONDITIONS  (toutes doivent être remplies)");
+        DrawSectionLabel("MODE D'ÉVALUATION");
+        EditorGUILayout.PropertyField(
+            serializedObject.FindProperty("mode"),
+            new GUIContent("Mode"));
+
+        // ── Sous-conditions ───────────────────────────────────
+        EditorGUILayout.Space(8);
+        DrawSectionLabel("SOUS-CONDITIONS  (toutes doivent être remplies)");
 
         var condProp = serializedObject.FindProperty("conditions");
-
-        // Sync foldouts
         while (_foldouts.Count < condProp.arraySize) _foldouts.Add(true);
 
         for (int i = 0; i < condProp.arraySize; i++)
         {
-            var entry = condProp.GetArrayElementAtIndex(i);
-            var typeProp = entry.FindPropertyRelative("type");
-            var type = (ConditionType)typeProp.enumValueIndex;
+            var entryProp   = condProp.GetArrayElementAtIndex(i);
+            var checkerProp = entryProp.FindPropertyRelative("checker");
 
-            EditorGUILayout.BeginVertical(GetBoxStyle(type));
+            Type  currentType  = checkerProp.managedReferenceValue?.GetType();
+            Color accent       = GetAccentColor(currentType);
+            string headerLabel = currentType != null ? PrettyName(currentType) : "— aucun checker —";
+            int    count       = entryProp.FindPropertyRelative("countRequired").intValue;
+            int    lvMin       = entryProp.FindPropertyRelative("playerLevelMin").intValue;
+            int    lvMax       = entryProp.FindPropertyRelative("playerLevelMax").intValue;
+            int    maxW        = entryProp.FindPropertyRelative("maxWinners").intValue;
+
+            // Résumé compact pour le header
+            string summary = $"×{count}";
+            if (lvMin > 0 || lvMax > 0)
+                summary += lvMax > 0 ? $"  lv{lvMin}-{lvMax}" : $"  lv{lvMin}+";
+            if (maxW > 0)
+                summary += $"  top{maxW}";
+
+            EditorGUILayout.BeginVertical(GUI.skin.box);
+
+            // ── Header foldout ────────────────────────────────
             EditorGUILayout.BeginHorizontal();
-
-            _foldouts[i] = EditorGUILayout.Foldout(_foldouts[i],
-                $"  [{i}]  {TypeLabel(type)}  —  x{entry.FindPropertyRelative("countRequired").intValue}",
-                true, GetFoldoutStyle(type));
+            _foldouts[i] = EditorGUILayout.Foldout(
+                _foldouts[i],
+                $"  [{i}]  {headerLabel}  —  {summary}",
+                true,
+                MakeFoldoutStyle(accent));
 
             if (GUILayout.Button("✕", GUILayout.Width(22), GUILayout.Height(18)))
             {
                 condProp.DeleteArrayElementAtIndex(i);
                 _foldouts.RemoveAt(i);
-                break;
+                serializedObject.ApplyModifiedProperties();
+                return;
             }
             EditorGUILayout.EndHorizontal();
 
@@ -63,62 +111,84 @@ public class ConditionDataEditor : Editor
             {
                 EditorGUI.indentLevel++;
 
-                // Type
-                SubLabel("TYPE");
-                EditorGUILayout.PropertyField(typeProp, new GUIContent("Type"));
+                // ── Sélecteur de checker ──────────────────────
+                DrawSubLabel("CHECKER");
+                DrawCheckerSelector(checkerProp, accent);
 
-                // Filtre commun
-                SubLabel("FILTRE COMMUN");
-                EditorGUILayout.PropertyField(entry.FindPropertyRelative("common_weapon"),           new GUIContent("Arme (Any = toutes)"));
-                EditorGUILayout.PropertyField(entry.FindPropertyRelative("common_locationID"),       new GUIContent("Location (vide = partout)"));
-                EditorGUILayout.PropertyField(entry.FindPropertyRelative("common_playerLevelMin"),   new GUIContent("Niveau joueur min (0 = any)"));
-                EditorGUILayout.PropertyField(entry.FindPropertyRelative("common_mustBeSolo"),       new GUIContent("Solo uniquement"));
-                EditorGUILayout.PropertyField(entry.FindPropertyRelative("common_mustBeInGroup"),    new GUIContent("En groupe uniquement"));
-
-                // Compteur — masqué pour les types où ça n'a pas de sens
-                bool showCounter = type != ConditionType.Affinity
-                                && type != ConditionType.Zone
-                                && type != ConditionType.Time;
-                if (showCounter)
+                // ── Champs du checker ─────────────────────────
+                if (checkerProp.managedReferenceValue != null)
                 {
-                    SubLabel("COMPTEUR");
-                    EditorGUILayout.PropertyField(entry.FindPropertyRelative("countRequired"), new GUIContent("Nombre requis"));
-                    EditorGUILayout.PropertyField(entry.FindPropertyRelative("mustBeLast"),    new GUIContent("Doit être le dernier"));
+                    EditorGUILayout.Space(2);
+                    DrawSubLabel("PARAMÈTRES");
+                    DrawCheckerFields(checkerProp);
                 }
 
-                // Champs spécifiques
-                TypeLabel_Colored(type);
-                DrawTypeFields(entry, type);
+                // ── Filtres globaux + compteur ────────────────
+                EditorGUILayout.Space(4);
+                DrawSubLabel("COMPTEUR & FILTRES GLOBAUX");
+
+                EditorGUILayout.PropertyField(
+                    entryProp.FindPropertyRelative("countRequired"),
+                    new GUIContent("Nombre requis"));
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.PropertyField(
+                    entryProp.FindPropertyRelative("playerLevelMin"),
+                    new GUIContent("Niveau min (0=any)"));
+                EditorGUILayout.PropertyField(
+                    entryProp.FindPropertyRelative("playerLevelMax"),
+                    new GUIContent("Niveau max (0=any)"));
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.PropertyField(
+                    entryProp.FindPropertyRelative("maxWinners"),
+                    new GUIContent("Max gagnants (0=illimité)"));
+
+                // ── Scope ─────────────────────────────────────
+                EditorGUILayout.Space(2);
+                DrawSubLabel("SCOPE");
+                EditorGUILayout.PropertyField(
+                    entryProp.FindPropertyRelative("scope"),
+                    new GUIContent("Scope"));
 
                 EditorGUI.indentLevel--;
             }
 
             EditorGUILayout.EndVertical();
-            EditorGUILayout.Space(4);
+            EditorGUILayout.Space(3);
         }
 
+        // ── Bouton Ajouter ────────────────────────────────────
+        EditorGUILayout.Space(4);
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        if (GUILayout.Button("＋  Ajouter une condition", GUILayout.Width(200), GUILayout.Height(24)))
+        if (GUILayout.Button("＋  Ajouter une sous-condition", GUILayout.Width(220), GUILayout.Height(24)))
         {
             condProp.InsertArrayElementAtIndex(condProp.arraySize);
+            var newEntry = condProp.GetArrayElementAtIndex(condProp.arraySize - 1);
+            newEntry.FindPropertyRelative("checker").managedReferenceValue = null;
+            newEntry.FindPropertyRelative("countRequired").intValue        = 1;
+            newEntry.FindPropertyRelative("playerLevelMin").intValue       = 0;
+            newEntry.FindPropertyRelative("playerLevelMax").intValue       = 0;
+            newEntry.FindPropertyRelative("maxWinners").intValue           = 0;
             _foldouts.Add(true);
         }
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("sequence_mustBeOrdered"),
-            new GUIContent("Conditions dans l'ordre"));
-
         // ── Récompenses ───────────────────────────────────────
         EditorGUILayout.Space(12);
-        SectionLabel("RÉCOMPENSES");
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("rewards"), new GUIContent("Rewards"), true);
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("rewardDescription"), new GUIContent("Description globale"));
+        DrawSectionLabel("RÉCOMPENSES");
+        EditorGUILayout.PropertyField(
+            serializedObject.FindProperty("rewards"),
+            new GUIContent("Rewards"), true);
+        EditorGUILayout.PropertyField(
+            serializedObject.FindProperty("rewardDescription"),
+            new GUIContent("Description globale"));
 
         // ── Affichage ─────────────────────────────────────────
         EditorGUILayout.Space(12);
-        SectionLabel("AFFICHAGE");
+        DrawSectionLabel("AFFICHAGE");
         EditorGUILayout.PropertyField(serializedObject.FindProperty("isHidden"),    new GUIContent("Caché"));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("displayName"), new GUIContent("Nom affiché"));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("description"), new GUIContent("Description"));
@@ -128,165 +198,153 @@ public class ConditionDataEditor : Editor
     }
 
     // =========================================================
-    // CHAMPS PAR TYPE
+    // SÉLECTEUR DE CHECKER
     // =========================================================
-    private void DrawTypeFields(SerializedProperty e, ConditionType type)
+
+    private void DrawCheckerSelector(SerializedProperty checkerProp, Color accent)
     {
-        switch (type)
+        Type currentType = checkerProp.managedReferenceValue?.GetType();
+        int  currentIdx  = currentType != null ? _checkerTypes.IndexOf(currentType) : -1;
+
+        string[] options = new[] { "— aucun —" }.Concat(_checkerLabels).ToArray();
+        int displayIdx   = currentIdx + 1;
+
+        EditorGUILayout.BeginHorizontal();
+        var labelStyle = new GUIStyle(EditorStyles.label) { normal = { textColor = accent } };
+        EditorGUILayout.LabelField("Checker", labelStyle, GUILayout.Width(70));
+        int newIdx = EditorGUILayout.Popup(displayIdx, options);
+        EditorGUILayout.EndHorizontal();
+
+        if (newIdx == displayIdx) return;
+
+        checkerProp.managedReferenceValue = newIdx == 0
+            ? null
+            : Activator.CreateInstance(_checkerTypes[newIdx - 1]);
+    }
+
+    // =========================================================
+    // CHAMPS DU CHECKER
+    // =========================================================
+
+    // Champs propres à chaque mode de StatChecker — masqués si mode différent
+    private static readonly HashSet<string> _statFinalStatFields = new HashSet<string> { "finalStat", "minValue", "maxValue" };
+    private static readonly HashSet<string> _statStatPointFields = new HashSet<string> { "statCategory", "minRank", "maxRank", "exactMilestone" };
+    private static readonly HashSet<string> _statAffinityFields  = new HashSet<string> { "affinityElement", "minAffinity", "affinityRankMin", "mustBeDominant" };
+
+    private void DrawCheckerFields(SerializedProperty checkerProp)
+    {
+        bool isStatChecker = checkerProp.managedReferenceValue is StatChecker;
+        int  statMode      = -1;
+
+        if (isStatChecker)
         {
-            case ConditionType.Kill:
-                Prop(e, "kill_specificMob",   "Mob (null = n'importe lequel)");
-                Prop(e, "kill_mobElement",    "Elément mob (Neutral = any)");
-                Prop(e, "kill_withSkill",     "Skill (null = n'importe lequel)");
-                Prop(e, "kill_withElement",   "Elément skill (Neutral = any)");
-                Prop(e, "kill_mustBeBoss",    "Boss uniquement");
-                Prop(e, "kill_isPlayer",      "Cible = joueur");
-                Prop(e, "kill_mustBeStealth", "En furtivité");
-                Prop(e, "kill_mustBeUnarmed", "Sans arme");
-                Prop(e, "kill_lowHP",         "HP joueur < 20%");
-                Prop(e, "kill_atNight",       "La nuit");
-                Prop(e, "kill_inZone",        "Zone ID (vide = any)");
-                break;
-            case ConditionType.Affinity:
-                Prop(e, "affinity_element",        "Elément");
-                Prop(e, "affinity_minAffinity",    "Affinité minimum");
-                Prop(e, "affinity_rankMin",        "Rang minimum");
-                Prop(e, "affinity_mustBeDominant", "Doit être dominant");
-                Prop(e, "affinity_multiElement",   "Multi-éléments");
-                break;
-            case ConditionType.SkillCast:
-                Prop(e, "skillcast_specificSkill", "Skill (null = n'importe lequel)");
-                Prop(e, "skillcast_element",       "Elément (Neutral = any)");
-                Prop(e, "skillcast_mustBeCombo",   "Combo uniquement");
-                Prop(e, "skillcast_inZone",        "Zone ID (vide = any)");
-                break;
-            case ConditionType.Damage:
-                Prop(e, "damage_minAmount",  "Dégâts minimum");
-                Prop(e, "damage_element",    "Elément (Neutral = any)");
-                Prop(e, "damage_isReceived", "Dégâts reçus (vs infligés)");
-                Prop(e, "damage_inOneHit",   "En un seul coup");
-                break;
-            case ConditionType.Zone:
-                Prop(e, "zone_zoneID",       "Zone ID (vide = any)");
-                Prop(e, "zone_minDuration",  "Durée min (sec)");
-                Prop(e, "zone_mustBeAFK",    "En AFK");
-                Prop(e, "zone_atNight",      "La nuit");
-                Prop(e, "zone_isDungeon",    "En donjon");
-                Prop(e, "zone_dungeonSolo",  "Donjon solo");
-                Prop(e, "zone_dungeonNoHit", "Sans prendre de coup");
-                Prop(e, "zone_speedRunMax",  "Speed run max (sec, 0=off)");
-                break;
-            case ConditionType.Item:
-                Prop(e, "item_itemID",  "Item ID (vide = any)");
-                Prop(e, "item_action",  "Action");
-                Prop(e, "item_minAeris", "Aeris minimum");
-                break;
-            case ConditionType.Social:
-                Prop(e, "social_action",        "Action sociale");
-                Prop(e, "social_mustBeInGroup", "En groupe");
-                break;
-            case ConditionType.Activity:
-                Prop(e, "activity_actionType", "Action (nage, pêche, marche, récolte... vide = any)");
-                Prop(e, "activity_levelMin",   "Niveau minimum (0 = any)");
-                break;
-            case ConditionType.Time:
-                Prop(e, "time_action",     "Action");
-                Prop(e, "time_minMinutes", "Minutes minimum");
-                Prop(e, "time_minDays",    "Jours minimum");
-                Prop(e, "time_isNight",    "La nuit");
-                break;
+            var modeProp = checkerProp.FindPropertyRelative("mode");
+            if (modeProp != null) statMode = modeProp.intValue;
+        }
+
+        var copy = checkerProp.Copy();
+        var end  = checkerProp.GetEndProperty();
+
+        if (!copy.NextVisible(true)) return;
+
+        while (!SerializedProperty.EqualContents(copy, end))
+        {
+            if (copy.depth <= checkerProp.depth) break;
+
+            // ── Filtrage contextuel pour StatChecker ──────────
+            if (isStatChecker && statMode >= 0)
+            {
+                string fn = copy.name;
+                bool skip = false;
+                if (_statFinalStatFields.Contains(fn) && statMode != 0) skip = true; // CheckMode.FinalStat = 0
+                if (_statStatPointFields.Contains(fn) && statMode != 1) skip = true; // CheckMode.StatPoint = 1
+                if (_statAffinityFields.Contains(fn)  && statMode != 2) skip = true; // CheckMode.Affinity  = 2
+
+                if (skip)
+                {
+                    if (!copy.NextVisible(false)) break;
+                    continue;
+                }
+            }
+
+            EditorGUILayout.PropertyField(copy, true);
+            if (!copy.NextVisible(false)) break;
         }
     }
 
     // =========================================================
     // HELPERS UI
     // =========================================================
-    private void Prop(SerializedProperty parent, string field, string label)
-    {
-        var p = parent.FindPropertyRelative(field);
-        if (p != null) EditorGUILayout.PropertyField(p, new GUIContent(label));
-    }
 
-    private void SectionLabel(string text)
+    private void DrawSectionLabel(string text)
     {
-        var style = new GUIStyle(EditorStyles.boldLabel);
-        style.normal.textColor = new Color(0.9f, 0.8f, 0.5f);
-        style.fontSize = 11;
+        var style = new GUIStyle(EditorStyles.boldLabel)
+        {
+            fontSize = 11,
+            normal   = { textColor = new Color(0.9f, 0.8f, 0.5f) }
+        };
         EditorGUILayout.LabelField(text, style);
         Rect r = GUILayoutUtility.GetLastRect();
-        r.y += r.height - 1;
-        r.height = 1;
+        r.y += r.height - 1; r.height = 1;
         EditorGUI.DrawRect(r, new Color(0.9f, 0.8f, 0.5f, 0.4f));
         EditorGUILayout.Space(2);
     }
 
-    private void SubLabel(string text)
+    private void DrawSubLabel(string text)
     {
-        EditorGUILayout.Space(4);
-        var style = new GUIStyle(EditorStyles.miniLabel);
-        style.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
+        EditorGUILayout.Space(3);
+        var style = new GUIStyle(EditorStyles.miniLabel)
+        {
+            normal = { textColor = new Color(0.5f, 0.8f, 0.6f) }
+        };
         EditorGUILayout.LabelField(text, style);
     }
 
-    private void TypeLabel_Colored(ConditionType type)
+    private GUIStyle MakeFoldoutStyle(Color accent)
     {
-        EditorGUILayout.Space(4);
-        var style = new GUIStyle(EditorStyles.boldLabel);
-        style.normal.textColor = AccentColor(type);
-        EditorGUILayout.LabelField(TypeLabel(type), style);
+        var s = new GUIStyle(EditorStyles.foldout);
+        s.normal.textColor    = accent;
+        s.onNormal.textColor  = accent;
+        s.focused.textColor   = accent;
+        s.onFocused.textColor = accent;
+        return s;
     }
 
-    private GUIStyle GetBoxStyle(ConditionType type)
+    private static string PrettyName(Type t)
     {
-        var style = new GUIStyle(GUI.skin.box);
-        // Pas de fond custom possible facilement — on utilise le box standard
-        return style;
+        string name = t.Name
+            .Replace("Checker", "")
+            .Replace("Validator", "");
+        return System.Text.RegularExpressions.Regex.Replace(name, "(?<!^)([A-Z])", " $1").Trim();
     }
 
-    private GUIStyle GetFoldoutStyle(ConditionType type)
+    private static Color GetAccentColor(Type t)
     {
-        var style = new GUIStyle(EditorStyles.foldout);
-        style.normal.textColor    = AccentColor(type);
-        style.onNormal.textColor  = AccentColor(type);
-        style.focused.textColor   = AccentColor(type);
-        style.onFocused.textColor = AccentColor(type);
-        return style;
-    }
+        if (t == null) return Color.gray;
 
-    private Color AccentColor(ConditionType t)
-    {
-        switch (t)
+        // ── Checkers actuels (typeof safe) ────────────────────
+        if (t == typeof(KillChecker))        return new Color(1.0f, 0.40f, 0.40f);
+        if (t == typeof(DamageChecker))      return new Color(1.0f, 0.60f, 0.25f);
+        if (t == typeof(SkillCastChecker))   return new Color(0.75f, 0.50f, 1.0f);
+        if (t == typeof(DebuffChecker))      return new Color(0.60f, 0.85f, 0.60f); // ex-DebuffReceivedChecker
+        if (t == typeof(NpcInteractChecker)) return new Color(1.0f, 0.85f, 0.40f);
+        if (t == typeof(StatChecker))        return new Color(0.55f, 0.70f, 1.0f);  // fusionne PlayerLevelChecker / StatThresholdChecker / StatPointChecker / AffinityChecker
+        if (t == typeof(ZoneChecker))        return new Color(0.40f, 1.0f, 0.55f);
+        if (t == typeof(SocialChecker))      return new Color(0.85f, 0.85f, 0.85f);
+        if (t == typeof(TimeChecker))        return new Color(0.40f, 0.95f, 0.95f); // couvre aussi FirstConnectionChecker (action=Login)
+        if (t == typeof(QuestChecker))       return new Color(1.0f, 0.70f, 0.50f);
+        if (t == typeof(DeathChecker))       return new Color(0.80f, 0.30f, 0.30f);
+
+        // ── Checkers non encore implémentés — par nom de string
+        // (évite les erreurs CS0246 si le type n'existe pas encore)
+        switch (t.Name)
         {
-            case ConditionType.Kill:      return new Color(1.0f, 0.45f, 0.45f);
-            case ConditionType.Affinity:  return new Color(0.45f, 0.75f, 1.0f);
-            case ConditionType.SkillCast: return new Color(0.75f, 0.55f, 1.0f);
-            case ConditionType.Damage:    return new Color(1.0f, 0.65f, 0.3f);
-            case ConditionType.Zone:      return new Color(0.45f, 1.0f, 0.55f);
-            case ConditionType.Item:      return new Color(1.0f, 0.9f, 0.35f);
-            case ConditionType.Social:    return new Color(0.85f, 0.85f, 0.85f);
-            case ConditionType.Activity:  return new Color(0.95f, 0.75f, 0.45f);
-            case ConditionType.Time:      return new Color(0.45f, 0.95f, 0.95f);
-            
-            default:                      return Color.white;
+            case "ItemChecker":     return new Color(1.0f, 0.90f, 0.30f);
+            case "ActivityChecker": return new Color(0.95f, 0.70f, 0.40f);
+            case "PetChecker":      return new Color(0.60f, 0.95f, 0.70f);
         }
-    }
 
-    private string TypeLabel(ConditionType t)
-    {
-        switch (t)
-        {
-            case ConditionType.Kill:      return "⚔  KILL";
-            case ConditionType.Affinity:  return "✦  AFFINITÉ";
-            case ConditionType.SkillCast: return "✦  SKILL CAST";
-            case ConditionType.Damage:    return "💥  DÉGÂTS";
-            case ConditionType.Zone:      return "📍  ZONE";
-            case ConditionType.Item:      return "🎒  ITEM";
-            case ConditionType.Social:    return "👥  SOCIAL";
-            case ConditionType.Activity:  return "⚡  ACTIVITÉ";
-            case ConditionType.Time:      return "⏱  TEMPS";
-            
-            default:                      return "—";
-        }
+        return Color.white; // tout nouveau checker ajouté plus tard
     }
 }
 #endif

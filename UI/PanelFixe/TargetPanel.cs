@@ -102,7 +102,7 @@ public class TargetPanel : MonoBehaviour, IPointerClickHandler
         gameObject.SetActive(true);
 
         if (targetNameText  != null)
-            targetNameText.text  = node.data?.resourceName ?? "Ressource";
+            targetNameText.text  = node.data?.displayName.Get(LocalizationManager.CurrentLanguage) ?? "Ressource";
 
         if (targetLevelText != null)
             targetLevelText.text = node.data?.resourceType.ToString() ?? "";

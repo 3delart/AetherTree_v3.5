@@ -25,9 +25,10 @@ public class PermanentSkillData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string skillName  = "Permanent";
-    [TextArea]
-    public string description = "";
+    [Tooltip("Nom affiché au joueur (fr/en). Ne jamais utiliser dans un log/comparaison —\n" +
+             "utiliser this.name (nom d'asset Unity, déjà la clé stable) pour ça.")]
+    public LocalizedText skillName  = new LocalizedText();
+    public LocalizedText description = new LocalizedText();
     public Sprite icon;
 
     // ── Catégorie visuelle (pour le tooltip / SkillLibrary) ───

@@ -343,18 +343,10 @@ public class SocialUI : MonoBehaviour
         foreach (Transform child in rewardItemContainer) Destroy(child.gameObject);
         if (reward == null) return;
 
-        string desc = reward.rewardType switch
-        {
-            RewardType.Skill        => reward.rewardSkill != null ? $"Compétence : {reward.rewardSkill.skillName}" : "Compétence inconnue",
-            RewardType.SkillAndTitle => $"Compétence : {reward.rewardSkill?.skillName}\nTitre : {reward.rewardTitle}",
-            RewardType.Title        => $"Titre : {reward.rewardTitle}",
-            RewardType.Equipment    => $"Équipement : {reward.rewardItemID}",
-            RewardType.Resource     => $"Ressource ×{reward.rewardItemQuantity} : {reward.rewardItemID}",
-            RewardType.Consumable   => $"Consommable ×{reward.rewardItemQuantity} : {reward.rewardItemID}",
-            RewardType.Recipe       => $"Recette : {reward.rewardRecipeID}",
-            RewardType.StatBonus    => reward.rewardSkill != null ? $"Bonus permanent : {reward.rewardSkill.skillName}" : "Bonus de statistiques",
-            _                       => reward.rewardDescription
-        };
+        // GetDisplayName() et GetIcon() centralisent la logique d'affichage
+        // pour tous les RewardType — plus besoin de switch ici.
+        string desc      = reward.GetDisplayName();
+        Sprite rewardIcon = reward.GetIcon();
 
         if (rewardItemPrefab != null)
         {
@@ -364,8 +356,8 @@ public class SocialUI : MonoBehaviour
 
             // Icône selon le type
             var icon = go.transform.Find("Icon")?.GetComponent<Image>();
-            if (icon != null && reward.rewardSkill?.icon != null)
-                icon.sprite = reward.rewardSkill.icon;
+            if (icon != null && rewardIcon != null)
+                icon.sprite = rewardIcon;
         }
         else
         {

@@ -167,9 +167,10 @@ public class PassiveSkillData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string skillName  = "Passive";
-    [TextArea]
-    public string description = "";
+    [Tooltip("Nom affiché au joueur (fr/en). Ne jamais utiliser dans un log/comparaison —\n" +
+             "utiliser this.name (nom d'asset Unity, déjà la clé stable) pour ça.")]
+    public LocalizedText skillName  = new LocalizedText();
+    public LocalizedText description = new LocalizedText();
     public Sprite icon;
 
     // ── Déclencheur ───────────────────────────────────────────

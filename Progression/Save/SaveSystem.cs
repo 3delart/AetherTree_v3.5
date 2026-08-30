@@ -3,30 +3,43 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System;
+using System.Linq;
 
 // =============================================================
 // SAVESYSTEM — Sauvegarde complète sur fichier JSON
-// Path : Assets/Scripts/Progression/Save/SaveSystem.cs
+// Path : Assets/_Game/Scripts/Progression/Save/SaveSystem.cs
 // AetherTree GDD v31
 //
-// Fichier : [ProjetUnity]/Saves/save_slot0.json
+// Deux fichiers distincts :
+//   character_[nom].json  → données du personnage actif
+//   account.json          → données cumulées du compte
+//
+// En v3.5 (solo) : account.json est écrit en même temps que
+// character.json. En v4, account.json deviendra une sync serveur.
+//
+// Flux Save  : Save(player) → CollectProgress() + SaveAccount()
+// Flux Load  : Load(player) → ApplyProgress()  + LoadAccount()
 // =============================================================
 
 public class SaveSystem : MonoBehaviour
 {
     public static SaveSystem Instance { get; private set; }
 
-    private const string SAVE_FILENAME = "save_slot0.json";
-    private const float  LOAD_DELAY    = 0.15f;
+    // Nom du fichier perso — en v4 : "character_[characterName].json"
+    private const string SAVE_FILENAME    = "save_slot0.json";
+    private const string ACCOUNT_FILENAME = "account.json";
+    private const float  LOAD_DELAY       = 0.15f;
 
     [Header("Autosave")]
     [Tooltip("Intervalle de sauvegarde automatique en secondes. 0 = désactivé.")]
     public float autosaveInterval = 30f;
 
     private float _autosaveTimer = 0f;
-    private bool  _isFirstLoad   = true; // évite de sauvegarder avant le premier chargement
+    private bool  _isFirstLoad   = true;
 
-    private string SavePath
+    // ── Chemins ───────────────────────────────────────────────
+
+    private string SaveDir
     {
         get
         {
@@ -34,15 +47,21 @@ public class SaveSystem : MonoBehaviour
                 Directory.GetParent(Application.dataPath).FullName,
                 "Saves");
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            return Path.Combine(dir, SAVE_FILENAME);
+            return dir;
         }
     }
+
+    private string CharacterSavePath => Path.Combine(SaveDir, SAVE_FILENAME);
+    private string AccountSavePath   => Path.Combine(SaveDir, ACCOUNT_FILENAME);
 
     private Vector3 _pendingPosition;
     private Player  _pendingPlayer;
     private bool    _hasPendingPosition;
 
     // =========================================================
+    // LIFECYCLE
+    // =========================================================
+
     private void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
@@ -52,10 +71,14 @@ public class SaveSystem : MonoBehaviour
 
     private void Start()
     {
+        // Charge le compte en premier (compteurs cross-perso disponibles
+        // avant que UnlockManager commence à évaluer les conditions)
+        LoadAccount();
+
         if (HasSave())
             Invoke(nameof(LoadAfterInit), LOAD_DELAY);
         else
-            _isFirstLoad = false; // nouveau personnage, autosave autorisé immédiatement
+            _isFirstLoad = false;
     }
 
     private void LoadAfterInit()
@@ -64,13 +87,11 @@ public class SaveSystem : MonoBehaviour
         if (player != null) Load(player);
         else Debug.LogWarning("[SAVE] LoadAfterInit : aucun Player trouvé.");
 
-        _isFirstLoad = false; // autorise l'autosave à partir de maintenant
+        _isFirstLoad = false;
     }
-
 
     private void Update()
     {
-        // Pas d'autosave avant que le chargement initial soit terminé
         if (_isFirstLoad) return;
 
         _autosaveTimer += Time.deltaTime;
@@ -101,7 +122,7 @@ public class SaveSystem : MonoBehaviour
 #endif
 
     // =========================================================
-    // SAVE
+    // SAVE PERSONNAGE
     // =========================================================
 
     public void Save(Player player)
@@ -113,20 +134,57 @@ public class SaveSystem : MonoBehaviour
 
         try
         {
-            File.WriteAllText(SavePath, json);
-            Debug.Log($"[SAVE] ✅ Sauvegardé → {SavePath}\n" +
+            File.WriteAllText(CharacterSavePath, json);
+            int itemCount = progress.weapons.Count + progress.armors.Count + progress.helmets.Count +
+                            progress.gloves.Count + progress.boots.Count + progress.jewelry.Count +
+                            progress.spirits.Count + progress.consumables.Count + progress.resources.Count +
+                            progress.gems.Count + progress.runes.Count + progress.cosmeticHeads.Count +
+                            progress.cosmeticBodies.Count + progress.cards.Count;
+            Debug.Log($"[SAVE] ✅ Personnage → {CharacterSavePath}\n" +
                       $"Niv.{progress.level} | XP:{progress.xpCombat} | " +
-                      $"Items:{progress.items.Count} | Quêtes:{progress.quests.Count} | " +
+                      $"Items:{itemCount} | Quêtes:{progress.quests.Count} | " +
                       $"Mails:{progress.mails.Count} | Aeris:{progress.aeris}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[SAVE] ❌ Erreur écriture : {e.Message}");
+            Debug.LogError($"[SAVE] ❌ Erreur écriture personnage : {e.Message}");
+        }
+
+        // Sauvegarde compte en même temps
+        SaveAccount();
+    }
+
+    // =========================================================
+    // SAVE COMPTE
+    // =========================================================
+
+    public void SaveAccount()
+    {
+        var account = new AccountProgress
+        {
+            accountID = FindObjectOfType<Player>()?.entityName ?? "default"
+        };
+
+        // Demande à UnlockManager de remplir les données compte
+        UnlockManager.Instance?.CollectAccountProgress(account);
+
+        string json = JsonUtility.ToJson(account, prettyPrint: true);
+
+        try
+        {
+            File.WriteAllText(AccountSavePath, json);
+            Debug.Log($"[SAVE] ✅ Compte → {AccountSavePath} " +
+                      $"({account.accountCountersList.Count} compteurs, " +
+                      $"{account.unlockedAccountConditionIDs.Count} conditions compte)");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[SAVE] ❌ Erreur écriture compte : {e.Message}");
         }
     }
 
     // =========================================================
-    // LOAD
+    // LOAD PERSONNAGE
     // =========================================================
 
     public void Load(Player player)
@@ -135,7 +193,7 @@ public class SaveSystem : MonoBehaviour
 
         try
         {
-            string json     = File.ReadAllText(SavePath);
+            string json     = File.ReadAllText(CharacterSavePath);
             var    progress = JsonUtility.FromJson<CharacterProgress>(json);
 
             if (progress == null)
@@ -148,18 +206,64 @@ public class SaveSystem : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"[LOAD] ❌ Erreur lecture : {e.Message}");
+            Debug.LogError($"[LOAD] ❌ Erreur lecture personnage : {e.Message}");
         }
     }
 
-    public bool HasSave() => File.Exists(SavePath);
+    // =========================================================
+    // LOAD COMPTE
+    // =========================================================
+
+    public void LoadAccount()
+    {
+        if (!File.Exists(AccountSavePath))
+        {
+            Debug.Log("[LOAD] account.json introuvable — nouveau compte, compteurs à zéro.");
+            return;
+        }
+
+        try
+        {
+            string json    = File.ReadAllText(AccountSavePath);
+            var    account = JsonUtility.FromJson<AccountProgress>(json);
+
+            if (account == null)
+            {
+                Debug.LogWarning("[LOAD] account.json invalide — ignoré.");
+                return;
+            }
+
+            // Restaure compteurs et conditions compte dans UnlockManager
+            UnlockManager.Instance?.LoadAccountProgress(account);
+
+            Debug.Log($"[LOAD] ✅ Compte chargé — " +
+                      $"{account.accountCountersList?.Count ?? 0} compteurs, " +
+                      $"{account.unlockedAccountConditionIDs?.Count ?? 0} conditions compte.");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[LOAD] ❌ Erreur lecture compte : {e.Message}");
+        }
+    }
+
+    public bool HasSave()        => File.Exists(CharacterSavePath);
+    public bool HasAccountSave() => File.Exists(AccountSavePath);
 
     public void DeleteSave()
     {
-        if (File.Exists(SavePath))
+        if (File.Exists(CharacterSavePath))
         {
-            File.Delete(SavePath);
-            Debug.Log("[SAVE] 🗑 Sauvegarde supprimée.");
+            File.Delete(CharacterSavePath);
+            Debug.Log("[SAVE] 🗑 Sauvegarde personnage supprimée.");
+        }
+    }
+
+    public void DeleteAccount()
+    {
+        if (File.Exists(AccountSavePath))
+        {
+            File.Delete(AccountSavePath);
+            Debug.Log("[SAVE] 🗑 Sauvegarde compte supprimée.");
         }
     }
 
@@ -182,13 +286,26 @@ public class SaveSystem : MonoBehaviour
             posY            = player.transform.position.y,
             posZ            = player.transform.position.z,
             aeris           = AerisSystem.Instance?.Aeris ?? 0,
+
+            // StatPoints (§3.2.1) — rangs investis + pool
+            spRankAttack    = player.statPoints?.rankAttack        ?? 0,
+            spRankDefense   = player.statPoints?.rankDefense       ?? 0,
+            spRankElemental = player.statPoints?.rankElemental     ?? 0,
+            spRankHP        = player.statPoints?.rankHP            ?? 0,
+            spAvailable     = player.statPoints?.availablePoints   ?? 0,
+            spTotalEarned   = player.statPoints?.totalPointsEarned ?? 0,
         };
 
-        // ⑧ Conditions débloquées
+        // ⑧ Conditions débloquées (scope Character uniquement)
         if (UnlockManager.Instance != null)
-            progress.unlockedConditionIDs = UnlockManager.Instance.GetUnlocked();
+            progress.unlockedConditionIDs = UnlockManager.Instance.GetUnlocked()
+                .Where(id =>
+                {
+                    var cond = allConditions?.FirstOrDefault(c => c?.conditionID == id);
+                    return cond == null || cond.GetDominantScope() == CounterScope.Character;
+                }).ToList();
 
-        // ⑫ Progression conditions en cours
+        // ⑫ Progression conditions en cours (scope Character)
         if (UnlockManager.Instance != null)
             progress.conditionProgresses = UnlockManager.Instance.GetConditionProgresses();
 
@@ -202,12 +319,10 @@ public class SaveSystem : MonoBehaviour
         foreach (var skill in player.unlockedSkills)
             if (skill != null) progress.unlockedSkillNames.Add(skill.name);
 
-        // ⑥ Permanents débloqués
         if (player.unlockedPermanents != null)
             foreach (var perm in player.unlockedPermanents)
                 if (perm != null) progress.unlockedPermanentNames.Add(perm.name);
 
-        // ⑥ Passifs débloqués
         if (player.unlockedPassives != null)
             foreach (var passive in player.unlockedPassives)
                 if (passive != null) progress.unlockedPassiveNames.Add(passive.name);
@@ -221,10 +336,8 @@ public class SaveSystem : MonoBehaviour
                     progress.skillBarSlots.Add(new SavedSkillSlot { slotIndex = i, skillName = skill.name });
             }
 
-        // ⑤ Équipements portés
+        // ⑤ Équipements + Inventaire
         CollectEquipped(progress, player);
-
-        // ⑤ Inventaire
         if (InventorySystem.Instance != null)
             foreach (var item in InventorySystem.Instance.GetAllItems())
                 CollectInventoryItem(progress, item);
@@ -245,54 +358,78 @@ public class SaveSystem : MonoBehaviour
         return progress;
     }
 
+    // Référence aux ConditionData pour filtrage scope dans CollectProgress
+    // — récupérées via UnlockManager pour éviter un FindObjectsOfTypeAll ici.
+    private List<ConditionData> allConditions =>
+        UnlockManager.Instance?.allConditions;
+
     // ── Équipements portés ────────────────────────────────────
 
     private void CollectEquipped(CharacterProgress p, Player player)
     {
         if (player.equippedWeaponInstance?.data != null)
-            p.items.Add(new SavedItem {
-                category = "Weapon", soName = player.equippedWeaponInstance.data.name,
-                rarityRank = player.equippedWeaponInstance.rarityRank,
-                upgradeLevel = player.equippedWeaponInstance.upgradeLevel,
-                isEquipped = true, slot = "Weapon" });
+        {
+            var w = player.equippedWeaponInstance;
+            p.weapons.Add(new SavedWeapon {
+                soName = w.data.name, isEquipped = true,
+                rarityRank = w.rarityRank, upgradeLevel = w.upgradeLevel,
+                ratioMin = w.rolledRatioMin, ratioMax = w.rolledRatioMax, ratioPrecision = w.rolledRatioPrecision });
+        }
 
         if (player.equippedArmorInstance?.data != null)
-            p.items.Add(new SavedItem {
-                category = "Armor", soName = player.equippedArmorInstance.data.name,
-                rarityRank = player.equippedArmorInstance.rarityRank,
-                upgradeLevel = player.equippedArmorInstance.upgradeLevel,
-                isEquipped = true, slot = "Armor" });
+        {
+            var a = player.equippedArmorInstance;
+            p.armors.Add(new SavedArmor {
+                soName = a.data.name, isEquipped = true,
+                rarityRank = a.rarityRank, upgradeLevel = a.upgradeLevel,
+                ratioMelee = a.rolledRatioMelee, ratioRanged = a.rolledRatioRanged,
+                ratioMagic = a.rolledRatioMagic, ratioDodge = a.rolledRatioDodge });
+        }
 
         if (player.equippedHelmetInstance?.data != null)
-            p.items.Add(new SavedItem {
-                category = "Helmet", soName = player.equippedHelmetInstance.data.name,
-                isEquipped = true, slot = "Helmet" });
+        {
+            var h = player.equippedHelmetInstance;
+            p.helmets.Add(new SavedHelmet {
+                soName = h.data.name, isEquipped = true,
+                ratioMelee = h.rolledRatioMelee, ratioRanged = h.rolledRatioRanged, ratioMagic = h.rolledRatioMagic });
+        }
 
         if (player.equippedGlovesInstance?.data != null)
-            p.items.Add(new SavedItem {
-                category = "Gloves", soName = player.equippedGlovesInstance.data.name,
-                isEquipped = true, slot = "Gloves" });
+        {
+            var g = player.equippedGlovesInstance;
+            p.gloves.Add(new SavedGloves {
+                soName = g.data.name, isEquipped = true,
+                ratioMelee = g.rolledRatioMelee, ratioRanged = g.rolledRatioRanged, ratioMagic = g.rolledRatioMagic,
+                fusionLevel = g.fusionLevel,
+                resistFire = g.resistFire, resistWater = g.resistWater, resistLightning = g.resistLightning,
+                resistEarth = g.resistEarth, resistNature = g.resistNature, resistDarkness = g.resistDarkness, resistLight = g.resistLight });
+        }
 
         if (player.equippedBootsInstance?.data != null)
-            p.items.Add(new SavedItem {
-                category = "Boots", soName = player.equippedBootsInstance.data.name,
-                isEquipped = true, slot = "Boots" });
+        {
+            var b = player.equippedBootsInstance;
+            p.boots.Add(new SavedBoots {
+                soName = b.data.name, isEquipped = true,
+                ratioMelee = b.rolledRatioMelee, ratioRanged = b.rolledRatioRanged, ratioMagic = b.rolledRatioMagic,
+                fusionLevel = b.fusionLevel,
+                resistFire = b.resistFire, resistWater = b.resistWater, resistLightning = b.resistLightning,
+                resistEarth = b.resistEarth, resistNature = b.resistNature, resistDarkness = b.resistDarkness, resistLight = b.resistLight });
+        }
 
         if (player.equippedJewelryInstances != null)
             foreach (var j in player.equippedJewelryInstances)
                 if (j?.data != null)
-                    p.items.Add(new SavedItem {
-                        category = "Jewelry", soName = j.data.name,
+                    p.jewelry.Add(new SavedJewelry {
+                        soName = j.data.name, isEquipped = true,
                         jewelrySlot = j.Slot.ToString(),
-                        isEquipped = true, slot = j.Slot.ToString() });
+                        ratioMelee = j.rolledRatioMelee, ratioRanged = j.rolledRatioRanged, ratioMagic = j.rolledRatioMagic });
 
         if (player.equippedSpiritInstances != null)
             foreach (var s in player.equippedSpiritInstances)
                 if (s?.data != null)
-                    p.items.Add(new SavedItem {
-                        category = "Spirit", soName = s.data.name,
-                        spiritLevel = s.level, spiritXP = s.currentXP,
-                        isEquipped = true, slot = "Spirit" });
+                    p.spirits.Add(new SavedSpirit {
+                        soName = s.data.name, isEquipped = true,
+                        spiritLevel = s.level, spiritXP = s.currentXP });
     }
 
     // ── Item inventaire ───────────────────────────────────────
@@ -300,47 +437,73 @@ public class SaveSystem : MonoBehaviour
     private void CollectInventoryItem(CharacterProgress p, InventoryItem item)
     {
         if (item == null) return;
-        SavedItem saved = null;
 
         if      (item.WeaponInstance?.data     != null)
-            saved = new SavedItem { category = "Weapon",     soName = item.WeaponInstance.data.name,
+            p.weapons.Add(new SavedWeapon { soName = item.WeaponInstance.data.name,
                                     rarityRank = item.WeaponInstance.rarityRank,
-                                    upgradeLevel = item.WeaponInstance.upgradeLevel };
+                                    upgradeLevel = item.WeaponInstance.upgradeLevel,
+                                    ratioMin = item.WeaponInstance.rolledRatioMin,
+                                    ratioMax = item.WeaponInstance.rolledRatioMax,
+                                    ratioPrecision = item.WeaponInstance.rolledRatioPrecision });
         else if (item.ArmorInstance?.data      != null)
-            saved = new SavedItem { category = "Armor",      soName = item.ArmorInstance.data.name,
+            p.armors.Add(new SavedArmor { soName = item.ArmorInstance.data.name,
                                     rarityRank = item.ArmorInstance.rarityRank,
-                                    upgradeLevel = item.ArmorInstance.upgradeLevel };
+                                    upgradeLevel = item.ArmorInstance.upgradeLevel,
+                                    ratioMelee = item.ArmorInstance.rolledRatioMelee,
+                                    ratioRanged = item.ArmorInstance.rolledRatioRanged,
+                                    ratioMagic = item.ArmorInstance.rolledRatioMagic,
+                                    ratioDodge = item.ArmorInstance.rolledRatioDodge });
         else if (item.HelmetInstance?.data     != null)
-            saved = new SavedItem { category = "Helmet",     soName = item.HelmetInstance.data.name };
+            p.helmets.Add(new SavedHelmet { soName = item.HelmetInstance.data.name,
+                                    ratioMelee = item.HelmetInstance.rolledRatioMelee,
+                                    ratioRanged = item.HelmetInstance.rolledRatioRanged,
+                                    ratioMagic = item.HelmetInstance.rolledRatioMagic });
         else if (item.GlovesInstance?.data     != null)
-            saved = new SavedItem { category = "Gloves",     soName = item.GlovesInstance.data.name };
+            p.gloves.Add(new SavedGloves { soName = item.GlovesInstance.data.name,
+                                    ratioMelee = item.GlovesInstance.rolledRatioMelee,
+                                    ratioRanged = item.GlovesInstance.rolledRatioRanged,
+                                    ratioMagic = item.GlovesInstance.rolledRatioMagic,
+                                    fusionLevel = item.GlovesInstance.fusionLevel,
+                                    resistFire = item.GlovesInstance.resistFire, resistWater = item.GlovesInstance.resistWater,
+                                    resistLightning = item.GlovesInstance.resistLightning, resistEarth = item.GlovesInstance.resistEarth,
+                                    resistNature = item.GlovesInstance.resistNature, resistDarkness = item.GlovesInstance.resistDarkness,
+                                    resistLight = item.GlovesInstance.resistLight });
         else if (item.BootsInstance?.data      != null)
-            saved = new SavedItem { category = "Boots",      soName = item.BootsInstance.data.name };
+            p.boots.Add(new SavedBoots { soName = item.BootsInstance.data.name,
+                                    ratioMelee = item.BootsInstance.rolledRatioMelee,
+                                    ratioRanged = item.BootsInstance.rolledRatioRanged,
+                                    ratioMagic = item.BootsInstance.rolledRatioMagic,
+                                    fusionLevel = item.BootsInstance.fusionLevel,
+                                    resistFire = item.BootsInstance.resistFire, resistWater = item.BootsInstance.resistWater,
+                                    resistLightning = item.BootsInstance.resistLightning, resistEarth = item.BootsInstance.resistEarth,
+                                    resistNature = item.BootsInstance.resistNature, resistDarkness = item.BootsInstance.resistDarkness,
+                                    resistLight = item.BootsInstance.resistLight });
         else if (item.JewelryInstance?.data    != null)
-            saved = new SavedItem { category = "Jewelry",    soName = item.JewelryInstance.data.name,
-                                    jewelrySlot = item.JewelryInstance.Slot.ToString() };
+            p.jewelry.Add(new SavedJewelry { soName = item.JewelryInstance.data.name,
+                                    jewelrySlot = item.JewelryInstance.Slot.ToString(),
+                                    ratioMelee = item.JewelryInstance.rolledRatioMelee,
+                                    ratioRanged = item.JewelryInstance.rolledRatioRanged,
+                                    ratioMagic = item.JewelryInstance.rolledRatioMagic });
         else if (item.SpiritInstance?.data     != null)
-            saved = new SavedItem { category = "Spirit",     soName = item.SpiritInstance.data.name,
+            p.spirits.Add(new SavedSpirit { soName = item.SpiritInstance.data.name,
                                     spiritLevel = item.SpiritInstance.level,
-                                    spiritXP    = item.SpiritInstance.currentXP };
+                                    spiritXP    = item.SpiritInstance.currentXP });
         else if (item.ConsumableInstance?.data != null)
-            saved = new SavedItem { category = "Consumable", soName = item.ConsumableInstance.data.name,
-                                    quantity = item.ConsumableInstance.quantity };
+            p.consumables.Add(new SavedConsumable { soName = item.ConsumableInstance.data.name,
+                                    quantity = item.ConsumableInstance.quantity });
         else if (item.ResourceInstance?.data   != null)
-            saved = new SavedItem { category = "Resource",   soName = item.ResourceInstance.data.name,
-                                    quantity = item.ResourceInstance.quantity };
+            p.resources.Add(new SavedResource { soName = item.ResourceInstance.data.name,
+                                    quantity = item.ResourceInstance.quantity });
         else if (item.GemInstance?.data        != null)
-            saved = new SavedItem { category = "Gem",        soName = item.GemInstance.data.name };
+            p.gems.Add(new SavedGem { soName = item.GemInstance.data.name });
         else if (item.RuneInstance?.data       != null)
-            saved = new SavedItem { category = "Rune",       soName = item.RuneInstance.data.name };
+            p.runes.Add(new SavedRune { soName = item.RuneInstance.data.name });
         else if (item.CosmeticInstanceHead?.data != null)
-            saved = new SavedItem { category = "CosmeticHead", soName = item.CosmeticInstanceHead.data.name };
+            p.cosmeticHeads.Add(new SavedCosmeticHead { soName = item.CosmeticInstanceHead.data.name });
         else if (item.CosmeticInstanceBody?.data != null)
-            saved = new SavedItem { category = "CosmeticBody", soName = item.CosmeticInstanceBody.data.name };
+            p.cosmeticBodies.Add(new SavedCosmeticBody { soName = item.CosmeticInstanceBody.data.name });
         else if (item.CardInstance?.data         != null)
-            saved = new SavedItem { category = "Card",          soName = item.CardInstance.data.name };
-
-        if (saved != null) { saved.isEquipped = false; p.items.Add(saved); }
+            p.cards.Add(new SavedCard { soName = item.CardInstance.data.name });
     }
 
     // ── Quêtes ────────────────────────────────────────────────
@@ -376,7 +539,6 @@ public class SaveSystem : MonoBehaviour
     private void CollectMails(CharacterProgress p)
     {
         var mails = MailboxSystem.Instance.GetAllMails();
-        Debug.Log($"[SAVE] CollectMails — {mails?.Count ?? 0} mails trouvés");
         if (mails == null) return;
 
         foreach (var mail in mails)
@@ -388,7 +550,7 @@ public class SaveSystem : MonoBehaviour
                 mailID        = mail.mailID,
                 senderName    = mail.senderName,
                 isFromServer  = mail.isFromServer,
-                sentAt        = mail.sentAt.ToString("o"), // format ISO 8601
+                sentAt        = mail.sentAt.ToString("o"),
                 subject       = mail.subject,
                 body          = mail.body,
                 isRead        = mail.isRead,
@@ -399,12 +561,19 @@ public class SaveSystem : MonoBehaviour
             if (mail.reward != null)
             {
                 saved.rewardType         = (int)mail.reward.rewardType;
-                saved.rewardSkillName    = mail.reward.rewardSkill?.name ?? "";
-                saved.rewardTitle        = mail.reward.rewardTitle       ?? "";
-                saved.rewardItemID       = mail.reward.rewardItemID      ?? "";
-                saved.rewardItemQuantity = mail.reward.rewardItemQuantity;
-                saved.rewardRecipeID     = mail.reward.rewardRecipeID    ?? "";
-                saved.rewardDescription  = mail.reward.rewardDescription ?? "";
+                saved.rewardSkillName    = mail.reward.rewardSkill?.name      ?? "";
+                saved.rewardTitle        = mail.reward.rewardTitle             ?? "";
+                saved.rewardRecipeID     = mail.reward.rewardRecipeID          ?? "";
+                saved.rewardPetID        = mail.reward.rewardPetID             ?? "";
+                saved.rewardDescription  = mail.reward.rewardDescription       ?? "";
+
+                // Équipement générique — on sauvegarde le nom du SO pour le retrouver au chargement
+                saved.rewardEquipmentName    = mail.reward.rewardEquipment?.name        ?? "";
+                // Ressource / Consommable
+                saved.rewardResourceName     = mail.reward.rewardResource?.name         ?? "";
+                saved.rewardResourceQuantity = mail.reward.rewardResourceQuantity;
+                saved.rewardConsumableName   = mail.reward.rewardConsumable?.name       ?? "";
+                saved.rewardConsumableQuantity = mail.reward.rewardConsumableQuantity;
             }
 
             p.mails.Add(saved);
@@ -417,28 +586,39 @@ public class SaveSystem : MonoBehaviour
 
     private void ApplyProgress(Player player, CharacterProgress p)
     {
-        // ① Niveau & XP
+        // ⑧ Conditions débloquées — chargées EN PREMIER, avant tout ce qui
+        // peut publier un StatsChangedEvent (OnLevelUp, RecalculateStats...).
+        // Sans ça, EvaluateAll() se déclenche sur des conditions dont les
+        // compteurs sont déjà à countRequired mais pas encore dans records{},
+        // ce qui re-trigger les mails de récompense à chaque chargement.
+        UnlockManager.Instance?.LoadUnlocked(p.unlockedConditionIDs);
+
+        // ⑫ Progression conditions en cours — chargée juste après pour que
+        // les compteurs soient cohérents avec les flags débloqués.
+        if (p.conditionProgresses != null)
+            UnlockManager.Instance?.LoadConditionProgresses(p.conditionProgresses);
+
+        // ① Niveau & XP — après les conditions pour que le StatsChangedEvent
+        // publié par RecalculateStats trouve les records{} déjà remplis.
         if (p.level > 1) player.OnLevelUp(p.level);
         player.xpCombat    = p.xpCombat;
         player.activeTitle = p.activeTitle;
+
+        // StatPoints — APRÈS OnLevelUp (qui distribue les points du niveau) :
+        // on écrase le pool avec l'état réel sauvegardé (rangs investis + points restants).
+        // Anciennes saves sans ces champs → tout à 0 = comportement actuel, pas de régression.
+        player.statPoints?.LoadFromSave(
+            p.spRankAttack, p.spRankDefense, p.spRankElemental, p.spRankHP,
+            p.spTotalEarned, p.spAvailable);
 
         // ② Réputation
         player.AddWorldReputation(p.worldReputation - player.worldReputation);
         player.AddPvPReputation(p.pvpReputation   - player.pvpReputation);
 
-        // ④ Aeris
-        if (AerisSystem.Instance != null)
-        {
-            int delta = p.aeris - AerisSystem.Instance.Aeris;
-            if (delta > 0) AerisSystem.Instance.Add(delta);
-        }
-
-        // ⑧ Conditions débloquées
-        UnlockManager.Instance?.LoadUnlocked(p.unlockedConditionIDs);
-
-        // ⑫ Progression conditions en cours
-        if (p.conditionProgresses != null)
-            UnlockManager.Instance?.LoadConditionProgresses(p.conditionProgresses);
+        // ④ Aeris — SetAeris() fait autorité (pas Add() : la save doit pouvoir aussi
+        // redescendre l'Aeris, ex. si le joueur en a dépensé après la dernière sauvegarde
+        // dans une session précédente qui a mal fermé).
+        AerisSystem.Instance?.SetAeris(p.aeris);
 
         // ⑨ Compteurs activité
         var counter = player.GetActivityCounter();
@@ -457,7 +637,6 @@ public class SaveSystem : MonoBehaviour
             if (skill != null) player.UnlockSkill(skill);
         }
 
-        // ⑥ Permanents débloqués
         if (p.unlockedPermanentNames != null)
             foreach (var name in p.unlockedPermanentNames)
             {
@@ -465,7 +644,6 @@ public class SaveSystem : MonoBehaviour
                 if (perm != null) player.UnlockPermanent(perm);
             }
 
-        // ⑥ Passifs débloqués
         if (p.unlockedPassiveNames != null)
             foreach (var name in p.unlockedPassiveNames)
             {
@@ -475,18 +653,32 @@ public class SaveSystem : MonoBehaviour
 
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
+        {
             foreach (var savedSlot in p.skillBarSlots)
             {
                 var skill = FindSOByName<SkillData>(savedSlot.skillName);
-                if (skill != null) SkillBar.Instance.SetSkillAtSlot(savedSlot.slotIndex, skill);
+                if (skill != null)
+                {
+                    // Garantit que le skill est débloqué même s'il manque dans unlockedSkillNames
+                    // (ex : BasicAttack débloquée via condition mais save écrite avant autosave)
+                    player.UnlockSkill(skill);
+                    SkillBar.Instance.SetSkillAtSlot(savedSlot.slotIndex, skill);
+                }
             }
+            // Signale à SetStartingSkillBar de ne pas écraser les slots restaurés
+            if (p.skillBarSlots != null && p.skillBarSlots.Count > 0)
+            {
+                var playerRef = FindObjectOfType<Player>();
+                if (playerRef != null) playerRef.skillBarRestoredFromSave = true;
+            }
+        }
 
-        // ⑬ Mails — restaurés avant les items pour que les skills soient
-        // disponibles si le joueur clique "Récupérer" immédiatement
+        // ⑬ Mails
         RestoreMails(p.mails);
 
-        // ⑤ Items — chargés en coroutine
+        // ⑤ Items — en coroutine
         StartCoroutine(LoadItemsDelayed(player, p));
+        GameEventBus.PublishSaveLoaded();
     }
 
     // ── Restauration mails ────────────────────────────────────
@@ -500,26 +692,37 @@ public class SaveSystem : MonoBehaviour
         {
             if (saved == null || string.IsNullOrEmpty(saved.mailID)) continue;
 
-            // Reconstruit la récompense
             MailReward reward = null;
             if (saved.hasReward)
             {
                 reward = new MailReward
                 {
-                    rewardType         = (RewardType)saved.rewardType,
-                    rewardTitle        = saved.rewardTitle,
-                    rewardItemID       = saved.rewardItemID,
-                    rewardItemQuantity = saved.rewardItemQuantity,
-                    rewardRecipeID     = saved.rewardRecipeID,
-                    rewardDescription  = saved.rewardDescription,
+                    rewardType               = (RewardType)saved.rewardType,
+                    rewardTitle              = saved.rewardTitle,
+                    rewardRecipeID           = saved.rewardRecipeID,
+                    rewardPetID              = saved.rewardPetID,
+                    rewardDescription        = saved.rewardDescription,
+                    rewardResourceQuantity   = saved.rewardResourceQuantity,
+                    rewardConsumableQuantity = saved.rewardConsumableQuantity,
                 };
 
-                // Retrouve le SkillData par nom si nécessaire
+                // Skill
                 if (!string.IsNullOrEmpty(saved.rewardSkillName))
                     reward.rewardSkill = FindSOByName<SkillData>(saved.rewardSkillName);
+
+                // Équipement générique — retrouvé par nom de SO
+                if (!string.IsNullOrEmpty(saved.rewardEquipmentName))
+                    reward.rewardEquipment = FindSOByName<ScriptableObject>(saved.rewardEquipmentName);
+
+                // Ressource
+                if (!string.IsNullOrEmpty(saved.rewardResourceName))
+                    reward.rewardResource = FindSOByName<ResourceData>(saved.rewardResourceName);
+
+                // Consommable
+                if (!string.IsNullOrEmpty(saved.rewardConsumableName))
+                    reward.rewardConsumable = FindSOByName<ConsumableData>(saved.rewardConsumableName);
             }
 
-            // Reconstruit le DateTime
             DateTime sentAt = DateTime.Now;
             if (!string.IsNullOrEmpty(saved.sentAt))
                 DateTime.TryParse(saved.sentAt, out sentAt);
@@ -552,10 +755,8 @@ public class SaveSystem : MonoBehaviour
         InventorySystem.Instance?.UnequipAll(player);
         InventorySystem.Instance?.ClearAll();
 
-        foreach (var saved in p.items)
-            RestoreItem(player, saved);
+        RestoreItems(player, p);
 
-        // ⑩ Quêtes
         if (QuestSystem.Instance != null && p.quests != null && p.quests.Count > 0)
         {
             var allQuests = FindAllQuests();
@@ -567,12 +768,10 @@ public class SaveSystem : MonoBehaviour
             QuestSystem.Instance.LoadSaveData(entries, allQuests);
         }
 
-        // ⑪ Jauge élémentaire
         var elemental = player.GetElementalSystem();
         if (elemental != null && p.elementAffinities != null && p.elementAffinities.Count > 0)
             elemental.LoadAffinities(p.elementAffinities);
 
-        // Position
         if (SceneLoader.Instance != null && !string.IsNullOrEmpty(p.lastMap)
             && p.lastMap != SceneLoader.Instance.CurrentMap)
         {
@@ -587,81 +786,164 @@ public class SaveSystem : MonoBehaviour
             RepositionPlayer(player, p);
         }
 
-        // Refresh UI
         GameEventBus.Publish(new StatsChangedEvent { player = player });
         InventoryUI.Instance?.RefreshGrid();
         CharacterPanelUI.Instance?.Refresh();
 
-        Debug.Log($"[LOAD] ✅ Items:{p.items.Count} | Quêtes:{p.quests?.Count ?? 0} | " +
+        int itemCount = p.weapons.Count + p.armors.Count + p.helmets.Count + p.gloves.Count + p.boots.Count +
+                        p.jewelry.Count + p.spirits.Count + p.consumables.Count + p.resources.Count +
+                        p.gems.Count + p.runes.Count + p.cosmeticHeads.Count + p.cosmeticBodies.Count + p.cards.Count;
+        Debug.Log($"[LOAD] ✅ Items:{itemCount} | Quêtes:{p.quests?.Count ?? 0} | " +
                   $"Mails:{p.mails?.Count ?? 0}");
     }
 
-    private void RestoreItem(Player player, SavedItem saved)
+    /// <summary>Restaure les 14 catégories d'items — chacune via son propre chemin,
+    /// vu que chaque SavedXxx ne porte que ses champs propres (pas de dispatch générique
+    /// possible sans polymorphisme, non supporté par JsonUtility).</summary>
+    private void RestoreItems(Player player, CharacterProgress p)
     {
-        var item = CreateItemFromSave(saved);
-        if (item == null)
+        // NB : on reconstruit chaque instance directement avec les ratios sauvegardés
+        // (constructeur explicite, ou CreateInstance() + écrasement des champs rollés
+        // quand l'état par défaut du SO doit d'abord être posé — Gloves/Boots) plutôt
+        // que via CreateDropInstance()/CreateInstance() seul, qui rollent un NOUVEAU
+        // ratio aléatoire à chaque appel — sinon l'item change de stats à chaque
+        // chargement de sauvegarde.
+
+        foreach (var s in p.weapons)
         {
-            Debug.LogWarning($"[LOAD] ⚠ Item introuvable : {saved.category} '{saved.soName}'");
-            return;
+            var wd = FindSOByName<WeaponData>(s.soName);
+            if (wd == null) { Debug.LogWarning($"[LOAD] ⚠ Weapon introuvable : '{s.soName}'"); continue; }
+            var inst = new WeaponInstance(wd, s.ratioMin, s.ratioMax, s.ratioPrecision, s.rarityRank, s.upgradeLevel);
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
         }
-        if (saved.isEquipped) InventorySystem.Instance?.EquipItem(item, player);
-        else                  InventorySystem.Instance?.AddItem(item);
+
+        foreach (var s in p.armors)
+        {
+            var ad = FindSOByName<ArmorData>(s.soName);
+            if (ad == null) { Debug.LogWarning($"[LOAD] ⚠ Armor introuvable : '{s.soName}'"); continue; }
+            var inst = new ArmorInstance(ad, s.ratioMelee, s.ratioRanged, s.ratioMagic, s.ratioDodge, s.rarityRank, s.upgradeLevel);
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
+        }
+
+        foreach (var s in p.helmets)
+        {
+            var hd = FindSOByName<HelmetData>(s.soName);
+            if (hd == null) { Debug.LogWarning($"[LOAD] ⚠ Helmet introuvable : '{s.soName}'"); continue; }
+            var inst = new HelmetInstance(hd, s.ratioMelee, s.ratioRanged, s.ratioMagic);
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
+        }
+
+        foreach (var s in p.gloves)
+        {
+            var gd = FindSOByName<GlovesData>(s.soName);
+            if (gd == null) { Debug.LogWarning($"[LOAD] ⚠ Gloves introuvable : '{s.soName}'"); continue; }
+            // Passe par CreateInstance() (pas un constructeur direct) pour poser d'abord
+            // les résistances de base depuis baseResistXxx, puis écrase avec l'état
+            // sauvegardé (ratios + Fusion) — fonctionne pareil, fusionnée ou non.
+            var inst = gd.CreateInstance();
+            inst.rolledRatioMelee  = s.ratioMelee;
+            inst.rolledRatioRanged = s.ratioRanged;
+            inst.rolledRatioMagic  = s.ratioMagic;
+            inst.fusionLevel       = s.fusionLevel;
+            inst.resistFire        = s.resistFire;
+            inst.resistWater       = s.resistWater;
+            inst.resistLightning   = s.resistLightning;
+            inst.resistEarth       = s.resistEarth;
+            inst.resistNature      = s.resistNature;
+            inst.resistDarkness    = s.resistDarkness;
+            inst.resistLight       = s.resistLight;
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
+        }
+
+        foreach (var s in p.boots)
+        {
+            var bd = FindSOByName<BootsData>(s.soName);
+            if (bd == null) { Debug.LogWarning($"[LOAD] ⚠ Boots introuvable : '{s.soName}'"); continue; }
+            var inst = bd.CreateInstance();
+            inst.rolledRatioMelee  = s.ratioMelee;
+            inst.rolledRatioRanged = s.ratioRanged;
+            inst.rolledRatioMagic  = s.ratioMagic;
+            inst.fusionLevel       = s.fusionLevel;
+            inst.resistFire        = s.resistFire;
+            inst.resistWater       = s.resistWater;
+            inst.resistLightning   = s.resistLightning;
+            inst.resistEarth       = s.resistEarth;
+            inst.resistNature      = s.resistNature;
+            inst.resistDarkness    = s.resistDarkness;
+            inst.resistLight       = s.resistLight;
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
+        }
+
+        foreach (var s in p.jewelry)
+        {
+            var jd = FindSOByName<JewelryData>(s.soName);
+            if (jd == null) { Debug.LogWarning($"[LOAD] ⚠ Jewelry introuvable : '{s.soName}'"); continue; }
+            var inst = new JewelryInstance(jd, s.ratioMelee, s.ratioRanged, s.ratioMagic);
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
+        }
+
+        foreach (var s in p.spirits)
+        {
+            var sd = FindSOByName<SpiritData>(s.soName);
+            if (sd == null) { Debug.LogWarning($"[LOAD] ⚠ Spirit introuvable : '{s.soName}'"); continue; }
+            var inst = new SpiritInstance(sd) { level = Mathf.Max(1, s.spiritLevel), currentXP = Mathf.Max(0, s.spiritXP) };
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
+        }
+
+        foreach (var s in p.consumables)
+        {
+            var cd = FindSOByName<ConsumableData>(s.soName);
+            if (cd == null) { Debug.LogWarning($"[LOAD] ⚠ Consumable introuvable : '{s.soName}'"); continue; }
+            InventorySystem.Instance?.AddItem(new InventoryItem(cd.CreateInstance(Mathf.Max(1, s.quantity))));
+        }
+
+        foreach (var s in p.resources)
+        {
+            var rd = FindSOByName<ResourceData>(s.soName);
+            if (rd == null) { Debug.LogWarning($"[LOAD] ⚠ Resource introuvable : '{s.soName}'"); continue; }
+            InventorySystem.Instance?.AddItem(new InventoryItem(rd.CreateInstance(Mathf.Max(1, s.quantity))));
+        }
+
+        foreach (var s in p.gems)
+        {
+            var gemD = FindSOByName<GemData>(s.soName);
+            if (gemD == null) { Debug.LogWarning($"[LOAD] ⚠ Gem introuvable : '{s.soName}'"); continue; }
+            InventorySystem.Instance?.AddItem(new InventoryItem(gemD.CreateDropInstance()));
+        }
+
+        foreach (var s in p.runes)
+        {
+            var runeD = FindSOByName<RuneData>(s.soName);
+            if (runeD == null) { Debug.LogWarning($"[LOAD] ⚠ Rune introuvable : '{s.soName}'"); continue; }
+            InventorySystem.Instance?.AddItem(new InventoryItem(runeD.CreateDropInstance()));
+        }
+
+        foreach (var s in p.cosmeticHeads)
+        {
+            var cosH = FindSOByName<CosmeticDataHead>(s.soName);
+            if (cosH == null) { Debug.LogWarning($"[LOAD] ⚠ CosmeticHead introuvable : '{s.soName}'"); continue; }
+            InventorySystem.Instance?.AddItem(new InventoryItem(new CosmeticInstanceHead(cosH)));
+        }
+
+        foreach (var s in p.cosmeticBodies)
+        {
+            var cosB = FindSOByName<CosmeticDataBody>(s.soName);
+            if (cosB == null) { Debug.LogWarning($"[LOAD] ⚠ CosmeticBody introuvable : '{s.soName}'"); continue; }
+            InventorySystem.Instance?.AddItem(new InventoryItem(new CosmeticInstanceBody(cosB)));
+        }
+
+        foreach (var s in p.cards)
+        {
+            var card = FindSOByName<CardData>(s.soName);
+            if (card == null) { Debug.LogWarning($"[LOAD] ⚠ Card introuvable : '{s.soName}'"); continue; }
+            InventorySystem.Instance?.AddItem(new InventoryItem(new CardInstance(card)));
+        }
     }
 
-    private InventoryItem CreateItemFromSave(SavedItem saved)
+    private void AddOrEquip(InventoryItem item, bool isEquipped, Player player)
     {
-        switch (saved.category)
-        {
-            case "Weapon":
-                var wd = FindSOByName<WeaponData>(saved.soName);
-                return wd != null ? new InventoryItem(wd.CreateDropInstance(saved.rarityRank, saved.upgradeLevel)) : null;
-            case "Armor":
-                var ad = FindSOByName<ArmorData>(saved.soName);
-                return ad != null ? new InventoryItem(ad.CreateDropInstance(saved.rarityRank, saved.upgradeLevel)) : null;
-            case "Helmet":
-                var hd = FindSOByName<HelmetData>(saved.soName);
-                return hd != null ? new InventoryItem(hd.CreateInstance()) : null;
-            case "Gloves":
-                var gd = FindSOByName<GlovesData>(saved.soName);
-                return gd != null ? new InventoryItem(gd.CreateInstance()) : null;
-            case "Boots":
-                var bd = FindSOByName<BootsData>(saved.soName);
-                return bd != null ? new InventoryItem(bd.CreateInstance()) : null;
-            case "Jewelry":
-                var jd = FindSOByName<JewelryData>(saved.soName);
-                return jd != null ? new InventoryItem(jd.CreateInstance()) : null;
-            case "Spirit":
-                var sd = FindSOByName<SpiritData>(saved.soName);
-                if (sd == null) return null;
-                var si = new SpiritInstance(sd);
-                si.level = Mathf.Max(1, saved.spiritLevel);
-                si.currentXP = Mathf.Max(0, saved.spiritXP);
-                return new InventoryItem(si);
-            case "Consumable":
-                var cd = FindSOByName<ConsumableData>(saved.soName);
-                return cd != null ? new InventoryItem(cd.CreateInstance(Mathf.Max(1, saved.quantity))) : null;
-            case "Resource":
-                var rd = FindSOByName<ResourceData>(saved.soName);
-                return rd != null ? new InventoryItem(rd.CreateInstance(Mathf.Max(1, saved.quantity))) : null;
-            case "Gem":
-                var gemD = FindSOByName<GemData>(saved.soName);
-                return gemD != null ? new InventoryItem(gemD.CreateDropInstance()) : null;
-            case "Rune":
-                var runeD = FindSOByName<RuneData>(saved.soName);
-                return runeD != null ? new InventoryItem(runeD.CreateDropInstance()) : null;
-            case "CosmeticHead":
-                var cosH = FindSOByName<CosmeticDataHead>(saved.soName);
-                return cosH != null ? new InventoryItem(new CosmeticInstanceHead(cosH)) : null;
-            case "CosmeticBody":
-                var cosB = FindSOByName<CosmeticDataBody>(saved.soName);
-                return cosB != null ? new InventoryItem(new CosmeticInstanceBody(cosB)) : null;
-            case "Card":
-                var card = FindSOByName<CardData>(saved.soName);
-                return card != null ? new InventoryItem(new CardInstance(card)) : null;
-            default:
-                Debug.LogWarning($"[LOAD] Catégorie inconnue : '{saved.category}'");
-                return null;
-        }
+        if (isEquipped) InventorySystem.Instance?.EquipItem(item, player);
+        else            InventorySystem.Instance?.AddItem(item);
     }
 
     // ── Helpers ───────────────────────────────────────────────

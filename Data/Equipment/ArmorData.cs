@@ -3,34 +3,40 @@ using System.Collections.Generic;
 
 // =============================================================
 // ArmorData — ScriptableObject template d'armure corps
-// Path : Assets/Scripts/Data/Inventory/Equipment/ArmorData.cs
-// AetherTree GDD v3.5 — §5.2
+// Path : Assets/Scripts/Data/Equipment/ArmorData.cs
+// AetherTree GDD v3.6 — §5.4 / §5.2Bis (ratio-roll)
+//
+// Hérite de EquipmentDataBase (itemID, displayName, description,
+// icon, requiredLevel, config... — voir ItemData/EquipmentDataBase).
 //
 // L'armure est entièrement libre — tout joueur peut équiper
 // n'importe quel type sans restriction liée à son arme.
 // Le type d'armure oriente naturellement le build via ses
-// bonus passifs fixes (GDD §5.2).
+// bonus passifs fixes (GDD §5.4).
 //
 // Stats fixes sur le SO (identiques sur toutes les instances) :
-//   armorType, weaponLevel, requiredLevel
+//   armorType, weaponLevel
 //
-// Stats rollées au drop / craft :
+// Stats rollées au drop / craft (ratio 0..1 stocké sur l'instance — voir
+// a implémenter/note-systeme-ratio-degats.md) — chaque défense a son propre
+// triplet base/spreadPercent/rollGapPercent indépendant (pas de contrainte
+// d'ordre entre les 3 défenses contrairement à dmgMin/dmgMax de l'arme, donc
+// une seule fourchette par défense suffit, comme basePrecision de WeaponData) :
 //   meleeDefense, rangedDefense, magicDefense → affectées par rareté + upgrade
+//   dodge                                     → PAS affectée par rareté/upgrade
+//                                                (ratio quand même, pour cohérence
+//                                                de stockage — voir FinalDodge)
 //
-// Bonus passifs par type d'armure (GDD §5.2) :
+// Bonus passifs par type d'armure (GDD §5.4) :
 //   Lourde  → +Défenses + Esquive
 //   Légère  → +BonusAttack + Précision
 //   Robe    → +Points élémentaires + Réduction cooldown
 // Ces bonus fixes sont définis via config.bonuses sur le SO.
 //
-// Systèmes applicables (GDD §5.2) :
+// Systèmes applicables (GDD §5.4) :
 //   Rareté   r-2 → r+7 — modificateur % sur les 3 défenses simultanément
 //   Upgrade  +0  → +10  — bonus cumulatif sur les défenses
 //   Rune     1 slot Rune Armor — rune.runeLevel ≤ weaponLevel armure
-//
-// Effets et bonus via EquipmentConfig (champ unique) :
-//   config.bonuses, config.statusEffects,
-//   config.debuffResistances, config.onHitEffects
 // =============================================================
 
 // ── Résistance à un debuff — partagée par tous les équipements ──
@@ -46,20 +52,17 @@ public class DebuffResistanceEntry
 }
 
 [CreateAssetMenu(fileName = "NewArmor", menuName = "AetherTree/Equipment/ArmorData")]
-public class ArmorData : ScriptableObject
+public class ArmorData : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string     armorName = "Armor";
-
     [Tooltip("Type d'armure — oriente le build via les bonus passifs fixes.\n" +
              "Lourde = Tank (Défenses + Esquive)\n" +
              "Légère = DPS (BonusAttack + Précision)\n" +
              "Robe   = Mage (Points élémentaires + Réduction cooldown)\n" +
-             "GDD §5.2 — aucune restriction par WeaponCategory du joueur.")]
+             "GDD §5.4 — aucune restriction par WeaponCategory du joueur.")]
     public ArmorType  armorType = ArmorType.Melee;
 
-    public Sprite     icon;
     public GameObject armorPrefab;
 
     // ── Niveau ────────────────────────────────────────────────
@@ -68,59 +71,52 @@ public class ArmorData : ScriptableObject
              "Règle GDD §5.7 : rune.runeLevel ≤ weaponLevel de l'armure.")]
     [Min(1)] public int weaponLevel = 1;
 
-    [Tooltip("Niveau minimum du joueur requis pour équiper cette armure.")]
-    [Min(1)] public int requiredLevel = 1;
+    // ── Défense mêlée — rollée, affectée par rareté + upgrade ──
+    [Header("Défense mêlée (rollée, affectée par rareté + upgrade)")]
+    public float baseMeleeDefense = 12.5f;
+    [Min(0f)] public float meleeDefenseSpreadPercent  = 0.10f;
+    [Min(0f)] public float meleeDefenseRollGapPercent = 0.06f;
+    public float MeleeDefenseLow  => baseMeleeDefense * (1f - meleeDefenseSpreadPercent);
+    public float MeleeDefenseHigh => baseMeleeDefense * (1f + meleeDefenseSpreadPercent);
 
-    // ── Stats rollées — fourchettes définies sur le SO ────────
-    [Header("Défenses rollées au drop / craft (affectées par rareté + upgrade)")]
-    [Tooltip("Borne basse du roll pour la défense mêlée.")]
-    public float baseMeleeDefenseMin  = 10f;
-    [Tooltip("Borne haute du roll pour la défense mêlée.")]
-    public float baseMeleeDefenseMax  = 15f;
+    // ── Défense distance — rollée, affectée par rareté + upgrade ──
+    [Header("Défense distance (rollée, affectée par rareté + upgrade)")]
+    public float baseRangedDefense = 12.5f;
+    [Min(0f)] public float rangedDefenseSpreadPercent  = 0.10f;
+    [Min(0f)] public float rangedDefenseRollGapPercent = 0.06f;
+    public float RangedDefenseLow  => baseRangedDefense * (1f - rangedDefenseSpreadPercent);
+    public float RangedDefenseHigh => baseRangedDefense * (1f + rangedDefenseSpreadPercent);
 
-    [Tooltip("Borne basse du roll pour la défense distance.")]
-    public float baseRangedDefenseMin = 10f;
-    [Tooltip("Borne haute du roll pour la défense distance.")]
-    public float baseRangedDefenseMax = 15f;
-
-    [Tooltip("Borne basse du roll pour la défense magique.")]
-    public float baseMagicDefenseMin  = 8f;
-    [Tooltip("Borne haute du roll pour la défense magique.")]
-    public float baseMagicDefenseMax  = 12f;
+    // ── Défense magique — rollée, affectée par rareté + upgrade ──
+    [Header("Défense magique (rollée, affectée par rareté + upgrade)")]
+    public float baseMagicDefense = 10f;
+    [Min(0f)] public float magicDefenseSpreadPercent  = 0.10f;
+    [Min(0f)] public float magicDefenseRollGapPercent = 0.06f;
+    public float MagicDefenseLow  => baseMagicDefense * (1f - magicDefenseSpreadPercent);
+    public float MagicDefenseHigh => baseMagicDefense * (1f + magicDefenseSpreadPercent);
 
     // ── Esquive — rollée, NON affectée par rareté/upgrade ─────
-    [Header("Esquive rollée (non affectée par rareté / upgrade)")]
-    [Tooltip("Borne basse du roll pour l'esquive.\nNon modifiée par rareté ni upgrade.")]
-    public float baseDodgeMin = 5f;
-    [Tooltip("Borne haute du roll pour l'esquive.")]
-    public float baseDodgeMax = 10f;
-
-    // ── Configuration — effets et bonus ───────────────────────
-    [Header("Configuration (bonus passifs, effets de statut, résistances, on-hit)")]
-    [Tooltip("Bonus passifs fixes (défenses, esquive, élémentaires selon type d'armure),\n" +
-             "effets appliqués à l'attaque, résistances aux debuffs et effets On-Hit.\n" +
-             "GDD §5.2 — les bonus passifs par type d'armure sont définis ici.")]
-    public EquipmentConfig config;
-
-    // ── Description ───────────────────────────────────────────
-    [Header("Description")]
-    [TextArea]
-    public string description = "";
+    [Header("Esquive (rollée, NON affectée par rareté / upgrade — GDD §5.4)")]
+    public float baseDodge = 7.5f;
+    [Min(0f)] public float dodgeSpreadPercent  = 0.10f;
+    [Min(0f)] public float dodgeRollGapPercent = 0.06f;
+    public float DodgeLow  => baseDodge * (1f - dodgeSpreadPercent);
+    public float DodgeHigh => baseDodge * (1f + dodgeSpreadPercent);
 
     // ── Utilitaires ───────────────────────────────────────────
 
-    /// <summary>Crée une instance avec stats rollées.</summary>
+    /// <summary>Crée une instance avec stats rollées (4 ratios indépendants).</summary>
     public ArmorInstance CreateDropInstance(int rarityRank = 0, int upgradeLevel = 0)
     {
-        float melee  = Random.Range(baseMeleeDefenseMin,  baseMeleeDefenseMax);
-        float ranged = Random.Range(baseRangedDefenseMin, baseRangedDefenseMax);
-        float magic  = Random.Range(baseMagicDefenseMin,  baseMagicDefenseMax);
-        float dodge  = Random.Range(baseDodgeMin,         baseDodgeMax);
-        return new ArmorInstance(this, melee, ranged, magic, dodge, rarityRank, upgradeLevel);
+        float ratioMelee  = Random.value;
+        float ratioRanged = Random.value;
+        float ratioMagic  = Random.value;
+        float ratioDodge  = Random.value;
+        return new ArmorInstance(this, ratioMelee, ratioRanged, ratioMagic, ratioDodge, rarityRank, upgradeLevel);
     }
 
     /// <summary>
-    /// Roll la rareté au drop selon la table GDD §5.8.
+    /// Roll la rareté au drop selon la table GDD §5.13.
     /// r-2(8%) r-1(12%) r0(20.85%) r+1(18%) r+2(15.7%) r+3(11.5%)
     /// r+4(8.5%) r+5(4.1%) r+6(1%) r+7(0.35%)
     /// </summary>
@@ -142,45 +138,47 @@ public class ArmorData : ScriptableObject
 
 // =============================================================
 // ArmorInstance — données runtime d'une armure droppée / craftée
-// GDD v3.5 — §5.2 / §5.8 / §5.9
+// GDD v3.6 — §5.4 / §5.13 / §5.14
 // =============================================================
 [System.Serializable]
 public class ArmorInstance
 {
     public ArmorData data;
 
-    // Stats rollées — fixées à la génération
-    public float rolledMeleeDefense;
-    public float rolledRangedDefense;
-    public float rolledMagicDefense;
-    public float rolledDodge;
+    // Ratios rollés — fixés à la génération, position (0..1) dans la fourchette
+    // DÉRIVÉE du SO (voir ArmorData.MeleeDefenseLow/High etc.). Indépendants les uns
+    // des autres — un item peut rouler bas en mêlée et haut en magique.
+    public float rolledRatioMelee;
+    public float rolledRatioRanged;
+    public float rolledRatioMagic;
+    public float rolledRatioDodge;
 
     // Modificateurs appliqués après drop
-    public int rarityRank   = 0;   // -2 à +7 — GDD §5.8
-    public int upgradeLevel = 0;   // 0 à +10 — GDD §5.9
+    public int rarityRank   = 0;   // -2 à +7 — GDD §5.13
+    public int upgradeLevel = 0;   // 0 à +10 — GDD §5.14
 
     // Slot rune — 1 par armure, irréversible via Antiquaire
     public RuneInstance equippedRune = null;
 
     public ArmorInstance(ArmorData source,
-                         float meleeDefense, float rangedDefense, float magicDefense,
-                         float dodge, int rarity = 0, int upgrade = 0)
+                         float ratioMelee, float ratioRanged, float ratioMagic,
+                         float ratioDodge, int rarity = 0, int upgrade = 0)
     {
-        data                 = source;
-        rolledMeleeDefense   = meleeDefense;
-        rolledRangedDefense  = rangedDefense;
-        rolledMagicDefense   = magicDefense;
-        rolledDodge          = dodge;
-        rarityRank           = rarity;
-        upgradeLevel         = upgrade;
+        data              = source;
+        rolledRatioMelee  = ratioMelee;
+        rolledRatioRanged = ratioRanged;
+        rolledRatioMagic  = ratioMagic;
+        rolledRatioDodge  = ratioDodge;
+        rarityRank        = rarity;
+        upgradeLevel      = upgrade;
     }
 
     // ── Modificateurs ─────────────────────────────────────────
 
-    /// <summary>Modificateur de rareté. GDD §5.8.</summary>
+    /// <summary>Modificateur de rareté. GDD §5.13.</summary>
     private float RarityBonus => rarityRank * 0.10f;
 
-    /// <summary>Modificateur d'upgrade — croissance triangulaire. GDD §5.9.</summary>
+    /// <summary>Modificateur d'upgrade — croissance triangulaire. GDD §5.14.</summary>
     private float UpgradeBonus
     {
         get
@@ -191,16 +189,39 @@ public class ArmorInstance
     }
 
     // ── Stats finales — affectées par rareté + upgrade ────────
-    public float FinalMeleeDefense  => rolledMeleeDefense  * (1f + RarityBonus) * (1f + UpgradeBonus);
-    public float FinalRangedDefense => rolledRangedDefense * (1f + RarityBonus) * (1f + UpgradeBonus);
-    public float FinalMagicDefense  => rolledMagicDefense  * (1f + RarityBonus) * (1f + UpgradeBonus);
+    // Chaque Lerp lit les bornes DÉRIVÉES ACTUELLES du ArmorData : un rééquilibrage
+    // des valeurs de référence se répercute automatiquement sur toutes les instances
+    // déjà droppées, sans script de migration (GDD §5.2Bis).
+    public float FinalMeleeDefense =>
+        (data != null ? Mathf.Lerp(data.MeleeDefenseLow, data.MeleeDefenseHigh, rolledRatioMelee) : 0f)
+        * (1f + RarityBonus) * (1f + UpgradeBonus);
+
+    public float FinalRangedDefense =>
+        (data != null ? Mathf.Lerp(data.RangedDefenseLow, data.RangedDefenseHigh, rolledRatioRanged) : 0f)
+        * (1f + RarityBonus) * (1f + UpgradeBonus);
+
+    public float FinalMagicDefense =>
+        (data != null ? Mathf.Lerp(data.MagicDefenseLow, data.MagicDefenseHigh, rolledRatioMagic) : 0f)
+        * (1f + RarityBonus) * (1f + UpgradeBonus);
 
     // ── Stats finales — NON affectées par rareté / upgrade ────
-    public float FinalDodge => rolledDodge;
+    // Stockée en ratio comme les 3 défenses (cohérence de stockage — un rééquilibrage
+    // de baseDodge se répercute aussi automatiquement), mais sans multiplicateur
+    // rareté/upgrade appliqué — GDD §5.4 exempte explicitement l'esquive.
+    public float FinalDodge =>
+        data != null ? Mathf.Lerp(data.DodgeLow, data.DodgeHigh, rolledRatioDodge) : 0f;
 
     // ── Raccourcis SO ─────────────────────────────────────────
     public ArmorType ArmorType    => data != null ? data.armorType    : global::ArmorType.Melee;
-    public string    ArmorName    => data != null ? data.armorName    : "Armor";
+
+    /// <summary>Clé technique STABLE — logs, saves, comparaisons. Jamais affichée au joueur.</summary>
+    public string    ItemId       => data != null ? data.itemID : "unknown_armor";
+
+    /// <summary>Nom affiché au joueur, dans la langue courante. Ne jamais utiliser dans un log.</summary>
+    public string    ArmorName    => data != null
+        ? data.displayName.Get(LocalizationManager.CurrentLanguage)
+        : "Armor";
+
     public Sprite    Icon         => data != null ? data.icon         : null;
     public int       WeaponLevel  => data != null ? data.weaponLevel  : 1;
     public string    RarityLabel  => rarityRank >= 0 ? $"r+{rarityRank}" : $"r{rarityRank}";
@@ -240,7 +261,7 @@ public class ArmorInstance
             Debug.Log($"[ArmorInstance] Rune {equippedRune.RuneName} écrasée par {rune.RuneName}.");
 
         equippedRune = rune;
-        Debug.Log($"[ArmorInstance] Rune insérée : {rune.Label} dans {ArmorName}.");
+        Debug.Log($"[ArmorInstance] Rune insérée : {rune.Label} dans {ItemId}.");
         return true;
     }
 

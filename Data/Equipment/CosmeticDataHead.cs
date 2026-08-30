@@ -3,42 +3,26 @@ using System.Collections.Generic;
 
 // =============================================================
 // CosmeticDataHead — ScriptableObject template de cosmétique tête
-// Path : Assets/Scripts/Data/Inventory/Equipment/CosmeticDataHead.cs
-// AetherTree GDD v3.5 — §5.x (Cosmétiques)
+// Path : Assets/Scripts/Data/Equipment/CosmeticDataHead.cs
+// AetherTree GDD v3.6 — §5.x (Cosmétiques)
+//
+// Hérite de EquipmentDataBase (itemID, displayName, description,
+// icon, requiredLevel, config... — voir ItemData/EquipmentDataBase).
 //
 // Cosmétique purement visuel — n'apporte aucune stat directement.
 // Peut avoir un EquipmentConfig pour des effets passifs cosmétiques
 // ou des bonus spéciaux (à définir).
 //
-// Pas de rareté, pas d'upgrade, pas de rune (GDD §5.0).
+// Pas de rareté, pas d'upgrade, pas de rune (GDD §5.0/§5.2).
 // Aucune restriction par WeaponCategory ni ArmorType.
 // =============================================================
 
 [CreateAssetMenu(fileName = "NewCosmeticHead", menuName = "AetherTree/Cosmetics/CosmeticDataHead")]
-public class CosmeticDataHead : ScriptableObject
+public class CosmeticDataHead : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string     cosmeticName = "Cosmetic Head";
-    public Sprite     icon;
     public GameObject cosmeticPrefab;
-
-    // ── Niveau ────────────────────────────────────────────────
-    [Header("Niveau")]
-    [Tooltip("Niveau minimum du joueur requis pour équiper ce cosmétique.")]
-    [Min(1)] public int requiredLevel = 1;
-
-    // ── Configuration — effets et bonus optionnels ────────────
-    [Header("Configuration (optionnel — bonus, effets de statut, résistances, on-hit)")]
-    [Tooltip("Effets passifs optionnels portés par ce cosmétique.\n" +
-             "Un cosmétique n'apporte pas de stats directement — ce champ\n" +
-             "est réservé à des effets spéciaux définis dans le GDD.")]
-    public EquipmentConfig config;
-
-    // ── Description ───────────────────────────────────────────
-    [Header("Description")]
-    [TextArea]
-    public string description = "";
 
     // ── Utilitaires ───────────────────────────────────────────
 
@@ -47,7 +31,7 @@ public class CosmeticDataHead : ScriptableObject
 
 // =============================================================
 // CosmeticInstanceHead — wrapper runtime d'un cosmétique tête équipé
-// GDD v3.5 — §5.x (Cosmétiques)
+// GDD v3.6 — §5.x (Cosmétiques)
 // =============================================================
 [System.Serializable]
 public class CosmeticInstanceHead
@@ -57,7 +41,8 @@ public class CosmeticInstanceHead
     public CosmeticInstanceHead(CosmeticDataHead source) { data = source; }
 
     // ── Raccourcis SO ─────────────────────────────────────────
-    public string CosmeticName  => data != null ? data.cosmeticName  : "Cosmetic Head";
+    public string ItemId       => data != null ? data.itemID : "unknown_cosmetic_head";
+    public string CosmeticName  => data != null ? data.displayName.Get(LocalizationManager.CurrentLanguage) : "Cosmetic Head";
     public Sprite Icon          => data != null ? data.icon          : null;
     public int    RequiredLevel => data != null ? data.requiredLevel : 1;
 

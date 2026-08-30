@@ -390,14 +390,14 @@ private void ShowDetailPermanent(PermanentSkillData permanent)
     if (permanent == null) { ClearDetail(); return; }
 
     if (detailIcon    != null) { detailIcon.sprite = permanent.icon; detailIcon.enabled = permanent.icon != null; }
-    if (detailName    != null) detailName.text    = permanent.skillName;
+    if (detailName    != null) detailName.text    = permanent.skillName.Get(LocalizationManager.CurrentLanguage);
     if (detailElement != null) detailElement.text = $"Permanent  ·  {permanent.category}";
     if (detailTags    != null) detailTags.text    = "";
     if (statMpValue   != null) statMpValue.text   = "—";
     if (statCdValue   != null) statCdValue.text   = "—";
     if (statRangeValue!= null) statRangeValue.text= "—";
-    if (descText      != null) descText.text      = !string.IsNullOrEmpty(permanent.description)
-                                                    ? permanent.description
+    if (descText      != null) descText.text      = !permanent.description.IsEmpty
+                                                    ? permanent.description.Get(LocalizationManager.CurrentLanguage)
                                                     : permanent.GetBonusSummary();
     if (journalDate   != null) journalDate.text   = "—";
     if (journalLevel  != null) journalLevel.text  = "—";
@@ -561,7 +561,7 @@ private void ShowDetailPermanent(PermanentSkillData permanent)
 
         // ── Nom ───────────────────────────────────────────────
         if (detailName != null)
-            detailName.text = skill.skillName;
+            detailName.text = skill.skillName.Get(LocalizationManager.CurrentLanguage);
 
         // ── Type · Éléments ───────────────────────────────────
         if (detailElement != null)
@@ -594,8 +594,8 @@ private void ShowDetailPermanent(PermanentSkillData permanent)
 
         // ── Description ───────────────────────────────────────
         if (descText != null)
-            descText.text = !string.IsNullOrEmpty(skill.description)
-                ? skill.description
+            descText.text = !skill.description.IsEmpty
+                ? skill.description.Get(LocalizationManager.CurrentLanguage)
                 : "Aucune description.";
 
         // ── Journal d'obtention ───────────────────────────────

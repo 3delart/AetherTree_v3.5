@@ -119,7 +119,7 @@ public class PassiveSkillSystem : MonoBehaviour
             RegisterTrigger(passive);
             ApplyAllEffects(passive);
 
-            Debug.Log($"[PASSIVE] {passive.skillName} — coup fatal survécu !");
+            Debug.Log($"[PASSIVE] {passive.name} — coup fatal survécu !");
             return true;
         }
         return false;
@@ -218,7 +218,7 @@ public class PassiveSkillSystem : MonoBehaviour
         RegisterTrigger(passive);
         ApplyAllEffects(passive);
 
-        Debug.Log($"[PASSIVE] {passive.skillName} déclenché !");
+        Debug.Log($"[PASSIVE] {passive.name} déclenché !");
     }
 
     /// <summary>True si cooldown OK et oncePerCombat OK.</summary>

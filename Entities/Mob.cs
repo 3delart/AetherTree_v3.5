@@ -534,7 +534,7 @@ public class Mob : Entity
             lastSkillByAttacker.TryGetValue(topContributor, out killerSkill);
 
         // ── LOG : résumé du kill ──────────────────────────────
-        string killerSkillName = killerSkill != null ? killerSkill.skillName : "DoT / inconnu";
+        string killerSkillName = killerSkill != null ? killerSkill.name : "DoT / inconnu";
         string killerName      = topContributor != null ? topContributor.entityName : "inconnu";
 
         // ── UN SEUL publish — tout le reste s'abonne ─────────

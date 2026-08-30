@@ -3,7 +3,11 @@ using UnityEngine;
 // =============================================================
 // RESOURCEDATA.CS — ScriptableObject template de ressource
 // Path : Assets/Scripts/Data/Inventory/ResourceData.cs
-// AetherTree GDD v3.1
+// AetherTree GDD v3.6
+//
+// Hérite de ItemData (itemID, displayName, description, icon,
+// isStackable, stackSize, vendorPrice... — voir ItemData). Pas de
+// EquipmentConfig — ressource pure, pas d'équipement.
 //
 // ResourceType détermine à la fois le type ET la source :
 //   CraftMaterial  — bois, minerai, tissu, cuir... (loot ou node)
@@ -32,26 +36,12 @@ public enum ResourceType
 }
 
 [CreateAssetMenu(fileName = "Resource_", menuName = "AetherTree/Inventory/ResourceData")]
-public class ResourceData : ScriptableObject
+public class ResourceData : ItemData
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
-    public string       resourceName = "Resource";
     public ResourceType resourceType = ResourceType.CraftMaterial;
-    public Sprite       icon;
     public GameObject   prefab;       // prefab objet au sol (WorldLootItem)
-    [TextArea]
-    public string       description  = "";
-
-    // ── Stack ─────────────────────────────────────────────────
-    [Header("Stack")]
-    [Tooltip("Quantité max par stack dans l'inventaire.")]
-    public int maxStack = 99;
-
-    // ── Valeur ────────────────────────────────────────────────
-    [Header("Valeur")]
-    [Tooltip("Prix de vente de base en Aeris.")]
-    public int sellPrice = 1;
 
     // ── Node World (Collectible uniquement) ───────────────────
     [Header("Node World (resourceType = Collectible)")]
@@ -77,7 +67,14 @@ public class ResourceData : ScriptableObject
     public bool IsCollectible => resourceType == ResourceType.Collectible;
 
     public ResourceInstance CreateInstance(int quantity = 1)
-        => new ResourceInstance(this, Mathf.Clamp(quantity, 1, maxStack));
+        => new ResourceInstance(this, Mathf.Clamp(quantity, 1, stackSize));
+
+#if UNITY_EDITOR
+    private void Reset()
+    {
+        isStackable = true; // toujours empilable — quantity/Add()/Remove() déjà en place sur l'instance
+    }
+#endif
 }
 
 // =============================================================
@@ -95,11 +92,12 @@ public class ResourceInstance
         quantity = qty;
     }
 
-    public string       Name       => data?.resourceName ?? "Resource";
+    public string       ItemId     => data != null ? data.itemID : "unknown_resource";
+    public string       Name       => data != null ? data.displayName.Get(LocalizationManager.CurrentLanguage) : "Resource";
     public Sprite       Icon       => data?.icon;
     public ResourceType Type       => data?.resourceType ?? ResourceType.Other;
-    public int          MaxStack   => data?.maxStack     ?? 99;
-    public int          SellPrice  => data?.sellPrice    ?? 1;
+    public int          MaxStack   => data?.stackSize    ?? 99;
+    public int          SellPrice  => data?.vendorPrice  ?? 1;
     public bool         IsEmpty    => quantity <= 0;
 
     public int Add(int amount)
