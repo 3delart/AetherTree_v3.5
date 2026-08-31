@@ -12,6 +12,8 @@ public class SocialChecker : ConditionCheckerBase
     public SocialAction action        = SocialAction.Any;
     public bool         mustBeInGroup = false;
 
+    public override System.Type RelevantEventType => typeof(SocialEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not SocialEvent e)                    return false;

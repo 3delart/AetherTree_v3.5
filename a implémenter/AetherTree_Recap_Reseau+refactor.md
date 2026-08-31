@@ -134,6 +134,10 @@ Ces deux systèmes sont actuellement pensés comme des **singletons globaux "un 
 
 ## 🟣 Priorité 3bis — Système de déblocage par conditions (UnlockManager / ConditionData / MailboxSystem)
 
+> **Mise à jour** : points A-D de l'"Architecture cible" ci-dessous **implémentés**. `ConditionCheckerBase.RelevantEventType` posé sur les 11 checkers, `UnlockManager` indexe par type d'event dans `Init()` (`_conditionsByEventType`), `validEntries` mis en cache (`_validEntriesCache`, remplace le recalcul de `FinalizeCondition`), `WinnerKey`/`localWinnerCounts` en clé `ValueTuple` (sans allocation). `AccountKey` reste en string — persisté via `StringIntPair`/`CharacterProgress.cs`, changer son type casserait le format de save. Bonus non prévu dans le doc d'origine : l'octroi de récompense (`Unlock()` → mail/save) est maintenant différé via une file (`_pendingUnlocks`, vidée dans `Update()`) plutôt qu'exécuté en synchrone dans le event-handler de combat — la détection/le comptage restent en temps réel (rien n'est perdu), seul l'octroi (I/O-like) sort du chemin chaud. Retrait d'une condition de l'index réservé au cas `maxWinners` épuisé pour toutes ses entries (jamais sur une simple complétion joueur — voir point E ci-dessous, toujours vrai).
+>
+> **Reste à faire** : point E (état runtime séparé par joueur) — inchangé, dépend du reste du refactor réseau comme documenté plus bas.
+
 Identifié comme **un des blocs les plus lourds du jeu**, à la fois en performance runtime et en architecture multijoueur. Analyse complète du pipeline : `ActivityCounter` → `UnlockManager` → `ConditionData`/`ConditionEntry`/`ConditionCheckerBase` → `MailboxSystem`.
 
 ### Diagnostic — la boucle actuelle

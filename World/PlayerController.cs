@@ -92,8 +92,15 @@ public class PlayerController : MonoBehaviour
 
         if (!hit.collider.CompareTag("Ground")) return;
 
-        // Déplacement manuel — annule toute approche automatique en cours
+        // Déplacement manuel — annule toute approche automatique en cours.
+        // SkillBar a son PROPRE suivi d'approche (_isApproaching/_pendingSkill, pour
+        // le cast auto-approche d'un skill hors portée) — indépendant de celui de
+        // TargetingSystem (loot/ressource/PNJ). Sans ce 2e appel, un clic manuel
+        // pendant qu'un skill approche laissait CheckApproach() reprendre la main
+        // sur l'agent chaque frame (SetDestination vers la cible périmée) et finir
+        // par lancer ce skill périmé dès que la cible redevenait à portée.
         TargetingSystem.Instance?.StopApproach();
+        SkillBar.Instance?.CancelApproach();
         _player?.RegisterAction();
 
         _agent.SetDestination(hit.point);

@@ -59,6 +59,11 @@ public class SkillBar : MonoBehaviour
     // ComboSequence n'utilise PAS ce lock — on peut se déplacer entre deux sorts du combo.
     public bool IsMultiHitLocked => _multiHitLockTimer > 0f;
 
+    // Vrai pendant qu'un skill (slot ≥1) se déplace vers sa cible avant exécution.
+    // TargetingSystem s'en sert pour suspendre l'auto-attaque le temps du trajet
+    // (on ne tape pas A en marchant pour livrer un sort sur B).
+    public bool IsApproachingSkill => _isApproaching && _pendingSlot != 0;
+
     private Player          _player;
     private ElementalSystem _elemental;
     private NavMeshAgent    _agent;
@@ -172,12 +177,30 @@ public class SkillBar : MonoBehaviour
     }
 
     // ── Utilisation ───────────────────────────────────────────
-    public bool TryUseSlot(int slot)
+    public bool TryUseSlot(int slot, bool isAutoTick = false)
     {
         if (slot < 0 || slot >= 10) return false;
         var skill = _slots[slot];
+        Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — skill={(skill!=null?skill.name:"null")}");
         if (skill == null)   return false;
         if (_player == null) return false;
+
+        // Appui manuel sur le slot 0 (pas le tick auto-attaque) alors qu'on est déjà
+        // engagé sur A avec B sélectionné : bascule l'engagement vers B tout de suite,
+        // comme un double-clic — INDÉPENDANT du cooldown/GCD ci-dessous, sinon la
+        // bascule échoue silencieusement la majeure partie du temps (cooldown occupé
+        // ~80% du cycle d'attaque). Le prochain coup réel reste cadencé normalement ;
+        // TickAutoAttack se charge de la chase/attaque une fois engagedTarget=B.
+        if (slot == 0 && !isAutoTick)
+        {
+            Entity liveSelected = TargetingSystem.Instance?.GetSelectedTarget();
+            Entity liveEngaged  = TargetingSystem.Instance?.GetEngagedTarget();
+            if (liveEngaged != null && liveSelected != null && liveSelected != liveEngaged && !liveSelected.isDead)
+            {
+                Debug.Log($"[COMBAT-DEBUG] TryUseSlot(0) manuel — bascule engagement {liveEngaged.name} → {liveSelected.name} (hors cooldown)");
+                TargetingSystem.Instance.Engage(liveSelected);
+            }
+        }
 
         // ── Vérification status effects bloquants ────────────
         var fx = _player.statusEffects;
@@ -199,13 +222,21 @@ public class SkillBar : MonoBehaviour
 
         // ── Vérification GCD & locks ──────────────────────────
         // MultiHit en cours → tous les slots bloqués sans exception
-        if (_multiHitLockTimer > 0f) return false;
+        if (_multiHitLockTimer > 0f)
+        {
+            Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — sort : _multiHitLockTimer={_multiHitLockTimer:F2} > 0");
+            return false;
+        }
 
         if (slot == 0)
         {
             // Basic attack : cooldown propre à l'arme équipée (skill.cooldown).
             // Pas de GCD global — _cooldownTimers[0] suffit.
-            if (_cooldownTimers[0] > 0f) return false;
+            if (_cooldownTimers[0] > 0f)
+            {
+                Debug.Log($"[COMBAT-DEBUG] TryUseSlot(0) — sort : _cooldownTimers[0]={_cooldownTimers[0]:F2} > 0");
+                return false;
+            }
         }
         else
         {
@@ -221,9 +252,34 @@ public class SkillBar : MonoBehaviour
             return false;
         }
 
-        // Récupère la cible courante
-        Entity target = TargetingSystem.Instance?.GetEngagedTarget()
-                     ?? TargetingSystem.Instance?.GetSelectedTarget();
+        // Récupère la cible courante — le tick auto-attaque continu (isAutoTick,
+        // appelé par TargetingSystem.PerformAutoAttack) reste strictement sur
+        // l'engagée (rouge) tant qu'elle existe, sans dévier vers une simple
+        // sélection. Tout appui EXPLICITE (clavier, clic bouton, y compris slot 0)
+        // vise en priorité ce qui est sélectionné (orange) — comme le double-clic —
+        // et ne retombe sur l'engagée que si rien n'est sélectionné. C'est ce cast
+        // qui promeut ensuite la cible visée en nouvelle engagée via Engage()/
+        // EngageFromSkill() plus bas.
+        Entity target = isAutoTick
+            ? TargetingSystem.Instance?.GetEngagedTarget()  ?? TargetingSystem.Instance?.GetSelectedTarget()
+            : TargetingSystem.Instance?.GetSelectedTarget() ?? TargetingSystem.Instance?.GetEngagedTarget();
+        Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — target résolu = {(target!=null?target.name:"null")} (engaged={(TargetingSystem.Instance?.GetEngagedTarget()!=null?TargetingSystem.Instance.GetEngagedTarget().name:"null")}, selected={(TargetingSystem.Instance?.GetSelectedTarget()!=null?TargetingSystem.Instance.GetSelectedTarget().name:"null")})");
+
+        // Un nouvel appui valide (passé les checks CD/mana/stun ci-dessus) sur le
+        // MÊME slot que l'approche en cours, pour un skill/cible différent, annule
+        // cette dernière — sinon elle continue de tirer l'agent vers l'ancienne
+        // cible en arrière-plan. Restreint à `_pendingSlot == slot` : l'auto-attaque
+        // (slot 0) tourne en continu (~1x/s) pendant qu'un skill (slot ≥ 1) est en
+        // train d'approcher sa cible — sans ce garde-fou, CHAQUE tic d'auto-attaque
+        // annulait l'approche du skill avant qu'elle n'ait une chance d'arriver à
+        // portée (le skill ne partait donc jamais, l'auto-attaque semblant "forcer"
+        // à taper l'engagée). Un skill sur un autre slot ne doit annuler que SA
+        // PROPRE approche précédente, jamais celle d'un slot différent.
+        if (_isApproaching && _pendingSlot == slot && (_pendingSkill != skill || _pendingTarget != target))
+        {
+            Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — CancelApproach() (approche périmée pour {(_pendingTarget!=null?_pendingTarget.name:"null")})");
+            CancelApproach();
+        }
 
         // ── Vérification portée pour les skills qui nécessitent une cible ──
         // Inclut tous les TargetType nécessitant une Entity valide au cast.
@@ -245,6 +301,7 @@ public class SkillBar : MonoBehaviour
 
             if (dist > range)
             {
+                Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — hors portée (dist={dist:F2} > range={range:F2}) → StartApproach vers {target.name}");
                 StartApproach(skill, slot, target);
                 return false;
             }
@@ -357,6 +414,23 @@ public class SkillBar : MonoBehaviour
             return;
         }
 
+        // Slot 0 (auto-attaque manuelle) reste "vivant" pendant le trajet : si la
+        // sélection change en route, on rebascule vers la nouvelle cible plutôt que
+        // de livrer le coup sur celle figée au moment de l'appui touche — même règle
+        // de priorité que la résolution immédiate ci-dessus (TryUseSlot, isAutoTick).
+        // Les vrais skills (slot ≥ 1) restent committés à leur cible d'origine, une
+        // simple sélection en cours de route ne doit jamais les rediriger.
+        if (_pendingSlot == 0)
+        {
+            Entity liveTarget = TargetingSystem.Instance?.GetSelectedTarget()
+                              ?? TargetingSystem.Instance?.GetEngagedTarget();
+            if (liveTarget != null && liveTarget != _pendingTarget && !liveTarget.isDead)
+            {
+                Debug.Log($"[COMBAT-DEBUG] CheckApproach(0) — sélection changée en route : {_pendingTarget.name} → {liveTarget.name}");
+                _pendingTarget = liveTarget;
+            }
+        }
+
         float dist  = Vector3.Distance(_player.transform.position, _pendingTarget.transform.position);
         float range = _pendingSkill.range > 0f ? _pendingSkill.range : GetDefaultRange();
 
@@ -403,8 +477,20 @@ public class SkillBar : MonoBehaviour
         if (slot >= 1)
             _gcdTimer = GCD_DURATION;
 
-        // Engage la cible dans TargetingSystem (outline rouge, auto-attaque).
-        // Uniquement pour les skills qui ciblent une Entity.
+        // Engage la cible dans TargetingSystem — uniquement pour les skills qui
+        // ciblent une Entity. Slot 0 (auto-attaque) et slots ≥ 1 (skills) n'ont PAS
+        // le même besoin ici :
+        //  - Slot 0 : appelle Engage() SEUL (jamais Select()). Engage() ne touche
+        //    jamais selectedTarget/TargetPanel (voir TargetingSystem.Engage), donc
+        //    le rappeler à chaque tic est sans danger pour la sélection orange en
+        //    cours — et c'est OBLIGATOIRE : l'attaque de base peut aussi partir
+        //    d'un appui clavier (slot 1, SkillBar.Update → GetSkillSlotPressed)
+        //    sans être passée par le flow 2-clics de TargetingSystem, auquel cas
+        //    engagedTarget/autoAttacking ne seraient jamais posés — un seul coup
+        //    partirait puis plus rien, TickAutoAttack() ne prenant jamais le relais
+        //    (son 1er garde-fou est `!autoAttacking || engagedTarget == null`).
+        //  - Slots ≥ 1 : EngageFromSkill() complet (Select + Engage) — un vrai
+        //    skill doit aussi ramener le TargetPanel sur sa cible.
         if (target != null
             && skill.targetType != TargetType.Self
             && skill.targetType != TargetType.AoE_Self
@@ -413,7 +499,17 @@ public class SkillBar : MonoBehaviour
             && skill.targetType != TargetType.Skillshot
             && skill.targetType != TargetType.Cone)
         {
-            TargetingSystem.Instance?.EngageFromSkill(target);
+            if (slot == 0) TargetingSystem.Instance?.Engage(target);
+            else           TargetingSystem.Instance?.EngageFromSkill(target);
+
+            // Snap immédiat vers la cible — sinon l'anim (auto-attaque ou skill)
+            // peut jouer dans le mauvais sens si le perso n'était pas déjà orienté
+            // dessus (même pattern que Mob.LookAt/ResourceNode : rotation instantanée,
+            // pas de lissage, l'action doit partir orientée dès la 1ère frame).
+            Vector3 faceDir = target.transform.position - _player.transform.position;
+            faceDir.y = 0f;
+            if (faceDir.sqrMagnitude > 0.001f)
+                _player.transform.rotation = Quaternion.LookRotation(faceDir);
         }
 
         // GroundTarget — passe par TargetingSystem.TryExecuteSkill pour

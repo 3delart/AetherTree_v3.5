@@ -14,6 +14,8 @@ public class DebuffChecker : ConditionCheckerBase
     [Tooltip("Ignoré si anyDebuff est coché")]
     public DebuffType debuffType = DebuffType.Poison;
 
+    public override System.Type RelevantEventType => typeof(DebuffReceivedEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not DebuffReceivedEvent e) return false;

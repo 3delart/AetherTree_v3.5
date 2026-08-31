@@ -46,16 +46,43 @@ public class UnlockManager : MonoBehaviour
         = new Dictionary<string, HashSet<int>>();
 
     // ── Compteurs Account ─────────────────────────────────────
+    // Reste en clé string (pas ValueTuple) : persisté via StringIntPair
+    // (CharacterProgress.cs) qui attend une string — changer le type ici
+    // casserait le format de save. Voir localWinnerCounts ci-dessous pour
+    // l'optimisation sans-allocation (non persisté, donc libre de le faire).
     private Dictionary<string, int> accountCounters
         = new Dictionary<string, int>();
 
     // ── Winners locaux ────────────────────────────────────────
-    private Dictionary<string, int> localWinnerCounts
-        = new Dictionary<string, int>();
+    // Jamais persisté (nom "locaux" — reset à chaque session) — libre d'utiliser
+    // une clé ValueTuple (struct, pas d'allocation heap par hit).
+    private Dictionary<(string, int), int> localWinnerCounts
+        = new Dictionary<(string, int), int>();
 
     // ── Records de déblocage ──────────────────────────────────
     private Dictionary<string, UnlockRecord> records
         = new Dictionary<string, UnlockRecord>();
+
+    // ── Index par type d'event — construit une fois dans Init(), consulté
+    // à chaque EvaluateAll() au lieu de reparcourir allConditions en entier.
+    // Catalogue PARTAGÉ (données de référence) — ne jamais retirer une
+    // condition ici parce qu'UN joueur l'a complétée. Seul retrait légitime :
+    // maxWinners globalement épuisé, via _pendingIndexRemoval (voir EvaluateAll).
+    private Dictionary<System.Type, List<ConditionData>> _conditionsByEventType
+        = new Dictionary<System.Type, List<ConditionData>>();
+
+    // validEntries ne change jamais après l'Init d'un ConditionData — calculé
+    // une fois ici plutôt que reparcouru à chaque FinalizeCondition().
+    private Dictionary<string, int> _validEntriesCache
+        = new Dictionary<string, int>();
+
+    // Déblocages détectés (compteur/seuil déjà vérifiés, temps réel) mais dont
+    // l'octroi (mail, save) est différé hors du chemin chaud — voir Update().
+    private Queue<ConditionData> _pendingUnlocks = new Queue<ConditionData>();
+
+    // Conditions à retirer de _conditionsByEventType (maxWinners épuisé) — traité
+    // après le foreach de EvaluateAll pour ne jamais muter la liste en cours d'itération.
+    private List<ConditionData> _pendingIndexRemoval = new List<ConditionData>();
 
     private ActivityCounter activityCounter;
     private Player          player;
@@ -109,6 +136,15 @@ public class UnlockManager : MonoBehaviour
         _onServerEvent    = e => EvaluateAll(e);
         _onStatsChanged   = e => EvaluateAll(e);
         _onQuestAction    = e => EvaluateAll(e);
+    }
+
+    // Vide _pendingUnlocks une fois par frame — hors du chemin chaud des events
+    // de combat. La détection (compteur + seuil, dans EvaluateCondition) reste
+    // en temps réel ; seul l'octroi (mail, save) est lissé ici.
+    private void Update()
+    {
+        while (_pendingUnlocks.Count > 0)
+            Unlock(_pendingUnlocks.Dequeue());
     }
 
     private void Start()
@@ -197,11 +233,31 @@ public class UnlockManager : MonoBehaviour
             if (privateCounters.ContainsKey(condition.conditionID)) continue;
 
             var entryCounters = new Dictionary<int, int>();
+            int validEntries  = 0;
             for (int i = 0; i < condition.conditions.Count; i++)
+            {
                 entryCounters[i] = 0;
+
+                var entry = condition.conditions[i];
+                if (entry?.checker == null) continue;
+                if (entry.scope != CounterScope.Server) validEntries++;
+
+                // Index par type d'event — une condition à entries multi-type
+                // apparaît dans plusieurs buckets, n'importe lequel doit la
+                // re-déclencher (voir plan §2).
+                var eventType = entry.checker.RelevantEventType;
+                if (eventType == null) continue;
+                if (!_conditionsByEventType.TryGetValue(eventType, out var bucket))
+                {
+                    bucket = new List<ConditionData>();
+                    _conditionsByEventType[eventType] = bucket;
+                }
+                if (!bucket.Contains(condition)) bucket.Add(condition);
+            }
 
             privateCounters[condition.conditionID]  = entryCounters;
             completedEntries[condition.conditionID] = new HashSet<int>();
+            _validEntriesCache[condition.conditionID] = validEntries;
         }
     }
 
@@ -218,13 +274,28 @@ public class UnlockManager : MonoBehaviour
             else return;
         }
 
-        foreach (var condition in allConditions)
+        // Filtrage par type d'event — remplace le parcours de allConditions en
+        // entier. Un event dont aucun checker du jeu ne s'occupe (ex: aucun
+        // ItemEvent/PetEvent utilisé actuellement) ressort en O(1) ici.
+        if (!_conditionsByEventType.TryGetValue(gameEvent.GetType(), out var relevant)) return;
+
+        foreach (var condition in relevant)
         {
             if (condition == null || string.IsNullOrEmpty(condition.conditionID)) continue;
             if (records.ContainsKey(condition.conditionID))                       continue;
             if (!privateCounters.ContainsKey(condition.conditionID))              continue;
 
             EvaluateCondition(condition, gameEvent);
+        }
+
+        // Retraits différés jusqu'ici — jamais pendant le foreach ci-dessus,
+        // qui itère potentiellement l'une des listes concernées.
+        if (_pendingIndexRemoval.Count > 0)
+        {
+            foreach (var condition in _pendingIndexRemoval)
+                foreach (var bucket in _conditionsByEventType.Values)
+                    bucket.Remove(condition);
+            _pendingIndexRemoval.Clear();
         }
     }
 
@@ -256,8 +327,8 @@ public class UnlockManager : MonoBehaviour
 
             if (entry.maxWinners > 0)
             {
-                string winKey  = WinnerKey(condition.conditionID, i);
-                int    winners = localWinnerCounts.TryGetValue(winKey, out int w) ? w : 0;
+                var winKey  = WinnerKey(condition.conditionID, i);
+                int winners = localWinnerCounts.TryGetValue(winKey, out int w) ? w : 0;
                 if (winners >= entry.maxWinners) continue;
             }
 
@@ -287,8 +358,14 @@ public class UnlockManager : MonoBehaviour
 
                 if (entry.maxWinners > 0)
                 {
-                    string winKey = WinnerKey(condition.conditionID, i);
+                    var winKey = WinnerKey(condition.conditionID, i);
                     localWinnerCounts[winKey] = (localWinnerCounts.TryGetValue(winKey, out int w) ? w : 0) + 1;
+
+                    // Pool de gagnants épuisé pour TOUTES les entries à maxWinners de cette
+                    // condition → plus jamais débloquable par personne, seul cas où on retire
+                    // du catalogue partagé (voir plan §4 — jamais sur simple complétion joueur).
+                    if (AllWinnerSlotsExhausted(condition) && !_pendingIndexRemoval.Contains(condition))
+                        _pendingIndexRemoval.Add(condition);
                 }
             }
         }
@@ -296,23 +373,37 @@ public class UnlockManager : MonoBehaviour
         FinalizeCondition(condition);
     }
 
+    /// <summary>
+    /// True si toutes les entries à maxWinners>0 de la condition ont atteint leur
+    /// plafond (et qu'il y en a au moins une) — condition définitivement et
+    /// globalement indébloquable, peu importe le joueur.
+    /// </summary>
+    private bool AllWinnerSlotsExhausted(ConditionData condition)
+    {
+        bool hasWinnerLimit = false;
+        for (int i = 0; i < condition.conditions.Count; i++)
+        {
+            var entry = condition.conditions[i];
+            if (entry?.checker == null || entry.maxWinners <= 0) continue;
+            hasWinnerLimit = true;
+            int winners = localWinnerCounts.TryGetValue(WinnerKey(condition.conditionID, i), out int w) ? w : 0;
+            if (winners < entry.maxWinners) return false;
+        }
+        return hasWinnerLimit;
+    }
+
     private void FinalizeCondition(ConditionData condition)
     {
         if (records.ContainsKey(condition.conditionID)) return;
 
-        int validEntries = 0;
-        for (int i = 0; i < condition.conditions.Count; i++)
-        {
-            var entry = condition.conditions[i];
-            if (entry?.checker != null && entry.scope != CounterScope.Server)
-                validEntries++;
-        }
-
-        if (validEntries == 0) return;
+        // validEntries précalculé une fois dans Init() — ne change jamais après,
+        // plus besoin de reparcourir les entries à chaque évaluation.
+        if (!_validEntriesCache.TryGetValue(condition.conditionID, out int validEntries) || validEntries == 0)
+            return;
 
         var completed = completedEntries[condition.conditionID];
-        if (completed.Count == validEntries)
-            Unlock(condition);
+        if (completed.Count == validEntries && !_pendingUnlocks.Contains(condition))
+            _pendingUnlocks.Enqueue(condition);
     }
 
     // =========================================================
@@ -324,7 +415,7 @@ public class UnlockManager : MonoBehaviour
         var entry = condition.conditions[entryIndex];
         if (entry.scope == CounterScope.Account)
         {
-            string key = AccountKey(condition.conditionID, entryIndex);
+            var key = AccountKey(condition.conditionID, entryIndex);
             return accountCounters.TryGetValue(key, out int v) ? v : 0;
         }
         return privateCounters.TryGetValue(condition.conditionID, out var d)
@@ -336,7 +427,7 @@ public class UnlockManager : MonoBehaviour
         var entry = condition.conditions[entryIndex];
         if (entry.scope == CounterScope.Account)
         {
-            string key = AccountKey(condition.conditionID, entryIndex);
+            var key = AccountKey(condition.conditionID, entryIndex);
             accountCounters[key] = GetCounter(condition, entryIndex) + 1;
             return;
         }
@@ -344,11 +435,15 @@ public class UnlockManager : MonoBehaviour
             d[entryIndex] = d.ContainsKey(entryIndex) ? d[entryIndex] + 1 : 1;
     }
 
+    // AccountKey reste une string — voir commentaire sur accountCounters (persisté
+    // via StringIntPair, ne pas changer le type sans migrer le format de save).
     private static string AccountKey(string conditionID, int entryIndex)
         => $"{conditionID}__{entryIndex}";
 
-    private static string WinnerKey(string conditionID, int entryIndex)
-        => $"win__{conditionID}__{entryIndex}";
+    // WinnerKey en ValueTuple (struct) — jamais persisté, pas d'allocation heap
+    // par hit contrairement à l'ancienne interpolation de string.
+    private static (string, int) WinnerKey(string conditionID, int entryIndex)
+        => (conditionID, entryIndex);
 
     // =========================================================
     // DÉBLOCAGE

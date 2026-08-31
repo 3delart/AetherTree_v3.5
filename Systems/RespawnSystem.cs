@@ -64,7 +64,7 @@ public class RespawnSystem : MonoBehaviour
         if (_player == null) { Debug.LogError("[RESPAWN] TriggerDeath — Player introuvable !"); return; }
 
 
-        TargetingSystem.Instance?.Deselect();
+        TargetingSystem.Instance?.ClearEverything();
 
         // Bloque le NavMeshAgent
         NavMeshAgent agent = _player.GetComponent<NavMeshAgent>();

@@ -991,7 +991,7 @@ public class SkillSystem : MonoBehaviour
     private void CheckKill(Entity target)
     {
         if (target == null || !target.isDead) return;
-        TargetingSystem.Instance?.Deselect();
+        TargetingSystem.Instance?.ClearForDeath(target);
     }
 
     // =========================================================

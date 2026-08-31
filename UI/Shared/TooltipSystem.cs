@@ -314,7 +314,7 @@ public class TooltipSystem : MonoBehaviour
     {
         ShowOnly(weaponPanel);
         SetIcon(weaponIcon, w.Icon);
-        SetText(weaponNameText,      $"<color={RarityColor(w.rarityRank)}>{w.WeaponName}</color>");
+        SetText(weaponNameText,      $"<color={w.RarityDisplayColorHex}>{w.RarityDisplayName} {w.WeaponName}</color>");
         SetText(weaponLevelText,     w.data != null ? LevelTag(w.data.requiredLevel) : "");
         SetText(weaponRarityText,    w.RarityLabel);
         SetText(weaponTypeText,      w.WeaponType.ToString());
@@ -342,7 +342,7 @@ public class TooltipSystem : MonoBehaviour
     {
         ShowOnly(armorPanel);
         SetIcon(armorIcon, a.Icon);
-        SetText(armorNameText,    $"<color={RarityColor(a.rarityRank)}>{a.ArmorName}</color>");
+        SetText(armorNameText,    $"<color={a.RarityDisplayColorHex}>{a.RarityDisplayName} {a.ArmorName}</color>");
         SetText(armorLevelText,   a.data != null ? LevelTag(a.data.requiredLevel) : "");
         SetText(armorRarityText,  a.RarityLabel);
         SetText(armorTypeText,    a.ArmorType.ToString());
@@ -712,10 +712,4 @@ public class TooltipSystem : MonoBehaviour
     private void SetIcon(Image img, Sprite sprite)
         { if (img == null) return; img.sprite = sprite; img.enabled = sprite != null; }
 
-    private string RarityColor(int r) => r switch
-    {
-        -2 => "#9D9D9D", -1 => "#FFFFFF",  0 => "#1EFF00", 1 => "#0070FF",
-         2 => "#A335EE",  3 => "#FF8000",  4 => "#E268A8", 5 => "#00CCFF",
-         6 => "#FFD700",  7 => "#FF4444",  _ => "#FFFFFF"
-    };
 }

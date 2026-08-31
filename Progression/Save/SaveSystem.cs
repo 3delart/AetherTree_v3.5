@@ -373,6 +373,7 @@ public class SaveSystem : MonoBehaviour
             p.weapons.Add(new SavedWeapon {
                 soName = w.data.name, isEquipped = true,
                 rarityRank = w.rarityRank, upgradeLevel = w.upgradeLevel,
+                hasAethernelleSeal = w.hasAethernelleSeal,
                 ratioMin = w.rolledRatioMin, ratioMax = w.rolledRatioMax, ratioPrecision = w.rolledRatioPrecision });
         }
 
@@ -382,6 +383,7 @@ public class SaveSystem : MonoBehaviour
             p.armors.Add(new SavedArmor {
                 soName = a.data.name, isEquipped = true,
                 rarityRank = a.rarityRank, upgradeLevel = a.upgradeLevel,
+                hasAethernelleSeal = a.hasAethernelleSeal,
                 ratioMelee = a.rolledRatioMelee, ratioRanged = a.rolledRatioRanged,
                 ratioMagic = a.rolledRatioMagic, ratioDodge = a.rolledRatioDodge });
         }
@@ -442,6 +444,7 @@ public class SaveSystem : MonoBehaviour
             p.weapons.Add(new SavedWeapon { soName = item.WeaponInstance.data.name,
                                     rarityRank = item.WeaponInstance.rarityRank,
                                     upgradeLevel = item.WeaponInstance.upgradeLevel,
+                                    hasAethernelleSeal = item.WeaponInstance.hasAethernelleSeal,
                                     ratioMin = item.WeaponInstance.rolledRatioMin,
                                     ratioMax = item.WeaponInstance.rolledRatioMax,
                                     ratioPrecision = item.WeaponInstance.rolledRatioPrecision });
@@ -449,6 +452,7 @@ public class SaveSystem : MonoBehaviour
             p.armors.Add(new SavedArmor { soName = item.ArmorInstance.data.name,
                                     rarityRank = item.ArmorInstance.rarityRank,
                                     upgradeLevel = item.ArmorInstance.upgradeLevel,
+                                    hasAethernelleSeal = item.ArmorInstance.hasAethernelleSeal,
                                     ratioMelee = item.ArmorInstance.rolledRatioMelee,
                                     ratioRanged = item.ArmorInstance.rolledRatioRanged,
                                     ratioMagic = item.ArmorInstance.rolledRatioMagic,
@@ -814,6 +818,7 @@ public class SaveSystem : MonoBehaviour
             var wd = FindSOByName<WeaponData>(s.soName);
             if (wd == null) { Debug.LogWarning($"[LOAD] ⚠ Weapon introuvable : '{s.soName}'"); continue; }
             var inst = new WeaponInstance(wd, s.ratioMin, s.ratioMax, s.ratioPrecision, s.rarityRank, s.upgradeLevel);
+            inst.hasAethernelleSeal = s.hasAethernelleSeal;
             AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
         }
 
@@ -822,6 +827,7 @@ public class SaveSystem : MonoBehaviour
             var ad = FindSOByName<ArmorData>(s.soName);
             if (ad == null) { Debug.LogWarning($"[LOAD] ⚠ Armor introuvable : '{s.soName}'"); continue; }
             var inst = new ArmorInstance(ad, s.ratioMelee, s.ratioRanged, s.ratioMagic, s.ratioDodge, s.rarityRank, s.upgradeLevel);
+            inst.hasAethernelleSeal = s.hasAethernelleSeal;
             AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
         }
 

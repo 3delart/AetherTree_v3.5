@@ -24,4 +24,12 @@ public abstract class ConditionCheckerBase
     /// de ConditionEntry sont déjà passés.
     /// </summary>
     public abstract bool Evaluate(object gameEvent, Player player);
+
+    /// <summary>
+    /// Type d'event GameEventBus auquel ce checker répond (le même type que le
+    /// "is XEvent" en tête de son Evaluate()). Utilisé par UnlockManager pour
+    /// indexer les ConditionData par type d'event et éviter de parcourir toutes
+    /// les conditions du jeu à chaque event — voir UnlockManager._conditionsByEventType.
+    /// </summary>
+    public abstract System.Type RelevantEventType { get; }
 }

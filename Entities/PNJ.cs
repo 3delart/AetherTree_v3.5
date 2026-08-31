@@ -187,11 +187,14 @@ public class PNJ : Entity
     }
 
     // ── Forgeron ──────────────────────────────────────────────
+    // N'ouvre PAS ForgeUI directement — le dialogue s'affiche d'abord,
+    // ForgeUI s'ouvre seulement quand le joueur clique l'option dont
+    // l'Action = DialogueAction.OpenForge (voir HandleDialogueAction
+    // ci-dessous et DialogueUI.OnOptionClicked, le chemin réellement
+    // emprunté au clic bouton).
     private void InteractBlacksmith(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
-        // TODO Phase 6 : ForgeUI.Instance?.Open(data, player)
-        Debug.Log($"[PNJ/Forgeron] {data.pnjName} — upgrade max +{data.maxUpgradeLevel} (ForgeUI Phase 6)");
     }
 
     // ── Antiquaire ────────────────────────────────────────────
@@ -378,7 +381,7 @@ public class PNJ : Entity
         switch (action)
         {
             case DialogueAction.OpenShop:           ShopUI.Instance?.OpenShop(data, player); break;
-            case DialogueAction.OpenForge:          Debug.Log("[PNJ] OpenForge — ForgeUI Phase 6");   break;
+            case DialogueAction.OpenForge:          ForgeUI.Instance?.Open(); break;
             case DialogueAction.OpenRuneUI:         Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");   break;
             case DialogueAction.OpenFusionUI:       Debug.Log("[PNJ] OpenFusionUI — FusionUI Phase 6"); break;
             case DialogueAction.OpenMetierUI:       Debug.Log("[PNJ] OpenMetierUI — MetierUI Phase 7"); break;

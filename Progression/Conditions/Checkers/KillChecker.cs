@@ -66,6 +66,8 @@ public class KillChecker : ConditionCheckerBase
     [Tooltip("Vide = n'importe quelle zone")]
     public string inZone = "";
 
+    public override System.Type RelevantEventType => typeof(MobKilledEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not MobKilledEvent e) return false;

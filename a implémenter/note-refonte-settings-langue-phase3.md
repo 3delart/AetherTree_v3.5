@@ -1,12 +1,12 @@
 # Refonte — Branchement UI langue & options (Phase 3, réduite)
 
-> **Statut** : document de cadrage. **Révisé** — le cœur de cette phase (`PlayerSettings`, branchement de `LocalizationManager` dessus) a été avancé en Phase 1 (voir `note-refonte-itemdata-classe-de-base.md` §2.2-2.3), pour éviter de retoucher `LocalizationManager` deux fois. Ce document ne couvre plus que ce qui dépend d'un menu Options qui n'existe pas encore dans le projet.
+> **Statut** : document de cadrage. **Révisé** — le cœur de cette phase (`PlayerSettings`, branchement de `LocalizationManager` dessus) a été avancé en Phase 1 (implémentée, voir git), pour éviter de retoucher `LocalizationManager` deux fois. Ce document ne couvre plus que ce qui dépend d'un menu Options qui n'existe pas encore dans le projet.
 
 **Contexte** : `PlayerSettings.Current.language` et `LocalizationManager` (API `CurrentLanguage`/`OnLanguageChanged`/`SetLanguage`/`LoadSavedLanguage`) sont opérationnels dès la Phase 1. Ce qui reste : les rendre visibles et actionnables pour le joueur, et faire en sorte que l'UI déjà affichée se rafraîchisse en direct quand la langue change.
 
 ## Ce qui rentre dans cette phase (réduite)
 
-1. **Abonnements `OnLanguageChanged`** dans les panels UI affichant du texte localisé (`TooltipSystem`, `ShopUI`, `SocialUI`, et tout autre panel d'inventaire/équipement découvert au moment de l'implémentation) — pattern `OnEnable()`/`OnDisable()` déjà documenté dans `note-systeme-multilangue.md` §2.3. **Attention à la fuite mémoire par abonnement oublié** (audit `note-refonte-itemdata-classe-de-base.md` §2.1 point 6) — vérifier systématiquement la paire `OnEnable`/`OnDisable` à chaque panel touché.
+1. **Abonnements `OnLanguageChanged`** dans les panels UI affichant du texte localisé (`TooltipSystem`, `ShopUI`, `SocialUI`, et tout autre panel d'inventaire/équipement découvert au moment de l'implémentation) — pattern `OnEnable()`/`OnDisable()` déjà documenté dans `note-systeme-multilangue.md` §2.3. **Attention à la fuite mémoire par abonnement oublié** — vérifier systématiquement la paire `OnEnable`/`OnDisable` à chaque panel touché.
 2. **Sélecteur de langue** dans le menu Options — UI à identifier/créer au moment de l'implémentation (pas encore localisée dans le projet à ce jour). Appelle `LocalizationManager.SetLanguage(...)`.
 3. **Migration `ConditionData`/`ConditionReward`/`MailboxSystem`/`SocialUI` vers `LocalizedText`** — inchangé par rapport à la version précédente de ce document :
    - `ConditionReward.rewardTitle` → `titleID` (stable) + `rewardTitleName` (`LocalizedText`).

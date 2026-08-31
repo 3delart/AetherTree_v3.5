@@ -14,6 +14,8 @@ public class NpcInteractChecker : ConditionCheckerBase
     [Tooltip("Any = n'importe quel type d'interaction")]
     public InteractType action = InteractType.Any;
 
+    public override System.Type RelevantEventType => typeof(NpcInteractEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not NpcInteractEvent e)                return false;

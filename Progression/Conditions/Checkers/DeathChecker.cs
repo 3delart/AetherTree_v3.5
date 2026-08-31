@@ -36,6 +36,8 @@ public class DeathChecker : ConditionCheckerBase
     [Tooltip("True = tué par un joueur (PvP)")]
     public bool     killedByPlayer = false;
 
+    public override System.Type RelevantEventType => typeof(PlayerDeathEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not PlayerDeathEvent e) return false;

@@ -45,11 +45,6 @@ public class PNJData : ScriptableObject
     public List<ShopEntry> shopItems  = new List<ShopEntry>();
     public List<ShopEntry> shopSkills = new List<ShopEntry>();
 
-    // ── Forgeron ──────────────────────────────────────────────
-    [Header("Forgeron (PNJType.Blacksmith)")]
-    [Tooltip("Niveau d'upgrade maximum autorisé par ce forgeron (3 = Braven, 10 = Erenthal)")]
-    public int maxUpgradeLevel = 3;
-
     // ── Antiquaire ────────────────────────────────────────────
     [Header("Antiquaire (PNJType.Antiquarian)")]
     public bool canIdentifyRunes = false;
@@ -178,7 +173,7 @@ public class PNJData : ScriptableObject
 public enum PNJType
 {
     Merchant,       // Achat/vente items consommables et ressources
-    Blacksmith,     // Amélioration arme/armure (+0→+3 Braven, +0→+10 Erenthal)
+    Blacksmith,     // Amélioration arme/armure (+0→+10, pas de restriction par ville)
     Antiquarian,    // Identification et insertion de runes
     FusionNPC,      // Fusion de Gants & Bottes (S0→S6)
     CraftMaster,    // Déblocage activités (Bûcheron, Pêcheur...)

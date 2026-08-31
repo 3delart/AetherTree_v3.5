@@ -21,6 +21,8 @@ public class SkillCastChecker : ConditionCheckerBase
     [Tooltip("Vide = n'importe quelle zone")]
     public string      inZone         = "";
 
+    public override System.Type RelevantEventType => typeof(SkillUsedEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not SkillUsedEvent e)                              return false;

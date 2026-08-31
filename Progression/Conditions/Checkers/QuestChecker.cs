@@ -14,6 +14,8 @@ public class QuestChecker : ConditionCheckerBase
     [Tooltip("L'action qui valide la condition")]
     public QuestAction requiredAction = QuestAction.Completed;
 
+    public override System.Type RelevantEventType => typeof(QuestEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not QuestEvent e)                      return false;

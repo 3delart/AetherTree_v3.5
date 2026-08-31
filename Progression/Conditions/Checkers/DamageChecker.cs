@@ -58,6 +58,8 @@ public class DamageChecker : ConditionCheckerBase
     [Tooltip("True = cet élément doit être l'élément dominant de la cible")]
     public bool        targetMustBeDominant   = false;
 
+    public override System.Type RelevantEventType => typeof(DamageDealtEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not DamageDealtEvent e) return false;

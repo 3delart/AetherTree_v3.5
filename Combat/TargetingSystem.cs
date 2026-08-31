@@ -106,12 +106,50 @@ public class TargetingSystem : MonoBehaviour
 
     private void TickAutoAttack()
     {
-        if (!autoAttacking || engagedTarget == null) return;
-        if (engagedTarget.isDead) { Deselect(); return; }
+        if (!autoAttacking || engagedTarget == null)
+        {
+            if (autoAttacking) Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — sort tôt : autoAttacking={autoAttacking} engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")}");
+            return;
+        }
+        if (SkillBar.Instance != null && SkillBar.Instance.IsApproachingSkill)
+        {
+            Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — suspendu, un skill approche sa cible (on ne tape pas {engagedTarget.name} en marchant)");
+            return;
+        }
+        if (engagedTarget.isDead)
+        {
+            Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — {engagedTarget.name} isDead=true → ClearForDeath()");
+            ClearForDeath(engagedTarget);
+            return;
+        }
+
+        // Suivi + attaque fusionnés en une seule vérification par frame — avant,
+        // une coroutine de chase s'arrêtait dès l'entrée en portée et rendait la
+        // main à ce timer, qui ne revérifiait la distance qu'à son propre
+        // intervalle (vitesse d'attaque). Une cible qui ressortait de portée
+        // entre les deux n'était surveillée par personne (le perso restait
+        // planté). Ici la distance est revérifiée chaque frame, donc le suivi
+        // ne s'interrompt jamais tant que la cible reste engagée.
+        var basicAttackSkill = SkillBar.Instance?.GetSkillAtSlot(0);
+        if (basicAttackSkill != null && basicAttackSkill.range > 0f)
+        {
+            float dist = Vector3.Distance(player.transform.position, engagedTarget.transform.position);
+            if (dist > basicAttackSkill.range * 1.1f)
+            {
+                Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — {engagedTarget.name} hors portée (dist={dist:F2} > {basicAttackSkill.range * 1.1f:F2}) → chase, selectedTarget={(selectedTarget!=null?selectedTarget.name:"null")}");
+                if (_agent != null) _agent.SetDestination(engagedTarget.transform.position);
+                return;
+            }
+            // À portée — l'auto-attaque ne touche jamais au TargetPanel/à la sélection,
+            // même à l'arrivée : seul un vrai skill (slot ≥ 1, voir SkillBar.ExecuteSkill)
+            // justifie de reprendre la main dessus.
+            if (_agent != null && _agent.hasPath) _agent.ResetPath();
+        }
 
         autoAttackTimer -= Time.deltaTime;
         if (autoAttackTimer <= 0f)
         {
+            Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — timer écoulé, appel PerformAutoAttack() sur {engagedTarget.name}, selectedTarget={(selectedTarget!=null?selectedTarget.name:"null")}");
             PerformAutoAttack();
             float speed = player?.equippedWeaponInstance != null
                 ? player.equippedWeaponInstance.AttackSpeed : 1.2f;
@@ -121,26 +159,26 @@ public class TargetingSystem : MonoBehaviour
 
     private void PerformAutoAttack()
     {
-        if (player == null || SkillBar.Instance == null) return;
-        if (engagedTarget == null || engagedTarget.isDead) return;
-        if (player.statusEffects != null && player.statusEffects.isStunned) return;
-
-        // ── Check de distance — avant tout ───────────────────
-        // Le RollDodge/Miss est géré dans ApplyEffectType (SkillSystem).
-        // On ne roll pas ici pour éviter d'afficher "ESQUIVE" hors range.
-        var basicAttackSkill = SkillBar.Instance.GetSkillAtSlot(0);
-        if (basicAttackSkill != null && basicAttackSkill.range > 0f)
+        if (player == null || SkillBar.Instance == null)
         {
-            float dist = Vector3.Distance(player.transform.position, engagedTarget.transform.position);
-            if (dist > basicAttackSkill.range * 1.1f)
-            {
-                // Hors range → approche automatique vers la cible
-                StartApproach(ApproachCombatTargetRoutine(engagedTarget, basicAttackSkill.range));
-                return;
-            }
+            Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — sort : player={(player!=null)} SkillBar.Instance={(SkillBar.Instance!=null)}");
+            return;
+        }
+        if (engagedTarget == null || engagedTarget.isDead)
+        {
+            Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — sort : engagedTarget null ou mort");
+            return;
+        }
+        if (player.statusEffects != null && player.statusEffects.isStunned)
+        {
+            Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — sort : isStunned=true");
+            return;
         }
 
-        SkillBar.Instance.TryUseSlot(0);
+        // Distance déjà validée dans TickAutoAttack() juste avant — plus besoin
+        // de re-checker ici (l'ancienne approche via coroutine a été retirée).
+        bool success = SkillBar.Instance.TryUseSlot(0, isAutoTick: true);
+        Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — TryUseSlot(0) → {success}");
     }
 
     private void ToggleAutoAttack()
@@ -302,6 +340,7 @@ public class TargetingSystem : MonoBehaviour
 
     private void HandleCombatEntityClick(Entity entity)
     {
+        Debug.Log($"[COMBAT-DEBUG] HandleCombatEntityClick({entity.name}) — selectedTarget={(selectedTarget!=null?selectedTarget.name:"null")} engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")}");
         if (entity == selectedTarget && engagedTarget != entity)
             Engage(entity);
         else
@@ -315,6 +354,26 @@ public class TargetingSystem : MonoBehaviour
     public void Select(Entity entity)
     {
         if (entity == null) return;
+        Debug.Log($"[COMBAT-DEBUG] Select({entity.name}) — engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")} autoAttacking={autoAttacking}");
+
+        // Re-cliquer sa PROPRE cible déjà engagée (rouge) doit juste ramener le
+        // TargetPanel dessus — ne pas repeindre son outline en orange. selectedOutline
+        // et engagedOutline peuvent référencer le même composant Outline (un seul par
+        // GameObject), donc sans ce garde-fou la cible attaquée redevenait visuellement
+        // orange alors qu'elle restait réellement engagée (engagedTarget/autoAttacking
+        // inchangés) — désync entre couleur affichée et état réel.
+        if (entity == engagedTarget)
+        {
+            // Nettoie une éventuelle autre sélection orange en cours (ClearAllSelection
+            // ne touche pas engagedTarget/engagedOutline, donc la cible rouge n'est pas
+            // affectée) sans créer/repeindre d'outline pour cette entité — l'outline
+            // rouge d'engagedOutline reste seule maîtresse de sa couleur.
+            ClearAllSelection();
+            selectedTarget = entity;
+            TargetPanel.Instance?.Show(entity);
+            return;
+        }
+
         ClearAllSelection();
 
         selectedTarget  = entity;
@@ -330,6 +389,7 @@ public class TargetingSystem : MonoBehaviour
     public void Engage(Entity entity)
     {
         if (entity == null) return;
+        Debug.Log($"[COMBAT-DEBUG] Engage({entity.name}) — précédent engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")}");
 
         if (engagedOutline != null)
             engagedOutline.OutlineColor = colorSelected;
@@ -460,6 +520,7 @@ public class TargetingSystem : MonoBehaviour
             // Désengage la cible — repasse en orange (sélectionnée) si elle existe
             if (engagedTarget != null)
             {
+                Debug.Log($"[COMBAT-DEBUG] CheckApproachCancelled — MoveHeld=true, désengage {engagedTarget.name}");
                 // Transfère l'engagée en sélectionnée pour garder l'outline orange
                 if (selectedOutline != null) { selectedOutline.enabled = false; }
                 selectedTarget  = engagedTarget;
@@ -471,38 +532,6 @@ public class TargetingSystem : MonoBehaviour
                 autoAttacking  = false;
             }
         }
-    }
-
-    // ── Routine Combat — approche vers cible engagée ─────────
-
-    private IEnumerator ApproachCombatTargetRoutine(Entity target, float attackRange)
-    {
-        if (_agent == null) yield break;
-
-        float elapsed = 0f;
-
-        while (elapsed < ApproachTimeout)
-        {
-            if (target == null || target.isDead) yield break;
-            if (engagedTarget != target)         yield break; // cible changée entre temps
-
-            _agent.SetDestination(target.transform.position);
-
-            float dist = Vector3.Distance(player.transform.position, target.transform.position);
-            if (dist <= attackRange * 1.1f)
-            {
-                // À portée — laisse TickAutoAttack reprendre
-                _agent.ResetPath();
-                _approachCoroutine = null;
-                yield break;
-            }
-
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        _agent.ResetPath();
-        _approachCoroutine = null;
     }
 
     // ── Routine WorldPickupItem (item ou aeris) ───────────────
@@ -623,12 +652,45 @@ public class TargetingSystem : MonoBehaviour
     // DESELECT
     // =========================================================
 
+    /// <summary>Clic gauche dans le vide / touche Deselect — n'enlève que le "regard"
+    /// (sélection orange + TargetPanel). Le combat en cours (cible rouge/auto-attaque)
+    /// ne s'arrête QUE via un vrai déplacement volontaire (PlayerController, clic droit)
+    /// ou en engageant réellement un autre mob (Engage) — jamais en désélectionnant.
+    /// Pour les cas où le combat DOIT vraiment s'arrêter (cible morte, mort du joueur),
+    /// voir ClearEverything().</summary>
     public void Deselect()
+    {
+        ClearAllSelection();
+        StopApproach();
+        TargetPanel.Instance?.Hide();
+    }
+
+    /// <summary>Coupe tout — sélection ET engagement/combat. Réservé à la mort du
+    /// joueur (RespawnSystem) — jamais pour un simple clic dans le vide (voir
+    /// Deselect()) ni pour la mort d'un mob (voir ClearForDeath, scopé).</summary>
+    public void ClearEverything()
     {
         ClearAllSelection();
         ClearEngage();
         StopApproach();
         TargetPanel.Instance?.Hide();
+    }
+
+    /// <summary>Nettoyage ciblé sur l'entité qui vient de mourir — ne touche que ce
+    /// qui pointait sur ELLE. Si A meurt pendant que B est sélectionné, B et son
+    /// TargetPanel restent intacts (seul l'engagement sur A est coupé).</summary>
+    public void ClearForDeath(Entity entity)
+    {
+        if (entity == engagedTarget)
+        {
+            ClearEngage();
+            StopApproach();
+        }
+        if (entity == selectedTarget)
+        {
+            ClearAllSelection();
+            TargetPanel.Instance?.Hide();
+        }
     }
 
     // =========================================================

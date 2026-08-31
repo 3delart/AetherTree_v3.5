@@ -51,6 +51,8 @@ public class TimeChecker : ConditionCheckerBase
     [Header("Nuit")]
     public bool mustBeNight = false;
 
+    public override System.Type RelevantEventType => typeof(TimeEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not TimeEvent e) return false;

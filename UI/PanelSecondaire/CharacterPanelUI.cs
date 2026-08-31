@@ -110,6 +110,7 @@ public class CharacterPanelUI : MonoBehaviour
     // =========================================================
     [Header("Card Attack")]
     public TextMeshProUGUI weaponNameText;
+    public TooltipTrigger  weaponTooltipTrigger;
     public TextMeshProUGUI weaponDamageText;
     public TextMeshProUGUI weaponAccuracyText;
     public TextMeshProUGUI critChanceText;
@@ -120,6 +121,7 @@ public class CharacterPanelUI : MonoBehaviour
     // =========================================================
     [Header("Card Defense")]
     public TextMeshProUGUI armorNameText;
+    public TooltipTrigger  armorTooltipTrigger;
     public TextMeshProUGUI meleeDefenseText;
     public TextMeshProUGUI rangedDefenseText;
     public TextMeshProUGUI magicDefenseText;
@@ -347,7 +349,12 @@ public class CharacterPanelUI : MonoBehaviour
     private void RefreshCardAttack()
     {
         var w = _player.equippedWeaponInstance;
-        SetText(weaponNameText,     w != null ? w.WeaponName : "—");
+        SetText(weaponNameText,     w != null ? $"<color={w.RarityDisplayColorHex}>{w.RarityDisplayName} {w.WeaponName}</color>" : "—");
+        if (weaponTooltipTrigger != null)
+        {
+            if (w != null) weaponTooltipTrigger.SetItem(new InventoryItem(w));
+            else weaponTooltipTrigger.Clear();
+        }
         SetText(weaponDamageText,   $"{Mathf.RoundToInt(_player.AttackDamageMin)} – {Mathf.RoundToInt(_player.AttackDamageMax)}");
         SetText(weaponAccuracyText, $"{Mathf.RoundToInt(_player.Precision)}");
         SetText(critChanceText,     $"{_player.CritChance * 100f:F1}%");
@@ -362,7 +369,12 @@ public class CharacterPanelUI : MonoBehaviour
     private void RefreshCardDefense()
     {
         var a = _player.equippedArmorInstance;
-        SetText(armorNameText,     a?.data != null ? a.ArmorName : "—");
+        SetText(armorNameText,     a?.data != null ? $"<color={a.RarityDisplayColorHex}>{a.RarityDisplayName} {a.ArmorName}</color>" : "—");
+        if (armorTooltipTrigger != null)
+        {
+            if (a?.data != null) armorTooltipTrigger.SetItem(new InventoryItem(a));
+            else armorTooltipTrigger.Clear();
+        }
         SetText(meleeDefenseText,  $"{Mathf.RoundToInt(_player.MeleeDefense)}");
         SetText(rangedDefenseText, $"{Mathf.RoundToInt(_player.RangedDefense)}");
         SetText(magicDefenseText,  $"{Mathf.RoundToInt(_player.MagicDefense)}");

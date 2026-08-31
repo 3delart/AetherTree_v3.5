@@ -29,6 +29,7 @@ public class SavedWeapon
     public bool   isEquipped;
     public int    rarityRank;
     public int    upgradeLevel;
+    public bool   hasAethernelleSeal; // GDD §5.13Bis — cosmétique, aucun impact sur les stats
     public float  ratioMin;
     public float  ratioMax;
     public float  ratioPrecision;
@@ -43,6 +44,7 @@ public class SavedArmor
     public bool   isEquipped;
     public int    rarityRank;
     public int    upgradeLevel;
+    public bool   hasAethernelleSeal; // GDD §5.13Bis — cosmétique, aucun impact sur les stats
     public float  ratioMelee;
     public float  ratioRanged;
     public float  ratioMagic;

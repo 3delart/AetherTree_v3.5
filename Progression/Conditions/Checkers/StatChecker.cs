@@ -73,6 +73,8 @@ public class StatChecker : ConditionCheckerBase
 
     // ─────────────────────────────────────────────────────────
 
+    public override System.Type RelevantEventType => typeof(StatsChangedEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not StatsChangedEvent) return false;

@@ -195,6 +195,45 @@ public class InventorySystem : MonoBehaviour
         return true;
     }
 
+    // ── Ressources — comptage/consommation par référence SO ──────
+    // Une ressource peut être répartie sur plusieurs stacks (débordement
+    // au-delà de MaxStack, voir AddItem) — ces deux méthodes agrègent/
+    // consomment sur l'ensemble des stacks du même ResourceData.
+
+    public int GetResourceCount(ResourceData data)
+    {
+        if (data == null) return 0;
+        int total = 0;
+        foreach (var item in _items)
+            if (item.ResourceInstance?.data == data) total += item.ResourceInstance.quantity;
+        return total;
+    }
+
+    /// <summary>Retire `amount` du ResourceData donné, réparti sur les stacks existants
+    /// (les stacks vidés sont retirés de l'inventaire). Ne retire rien si le total
+    /// disponible est insuffisant — vérifier avec GetResourceCount() avant si besoin
+    /// d'un contrôle séparé.</summary>
+    public bool ConsumeResource(ResourceData data, int amount)
+    {
+        if (data == null || amount <= 0) return false;
+        if (GetResourceCount(data) < amount) return false;
+
+        int remaining = amount;
+        foreach (var item in new List<InventoryItem>(_items))
+        {
+            if (remaining <= 0) break;
+            if (item.ResourceInstance?.data != data) continue;
+
+            int take = Mathf.Min(remaining, item.ResourceInstance.quantity);
+            item.ResourceInstance.Remove(take);
+            remaining -= take;
+            if (item.ResourceInstance.IsEmpty) RemoveItem(item);
+        }
+
+        OnInventoryChanged?.Invoke();
+        return true;
+    }
+
     // ── Équipement depuis l'inventaire ────────────────────────
 
     /// <summary>

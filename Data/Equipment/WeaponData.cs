@@ -194,11 +194,20 @@ public class WeaponInstance
     public float rolledRatioMax;
     public float rolledRatioPrecision;
 
-    // Modificateurs appliqués après drop
+    [Header("Modificateurs appliqués après drop")]
     public int rarityRank   = 0;   // -2 à +7 — GDD §5.13
     public int upgradeLevel = 0;   // 0 à +10 — GDD §5.14
 
+    // Sceau Aethernelle — GDD §5.13Bis. Posé sur une pièce déjà r+7 via une Pierre
+    // dédiée (condition, pas de RNG) — AUCUN bonus de stats, purement prestige/cosmétique.
+    // Indépendant du slot rune ci-dessous — n'affecte ni ne remplace equippedRune.
+    // Mécanique d'obtention (Pierre, condition, UI) pas encore implémentée — ce champ
+    // existe pour que l'affichage soit prêt et que la save round-trip dès maintenant.
+    [Header("Sceau spécial (cosmétique)")]
+    public bool hasAethernelleSeal = false;
+
     // Slot rune — 1 par arme, irréversible via Antiquaire
+    [Header("Rune")]
     public RuneInstance equippedRune = null;
 
     public WeaponInstance(WeaponData source,
@@ -267,6 +276,12 @@ public class WeaponInstance
     public int             WeaponLevel  => data != null ? data.weaponLevel  : 1;
     public int             RequiredLevel => data != null ? data.requiredLevel : 1;
     public string          RarityLabel  => rarityRank >= 0 ? $"r+{rarityRank}" : $"r{rarityRank}";
+
+    /// <summary>Nom de rareté affiché au joueur — "Aethernelle" si scellé, sinon le nom du rang. GDD §5.13/§5.13Bis.</summary>
+    public string          RarityDisplayName => hasAethernelleSeal ? RarityTier.AethernelleName : RarityTier.GetName(rarityRank);
+
+    /// <summary>Couleur affichée au joueur — GDD §5.13/§5.13Bis.</summary>
+    public string          RarityDisplayColorHex => hasAethernelleSeal ? RarityTier.AethernelleColorHex : RarityTier.GetColorHex(rarityRank);
 
     // ── Raccourcis config (4 slots fusionnés) ─────────────────
     public List<StatBonus>             Bonuses           => data?.config?.bonuses;

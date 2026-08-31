@@ -45,10 +45,13 @@ public class ZoneChecker : ConditionCheckerBase
     [Tooltip("0 = pas de limite de temps (speedrun). En secondes.")]
     public float speedRunMax  = 0f;
 
+    public override System.Type RelevantEventType => typeof(ZoneEvent);
+
     public override bool Evaluate(object gameEvent, Player player)
     {
         if (gameEvent is not ZoneEvent e) return false;
-        Debug.Log($"[ZONECHECKER] zoneID={e.zoneID} isFinalExit={e.isFinalExit} isAFK={e.isAFK} duration={e.timeSpentSeconds}");
+        if (UnlockManager.Instance != null && UnlockManager.Instance.verboseLogs)
+            Debug.Log($"[ZONECHECKER] zoneID={e.zoneID} isFinalExit={e.isFinalExit} isAFK={e.isAFK} duration={e.timeSpentSeconds}");
 
         // ── Zone ─────────────────────────────────────────────
         if (zone != null && e.zoneID != zone.zoneID)           return false;

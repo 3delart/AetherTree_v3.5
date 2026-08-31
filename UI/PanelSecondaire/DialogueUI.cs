@@ -273,7 +273,7 @@ public class DialogueUI : MonoBehaviour
                 ShopUI.Instance?.OpenShop(_currentPNJ?.data, _currentPlayer);
                 break;
             case DialogueAction.OpenForge:
-                Debug.Log("[DialogueUI] ForgeUI — TODO Phase 6");
+                ForgeUI.Instance?.Open();
                 break;
             case DialogueAction.OpenRuneUI:
                 Debug.Log("[DialogueUI] RuneUI — TODO Phase 6");
