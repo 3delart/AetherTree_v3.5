@@ -181,7 +181,6 @@ public class SkillBar : MonoBehaviour
     {
         if (slot < 0 || slot >= 10) return false;
         var skill = _slots[slot];
-        Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — skill={(skill!=null?skill.name:"null")}");
         if (skill == null)   return false;
         if (_player == null) return false;
 
@@ -197,7 +196,6 @@ public class SkillBar : MonoBehaviour
             Entity liveEngaged  = TargetingSystem.Instance?.GetEngagedTarget();
             if (liveEngaged != null && liveSelected != null && liveSelected != liveEngaged && !liveSelected.isDead)
             {
-                Debug.Log($"[COMBAT-DEBUG] TryUseSlot(0) manuel — bascule engagement {liveEngaged.name} → {liveSelected.name} (hors cooldown)");
                 TargetingSystem.Instance.Engage(liveSelected);
             }
         }
@@ -224,7 +222,6 @@ public class SkillBar : MonoBehaviour
         // MultiHit en cours → tous les slots bloqués sans exception
         if (_multiHitLockTimer > 0f)
         {
-            Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — sort : _multiHitLockTimer={_multiHitLockTimer:F2} > 0");
             return false;
         }
 
@@ -234,7 +231,6 @@ public class SkillBar : MonoBehaviour
             // Pas de GCD global — _cooldownTimers[0] suffit.
             if (_cooldownTimers[0] > 0f)
             {
-                Debug.Log($"[COMBAT-DEBUG] TryUseSlot(0) — sort : _cooldownTimers[0]={_cooldownTimers[0]:F2} > 0");
                 return false;
             }
         }
@@ -263,7 +259,6 @@ public class SkillBar : MonoBehaviour
         Entity target = isAutoTick
             ? TargetingSystem.Instance?.GetEngagedTarget()  ?? TargetingSystem.Instance?.GetSelectedTarget()
             : TargetingSystem.Instance?.GetSelectedTarget() ?? TargetingSystem.Instance?.GetEngagedTarget();
-        Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — target résolu = {(target!=null?target.name:"null")} (engaged={(TargetingSystem.Instance?.GetEngagedTarget()!=null?TargetingSystem.Instance.GetEngagedTarget().name:"null")}, selected={(TargetingSystem.Instance?.GetSelectedTarget()!=null?TargetingSystem.Instance.GetSelectedTarget().name:"null")})");
 
         // Un nouvel appui valide (passé les checks CD/mana/stun ci-dessus) sur le
         // MÊME slot que l'approche en cours, pour un skill/cible différent, annule
@@ -277,7 +272,6 @@ public class SkillBar : MonoBehaviour
         // PROPRE approche précédente, jamais celle d'un slot différent.
         if (_isApproaching && _pendingSlot == slot && (_pendingSkill != skill || _pendingTarget != target))
         {
-            Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — CancelApproach() (approche périmée pour {(_pendingTarget!=null?_pendingTarget.name:"null")})");
             CancelApproach();
         }
 
@@ -301,7 +295,6 @@ public class SkillBar : MonoBehaviour
 
             if (dist > range)
             {
-                Debug.Log($"[COMBAT-DEBUG] TryUseSlot({slot}) — hors portée (dist={dist:F2} > range={range:F2}) → StartApproach vers {target.name}");
                 StartApproach(skill, slot, target);
                 return false;
             }
@@ -426,7 +419,6 @@ public class SkillBar : MonoBehaviour
                               ?? TargetingSystem.Instance?.GetEngagedTarget();
             if (liveTarget != null && liveTarget != _pendingTarget && !liveTarget.isDead)
             {
-                Debug.Log($"[COMBAT-DEBUG] CheckApproach(0) — sélection changée en route : {_pendingTarget.name} → {liveTarget.name}");
                 _pendingTarget = liveTarget;
             }
         }

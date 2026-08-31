@@ -108,17 +108,14 @@ public class TargetingSystem : MonoBehaviour
     {
         if (!autoAttacking || engagedTarget == null)
         {
-            if (autoAttacking) Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — sort tôt : autoAttacking={autoAttacking} engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")}");
             return;
         }
         if (SkillBar.Instance != null && SkillBar.Instance.IsApproachingSkill)
         {
-            Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — suspendu, un skill approche sa cible (on ne tape pas {engagedTarget.name} en marchant)");
             return;
         }
         if (engagedTarget.isDead)
         {
-            Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — {engagedTarget.name} isDead=true → ClearForDeath()");
             ClearForDeath(engagedTarget);
             return;
         }
@@ -136,7 +133,6 @@ public class TargetingSystem : MonoBehaviour
             float dist = Vector3.Distance(player.transform.position, engagedTarget.transform.position);
             if (dist > basicAttackSkill.range * 1.1f)
             {
-                Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — {engagedTarget.name} hors portée (dist={dist:F2} > {basicAttackSkill.range * 1.1f:F2}) → chase, selectedTarget={(selectedTarget!=null?selectedTarget.name:"null")}");
                 if (_agent != null) _agent.SetDestination(engagedTarget.transform.position);
                 return;
             }
@@ -149,7 +145,6 @@ public class TargetingSystem : MonoBehaviour
         autoAttackTimer -= Time.deltaTime;
         if (autoAttackTimer <= 0f)
         {
-            Debug.Log($"[COMBAT-DEBUG] TickAutoAttack — timer écoulé, appel PerformAutoAttack() sur {engagedTarget.name}, selectedTarget={(selectedTarget!=null?selectedTarget.name:"null")}");
             PerformAutoAttack();
             float speed = player?.equippedWeaponInstance != null
                 ? player.equippedWeaponInstance.AttackSpeed : 1.2f;
@@ -161,24 +156,20 @@ public class TargetingSystem : MonoBehaviour
     {
         if (player == null || SkillBar.Instance == null)
         {
-            Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — sort : player={(player!=null)} SkillBar.Instance={(SkillBar.Instance!=null)}");
             return;
         }
         if (engagedTarget == null || engagedTarget.isDead)
         {
-            Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — sort : engagedTarget null ou mort");
             return;
         }
         if (player.statusEffects != null && player.statusEffects.isStunned)
         {
-            Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — sort : isStunned=true");
             return;
         }
 
         // Distance déjà validée dans TickAutoAttack() juste avant — plus besoin
         // de re-checker ici (l'ancienne approche via coroutine a été retirée).
-        bool success = SkillBar.Instance.TryUseSlot(0, isAutoTick: true);
-        Debug.Log($"[COMBAT-DEBUG] PerformAutoAttack — TryUseSlot(0) → {success}");
+        SkillBar.Instance.TryUseSlot(0, isAutoTick: true);
     }
 
     private void ToggleAutoAttack()
@@ -340,7 +331,6 @@ public class TargetingSystem : MonoBehaviour
 
     private void HandleCombatEntityClick(Entity entity)
     {
-        Debug.Log($"[COMBAT-DEBUG] HandleCombatEntityClick({entity.name}) — selectedTarget={(selectedTarget!=null?selectedTarget.name:"null")} engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")}");
         if (entity == selectedTarget && engagedTarget != entity)
             Engage(entity);
         else
@@ -354,7 +344,6 @@ public class TargetingSystem : MonoBehaviour
     public void Select(Entity entity)
     {
         if (entity == null) return;
-        Debug.Log($"[COMBAT-DEBUG] Select({entity.name}) — engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")} autoAttacking={autoAttacking}");
 
         // Re-cliquer sa PROPRE cible déjà engagée (rouge) doit juste ramener le
         // TargetPanel dessus — ne pas repeindre son outline en orange. selectedOutline
@@ -389,7 +378,6 @@ public class TargetingSystem : MonoBehaviour
     public void Engage(Entity entity)
     {
         if (entity == null) return;
-        Debug.Log($"[COMBAT-DEBUG] Engage({entity.name}) — précédent engagedTarget={(engagedTarget!=null?engagedTarget.name:"null")}");
 
         if (engagedOutline != null)
             engagedOutline.OutlineColor = colorSelected;
@@ -520,7 +508,6 @@ public class TargetingSystem : MonoBehaviour
             // Désengage la cible — repasse en orange (sélectionnée) si elle existe
             if (engagedTarget != null)
             {
-                Debug.Log($"[COMBAT-DEBUG] CheckApproachCancelled — MoveHeld=true, désengage {engagedTarget.name}");
                 // Transfère l'engagée en sélectionnée pour garder l'outline orange
                 if (selectedOutline != null) { selectedOutline.enabled = false; }
                 selectedTarget  = engagedTarget;

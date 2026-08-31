@@ -769,7 +769,6 @@ public class Player : Entity
         if (skill == null) return;
         lastSkillUsed = skill;
         RegisterCombatAction();
-        Debug.Log($"[ANIM-DEBUG] UseSkill({skill.name}) à t={Time.time:F2} — CombatActive={CombatActive}"); // DEBUG temporaire
         animatorController?.PlayAttack(skill.attackAnimation);
 
         bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
