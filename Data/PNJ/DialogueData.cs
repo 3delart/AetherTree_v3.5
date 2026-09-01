@@ -104,6 +104,7 @@ public class DialogueOption
     public DialogueAction action = DialogueAction.None;
 
     [Tooltip("Quête concernée — utilisé pour AcceptQuest et TurnInQuest")]
+    [ShowIf(nameof(action), DialogueAction.AcceptQuest, DialogueAction.TurnInQuest)]
     public QuestData questData = null;
 }
 
@@ -113,6 +114,7 @@ public enum DialogueAction
     None,               // Aucune action — juste navigation de stage
     OpenShop,           // Ouvre ShopUI (Merchant)
     OpenForge,          // Ouvre ForgeUI (Blacksmith) — TODO Phase 6
+    OpenRarity,         // Ouvre RarityUI (Rarity) — pari de rareté GDD §3.4.8
     OpenRuneUI,         // Ouvre RuneUI identification/insertion (Antiquarian) — TODO Phase 6
     OpenFusionUI,       // Ouvre FusionUI Gants/Bottes (FusionNPC) — TODO Phase 6
     OpenMetierUI,       // Ouvre MetierUI déblocage activités (CraftMaster) — TODO Phase 7

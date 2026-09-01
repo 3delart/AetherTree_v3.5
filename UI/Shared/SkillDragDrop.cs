@@ -7,19 +7,20 @@ using UnityEngine.EventSystems;
 // Path : Assets/Scripts/UI/SkillDragDrop.cs
 // AetherTree GDD v30
 //
-// Deux composants :
-//   SkillDragSource  — sur chaque entrée de SkillLibraryUI
-//   SkillDropTarget  — sur chaque slot de SkillBarUI ET PassifBarUI
+// Trois composants :
+//   SkillDragSource    — sur chaque entrée SkillData de SkillLibraryUI (Actifs/Ultimes)
+//   PassiveDragSource  — sur chaque entrée PassiveSkillData de SkillLibraryUI (Passifs)
+//   SkillDropTarget    — sur chaque slot de SkillBarUI ET PassifBarUI
 //
 // Compatibilité par skillType (GDD §8.1) :
-//   SlotType.BasicAttack    → SkillType.BasicAttack uniquement
-//   SlotType.Active         → SkillType.Active uniquement
-//   SlotType.Ultimate       → SkillType.Ultimate uniquement
-//   SlotType.PassiveUtility → SkillType.PassiveUtility uniquement
+//   SlotType.BasicAttack → SkillType.BasicAttack uniquement
+//   SlotType.Active      → SkillType.Active uniquement
+//   SlotType.Ultimate    → SkillType.Ultimate uniquement
+//   SlotType.Passive     → PassiveSkillData (pas de sous-type à matcher, tout drop valide)
 //
 // Setup automatique :
 //   SkillBarUI.Awake()  → SlotType auto selon index (0=BasicAttack, 1-8=Active, 9=Ultimate)
-//   PassifBarUI.Awake() → SlotType.PassiveUtility sur chaque slot
+//   PassifBarUI.Awake() → SlotType.Passive sur chaque slot
 // =============================================================
 
 // =============================================================
@@ -27,10 +28,10 @@ using UnityEngine.EventSystems;
 // =============================================================
 public enum SlotType
 {
-    BasicAttack,    // Slot 0 SkillBar
-    Active,         // Slots 1-8 SkillBar
-    Ultimate,       // Slot 9 SkillBar
-    PassiveUtility, // Slots P1/P2/P3 PassifBar
+    BasicAttack, // Slot 0 SkillBar
+    Active,      // Slots 1-8 SkillBar
+    Ultimate,    // Slot 9 SkillBar
+    Passive,     // Slots P1/P2/P3 PassifBar — PassiveSkillData, pas SkillData
 }
 
 // =============================================================
@@ -116,6 +117,83 @@ public class SkillDragSource : MonoBehaviour,
 }
 
 // =============================================================
+// PASSIVEDRAGSOURCE — mirroring SkillDragSource, pour PassiveSkillData
+// (drag depuis l'onglet Passifs de SkillLibraryUI vers PassifBarUI)
+// =============================================================
+public class PassiveDragSource : MonoBehaviour,
+    IBeginDragHandler, IDragHandler, IEndDragHandler
+{
+    [HideInInspector] public PassiveSkillData passive;
+
+    private static GameObject       _ghost;
+    private static PassiveSkillData _dragging;
+
+    private Canvas _rootCanvas;
+
+    private Canvas FindRootCanvas()
+    {
+        Canvas[] canvases = GetComponentsInParent<Canvas>(includeInactive: true);
+        if (canvases != null && canvases.Length > 0)
+            return canvases[canvases.Length - 1];
+        return FindObjectOfType<Canvas>();
+    }
+
+    public void OnBeginDrag(PointerEventData eventData)
+    {
+        if (passive == null) return;
+        _dragging = passive;
+
+        _rootCanvas = FindRootCanvas();
+
+        _ghost = new GameObject("PassiveDragGhost");
+        _ghost.transform.SetParent(_rootCanvas.transform, false);
+        _ghost.transform.SetAsLastSibling();
+
+        var rt = _ghost.AddComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(48f, 48f);
+        rt.anchorMin = rt.anchorMax = Vector2.zero;
+        rt.pivot     = new Vector2(0.5f, 0.5f);
+
+        var img = _ghost.AddComponent<Image>();
+        img.sprite        = passive.icon;
+        img.color         = passive.icon != null ? Color.white : new Color(0.5f, 0.5f, 0.5f, 0.8f);
+        img.raycastTarget = false;
+
+        MoveGhost(eventData);
+    }
+
+    public void OnDrag(PointerEventData eventData)
+    {
+        MoveGhost(eventData);
+    }
+
+    public void OnEndDrag(PointerEventData eventData)
+    {
+        _dragging = null;
+        if (_ghost != null) { Destroy(_ghost); _ghost = null; }
+    }
+
+    private void MoveGhost(PointerEventData eventData)
+    {
+        if (_ghost == null || _rootCanvas == null) return;
+
+        Camera cam = _rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay
+            ? null
+            : _rootCanvas.worldCamera;
+
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            _rootCanvas.transform as RectTransform,
+            eventData.position,
+            cam,
+            out Vector2 localPoint);
+
+        (_ghost.transform as RectTransform).anchoredPosition = localPoint;
+    }
+
+    public static PassiveSkillData CurrentDragging => _dragging;
+}
+
+// =============================================================
 // SKILLDROP TARGET
 // =============================================================
 public class SkillDropTarget : MonoBehaviour, IDropHandler, IPointerEnterHandler, IPointerExitHandler
@@ -137,18 +215,20 @@ public class SkillDropTarget : MonoBehaviour, IDropHandler, IPointerEnterHandler
 
     // ── Compatibilité slot / skill ─────────────────────────────
     /// <summary>
-    /// Basé uniquement sur SkillType — pas sur les tags.
+    /// Basé uniquement sur SkillType — pas sur les tags. Ne concerne QUE les slots
+    /// SkillBar (BasicAttack/Active/Ultimate) — SlotType.Passive traité à part dans
+    /// OnDrop/OnPointerEnter (drag PassiveSkillData, pas SkillData, aucun sous-type
+    /// à matcher).
     /// </summary>
     private bool IsCompatible(SkillData skill)
     {
         if (skill == null) return false;
         return slotType switch
         {
-            SlotType.BasicAttack    => skill.skillType == SkillType.BasicAttack,
-            SlotType.Active         => skill.skillType == SkillType.Active,
-            SlotType.Ultimate       => skill.skillType == SkillType.Ultimate,
-            SlotType.PassiveUtility => skill.skillType == SkillType.PassiveUtility,
-            _                       => false,
+            SlotType.BasicAttack => skill.skillType == SkillType.BasicAttack,
+            SlotType.Active      => skill.skillType == SkillType.Active,
+            SlotType.Ultimate    => skill.skillType == SkillType.Ultimate,
+            _                    => false,
         };
     }
 
@@ -156,9 +236,35 @@ public class SkillDropTarget : MonoBehaviour, IDropHandler, IPointerEnterHandler
     public void OnDrop(PointerEventData eventData)
     {
         ResetHighlight();
+        if (slotIndex < 0) return;
+
+        // ── Slot passif — chemin séparé, PassiveSkillData pas SkillData ──
+        if (slotType == SlotType.Passive)
+        {
+            PassiveSkillData droppedPassive = PassiveDragSource.CurrentDragging;
+            if (droppedPassive == null) return;
+
+            // Anti-doublon sur les 3 slots équipés
+            if (PassifBarUI.Instance != null)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    if (i == slotIndex) continue;
+                    if (PassifBarUI.Instance.GetPassifAtSlot(i) == droppedPassive)
+                    {
+                        Debug.LogWarning($"[DRAG] {droppedPassive.name} est déjà équipé en slot {i} — drop annulé.");
+                        return;
+                    }
+                }
+            }
+
+            PassifBarUI.Instance?.SetPassifAtSlot(slotIndex, droppedPassive);
+            Debug.Log($"[DRAG] {droppedPassive.name} → Passive slot {slotIndex}");
+            return;
+        }
 
         SkillData dropped = SkillDragSource.CurrentDragging;
-        if (dropped == null || slotIndex < 0) return;
+        if (dropped == null) return;
 
         if (!IsCompatible(dropped))
         {
@@ -168,52 +274,58 @@ public class SkillDropTarget : MonoBehaviour, IDropHandler, IPointerEnterHandler
         }
 
         // ── Anti-doublon : interdit de placer un skill déjà présent dans la SkillBar ──
-        if (slotType == SlotType.BasicAttack ||
-            slotType == SlotType.Active      ||
-            slotType == SlotType.Ultimate)
+        if (SkillBar.Instance != null)
         {
-            if (SkillBar.Instance != null)
+            for (int i = 0; i < 10; i++)
             {
-                for (int i = 0; i < 10; i++)
+                if (i == slotIndex) continue; // le slot de destination ne compte pas
+                if (SkillBar.Instance.GetSkillAtSlot(i) == dropped)
                 {
-                    if (i == slotIndex) continue; // le slot de destination ne compte pas
-                    if (SkillBar.Instance.GetSkillAtSlot(i) == dropped)
-                    {
-                        Debug.LogWarning($"[DRAG] {dropped.name} est déjà équipé en slot {i} — drop annulé.");
-                        return;
-                    }
+                    Debug.LogWarning($"[DRAG] {dropped.name} est déjà équipé en slot {i} — drop annulé.");
+                    return;
                 }
             }
         }
 
-        switch (slotType)
-        {
-            case SlotType.BasicAttack:
-            case SlotType.Active:
-            case SlotType.Ultimate:
-                SkillBar.Instance?.SetSkillAtSlot(slotIndex, dropped);
-                break;
-
-            case SlotType.PassiveUtility:
-                PassifBarUI.Instance?.SetPassifAtSlot(slotIndex, dropped);
-                break;
-        }
-
+        SkillBar.Instance?.SetSkillAtSlot(slotIndex, dropped);
         Debug.Log($"[DRAG] {dropped.name} → {slotType} slot {slotIndex}");
     }
 
     // ── Highlight survol ──────────────────────────────────────
     public void OnPointerEnter(PointerEventData eventData)
     {
+        // ── Slot passif — chemin séparé ──
+        if (slotType == SlotType.Passive)
+        {
+            PassiveSkillData draggingPassive = PassiveDragSource.CurrentDragging;
+            if (draggingPassive == null) return;
+
+            bool passiveCompatible = true;
+            if (PassifBarUI.Instance != null)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    if (i == slotIndex) continue;
+                    if (PassifBarUI.Instance.GetPassifAtSlot(i) == draggingPassive)
+                    {
+                        passiveCompatible = false;
+                        break;
+                    }
+                }
+            }
+
+            if (_slotImage != null)
+                _slotImage.color = passiveCompatible ? HighlightValid : HighlightInvalid;
+            return;
+        }
+
         SkillData dragging = SkillDragSource.CurrentDragging;
         if (dragging == null) return;
 
         bool compatible = IsCompatible(dragging);
 
         // Vérifie aussi le doublon pour que le highlight soit cohérent avec le drop
-        if (compatible &&
-            (slotType == SlotType.BasicAttack || slotType == SlotType.Active || slotType == SlotType.Ultimate) &&
-            SkillBar.Instance != null)
+        if (compatible && SkillBar.Instance != null)
         {
             for (int i = 0; i < 10; i++)
             {

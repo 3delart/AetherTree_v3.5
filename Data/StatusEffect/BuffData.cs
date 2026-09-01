@@ -18,82 +18,52 @@ public class BuffData : StatusEffectData
     public BuffType buffType;
 
     // ── Soin instantané (Heal) ────────────────────────────────
-    [Header("Soin instantané (Heal)")]
     [Tooltip("Flat : valeur fixe (ex: 1000 HP)\nPercent : % du MaxHP de la cible (ex: 0.10 = 10%)")]
+    [ShowIf(nameof(buffType), BuffType.Heal, Header = "Soin instantané (Heal)")]
     public ModifierType healModifier = ModifierType.Flat;
     [Tooltip("Montant de soin instantané.")]
+    [ShowIf(nameof(buffType), BuffType.Heal)]
     public float healAmount = 0f;
 
     // ── Soin sur la durée (Regeneration) ─────────────────────
-    [Header("Soin sur la durée (Regeneration)")]
     [Tooltip("Flat : valeur fixe par seconde\nPercent : % du MaxHP de la cible par seconde")]
+    [ShowIf(nameof(buffType), BuffType.Regeneration, Header = "Soin sur la durée (Regeneration)")]
     public ModifierType hotModifier = ModifierType.Flat;
     [Tooltip("Soin par seconde — tick géré dans BuffInstance.Tick().")]
+    [ShowIf(nameof(buffType), BuffType.Regeneration)]
     public float healPerSecond = 0f;
 
     // ── Bouclier (Shield) ─────────────────────────────────────
-    [Header("Bouclier (Shield)")]
     [Tooltip("Flat : montant fixe absorbé\nPercent : % du MaxHP de la cible")]
+    [ShowIf(nameof(buffType), BuffType.Shield, Header = "Bouclier (Shield)")]
     public ModifierType shieldModifier = ModifierType.Flat;
     [Tooltip("Montant de dégâts absorbés.")]
+    [ShowIf(nameof(buffType), BuffType.Shield)]
     public float shieldAmount = 0f;
 
-    // ── Résistance élémentaire (Barrier — §3.1.1.2) ──────────
-    [Header("Résistance élémentaire (Barrier)")]
-    [Tooltip("Barrier (§3.1.1.2) : résistance élémentaire temporaire.\n0 = aucun effet | 0.20 = -20% dégâts élémentaires reçus.")]
-    [Range(0f, 1f)]
-    public float elementResistBonus = 0f;
-
-    // ── Défense (DefenseUp / Fortify) ─────────────────────────
-    [Header("Défense (DefenseUp)")]
-    [Tooltip("Flat : valeur fixe | Percent : % de la défense actuelle")]
-    public ModifierType defenseModifier = ModifierType.Flat;
-    [Tooltip("Bonus de défense appliqué aux 3 types.")]
-    public float defenseBonus = 0f;
-
-    // ── Esquive (DodgeUp) ─────────────────────────────────────
-    [Header("Esquive (DodgeUp)")]
-    [Tooltip("Flat : valeur fixe | Percent : % de l'esquive actuelle")]
-    public ModifierType dodgeModifier = ModifierType.Flat;
-    [Tooltip("Bonus d'esquive.")]
-    public float dodgeBonus = 0f;
-
-    // ── Précision (PrecisionUp) ──────────────────────────────
-    [Header("Précision (PrecisionUp)")]
-    [Tooltip("Flat : valeur fixe | Percent : % de la précision actuelle")]
-    public ModifierType precisionModifier = ModifierType.Flat;
-    [Tooltip("Bonus de précision.")]
-    public float precisionBonus = 0f;
-
-    // ── Vitesse (Haste) ───────────────────────────────────────
-    [Header("Vitesse (Haste)")]
-    [Tooltip("Multiplicateur de vitesse.\nEx: 1.3 = +30% vitesse.")]
-    public float speedMultiplier = 1f;
-
-    // ── Attaque (AttackUp) ────────────────────────────────────
-    [Header("Attaque (AttackUp)")]
-    [Tooltip("Flat : valeur fixe | Percent : % de l'attaque actuelle")]
-    public ModifierType attackModifier = ModifierType.Flat;
-    [Tooltip("Bonus d'attaque ajouté à baseAttackMin et baseAttackMax.")]
-    public float attackBonus = 0f;
-
-    // ── Critique (CritChanceUp / CritDamageUp) ────────────────
-    [Header("Critique (CritChanceUp / CritDamageUp)")]
-    [Tooltip("CritChanceUp : bonus de chance de critique [0..1].\nEx: 0.10 = +10% critique.")]
-    [Range(0f, 1f)]
-    public float critChanceBonus = 0f;
-
-    [Tooltip("CritDamageUp : bonus de multiplicateur de critique.\nEx: 0.25 = +0.25× (base 1.5 → 1.75).")]
-    public float critDamageBonus = 0f;
-
     // ── Augmentation de stat (Stats) ──────────────────────────
-    [Header("Augmentation de stat (Stats)")]
+    // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp
+    // retirés (2026) — redondants avec Stats, voir StatusEffectData.BuffType.
     [Tooltip("Stat à augmenter — utilisé uniquement si buffType = Stats.\nv3.5 : utilise StatModifierType (fusion BuffStatType + DebuffStatType).")]
+    [ShowIf(nameof(buffType), BuffType.Stats, Header = "Augmentation de stat (Stats)")]
     public StatModifierType buffStatType = StatModifierType.AttackDamage;
     [Tooltip("Flat : valeur directe | Percent : ratio (0.10 = +10%)")]
+    [ShowIf(nameof(buffType), BuffType.Stats)]
     public ModifierType buffModifier = ModifierType.Flat;
     [Tooltip("Valeur du bonus.")]
+    [ShowIf(nameof(buffType), BuffType.Stats)]
     public float buffStatValue = 0f;
+
+    // ── Résurrection (Revive — Player uniquement) ─────────────
+    [Tooltip("HP restaurés à la résurrection (ratio du MaxHP). Ex: 0.50 = 50% HP.")]
+    [Range(0f, 1f)]
+    [ShowIf(nameof(buffType), BuffType.Revive, Header = "Résurrection (Revive)")]
+    public float reviveHPPercent = 0.50f;
+
+    [Tooltip("Mana restaurée à la résurrection (ratio du MaxMana).")]
+    [Range(0f, 1f)]
+    [ShowIf(nameof(buffType), BuffType.Revive)]
+    public float reviveManaPercent = 0.30f;
 
     // ── Helpers ───────────────────────────────────────────────
 

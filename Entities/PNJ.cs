@@ -166,6 +166,7 @@ public class PNJ : Entity
         {
             case PNJType.Merchant:     InteractMerchant(player);     break;
             case PNJType.Blacksmith:   InteractBlacksmith(player);   break;
+            case PNJType.Rarity:       InteractRarity(player);       break;
             case PNJType.Antiquarian:  InteractAntiquarian(player);  break;
             case PNJType.FusionNPC:    InteractFusionNPC(player);    break;
             case PNJType.CraftMaster:  InteractCraftMaster(player);  break;
@@ -190,9 +191,17 @@ public class PNJ : Entity
     // N'ouvre PAS ForgeUI directement — le dialogue s'affiche d'abord,
     // ForgeUI s'ouvre seulement quand le joueur clique l'option dont
     // l'Action = DialogueAction.OpenForge (voir HandleDialogueAction
-    // ci-dessous et DialogueUI.OnOptionClicked, le chemin réellement
-    // emprunté au clic bouton).
+    // ci-dessous — seul point de dispatch, DialogueUI.OnOptionClicked
+    // ne fait que forwarder le clic via SelectOption()).
     private void InteractBlacksmith(Player player)
+    {
+        StartDialogue(SelectDialogue(player), player);
+    }
+
+    // ── PNJ Rareté ────────────────────────────────────────────
+    // Même schéma que le Forgeron : dialogue d'abord, RarityUI ne s'ouvre
+    // qu'au clic sur l'option dont l'Action = DialogueAction.OpenRarity.
+    private void InteractRarity(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
     }
@@ -382,6 +391,7 @@ public class PNJ : Entity
         {
             case DialogueAction.OpenShop:           ShopUI.Instance?.OpenShop(data, player); break;
             case DialogueAction.OpenForge:          ForgeUI.Instance?.Open(); break;
+            case DialogueAction.OpenRarity:          RarityUI.Instance?.Open(); break;
             case DialogueAction.OpenRuneUI:         Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");   break;
             case DialogueAction.OpenFusionUI:       Debug.Log("[PNJ] OpenFusionUI — FusionUI Phase 6"); break;
             case DialogueAction.OpenMetierUI:       Debug.Log("[PNJ] OpenMetierUI — MetierUI Phase 7"); break;

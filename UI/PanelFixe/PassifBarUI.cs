@@ -3,14 +3,16 @@ using UnityEngine.UI;
 using TMPro;
 
 // =============================================================
-// PASSIFBARUI.CS — Barre des 3 passifs utilitaires
-// AetherTree GDD v30
+// PASSIFBARUI.CS — Barre des 3 passifs équipés (PassiveSkillData)
+// AetherTree GDD v30 — §7.5
 //
 // Glisser les 3 GameObjects PassifSlot1…3 dans slots[].
 // Les enfants (PassifIcon, CDOverlay, CD) trouvés par nom.
 //
-// Chaque slot reçoit un SkillDropTarget avec SlotType.PassiveUtility.
-// Drag depuis SkillLibrary → slot passif via SkillDragDrop.
+// Chaque slot reçoit un SkillDropTarget avec SlotType.Passive.
+// Drag depuis SkillLibrary (onglet Passifs) → slot via SkillDragDrop
+// (PassiveDragSource). Source de vérité = Player.equippedPassives — cette
+// classe ne fait que refléter/écrire dedans, jamais son propre état local.
 // =============================================================
 
 public class PassifBarUI : MonoBehaviour
@@ -20,8 +22,8 @@ public class PassifBarUI : MonoBehaviour
     [Header("Slots — glisser les 3 GameObjects ici")]
     public GameObject[] slots = new GameObject[3];
 
-    private PassifSlotBarUI[] _slotUIs   = new PassifSlotBarUI[3];
-    private SkillData[]       _skills    = new SkillData[3];
+    private PassifSlotBarUI[] _slotUIs = new PassifSlotBarUI[3];
+    private Player            _player;
 
     private void Awake()
     {
@@ -43,48 +45,58 @@ public class PassifBarUI : MonoBehaviour
 
             _slotUIs[i] = slot;
 
-            // ── Drop target — SlotType.PassiveUtility ─────────
+            // ── Drop target — SlotType.Passive ────────────────
             var drop = slots[i].GetComponent<SkillDropTarget>();
             if (drop == null) drop = slots[i].AddComponent<SkillDropTarget>();
             drop.slotIndex = i;
-            drop.slotType  = SlotType.PassiveUtility;
+            drop.slotType  = SlotType.Passive;
         }
     }
 
-    private void Start() => RefreshAll();
+    private void Start()
+    {
+        _player = FindObjectOfType<Player>();
+        RefreshAll();
+    }
 
     // =========================================================
     // API PUBLIQUE
     // =========================================================
 
     /// <summary>
-    /// Assigne un skill PassiveUtility à un slot.
+    /// Équipe un passif dans un slot — écrit directement dans
+    /// Player.equippedPassives (source de vérité, lue par PassiveSkillSystem).
     /// Appelé par SkillDropTarget.OnDrop().
     /// </summary>
-    public void SetPassifAtSlot(int index, SkillData skill)
+    public void SetPassifAtSlot(int index, PassiveSkillData passive)
     {
-        if (index < 0 || index >= _slotUIs.Length) return;
-        _skills[index] = skill;
-        _slotUIs[index]?.SetPassif(skill);
-        Debug.Log($"[PASSIF] Slot {index} → {skill?.name ?? "vide"}");
+        if (_player == null) _player = FindObjectOfType<Player>();
+        if (_player == null || index < 0 || index >= 3) return;
+
+        _player.equippedPassives[index] = passive;
+        _slotUIs[index]?.SetPassif(passive);
+        Debug.Log($"[PASSIF] Slot {index} → {passive?.name ?? "vide"}");
     }
 
-    public SkillData GetPassifAtSlot(int index)
+    public PassiveSkillData GetPassifAtSlot(int index)
     {
-        if (index < 0 || index >= _skills.Length) return null;
-        return _skills[index];
+        if (_player?.equippedPassives == null || index < 0 || index >= 3) return null;
+        return _player.equippedPassives[index];
     }
 
     public void RefreshAll()
     {
+        if (_player == null) _player = FindObjectOfType<Player>();
+        if (_player?.equippedPassives == null) return;
+
         for (int i = 0; i < _slotUIs.Length; i++)
-            _slotUIs[i]?.SetPassif(_skills[i]);
+            _slotUIs[i]?.SetPassif(_player.equippedPassives[i]);
     }
 
-    public void RefreshSlot(int index, SkillData skill)
+    public void RefreshSlot(int index, PassiveSkillData passive)
     {
         if (index >= 0 && index < _slotUIs.Length)
-            _slotUIs[index]?.SetPassif(skill);
+            _slotUIs[index]?.SetPassif(passive);
     }
 }
 
@@ -108,10 +120,10 @@ public class PassifSlotBarUI : MonoBehaviour
         cdOverlay.gameObject.SetActive(false);
     }
 
-    public void SetPassif(SkillData skill)
+    public void SetPassif(PassiveSkillData passive)
     {
         if (passifIcon == null) return;
-        if (skill == null || skill.icon == null)
+        if (passive == null || passive.icon == null)
         {
             passifIcon.sprite  = null;
             passifIcon.color   = EmptyColor;
@@ -119,7 +131,7 @@ public class PassifSlotBarUI : MonoBehaviour
         }
         else
         {
-            passifIcon.sprite  = skill.icon;
+            passifIcon.sprite  = passive.icon;
             passifIcon.color   = Color.white;
             passifIcon.enabled = true;
         }

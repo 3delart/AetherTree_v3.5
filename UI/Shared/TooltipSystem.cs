@@ -198,6 +198,24 @@ public class TooltipSystem : MonoBehaviour
     public TextMeshProUGUI skillElementText;
     public TextMeshProUGUI skillDescText;
 
+    // ⑭ PERMANENT SKILL (bonus permanent débloquable) — simple : icône+nom+description,
+    // le texte explicatif (rédigé par le designer) porte l'effet, pas de breakdown auto.
+    [Header("⑭ Permanent Skill Panel")]
+    public GameObject      permanentSkillPanel;
+    public Image           permanentSkillIcon;
+    public TextMeshProUGUI permanentSkillNameText;
+    public TextMeshProUGUI permanentSkillDescText;
+
+    // ⑮ PASSIVE SKILL (proc conditionnel — trigger + effets très variables selon l'asset,
+    // ex: "regen 500 HP tous les 10 coups", "invulnérable 5s après un coup mortel"...) —
+    // même choix que Permanent : icône+nom+description, pas de breakdown générique possible
+    // vu la diversité des combinaisons trigger/effets.
+    [Header("⑮ Passive Skill Panel")]
+    public GameObject      passiveSkillPanel;
+    public Image           passiveSkillIcon;
+    public TextMeshProUGUI passiveSkillNameText;
+    public TextMeshProUGUI passiveSkillDescText;
+
     // ⑪ CONSUMABLE
     [Header("⑪ Consumable Panel")]
     public GameObject      consumablePanel;
@@ -251,7 +269,7 @@ public class TooltipSystem : MonoBehaviour
         {
             weaponPanel, armorPanel, helmetPanel, glovesPanel, bootsPanel,
             jewelryPanel, spiritPanel, runePanel, gemPanel,
-            skillPanel, consumablePanel, resourcePanel, statusEffectPanel
+            skillPanel, permanentSkillPanel, passiveSkillPanel, consumablePanel, resourcePanel, statusEffectPanel
         };
         HideTooltip();
         _player = FindObjectOfType<Player>();
@@ -314,7 +332,7 @@ public class TooltipSystem : MonoBehaviour
     {
         ShowOnly(weaponPanel);
         SetIcon(weaponIcon, w.Icon);
-        SetText(weaponNameText,      $"<color={w.RarityDisplayColorHex}>{w.RarityDisplayName} {w.WeaponName}</color>");
+        SetText(weaponNameText,      w.DisplayNameRich);
         SetText(weaponLevelText,     w.data != null ? LevelTag(w.data.requiredLevel) : "");
         SetText(weaponRarityText,    w.RarityLabel);
         SetText(weaponTypeText,      w.WeaponType.ToString());
@@ -322,7 +340,6 @@ public class TooltipSystem : MonoBehaviour
         SetText(weaponPrecisionText, $"Précision : {Mathf.RoundToInt(w.FinalPrecision)}");
         SetText(weaponSpeedText,     $"Vitesse : {w.AttackSpeed:F1} att/s");
         SetText(weaponCritText,      $"Critique : {w.CritChance * 100f:F0}% / x{w.CritMultiplier:F2}");
-        SetText(weaponUpgradeText,   w.upgradeLevel > 0 ? $"Upgrade : +{w.upgradeLevel}" : "");
         SetText(weaponRuneText, w.equippedRune != null
             ? (w.equippedRune.isIdentified ? $"Rune : {w.equippedRune.Label}" : "Rune : ???")
             : "Rune : aucune");
@@ -342,7 +359,7 @@ public class TooltipSystem : MonoBehaviour
     {
         ShowOnly(armorPanel);
         SetIcon(armorIcon, a.Icon);
-        SetText(armorNameText,    $"<color={a.RarityDisplayColorHex}>{a.RarityDisplayName} {a.ArmorName}</color>");
+        SetText(armorNameText,    a.DisplayNameRich);
         SetText(armorLevelText,   a.data != null ? LevelTag(a.data.requiredLevel) : "");
         SetText(armorRarityText,  a.RarityLabel);
         SetText(armorTypeText,    a.ArmorType.ToString());
@@ -350,7 +367,6 @@ public class TooltipSystem : MonoBehaviour
         SetText(armorRangedText,  $"Déf. distance : {Mathf.RoundToInt(a.FinalRangedDefense)}");
         SetText(armorMagicText,   $"Déf. magie : {Mathf.RoundToInt(a.FinalMagicDefense)}");
         SetText(armorDodgeText,   $"Esquive : {Mathf.RoundToInt(a.FinalDodge)}");
-        SetText(armorUpgradeText, a.upgradeLevel > 0 ? $"Upgrade : +{a.upgradeLevel}" : "");
         SetText(armorRuneText, a.equippedRune != null
             ? (a.equippedRune.isIdentified ? $"Rune : {a.equippedRune.Label}" : "Rune : ???")
             : "Rune : aucune");
@@ -538,6 +554,39 @@ public class TooltipSystem : MonoBehaviour
                 if (e != ElementType.Neutral) elemLabel += e.GetLabel() + " ";
         SetText(skillElementText, elemLabel.TrimEnd());
         SetText(skillDescText,    FormatDesc(skill.description.Get(LocalizationManager.CurrentLanguage)));
+        Show();
+    }
+
+    // =========================================================
+    // ⑭ PERMANENT SKILL — bonus permanent débloquable (Antre/PNJ CraftMaster...).
+    // Uniquement icône+nom+description : le texte (rédigé par le designer) porte
+    // l'effet, pas de breakdown auto — c'est juste un ajout de stats.
+    // =========================================================
+
+    public void ShowPermanentSkillTooltip(PermanentSkillData permanent)
+    {
+        if (permanent == null || tooltipPanel == null) return;
+        ShowOnly(permanentSkillPanel);
+        SetIcon(permanentSkillIcon, permanent.icon);
+        SetText(permanentSkillNameText, permanent.skillName.Get(LocalizationManager.CurrentLanguage));
+        SetText(permanentSkillDescText, FormatDesc(permanent.description.Get(LocalizationManager.CurrentLanguage)));
+        Show();
+    }
+
+    // =========================================================
+    // ⑮ PASSIVE SKILL — proc conditionnel (trigger + effets, PassiveSkillData).
+    // Combinaisons trigger/effets trop variables pour un breakdown générique
+    // (ex: "regen 500 HP tous les 10 coups", "invulnérable 5s après un coup
+    // mortel"...) — icône+nom+description uniquement, comme Permanent.
+    // =========================================================
+
+    public void ShowPassiveSkillTooltip(PassiveSkillData passive)
+    {
+        if (passive == null || tooltipPanel == null) return;
+        ShowOnly(passiveSkillPanel);
+        SetIcon(passiveSkillIcon, passive.icon);
+        SetText(passiveSkillNameText, passive.skillName.Get(LocalizationManager.CurrentLanguage));
+        SetText(passiveSkillDescText, FormatDesc(passive.description.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 

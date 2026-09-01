@@ -12,7 +12,8 @@ using UnityEngine.AI;
 //   Slot 0     : BasicAttack — GCD = skill.cooldown (propre à l'arme)
 //   Slots 1-8  : Actifs — soumis au GCD global de 1s + cooldown individuel
 //   Slot 9     : Ultime — soumis au GCD global + cooldown ultime
-//   P1, P2, P3 : Passifs utilitaires — proc automatique, pas de GCD (backlog §44)
+//   P1, P2, P3 : Passifs (PassiveSkillData) — gérés par PassifBarUI/PassiveSkillSystem,
+//                hors de cette classe (pas de slots ici, pas de GCD).
 //
 // GCD (§8.7) :
 //   Slot 0 → pas de GCD global, cooldown = skill.cooldown de la BasicAttack équipée.
@@ -22,10 +23,6 @@ using UnityEngine.AI;
 //
 // Calls SkillSystem.Execute(skill, caster, target) — target peut être null
 //   pour Self, AoE_Self, GroundTarget, Direction, Skillshot, LineTarget, Cone.
-//
-// ⚠ TODO §8.1 (backlog §44) : slots passifs P1/P2/P3 manquants
-//   Passifs utilitaires : proc via condition (HP < 30%, crit...) — §8.6
-//   À implémenter : _passiveSlots[3], TryProcPassives(), SetPassiveAtSlot()
 //
 // ⚠ TODO §44 : Slot 0 protégé contre le drag & drop
 //   Bloquer drag & drop sur slot 0 côté UI (SkillBarUI)

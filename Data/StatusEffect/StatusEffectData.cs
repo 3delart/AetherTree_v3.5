@@ -70,17 +70,10 @@ public enum BuffType
 
     // Défense
     Shield,         // Bouclier — absorbe les dégâts en priorité avant les HP (§3.1.1.2)
-    Barrier,        // Bouclier HP + résistance élémentaire — Nature (§3.1.1.2)
-    DefenseUp,      // Augmentation de défense — Fortify — Terre (§3.1.1.2)
-    DodgeUp,        // Augmentation d'esquive (§3.1.1.2)
-    PrecisionUp,    // Augmentation de précision (§
-
-
-    // Offensif
-    AttackUp,       // Augmentation d'attaque (§3.1.1.2)
-    Haste,          // Augmentation vitesse déplacement + attackSpeed — Foudre (§3.1.1.2)
-    CritChanceUp,   // Augmentation de chance de critique (§3.1.1.2)
-    CritDamageUp,   // Augmentation de dégâts critiques (§3.1.1.2)
+    // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp
+    // retirés (2026) — redondants avec Stats (StatModifierType couvre déjà chaque
+    // stat individuellement : AllResistances, MeleeDefense/RangedDefense/MagicDefense,
+    // Dodge, Precision, AttackDamage, MoveSpeed, CritChance, CritDamage).
 
     // Spéciaux
     Purified,       // Suppression de tous les debuffs actifs — Lumière (§3.1.1.2)
@@ -89,6 +82,8 @@ public enum BuffType
     Dispel,         // Supprime un buff spécifique sur la cible ennemie (§3.1.1.3)
     Stats,          // Augmentation de stat spécifique (utilise StatModifierType)
     Other,          // Effet spécial custom
+    Revive,         // Résurrection instantanée (Player uniquement) — ajouté en fin d'enum
+                     // volontairement, pour ne jamais décaler les valeurs déjà sérialisées.
 }
 
 // ── Stat ciblée par un modificateur de buff ou debuff ─────────

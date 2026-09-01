@@ -15,14 +15,14 @@ using System.Collections.Generic;
 //   1 PassiveSkillData = 1 trigger + List<PassiveEffect>
 //   Plusieurs effets se déclenchent simultanément.
 //
-// Exemples de configuration :
-//   "Dernier Rempart"  OnFatalHit (100%)     → InvincibleSelf 5s + PushEnemiesAround r=5
-//   "Résurrection"     OnFatalHit (10%)      → ReviveSelf 50% HP          (oncePerCombat)
-//   "Onde de Choc"     OnTakeDamage% ≥ 20%  → PushEnemiesAround + DebuffEnemiesAround Slow
-//   "Rage"             OnLowHP ≤ 20%        → BuffSelf(Haste) + BuffSelf(AttackUp)
-//   "Vengeur"          OnKill               → BuffSelf(Haste 3s)          (cooldown 5s)
-//   "Oeil de Faucon"   OnCritical           → HealSelf 5% MaxHP
-//   "Résonance Combo"  OnCombo              → ShieldSelf 200
+// Exemples de configuration (Buff/Debuff/Skill, voir PassiveEffectType) :
+//   "Dernier Rempart"  OnFatalHit (100%)     → Buff(Invincible 5s) + Skill(push AoE_Self)
+//   "Résurrection"     OnFatalHit (10%)      → Buff(Revive 50% HP)        (oncePerCombat)
+//   "Onde de Choc"     OnTakeDamage% ≥ 20%  → Skill(push AoE_Self) + Debuff(Slow)
+//   "Rage"             OnLowHP ≤ 20%        → Buff(Stats AttackDamage)
+//   "Vengeur"          OnKill               → Buff(Stats MoveSpeed 3s)    (cooldown 5s)
+//   "Oeil de Faucon"   OnCritical           → Buff(Heal 5% MaxHP)
+//   "Résonance Combo"  OnCombo              → Buff(Shield 200)
 //
 // Assets > Create > AetherTree > Skills > PassiveSkillData
 // =============================================================
@@ -53,36 +53,27 @@ public enum PassiveTriggerType
 
     [InspectorName("OnCombo — Utiliser un skill avec 2+ éléments (combo élémentaire)")]
     OnCombo,
+
+    // ── Temps ─────────────────────────────────────────────────
+    [InspectorName("OnInterval — Se redéclenche automatiquement toutes les `cooldown` secondes")]
+    OnInterval,
 }
 
 // ── Types d'effets disponibles ────────────────────────────────
+// Réduit à 3 catégories (2026) — Heal/Shield/Invincible/Revive sont déjà
+// des BuffType (Buff), Push/Damage sont déjà des mécaniques de SkillData
+// (Skill) — pas besoin de les réimplémenter à la main ici. Buff/Debuff/Skill
+// couvrent tout ce qu'une passive peut faire.
 public enum PassiveEffectType
 {
-    // ── Sur soi ───────────────────────────────────────────────
-    [InspectorName("BuffSelf — Applique un BuffData sur soi (Haste, AttackUp...)")]
-    BuffSelf,
+    [InspectorName("Buff — Applique un BuffData sur soi (Heal, Shield, Revive, Invincible...)")]
+    Buff,
 
-    [InspectorName("HealSelf — Soin instantané (flat ou % MaxHP)")]
-    HealSelf,
+    [InspectorName("Debuff — Applique un DebuffData aux ennemis proches")]
+    Debuff,
 
-    [InspectorName("ShieldSelf — Bouclier absorbant (flat ou % MaxHP)")]
-    ShieldSelf,
-
-    [InspectorName("InvincibleSelf — Immunité totale X secondes")]
-    InvincibleSelf,
-
-    [InspectorName("ReviveSelf — Résurrection instantanée à X% HP")]
-    ReviveSelf,
-
-    // ── Sur ennemis proches ───────────────────────────────────
-    [InspectorName("PushEnemiesAround — Repousse les ennemis dans un rayon")]
-    PushEnemiesAround,
-
-    [InspectorName("DebuffEnemiesAround — Applique un DebuffData aux ennemis proches")]
-    DebuffEnemiesAround,
-
-    [InspectorName("DamageEnemiesAround — Inflige des dégâts aux ennemis proches")]
-    DamageEnemiesAround,
+    [InspectorName("Skill — Lance un SkillData (dégâts, push, zone... tout ce qu'un skill fait déjà)")]
+    Skill,
 }
 
 // =============================================================
@@ -93,70 +84,34 @@ public enum PassiveEffectType
 public class PassiveEffect
 {
     [Tooltip("Type d'effet à appliquer quand la passive se déclenche.")]
-    public PassiveEffectType effectType = PassiveEffectType.BuffSelf;
+    public PassiveEffectType effectType = PassiveEffectType.Buff;
 
-    // ── BuffSelf ──────────────────────────────────────────────
-    [Header("BuffSelf")]
-    [Tooltip("Buff appliqué sur soi.\n" +
-             "Utilisé par : BuffSelf.")]
+    // ── Buff ──────────────────────────────────────────────────
+    [Tooltip("Buff appliqué sur soi — le BuffData choisit lui-même son comportement\n" +
+             "(buffType = Heal, Shield, Revive, Invincible, Stats...).\n" +
+             "Utilisé par : Buff.")]
+    [ShowIf(nameof(effectType), PassiveEffectType.Buff, Header = "Buff")]
     public BuffData buffToApply;
 
-    // ── HealSelf / ShieldSelf ─────────────────────────────────
-    [Header("HealSelf / ShieldSelf")]
-    [Tooltip("Flat : valeur fixe | Percent : ratio du MaxHP.\n" +
-             "Utilisé par : HealSelf, ShieldSelf.")]
-    public ModifierType valueModifier = ModifierType.Percent;
-
-    [Tooltip("Montant de soin ou de shield.\n" +
-             "Percent : 0.20 = 20% MaxHP | Flat : 500 = 500 pts fixes.\n" +
-             "Utilisé par : HealSelf, ShieldSelf.")]
-    [Min(0f)]
-    public float value = 0.20f;
-
-    // ── InvincibleSelf ────────────────────────────────────────
-    [Header("InvincibleSelf")]
-    [Tooltip("Durée de l'invincibilité en secondes.\n" +
-             "Utilisé par : InvincibleSelf.")]
-    [Min(0f)]
-    public float invincibleDuration = 3f;
-
-    // ── ReviveSelf ────────────────────────────────────────────
-    [Header("ReviveSelf")]
-    [Tooltip("HP restaurés à la résurrection (ratio du MaxHP).\n" +
-             "Ex: 0.50 = 50% HP.\nUtilisé par : ReviveSelf.")]
-    [Range(0f, 1f)]
-    public float reviveHPPercent = 0.50f;
-
-    // ── Zone — Push / Debuff / Damage ─────────────────────────
-    [Header("Zone (Push / Debuff / Damage)")]
-    [Tooltip("Rayon en unités world autour du joueur.\n" +
-             "Utilisé par : PushEnemiesAround, DebuffEnemiesAround, DamageEnemiesAround.")]
-    [Min(0f)]
-    public float aoeRadius = 5f;
-
-    [Tooltip("Distance de recul en unités world.\n" +
-             "Utilisé par : PushEnemiesAround.")]
-    [Min(0f)]
-    public float pushForce = 4f;
-
+    // ── Debuff ────────────────────────────────────────────────
     [Tooltip("Debuff à appliquer aux ennemis proches.\n" +
-             "Utilisé par : DebuffEnemiesAround.")]
+             "Utilisé par : Debuff.")]
+    [ShowIf(nameof(effectType), PassiveEffectType.Debuff, Header = "Debuff")]
     public DebuffData debuffToApply;
 
-    [Tooltip("Multiplicateur de dégâts (basé sur l'attaque de base du joueur).\n" +
-             "Ex: 0.5 = 50% de l'attaque de base.\n" +
-             "Utilisé par : DamageEnemiesAround.")]
+    [Tooltip("Rayon en unités world autour du joueur.\n" +
+             "Utilisé par : Debuff.")]
     [Min(0f)]
-    public float damageMultiplier = 0.5f;
+    [ShowIf(nameof(effectType), PassiveEffectType.Debuff)]
+    public float aoeRadius = 5f;
 
-    [Tooltip("Élément des dégâts AoE.\n" +
-             "Utilisé par : DamageEnemiesAround.")]
-    public ElementType damageElement = ElementType.Neutral;
-
-    // ── Helper ────────────────────────────────────────────────
-    /// <summary>Valeur finale pour HealSelf / ShieldSelf selon le MaxHP.</summary>
-    public float GetFinalValue(float maxHP)
-        => valueModifier == ModifierType.Percent ? maxHP * value : value;
+    // ── Skill ─────────────────────────────────────────────────
+    [Tooltip("Skill lancé par le joueur au déclenchement — porte-toi-même vers\n" +
+             "targetType = AoE_Self pour un skill centré sur le joueur (dégâts,\n" +
+             "push...) ou tout autre type déjà supporté par le système de skill.\n" +
+             "Utilisé par : Skill.")]
+    [ShowIf(nameof(effectType), PassiveEffectType.Skill, Header = "Skill")]
+    public SkillData skillToCast;
 }
 
 // =============================================================
@@ -183,10 +138,12 @@ public class PassiveSkillData : ScriptableObject
              "OnTakeDamage%  : se déclenche si le coup ≥ seuil × MaxHP.\n" +
              "Ignoré pour les autres triggers.")]
     [Range(0f, 1f)]
+    [ShowIf(nameof(triggerType), PassiveTriggerType.OnLowHP, PassiveTriggerType.OnTakeDamagePercent)]
     public float triggerThreshold = 0.20f;
 
     [Tooltip("Skill spécifique requis pour OnCast.\n" +
              "Laisser vide = se déclenche sur n'importe quel skill.")]
+    [ShowIf(nameof(triggerType), PassiveTriggerType.OnCast)]
     public SkillData triggerSkill;
 
     [Tooltip("Chance de déclenchement [0..1] quand la condition est remplie.\n" +
@@ -195,7 +152,9 @@ public class PassiveSkillData : ScriptableObject
     public float procChance = 1f;
 
     [Tooltip("Cooldown en secondes avant que cette passive puisse se déclencher à nouveau.\n" +
-             "0 = pas de cooldown.")]
+             "0 = pas de cooldown.\n\n" +
+             "Pour OnInterval : c'est CE champ qui sert d'intervalle (\"toutes les X sec\") —\n" +
+             "0 n'a pas de sens ici (redéclencherait chaque frame), garder > 0.")]
     [Min(0f)]
     public float cooldown = 60f;
 

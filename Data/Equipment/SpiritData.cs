@@ -48,15 +48,17 @@ public class SpiritData : EquipmentDataBase
     public ElementType element = ElementType.Fire;
 
     // ── Points élémentaires ───────────────────────────────────
-    [Header("Points élémentaires (ignoré si element = Neutral — GDD §5.8)")]
     [Tooltip("Points élémentaires apportés au niveau 1.")]
+    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light, Header = "Points élémentaires (ignoré si element = Neutral — GDD §5.8)")]
     public int pointsAtLevel1 = 1;
 
     [Tooltip("Points élémentaires apportés au niveau maximum.")]
+    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light)]
     public int pointsAtMaxLevel = 20;
 
     [Tooltip("Exposant de la courbe de progression (1.0 = linéaire, 1.5 = progressive).\n" +
              "Recommandé : 1.5")]
+    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light)]
     public float pointsCurveExponent = 1.5f;
 
     // ── Progression ───────────────────────────────────────────

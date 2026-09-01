@@ -336,6 +336,15 @@ public class SaveSystem : MonoBehaviour
                     progress.skillBarSlots.Add(new SavedSkillSlot { slotIndex = i, skillName = skill.name });
             }
 
+        // ⑦Bis PassifBar (3 slots équipés)
+        if (player.equippedPassives != null)
+            for (int i = 0; i < player.equippedPassives.Length; i++)
+            {
+                var passive = player.equippedPassives[i];
+                if (passive != null)
+                    progress.passifBarSlots.Add(new SavedSkillSlot { slotIndex = i, skillName = passive.name });
+            }
+
         // ⑤ Équipements + Inventaire
         CollectEquipped(progress, player);
         if (InventorySystem.Instance != null)
@@ -675,6 +684,22 @@ public class SaveSystem : MonoBehaviour
                 var playerRef = FindObjectOfType<Player>();
                 if (playerRef != null) playerRef.skillBarRestoredFromSave = true;
             }
+        }
+
+        // ⑦Bis PassifBar (3 slots équipés)
+        if (p.passifBarSlots != null && player.equippedPassives != null)
+        {
+            foreach (var savedSlot in p.passifBarSlots)
+            {
+                var passive = FindSOByName<PassiveSkillData>(savedSlot.skillName);
+                if (passive != null && savedSlot.slotIndex >= 0 && savedSlot.slotIndex < player.equippedPassives.Length)
+                {
+                    // Garantit que le passif est débloqué même s'il manque dans unlockedPassiveNames
+                    player.UnlockPassive(passive);
+                    player.equippedPassives[savedSlot.slotIndex] = passive;
+                }
+            }
+            PassifBarUI.Instance?.RefreshAll();
         }
 
         // ⑬ Mails

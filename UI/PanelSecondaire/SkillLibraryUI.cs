@@ -340,6 +340,13 @@ private void RefreshGrid()
         return;
     }
 
+    // ── Onglet Passifs — source différente (PassiveSkillData, pas SkillData) ──
+    if (currentTab == SkillLibraryTab.Passifs)
+    {
+        RefreshGridPassifs();
+        return;
+    }
+
     // ── Autres onglets — source unlockedSkills ────────────────
     List<SkillData> skills = GetSkillsForTab();
     skills = SortByFilterPriority(skills);
@@ -374,8 +381,7 @@ private void SpawnPermanentEntry(PermanentSkillData permanent)
 
     // Tooltip
     var tooltip = entry.GetComponent<TooltipTrigger>() ?? entry.AddComponent<TooltipTrigger>();
-    // TODO : ShowPermanentTooltip si tu ajoutes un panel dédié dans TooltipSystem
-    // Pour l'instant : description textuelle dans le detail panel au clic
+    tooltip.SetPermanentSkill(permanent);
 
     var btn = entry.GetComponent<Button>();
     if (btn != null)
@@ -399,6 +405,67 @@ private void ShowDetailPermanent(PermanentSkillData permanent)
     if (descText      != null) descText.text      = !permanent.description.IsEmpty
                                                     ? permanent.description.Get(LocalizationManager.CurrentLanguage)
                                                     : permanent.GetBonusSummary();
+    if (journalDate   != null) journalDate.text   = "—";
+    if (journalLevel  != null) journalLevel.text  = "—";
+    if (journalTime   != null) journalTime.text   = "—";
+}
+
+// =========================================================
+// ONGLET PASSIFS — PassiveSkillData (pool possédé, unlockedPassives).
+// Équipement réel (3 slots actifs) géré ailleurs, voir PassifBarUI.
+// =========================================================
+
+private void RefreshGridPassifs()
+{
+    if (_player?.unlockedPassives == null) return;
+    foreach (var passive in _player.unlockedPassives)
+    {
+        if (passive == null) continue;
+        SpawnPassifEntry(passive);
+    }
+    LayoutRebuilder.ForceRebuildLayoutImmediate(skillGridContent as RectTransform);
+}
+
+private void SpawnPassifEntry(PassiveSkillData passive)
+{
+    if (skillEntryPrefab == null) return;
+    var entry = Instantiate(skillEntryPrefab, skillGridContent);
+
+    var img = entry.GetComponent<Image>();
+    if (img != null)
+    {
+        img.sprite = passive.icon;
+        img.color  = passive.icon != null ? Color.white : new Color(0.3f, 0.3f, 0.3f, 0.8f);
+    }
+
+    // Tooltip
+    var tooltip = entry.GetComponent<TooltipTrigger>() ?? entry.AddComponent<TooltipTrigger>();
+    tooltip.SetPassiveSkill(passive);
+
+    // Drag vers PassifBar — contrairement aux Permanents, les passifs s'équipent.
+    var drag = entry.GetComponent<PassiveDragSource>() ?? entry.AddComponent<PassiveDragSource>();
+    drag.passive = passive;
+
+    var btn = entry.GetComponent<Button>();
+    if (btn != null)
+    {
+        var captured = passive;
+        btn.onClick.AddListener(() => ShowDetailPassive(captured));
+    }
+}
+
+private void ShowDetailPassive(PassiveSkillData passive)
+{
+    if (passive == null) { ClearDetail(); return; }
+
+    if (detailIcon    != null) { detailIcon.sprite = passive.icon; detailIcon.enabled = passive.icon != null; }
+    if (detailName    != null) detailName.text    = passive.skillName.Get(LocalizationManager.CurrentLanguage);
+    if (detailElement != null) detailElement.text = $"Passif  ·  {passive.triggerType}";
+    if (detailTags    != null) detailTags.text    = "";
+    if (statMpValue   != null) statMpValue.text   = "—";
+    if (statCdValue   != null) statCdValue.text   = passive.cooldown > 0f ? $"{passive.cooldown:F0}s" : "—";
+    if (statRangeValue!= null) statRangeValue.text= "—";
+    if (descText      != null) descText.text      = passive.description.Get(LocalizationManager.CurrentLanguage);
     if (journalDate   != null) journalDate.text   = "—";
     if (journalLevel  != null) journalLevel.text  = "—";
     if (journalTime   != null) journalTime.text   = "—";
@@ -452,7 +519,7 @@ private void ShowDetailPermanent(PermanentSkillData permanent)
             SkillLibraryTab.Actifs      => skill.skillType == SkillType.Active
                                         && !skill.HasTag(SkillTag.BasicAttack),
             SkillLibraryTab.Ultimes     => skill.skillType == SkillType.Ultimate,
-            SkillLibraryTab.Passifs     => skill.skillType == SkillType.PassiveUtility,
+            SkillLibraryTab.Passifs     => false, // PassiveSkillData, jamais un SkillData — voir RefreshGridPassifs
             SkillLibraryTab.Permanents  => false,
             _                           => false
         };
@@ -571,7 +638,6 @@ private void ShowDetailPermanent(PermanentSkillData permanent)
                 SkillType.BasicAttack    => "Attaque de base",
                 SkillType.Active         => "Actif",
                 SkillType.Ultimate       => "Ultime",
-                SkillType.PassiveUtility => "Passif",
                 _ => ""
             };
             string elemLabel = skill.IsNeutral

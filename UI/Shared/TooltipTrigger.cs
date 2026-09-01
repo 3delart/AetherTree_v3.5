@@ -22,8 +22,10 @@ public class TooltipTrigger : MonoBehaviour,
     IPointerEnterHandler, IPointerExitHandler
 {
     // ── Données à afficher ────────────────────────────────────
-    private InventoryItem _item;
-    private SkillData     _skill;
+    private InventoryItem      _item;
+    private SkillData          _skill;
+    private PermanentSkillData _permanentSkill;
+    private PassiveSkillData   _passiveSkill;
 
     [Header("Délai avant affichage (secondes)")]
     public float hoverDelay = 0.4f;
@@ -38,20 +40,42 @@ public class TooltipTrigger : MonoBehaviour,
 
     public void SetItem(InventoryItem item)
     {
-        _item  = item;
-        _skill = null;
+        _item           = item;
+        _skill          = null;
+        _permanentSkill = null;
+        _passiveSkill   = null;
     }
 
     public void SetSkill(SkillData skill)
     {
-        _skill = skill;
-        _item  = null;
+        _skill          = skill;
+        _item           = null;
+        _permanentSkill = null;
+        _passiveSkill   = null;
+    }
+
+    public void SetPermanentSkill(PermanentSkillData permanent)
+    {
+        _permanentSkill = permanent;
+        _item           = null;
+        _skill          = null;
+        _passiveSkill   = null;
+    }
+
+    public void SetPassiveSkill(PassiveSkillData passive)
+    {
+        _passiveSkill   = passive;
+        _item           = null;
+        _skill          = null;
+        _permanentSkill = null;
     }
 
     public void Clear()
     {
-        _item  = null;
-        _skill = null;
+        _item           = null;
+        _skill          = null;
+        _permanentSkill = null;
+        _passiveSkill   = null;
         HideIfShown();
     }
 
@@ -61,7 +85,7 @@ public class TooltipTrigger : MonoBehaviour,
 
     public void OnPointerEnter(PointerEventData eventData)
     {
-        if (_item == null && _skill == null) return;
+        if (_item == null && _skill == null && _permanentSkill == null && _passiveSkill == null) return;
         _hovering   = true;
         _hoverTimer = 0f;
         _shown      = false;
@@ -101,6 +125,8 @@ public class TooltipTrigger : MonoBehaviour,
 
         if (_item  != null) TooltipSystem.Instance.ShowItemTooltip(_item);
         else if (_skill != null) TooltipSystem.Instance.ShowSkillTooltip(_skill);
+        else if (_permanentSkill != null) TooltipSystem.Instance.ShowPermanentSkillTooltip(_permanentSkill);
+        else if (_passiveSkill != null) TooltipSystem.Instance.ShowPassiveSkillTooltip(_passiveSkill);
     }
 
     private void HideIfShown()

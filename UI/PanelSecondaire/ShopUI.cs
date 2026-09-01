@@ -130,6 +130,7 @@ public class ShopUI : MonoBehaviour
     public void CloseShop()
     {
         gameObject.SetActive(false);
+        InventoryUI.Instance?.Close();
         _pnjData       = null;
         _player        = null;
         _selectedEntry = null;
@@ -191,18 +192,30 @@ public class ShopUI : MonoBehaviour
             // Label affiché sous l'icône
             string priceLabel = exhausted ? "Acheté" : null;
 
+            // Aperçu pour le tooltip au survol — instance jetable (ResolveItemFromEntry,
+            // déjà utilisée à l'achat) pour les items, SkillData/PermanentSkillData
+            // directement pour les sorts (pas d'instance à rouler, ce sont déjà des SO).
+            InventoryItem      previewItem      = ResolveItemFromEntry(entry);
+            SkillData          previewSkill     = entry.item as SkillData;
+            PermanentSkillData previewPermanent = entry.item as PermanentSkillData;
+            PassiveSkillData   previewPassive   = entry.item as PassiveSkillData;
+
             var capturedEntry = entry;
             var capturedIcon  = icon;
             var capturedName  = name;
             var capturedDesc  = desc;
 
             SpawnCell(
-                icon       : icon,
-                price      : entry.aerisCost,
-                locked     : locked,
-                exhausted  : exhausted,
-                priceLabel : priceLabel,
-                onSelect   : () => SelectBuyEntry(capturedEntry, capturedIcon, capturedName, capturedDesc)
+                icon                 : icon,
+                price                : entry.aerisCost,
+                locked               : locked,
+                exhausted            : exhausted,
+                priceLabel           : priceLabel,
+                tooltipItem          : previewItem,
+                tooltipSkill         : previewSkill,
+                tooltipPermanentSkill: previewPermanent,
+                tooltipPassiveSkill  : previewPassive,
+                onSelect             : () => SelectBuyEntry(capturedEntry, capturedIcon, capturedName, capturedDesc)
             );
         }
     }
@@ -219,18 +232,27 @@ public class ShopUI : MonoBehaviour
 
             var captured = item;
             SpawnCell(
-                icon     : item.Icon,
-                price    : sellPrice,
-                locked   : false,
-                onSelect : () => SelectSellItem(captured, sellPrice)
+                icon        : item.Icon,
+                price       : sellPrice,
+                locked      : false,
+                tooltipItem : item,
+                onSelect    : () => SelectSellItem(captured, sellPrice)
             );
         }
     }
 
-    private void SpawnCell(Sprite icon, int price, bool locked, bool exhausted = false, string priceLabel = null, System.Action onSelect = null)
+    private void SpawnCell(Sprite icon, int price, bool locked, bool exhausted = false, string priceLabel = null,
+        InventoryItem tooltipItem = null, SkillData tooltipSkill = null, PermanentSkillData tooltipPermanentSkill = null,
+        PassiveSkillData tooltipPassiveSkill = null, System.Action onSelect = null)
     {
         var go = Instantiate(shopCellPrefab, shopGridContent);
         _cells.Add(go);
+
+        var trigger = go.GetComponent<TooltipTrigger>();
+        if      (tooltipItem           != null) trigger?.SetItem(tooltipItem);
+        else if (tooltipSkill          != null) trigger?.SetSkill(tooltipSkill);
+        else if (tooltipPermanentSkill != null) trigger?.SetPermanentSkill(tooltipPermanentSkill);
+        else if (tooltipPassiveSkill   != null) trigger?.SetPassiveSkill(tooltipPassiveSkill);
 
         var iconImg = go.GetComponent<Image>();
         if (iconImg != null)
@@ -315,7 +337,7 @@ public class ShopUI : MonoBehaviour
         if (detailPanel != null) detailPanel.SetActive(true);
 
         SetDetailIcon(item.Icon);
-        SetText(detailNameText,   item.Name);
+        SetText(detailNameText,   item.DisplayNameRich);
         SetText(detailDescText,   GetItemDescription(item));
         SetText(actionButtonText, "Vendre");
 
@@ -450,6 +472,11 @@ public class ShopUI : MonoBehaviour
             _player.UnlockPermanent(permanent);
             FloatingText.Spawn($"Passif débloqué !", _player.transform.position, new Color(0.6f, 0.4f, 1f));
         }
+        else if (_selectedEntry.item is PassiveSkillData passive)
+        {
+            _player.UnlockPassive(passive);
+            FloatingText.Spawn($"Passif débloqué !", _player.transform.position, new Color(0.6f, 0.4f, 1f));
+        }
         else
         {
             for (int i = 0; i < _quantity; i++)
@@ -555,6 +582,7 @@ public class ShopUI : MonoBehaviour
             case ResourceData rd:   return new InventoryItem(rd.CreateInstance());
             case SkillData:             return null;
             case PermanentSkillData:    return null; // géré dans BuySelected
+            case PassiveSkillData:      return null; // géré dans BuySelected
             default:
                 Debug.LogWarning($"[SHOP] Type SO non géré : {entry.item.GetType().Name}");
                 return null;
@@ -579,6 +607,7 @@ public class ShopUI : MonoBehaviour
             case ResourceData rd:   return rd.icon;
             case SkillData sd:      return sd.icon;
             case PermanentSkillData pd: return pd.icon;
+            case PassiveSkillData psd:  return psd.icon;
             default:                return null;
         }
     }
@@ -590,6 +619,7 @@ public class ShopUI : MonoBehaviour
             case ItemData id:           return id.displayName.Get(LocalizationManager.CurrentLanguage);
             case SkillData sd:          return sd.skillName.Get(LocalizationManager.CurrentLanguage);
             case PermanentSkillData pd: return pd.skillName.Get(LocalizationManager.CurrentLanguage);
+            case PassiveSkillData psd:  return psd.skillName.Get(LocalizationManager.CurrentLanguage);
             default:                    return entry.item?.name ?? "???";
         }
     }
@@ -601,6 +631,7 @@ public class ShopUI : MonoBehaviour
             case ItemData id:           return id.description.Get(LocalizationManager.CurrentLanguage);
             case SkillData sd:          return sd.description.Get(LocalizationManager.CurrentLanguage);
             case PermanentSkillData pd: return !pd.description.IsEmpty ? pd.description.Get(LocalizationManager.CurrentLanguage) : pd.GetBonusSummary();
+            case PassiveSkillData psd:  return psd.description.Get(LocalizationManager.CurrentLanguage);
             default:                    return "";
         }
     }
@@ -619,6 +650,15 @@ public class ShopUI : MonoBehaviour
     private int EquipSellPrice(int vendorPrice, float powerStat)
         => powerStat > 0f ? Mathf.RoundToInt(vendorPrice * powerStat) : vendorPrice;
 
+    /// <summary>Prix de revente Arme/Armure : vendorPrice × (1 + rarityRank × 10%) —
+    /// même barème que RarityBonus (GDD §5.13, -20% à +70%). Pourcentage plutôt qu'un
+    /// montant fixe : s'adapte automatiquement au vendorPrice de chaque item, rien à
+    /// resaisir. Ni la stat finale (Final*), ni le roll, ni l'upgrade n'entrent en
+    /// compte : seule la rareté fait varier le prix entre deux exemplaires de la même
+    /// arme/armure.</summary>
+    private int RarityAdjustedSellPrice(int vendorPrice, int rarityRank)
+        => Mathf.RoundToInt(vendorPrice * (1f + rarityRank * 0.10f));
+
     private int GetSellPrice(InventoryItem item)
     {
         if (item == null) return 0;
@@ -626,9 +666,8 @@ public class ShopUI : MonoBehaviour
         int basePrice = 0;
         if      (item.ResourceInstance   != null) basePrice = item.ResourceInstance.SellPrice;
         else if (item.ConsumableInstance != null) basePrice = Mathf.RoundToInt((item.ConsumableInstance.data?.healHP ?? 0) / 10f) + 5;
-        else if (item.WeaponInstance     != null) basePrice = EquipSellPrice(item.WeaponInstance.data?.vendorPrice ?? 0, item.WeaponInstance.FinalDamageMax);
-        else if (item.ArmorInstance      != null) basePrice = EquipSellPrice(item.ArmorInstance.data?.vendorPrice ?? 0,
-                                                        item.ArmorInstance.FinalMeleeDefense + item.ArmorInstance.FinalRangedDefense + item.ArmorInstance.FinalMagicDefense);
+        else if (item.WeaponInstance     != null) basePrice = RarityAdjustedSellPrice(item.WeaponInstance.data?.vendorPrice ?? 0, item.WeaponInstance.rarityRank);
+        else if (item.ArmorInstance      != null) basePrice = RarityAdjustedSellPrice(item.ArmorInstance.data?.vendorPrice ?? 0, item.ArmorInstance.rarityRank);
         else if (item.HelmetInstance     != null) basePrice = EquipSellPrice(item.HelmetInstance.data?.vendorPrice ?? 0,
                                                         item.HelmetInstance.MeleeDefense + item.HelmetInstance.RangedDefense + item.HelmetInstance.MagicDefense);
         else if (item.GlovesInstance     != null) basePrice = EquipSellPrice(item.GlovesInstance.data?.vendorPrice ?? 0,

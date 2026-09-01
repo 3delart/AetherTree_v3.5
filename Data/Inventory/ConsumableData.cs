@@ -39,24 +39,27 @@ public class ConsumableData : ItemData
     public GameObject      prefab;
 
     // ── Potion ────────────────────────────────────────────────
-    [Header("Potion (si consumableType = Potion)")]
     [Tooltip("HP restaurés. 0 = pas de soin HP.")]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion, Header = "Potion (si consumableType = Potion)")]
     public float healHP   = 0f;
     [Tooltip("Mana restaurée. 0 = pas de soin Mana.")]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion)]
     public float healMana = 0f;
     [Tooltip("Buff appliqué à l'utilisation (optionnel).")]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion)]
     public BuffData buffEffect;
     [Tooltip("Cooldown avant de pouvoir réutiliser cette potion (secondes).")]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion)]
     public float cooldown = 30f;
 
     // ── Pierre de donjon ──────────────────────────────────────
-    [Header("Pierre de donjon (si consumableType = DungeonStone)")]
     [Tooltip("ID du donjon accessible avec cette pierre.")]
+    [ShowIf(nameof(consumableType), ConsumableType.DungeonStone, Header = "Pierre de donjon (si consumableType = DungeonStone)")]
     public string dungeonID = "";
 
     // ── Téléportation ─────────────────────────────────────────
-    [Header("Téléportation (si consumableType = TeleportItem)")]
     [Tooltip("ID de la zone de destination.")]
+    [ShowIf(nameof(consumableType), ConsumableType.TeleportItem, Header = "Téléportation (si consumableType = TeleportItem)")]
     public string targetZoneID = "";
 
     // ── Utilitaires ───────────────────────────────────────────

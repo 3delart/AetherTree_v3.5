@@ -227,10 +227,25 @@ public class UnlockManager : MonoBehaviour
         if (allConditions.Count == 0)
             Debug.LogWarning("[UNLOCK] allConditions vide ! Clic droit → 'Auto-remplir allConditions'.");
 
+        // Type d'arme du personnage — fixe pour toute la partie (voir Unlock()).
+        // Une condition dont AUCUNE récompense ne matche ce type ne sera JAMAIS
+        // débloquable pour ce joueur (le type ne change jamais en cours de partie)
+        // — pas la peine de la compter du tout, ça allège le suivi (moins de
+        // conditions trackées, moins d'events à évaluer).
+        WeaponType characterWeaponType = player?.characterData?.startingWeapon?.weaponType ?? WeaponType.Any;
+
         foreach (var condition in allConditions)
         {
             if (condition == null || string.IsNullOrEmpty(condition.conditionID)) continue;
             if (privateCounters.ContainsKey(condition.conditionID)) continue;
+
+            bool hasAnyRewardDefined = condition.rewards != null && condition.rewards.Count > 0;
+            if (hasAnyRewardDefined && condition.GetEligibleRewards(characterWeaponType).Count == 0)
+            {
+                if (verboseLogs)
+                    Debug.Log($"[UNLOCK] {condition.conditionID} — aucune récompense éligible pour {characterWeaponType}, jamais comptée.");
+                continue;
+            }
 
             var entryCounters = new Dictionary<int, int>();
             int validEntries  = 0;
@@ -453,6 +468,32 @@ public class UnlockManager : MonoBehaviour
     {
         if (records.ContainsKey(condition.conditionID)) return;
 
+        // ⚠ Rien n'est enregistré tant qu'on n'est pas sûr qu'une récompense (si
+        // prévue) partira réellement — sinon la condition est "gâchée" pour de bon
+        // sans jamais avoir livré son mail, sans retry possible. Voir plus bas :
+        // seul le cas "des rewards existent mais aucun n'est éligible" bloque —
+        // une condition sans AUCUNE récompense définie (marqueur pur) s'enregistre
+        // normalement.
+        if (MailboxSystem.Instance == null)
+        {
+            Debug.LogError("[UNLOCK] MailboxSystem introuvable ! Retry au prochain déclenchement.");
+            return;
+        }
+
+        // Type d'arme du PERSONNAGE (fixe, défini à la création via startingWeapon)
+        // — pas l'arme momentanément équipée, qui peut être retirée à tout moment
+        // sans changer l'identité du personnage. GDD §5.1 : weaponCategory est
+        // immuable ; ce filtre de reward va plus loin, au WeaponType précis.
+        WeaponType characterWeaponType = player?.characterData?.startingWeapon?.weaponType ?? WeaponType.Any;
+        var        eligibleRewards     = condition.GetEligibleRewards(characterWeaponType);
+
+        bool hasAnyRewardDefined = condition.rewards != null && condition.rewards.Count > 0;
+        if (hasAnyRewardDefined && eligibleRewards.Count == 0)
+        {
+            Debug.LogWarning($"[UNLOCK] {condition.conditionID} — aucune récompense éligible pour {characterWeaponType}, retry plus tard.");
+            return;
+        }
+
         var record = new UnlockRecord
         {
             conditionID = condition.conditionID,
@@ -466,18 +507,6 @@ public class UnlockManager : MonoBehaviour
         Debug.Log(condition.isHidden
             ? "[UNLOCK SECRET] Condition mystère débloquée !"
             : $"[UNLOCK] {condition.displayName} — scope:{condition.GetDominantScope()}");
-
-        if (MailboxSystem.Instance == null)
-        {
-            Debug.LogError("[UNLOCK] MailboxSystem introuvable !");
-            return;
-        }
-
-        WeaponType equippedWeapon  = player?.equippedWeaponInstance?.data?.weaponType ?? WeaponType.Any;
-        var        eligibleRewards = condition.GetEligibleRewards(equippedWeapon);
-
-        if (eligibleRewards.Count == 0)
-            Debug.LogWarning($"[UNLOCK] {condition.conditionID} — aucune récompense éligible pour {equippedWeapon}.");
 
         foreach (var reward in eligibleRewards)
             MailboxSystem.Instance.SendRewardMail(condition, reward);

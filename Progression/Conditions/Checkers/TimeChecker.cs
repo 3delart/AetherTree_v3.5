@@ -31,8 +31,8 @@ public class TimeChecker : ConditionCheckerBase
     [Tooltip("Any = n'importe quel event temps")]
     public TimeAction action      = TimeAction.Any;
 
-    [Header("AFK")]
     [Tooltip("0 = pas de minimum. En minutes. Utilisé seulement si action=AFK.")]
+    [ShowIf(nameof(action), TimeAction.AFK, Header = "AFK")]
     public float minMinutes       = 0f;
 
     [Header("Jours consécutifs")]

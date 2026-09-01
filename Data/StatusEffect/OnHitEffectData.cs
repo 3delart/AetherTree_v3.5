@@ -47,40 +47,42 @@ public class OnHitEffectData : ScriptableObject
     public float chance = 0.15f;
 
     // ── ReflectPercent ────────────────────────────────────────
-    [Header("Reflect % (ReflectPercent)")]
     [Tooltip("Pourcentage des dégâts reçus renvoyés à l'attaquant.\nEx: 0.20 = 20% réfléchis.")]
     [Range(0f, 1f)]
+    [ShowIf(nameof(effectType), OnHitEffectType.ReflectPercent, Header = "Reflect % (ReflectPercent)")]
     public float reflectPercent = 0.20f;
 
     // ── Thorns ────────────────────────────────────────────────
-    [Header("Épines fixes (Thorns)")]
     [Tooltip("Dégâts fixes renvoyés à l'attaquant.")]
+    [ShowIf(nameof(effectType), OnHitEffectType.Thorns, Header = "Épines fixes (Thorns)")]
     public float thornsDamage = 10f;
 
     // ── Commun Reflect + Thorns ───────────────────────────────
-    [Header("Options Reflect & Thorns")]
     [Tooltip("Si true : les dégâts renvoyés ignorent la défense de l'attaquant (dégâts bruts).\n" +
              "Si false : passent par CombatSystem normalement.")]
+    [ShowIf(nameof(effectType), OnHitEffectType.ReflectPercent, OnHitEffectType.Thorns, Header = "Options Reflect & Thorns")]
     public bool pierceDefense = false;
 
     [Tooltip("Élément des dégâts renvoyés.\nNeutral = pas d'élément.")]
+    [ShowIf(nameof(effectType), OnHitEffectType.ReflectPercent, OnHitEffectType.Thorns)]
     public ElementType reflectElement = ElementType.Neutral;
 
     // ── CounterDebuff ─────────────────────────────────────────
-    [Header("Counter-Debuff (CounterDebuff)")]
     [Tooltip("Debuff appliqué sur l'attaquant au déclenchement.\nGlisser un DebuffData ici.")]
+    [ShowIf(nameof(effectType), OnHitEffectType.CounterDebuff, Header = "Counter-Debuff (CounterDebuff)")]
     public DebuffData counterDebuff;
 
     // ── HealOnHit ─────────────────────────────────────────────
-    [Header("Soin au coup reçu (HealOnHit)")]
     [Tooltip("Flat : valeur fixe soignée.\nPercent : % du MaxHP de la cible.")]
+    [ShowIf(nameof(effectType), OnHitEffectType.HealOnHit, Header = "Soin au coup reçu (HealOnHit)")]
     public ModifierType healModifier = ModifierType.Flat;
     [Tooltip("Montant de soin.\nEx: 50 (Flat) ou 0.05 (Percent = 5% MaxHP).")]
+    [ShowIf(nameof(effectType), OnHitEffectType.HealOnHit)]
     public float healAmount = 50f;
 
     // ── CounterBuff ───────────────────────────────────────────
-    [Header("Counter-Buff sur soi (CounterBuff)")]
     [Tooltip("Buff appliqué sur soi-même au déclenchement.\nGlisser un BuffData ici.")]
+    [ShowIf(nameof(effectType), OnHitEffectType.CounterBuff, Header = "Counter-Buff sur soi (CounterBuff)")]
     public BuffData counterBuff;
 
     // ── Helpers ───────────────────────────────────────────────

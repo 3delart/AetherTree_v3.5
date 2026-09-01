@@ -99,6 +99,15 @@ public struct ZoneEvent
     // Durée totale passée dans la zone — rempli uniquement sur isFinalExit=true
     public float  totalTimeSeconds;
 
+    // Durée AFK / nuit continues dans la zone (remises à zéro dès que la condition
+    // casse) — indépendantes de timeSpentSeconds (temps brut, non filtré). Permet à
+    // chaque ZoneChecker de choisir le bon compteur selon SES PROPRES mustBeAFK/
+    // atNight, sans dépendre d'un filtre partagé posé sur le ZoneTrigger lui-même
+    // (un même trigger peut être écouté par plusieurs conditions aux exigences différentes).
+    public float  continuousAFKSeconds;
+    public float  continuousNightSeconds;
+    public float  continuousAFKAndNightSeconds;
+
     // True = event de sortie (fin de présence), False = tick périodique
     public bool   isFinalExit;
 

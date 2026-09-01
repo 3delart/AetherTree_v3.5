@@ -73,21 +73,25 @@ public class SkillData : ScriptableObject
     public float           castTime         = 0f;
 
     // ── Effet spécial (si effectType == Other) ────────────────
-    [Header("③ Effet spécial (si effectType = Other)")]
     [Tooltip("Effet spécial appliqué par ce skill.\nActif uniquement si effectType = Other.")]
+    [ShowIf(nameof(effectType), SkillEffectType.Other, Header = "③ Effet spécial (si effectType = Other)")]
     public SkillSpecialEffect specialEffect = SkillSpecialEffect.None;
 
     [Tooltip("Force du déplacement pour Pull/Push/PullAoE/PushAoE/GatherAoE/Vortex.\nDistance en unités world.")]
+    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Pull, SkillSpecialEffect.Push, SkillSpecialEffect.PullAoE, SkillSpecialEffect.PushAoE, SkillSpecialEffect.GatherAoE, SkillSpecialEffect.Vortex)]
     public float pullPushForce = 5f;
 
     [Tooltip("Ratio des dégâts restitués en soin (DrainHP). Ex: 0.5 = 50% des dégâts soignés.")]
     [Range(0f, 1f)]
+    [ShowIf(nameof(specialEffect), SkillSpecialEffect.DrainHP)]
     public float drainHealRatio = 0.5f;
 
     [Tooltip("MobData à invoquer (Summon uniquement).")]
+    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
     public MobData summonMobData;
 
     [Tooltip("Durée de vie de l'invocation en secondes. 0 = permanent jusqu'à la mort.")]
+    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
     public float summonDuration = 30f;
 
     // ── ③ Ratios de dégâts physiques ──────────────────────────
@@ -158,15 +162,18 @@ public class SkillData : ScriptableObject
 
     [Tooltip("MultiHit uniquement — liste des hits avec leurs stats propres.\n" +
              "Chaque HitStep définit : délai, multiplicateur, élément, effets, VFX.")]
+    [ShowIf(nameof(executionType), SkillExecutionType.MultiHit)]
     public List<HitStep>   hitSteps  = new List<HitStep>();
 
     [Tooltip("ComboSequence uniquement — liste des SkillData steps dans l'ordre.\n" +
              "Chaque step est un skill complet avec ses propres stats et icône.")]
+    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
     public List<SkillData> comboSteps = new List<SkillData>();
 
     [Tooltip("ComboSequence uniquement — durée en secondes pendant laquelle\n" +
              "le joueur peut appuyer pour continuer le combo après chaque step.\n" +
              "Expiration → CD déclenché + retour au step 0.")]
+    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
     public float comboWindowDuration = 2f;
 
     // ── ⑩ Visuel & Son ────────────────────────────────────────
@@ -262,13 +269,14 @@ public class SkillData : ScriptableObject
 /// <summary>
 /// Type de skill — détermine l'onglet dans SkillLibraryUI et les règles d'équipement.
 /// ⚠ Permanent supprimé — les passifs définitifs utilisent PermanentSkillData (SO séparé).
+/// ⚠ PassiveUtility supprimé — vestige jamais fini (aucun moteur runtime), remplacé
+/// intégralement par PassiveSkillData (SO séparé, slots P1/P2/P3 PassifBar, GDD §7.5).
 /// </summary>
 public enum SkillType
 {
     BasicAttack,     // Attaque de base — slot 0 SkillBar uniquement
     Active,          // Sort actif — slots 1-8 SkillBar
     Ultimate,        // Ultime — slot 9 SkillBar
-    PassiveUtility,  // Passif utilitaire — slots P1/P2/P3 PassifBar
 }
 
 public enum SkillEffectType

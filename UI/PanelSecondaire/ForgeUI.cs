@@ -117,12 +117,10 @@ public class ForgeUI : MonoBehaviour
             return;
         }
 
-        int    currentLevel = hasWeapon ? _staged.WeaponInstance.upgradeLevel     : _staged.ArmorInstance.upgradeLevel;
-        string colorHex     = hasWeapon ? _staged.WeaponInstance.RarityDisplayColorHex : _staged.ArmorInstance.RarityDisplayColorHex;
-        string rarityName   = hasWeapon ? _staged.WeaponInstance.RarityDisplayName     : _staged.ArmorInstance.RarityDisplayName;
+        int currentLevel = hasWeapon ? _staged.WeaponInstance.upgradeLevel : _staged.ArmorInstance.upgradeLevel;
 
         if (slotIcon != null) slotIcon.sprite = _staged.Icon;
-        SetText(itemNameText, $"<color={colorHex}>{rarityName} {_staged.Name}</color> (+{currentLevel})");
+        SetText(itemNameText, _staged.DisplayNameRich);
 
         if (UpgradeSystem.Instance == null)
         {

@@ -350,39 +350,17 @@ public class StatusEffectSystem : MonoBehaviour
         buffCritDamageBonus = 0f;
         barrierElementResist = 0f;
 
+        // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp
+        // retirés (2026) — redondants avec Stats. Les accumulateurs buffDefenseBonus/
+        // buffDodgeBonus/buffPrecisionBonus/buffSpeedMultiplier/buffAttackBonus/
+        // buffCritChanceBonus/buffCritDamageBonus/barrierElementResist restent déclarés
+        // (lus par Entity.cs/CombatSystem.cs/PlayerController.cs/Mob.cs) mais ne sont
+        // plus jamais réécrits ici — toujours à leur valeur par défaut (0 ou 1),
+        // sans effet, sans rien à changer côté lecteurs.
         foreach (var kvp in _activeBuffs)
         {
-            var b = kvp.Value.BuffData;
-            switch (kvp.Key)
-            {
-                case BuffType.DefenseUp:
-                    buffDefenseBonus += b.defenseBonus;
-                    break;
-                case BuffType.DodgeUp:
-                    buffDodgeBonus += b.dodgeBonus;
-                    break;
-                case BuffType.PrecisionUp:
-                    buffPrecisionBonus += b.precisionBonus;
-                    break;
-                case BuffType.Haste:
-                    buffSpeedMultiplier = Mathf.Max(buffSpeedMultiplier, b.speedMultiplier);
-                    break;
-                case BuffType.AttackUp:
-                    buffAttackBonus += b.attackBonus;
-                    break;
-                case BuffType.CritChanceUp:
-                    buffCritChanceBonus += b.critChanceBonus;
-                    break;
-                case BuffType.CritDamageUp:
-                    buffCritDamageBonus += b.critDamageBonus;
-                    break;
-                case BuffType.Barrier:
-                    barrierElementResist += b.elementResistBonus;
-                    break;
-                case BuffType.Stats:
-                    ApplyStatBuff(target, b);
-                    break;
-            }
+            if (kvp.Key == BuffType.Stats)
+                ApplyStatBuff(target, kvp.Value.BuffData);
         }
     }
 
@@ -523,14 +501,15 @@ public class StatusEffectSystem : MonoBehaviour
                 CleanseAllDebuffs();
                 break;
 
+            // ── Résurrection (Player uniquement) ─────────────────
+            case BuffType.Revive:
+                if (_entity is Player p)
+                    p.Revive(instance.BuffData.reviveHPPercent, instance.BuffData.reviveManaPercent);
+                break;
+
             // ── Bouclier — valeur stockée dans l'instance ────────
             case BuffType.Shield:
                 instance.remainingShield = instance.BuffData.GetShieldAmount(_entity.MaxHP);
-                break;
-
-            case BuffType.Barrier:
-                instance.remainingShield = instance.BuffData.GetShieldAmount(_entity.MaxHP);
-                barrierElementResist    += instance.BuffData.elementResistBonus;
                 break;
 
             // ── Flags spéciaux ────────────────────────────────────
@@ -542,14 +521,7 @@ public class StatusEffectSystem : MonoBehaviour
                 isStealthed = true;
                 break;
 
-            // ── Valeurs numériques + Stats — tout par Recalculate ─
-            case BuffType.DefenseUp:
-            case BuffType.DodgeUp:
-            case BuffType.PrecisionUp:
-            case BuffType.Haste:
-            case BuffType.AttackUp:
-            case BuffType.CritChanceUp:
-            case BuffType.CritDamageUp:
+            // ── Valeurs numériques (Stats) ────────────────────────
             case BuffType.Stats:
                 RecalculateAndReapply();
                 break;
@@ -635,14 +607,6 @@ public class StatusEffectSystem : MonoBehaviour
         // ── Valeurs numériques — recalcul propre ──────────────
         switch (type)
         {
-            case BuffType.DefenseUp:
-            case BuffType.DodgeUp:
-            case BuffType.PrecisionUp:
-            case BuffType.Haste:
-            case BuffType.AttackUp:
-            case BuffType.CritChanceUp:
-            case BuffType.CritDamageUp:
-            case BuffType.Barrier:
             case BuffType.Stats:
                 RecalculateAndReapply();
                 break;
@@ -656,20 +620,10 @@ public class StatusEffectSystem : MonoBehaviour
     // =========================================================
 
     /// <summary>
-    /// Absorbe les dégâts avec le bouclier actif (Shield ou Barrier).
-    /// Barrier est prioritaire sur Shield. Retourne les dégâts résiduels.
+    /// Absorbe les dégâts avec le bouclier actif (Shield). Retourne les dégâts résiduels.
     /// </summary>
     public float AbsorbWithShield(float incomingDamage)
     {
-        // Barrier en priorité
-        if (_activeBuffs.TryGetValue(BuffType.Barrier, out var barrier))
-        {
-            incomingDamage = barrier.AbsorbDamage(incomingDamage);
-            if (barrier.remainingShield <= 0f) ExpireBuff(BuffType.Barrier);
-            if (incomingDamage <= 0f) return 0f;
-        }
-
-        // Puis Shield normal
         if (_activeBuffs.TryGetValue(BuffType.Shield, out var shield))
         {
             incomingDamage = shield.AbsorbDamage(incomingDamage);

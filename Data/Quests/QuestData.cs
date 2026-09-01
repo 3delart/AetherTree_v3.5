@@ -189,15 +189,19 @@ public class QuestObjective
     public QuestObjectiveType type = QuestObjectiveType.Kill;
 
     [Tooltip("Kill / Boss — glisser le MobData")]
+    [ShowIf(nameof(type), QuestObjectiveType.Kill, QuestObjectiveType.Boss)]
     public MobData targetMob;
 
     [Tooltip("TalkTo — glisser le PNJData")]
+    [ShowIf(nameof(type), QuestObjectiveType.TalkTo)]
     public PNJData targetPNJ;
 
     [Tooltip("Deliver / Gather / Craft — glisser le SO item")]
+    [ShowIf(nameof(type), QuestObjectiveType.Deliver, QuestObjectiveType.Gather, QuestObjectiveType.Craft)]
     public ScriptableObject targetItem;
 
     [Tooltip("Explore — ID de zone (string)")]
+    [ShowIf(nameof(type), QuestObjectiveType.Explore)]
     public string targetZoneID = "";
 
     public int requiredCount = 1;

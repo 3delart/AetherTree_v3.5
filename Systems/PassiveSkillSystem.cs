@@ -74,14 +74,33 @@ public class PassiveSkillSystem : MonoBehaviour
 
     private void Update()
     {
-        if (_cooldownTimers.Count == 0) return;
-
-        var keys = new List<PassiveSkillData>(_cooldownTimers.Keys);
-        foreach (var passive in keys)
+        if (_cooldownTimers.Count > 0)
         {
-            _cooldownTimers[passive] -= Time.deltaTime;
-            if (_cooldownTimers[passive] <= 0f)
-                _cooldownTimers.Remove(passive);
+            var keys = new List<PassiveSkillData>(_cooldownTimers.Keys);
+            foreach (var passive in keys)
+            {
+                _cooldownTimers[passive] -= Time.deltaTime;
+                if (_cooldownTimers[passive] <= 0f)
+                    _cooldownTimers.Remove(passive);
+            }
+        }
+
+        TickIntervalPassives();
+    }
+
+    /// <summary>OnInterval — se redéclenche tout seul, pas d'événement combat à écouter.
+    /// TryTrigger() est déjà gaté par CanTrigger() (cooldown/oncePerCombat), donc cet
+    /// appel chaque frame est un no-op tant que le cooldown (= l'intervalle) n'est pas
+    /// écoulé — pas besoin d'un timer séparé.</summary>
+    private void TickIntervalPassives()
+    {
+        if (_player == null || _player.isDead || _player.equippedPassives == null) return;
+
+        foreach (var passive in _player.equippedPassives)
+        {
+            if (passive == null) continue;
+            if (passive.triggerType != PassiveTriggerType.OnInterval) continue;
+            TryTrigger(passive);
         }
     }
 
@@ -106,9 +125,9 @@ public class PassiveSkillSystem : MonoBehaviour
     /// </summary>
     public bool CanSurviveFatalHit()
     {
-        if (_player == null || _player.unlockedPassives == null) return false;
+        if (_player == null || _player.equippedPassives == null) return false;
 
-        foreach (var passive in _player.unlockedPassives)
+        foreach (var passive in _player.equippedPassives)
         {
             if (passive == null) continue;
             if (passive.triggerType != PassiveTriggerType.OnFatalHit) continue;
@@ -132,9 +151,9 @@ public class PassiveSkillSystem : MonoBehaviour
     private void OnDamageDealt(DamageDealtEvent e)
     {
         if (_player == null || _player.isDead) return;
-        if (_player.unlockedPassives == null || _player.unlockedPassives.Count == 0) return;
+        if (_player.equippedPassives == null) return;
 
-        foreach (var passive in _player.unlockedPassives)
+        foreach (var passive in _player.equippedPassives)
         {
             if (passive == null) continue;
 
@@ -167,9 +186,9 @@ public class PassiveSkillSystem : MonoBehaviour
     {
         if (_player == null || _player.isDead) return;
         if (e.eligiblePlayers == null || !e.eligiblePlayers.Contains(_player)) return;
-        if (_player.unlockedPassives == null) return;
+        if (_player.equippedPassives == null) return;
 
-        foreach (var passive in _player.unlockedPassives)
+        foreach (var passive in _player.equippedPassives)
         {
             if (passive == null) continue;
             if (passive.triggerType == PassiveTriggerType.OnKill)
@@ -181,9 +200,9 @@ public class PassiveSkillSystem : MonoBehaviour
     {
         if (_player == null || _player.isDead) return;
         if (e.caster != _player) return;
-        if (_player.unlockedPassives == null) return;
+        if (_player.equippedPassives == null) return;
 
-        foreach (var passive in _player.unlockedPassives)
+        foreach (var passive in _player.equippedPassives)
         {
             if (passive == null) continue;
 
@@ -257,98 +276,18 @@ public class PassiveSkillSystem : MonoBehaviour
 
         switch (effect.effectType)
         {
-            // ── Buff sur soi ──────────────────────────────────
-            case PassiveEffectType.BuffSelf:
+            // ── Buff sur soi — le BuffData choisit son comportement ──
+            // (Heal, Shield, Revive, Invincible, Stats... voir BuffType).
+            case PassiveEffectType.Buff:
                 if (effect.buffToApply != null && _player.statusEffects != null)
                 {
                     _player.statusEffects.ApplyBuff(effect.buffToApply, _player);
-                    Debug.Log($"[PASSIVE EFFECT] BuffSelf → {effect.buffToApply.effectName}");
+                    Debug.Log($"[PASSIVE EFFECT] Buff → {effect.buffToApply.effectName}");
                 }
                 break;
 
-            // ── Soin sur soi ──────────────────────────────────
-            case PassiveEffectType.HealSelf:
-            {
-                float amount = effect.GetFinalValue(_player.MaxHP);
-                _player.Heal(amount);
-                FloatingText.Spawn($"+{Mathf.RoundToInt(amount)} HP",
-                    _player.transform.position + Vector3.up * 2f, Color.green, 1.5f);
-                Debug.Log($"[PASSIVE EFFECT] HealSelf → +{amount:F0} HP");
-                break;
-            }
-
-            // ── Shield sur soi ────────────────────────────────
-            case PassiveEffectType.ShieldSelf:
-            {
-                // Crée un BuffData Shield runtime
-                // On utilise BuffData.shieldAmount = valeur calculée
-                // Le shield est appliqué via StatusEffectSystem comme un buff normal
-                float amount = effect.GetFinalValue(_player.MaxHP);
-                if (_player.statusEffects != null)
-                {
-                    // Crée un BuffData temporaire runtime (pas de SO requis)
-                    var shieldBuff = ScriptableObject.CreateInstance<BuffData>();
-                    shieldBuff.buffType     = BuffType.Shield;
-                    shieldBuff.shieldAmount = amount;
-                    shieldBuff.duration     = 30f; // shield dure jusqu'à absorption ou 30s
-                    shieldBuff.effectName   = "PassiveShield";
-                    _player.statusEffects.ApplyBuff(shieldBuff, _player);
-                    Destroy(shieldBuff, 1f); // nettoyage — le buff a déjà été enregistré
-                    FloatingText.Spawn($"SHIELD +{Mathf.RoundToInt(amount)}",
-                        _player.transform.position + Vector3.up * 2f,
-                        new Color(0.4f, 0.7f, 1f), 1.5f);
-                    Debug.Log($"[PASSIVE EFFECT] ShieldSelf → {amount:F0} pts");
-                }
-                break;
-            }
-
-            // ── Invincibilité sur soi ─────────────────────────
-            case PassiveEffectType.InvincibleSelf:
-            {
-                if (_player.statusEffects != null)
-                {
-                    var invincBuff = ScriptableObject.CreateInstance<BuffData>();
-                    invincBuff.buffType   = BuffType.Invincible;
-                    invincBuff.duration   = effect.invincibleDuration;
-                    invincBuff.effectName = "PassiveInvincible";
-                    _player.statusEffects.ApplyBuff(invincBuff, _player);
-                    Destroy(invincBuff, 1f);
-                    FloatingText.Spawn($"INVINCIBLE {effect.invincibleDuration:F0}s",
-                        _player.transform.position + Vector3.up * 2.5f,
-                        new Color(1f, 0.85f, 0.2f), 2f);
-                    Debug.Log($"[PASSIVE EFFECT] InvincibleSelf → {effect.invincibleDuration:F0}s");
-                }
-                break;
-            }
-
-            // ── Résurrection instantanée ──────────────────────
-            case PassiveEffectType.ReviveSelf:
-                _player.Revive(effect.reviveHPPercent, 0.30f);
-                FloatingText.Spawn("RÉSURRECTION !",
-                    _player.transform.position + Vector3.up * 2.5f,
-                    new Color(1f, 0.85f, 0.2f), 2.5f);
-                Debug.Log($"[PASSIVE EFFECT] ReviveSelf → {effect.reviveHPPercent:P0} HP");
-                break;
-
-            // ── Repousser les ennemis ─────────────────────────
-            case PassiveEffectType.PushEnemiesAround:
-            {
-                int count = DisplacementUtils.ApplyDisplacementAoE(
-                    _player.transform.position,
-                    effect.aoeRadius,
-                    effect.pushForce,
-                    towardsCenter: false,
-                    caster: _player,
-                    layerMask: ~UnityEngine.LayerMask.GetMask("Player"));
-
-                FloatingText.Spawn($"ONDE ×{count}",
-                    _player.transform.position + Vector3.up * 2f, Color.yellow, 1.5f);
-                Debug.Log($"[PASSIVE EFFECT] PushEnemiesAround → ×{count} ennemis");
-                break;
-            }
-
-            // ── Debuffer les ennemis proches ──────────────────
-            case PassiveEffectType.DebuffEnemiesAround:
+            // ── Debuff aux ennemis proches ─────────────────────
+            case PassiveEffectType.Debuff:
             {
                 if (effect.debuffToApply == null) break;
 
@@ -369,36 +308,20 @@ public class PassiveSkillSystem : MonoBehaviour
 
                 FloatingText.Spawn($"{effect.debuffToApply.effectName} ×{count}",
                     _player.transform.position + Vector3.up * 2f, Color.magenta, 1.5f);
-                Debug.Log($"[PASSIVE EFFECT] DebuffEnemiesAround → {effect.debuffToApply.effectName} ×{count}");
+                Debug.Log($"[PASSIVE EFFECT] Debuff → {effect.debuffToApply.effectName} ×{count}");
                 break;
             }
 
-            // ── Dégâts AoE autour du joueur ───────────────────
-            case PassiveEffectType.DamageEnemiesAround:
-            {
-                if (_player.equippedWeaponInstance == null && effect.damageMultiplier <= 0f) break;
-
-                float baseDmg = UnityEngine.Random.Range(_player.AttackDamageMin, _player.AttackDamageMax) * effect.damageMultiplier;
-
-                Collider[] hits = Physics.OverlapSphere(
-                    _player.transform.position, effect.aoeRadius,
-                    ~UnityEngine.LayerMask.GetMask("Player"));
-
-                int count = 0;
-                foreach (var col in hits)
+            // ── Skill — délègue entièrement au système de skill normal ──
+            // (dégâts, push, zone... tout ce qu'un skill fait déjà, avec le
+            // vrai calcul de combat plutôt qu'une réimplémentation ad hoc).
+            case PassiveEffectType.Skill:
+                if (effect.skillToCast != null)
                 {
-                    Entity entity = col.GetComponentInParent<Entity>();
-                    if (entity == null || entity == _player || entity.isDead) continue;
-
-                    entity.TakeDamage(baseDmg, effect.damageElement, _player);
-                    count++;
+                    SkillSystem.Instance?.Execute(effect.skillToCast, _player, null);
+                    Debug.Log($"[PASSIVE EFFECT] Skill → {effect.skillToCast.name}");
                 }
-
-                FloatingText.Spawn($"×{count} -{Mathf.RoundToInt(baseDmg)}",
-                    _player.transform.position + Vector3.up * 2f, Color.red, 1.5f);
-                Debug.Log($"[PASSIVE EFFECT] DamageEnemiesAround → {baseDmg:F0} dmg ×{count}");
                 break;
-            }
         }
     }
 

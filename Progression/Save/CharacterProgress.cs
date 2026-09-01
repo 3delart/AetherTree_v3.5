@@ -300,6 +300,10 @@ public class CharacterProgress
     // ⑦ Slots SkillBar (0–9)
     public List<SavedSkillSlot> skillBarSlots = new List<SavedSkillSlot>();
 
+    // ⑦Bis Slots PassifBar (P1-P3) — les 3 PassiveSkillData réellement équipés,
+    // distinct de unlockedPassiveNames (le pool possédé, voir ⑥)
+    public List<SavedSkillSlot> passifBarSlots = new List<SavedSkillSlot>();
+
     // ⑧ Conditions débloquées
     public List<string> unlockedConditionIDs = new List<string>();
 

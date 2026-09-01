@@ -60,10 +60,21 @@ public class ZoneChecker : ConditionCheckerBase
         if (onlyFinalExit && !e.isFinalExit)                   return false;
 
         // ── Durée ─────────────────────────────────────────────
-        float duration = e.isFinalExit ? e.totalTimeSeconds : e.timeSpentSeconds;
+        // mustBeAFK/atNight choisissent le compteur DE CONTINUITÉ correspondant
+        // (remis à zéro par ZoneTrigger dès que la condition casse) plutôt que le
+        // temps brut — sinon minTotalSeconds compterait du temps où le joueur n'était
+        // pas réellement AFK/de nuit en continu. Sans aucun des deux, temps brut.
+        float duration;
+        if (mustBeAFK && atNight)   duration = e.continuousAFKAndNightSeconds;
+        else if (mustBeAFK)        duration = e.continuousAFKSeconds;
+        else if (atNight)          duration = e.continuousNightSeconds;
+        else                       duration = e.isFinalExit ? e.totalTimeSeconds : e.timeSpentSeconds;
+
         if (minTotalSeconds > 0 && duration < minTotalSeconds) return false;
 
-        // ── Conditions de présence ────────────────────────────
+        // ── Conditions de présence — garde-fou pour minTotalSeconds = 0 ──────
+        // (sans quoi mustBeAFK/atNight seuls, sans durée, ne seraient jamais
+        // vérifiés puisque le check ci-dessus est sauté quand minTotalSeconds = 0)
         if (mustBeAFK && !e.isAFK)                                           return false;
         if (atNight   && !(DayNightCycle.Instance?.IsNight ?? false))        return false;
 

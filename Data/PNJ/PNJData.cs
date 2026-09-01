@@ -41,35 +41,42 @@ public class PNJData : ScriptableObject
     public int reputationDialogueThreshold = 0;
 
     // ── Marchand ──────────────────────────────────────────────
-    [Header("Marchand (PNJType.Merchant)")]
+    [ShowIf(nameof(pnjType), PNJType.Merchant, Header = "Marchand (PNJType.Merchant)")]
     public List<ShopEntry> shopItems  = new List<ShopEntry>();
+    [ShowIf(nameof(pnjType), PNJType.Merchant)]
     public List<ShopEntry> shopSkills = new List<ShopEntry>();
 
     // ── Antiquaire ────────────────────────────────────────────
-    [Header("Antiquaire (PNJType.Antiquarian)")]
+    [ShowIf(nameof(pnjType), PNJType.Antiquarian, Header = "Antiquaire (PNJType.Antiquarian)")]
     public bool canIdentifyRunes = false;
+    [ShowIf(nameof(pnjType), PNJType.Antiquarian)]
     public bool canInsertRunes   = false;
 
     // ── Quête ─────────────────────────────────────────────────
-    [Header("Quête (PNJType.Quest)")]
+    [ShowIf(nameof(pnjType), PNJType.Quest, Header = "Quête (PNJType.Quest)")]
     public List<QuestData> availableQuests = new List<QuestData>();
 
     // ── Maire ─────────────────────────────────────────────────
-    [Header("Maire (PNJType.Mayor)")]
+    [ShowIf(nameof(pnjType), PNJType.Mayor, Header = "Maire (PNJType.Mayor)")]
     public DialogueData guildUnlockDialogue;
+    [ShowIf(nameof(pnjType), PNJType.Mayor)]
     public DialogueData guildNotReadyDialogue;
     [Tooltip("Coût en Aeris pour créer une guilde — GDD v3.5 §3.4")]
+    [ShowIf(nameof(pnjType), PNJType.Mayor)]
     public int guildCreationCost = 0;
 
     // ── PNJ Faction ───────────────────────────────────────────
-    [Header("Faction (PNJType.FactionNPC)")]
+    [ShowIf(nameof(pnjType), PNJType.FactionNPC, Header = "Faction (PNJType.FactionNPC)")]
     public FactionType  faction = FactionType.None;
+    [ShowIf(nameof(pnjType), PNJType.FactionNPC)]
     public DialogueData hostileDialogue;
 
     // ── Capitaine de Port ─────────────────────────────────────
-    [Header("Capitaine de Port (PNJType.HarborMaster)")]
+    [ShowIf(nameof(pnjType), PNJType.HarborMaster, Header = "Capitaine de Port (PNJType.HarborMaster)")]
     public List<string> availableDestinations = new List<string>();
+    [ShowIf(nameof(pnjType), PNJType.HarborMaster)]
     public float departureIntervalMin = 300f;
+    [ShowIf(nameof(pnjType), PNJType.HarborMaster)]
     public float departureIntervalMax = 900f;
 
     // ── Mort & Respawn ────────────────────────────────────────
@@ -77,6 +84,7 @@ public class PNJData : ScriptableObject
     [Tooltip("false = invulnérable (civils, décoratifs).\ntrue = peut mourir et respawner.")]
     public bool  canDie       = false;
     [Tooltip("Délai de respawn en secondes après mort. 0 = pas de respawn.")]
+    [ShowIf(nameof(canDie), true)]
     public float respawnDelay = 60f;
 
     // ── Déplacement ───────────────────────────────────────────
@@ -104,47 +112,61 @@ public class PNJData : ScriptableObject
     public bool canFight = false;
 
     [Tooltip("HP maximum du PNJ combattant.")]
+    [ShowIf(nameof(canFight), true)]
     public float baseMaxHP = 200f;
 
     [Tooltip("Mana maximum. 0 si le PNJ n'utilise que des skills sans coût.")]
+    [ShowIf(nameof(canFight), true)]
     public float baseMaxMana = 50f;
 
     [Tooltip("Regen HP/s hors combat. 0 = pas de regen.")]
+    [ShowIf(nameof(canFight), true)]
     public float baseRegenHP = 2f;
 
     [Tooltip("Dégâts de base de l'attaque — utilisés par CombatSystem.CalculateMobDamage() " +
              "via Entity.AttackDamageMin/Max.\nIgnoré si basicAttackSkill calcule ses propres dégâts via ratios.")]
+    [ShowIf(nameof(canFight), true)]
     public float attackDamage = 15f;
 
     [Tooltip("Catégorie d'arme — détermine quelle défense de la cible s'applique. GDD §3.1.")]
+    [ShowIf(nameof(canFight), true)]
     public WeaponCategory weaponCategory = WeaponCategory.Melee;
 
     [Tooltip("Skill d'attaque de base — utilisé à chaque attackCooldown.\n" +
              "Doit avoir targetType = Target et effectType = Damage.\nObligatoire si canFight.")]
+    [ShowIf(nameof(canFight), true)]
     public SkillData basicAttackSkill;
 
     [Tooltip("Skills secondaires (prioritaires sur l'attaque de base).\nMême logique que MobData.skills.")]
+    [ShowIf(nameof(canFight), true)]
     public List<SkillData> skills = new List<SkillData>();
 
     [Tooltip("Rayon de détection des ennemis (Mobs). Équivalent de detectionRange sur MobData.")]
+    [ShowIf(nameof(canFight), true)]
     public float aggroRadius = 15f;
 
     [Tooltip("Distance max depuis le spawn avant de lâcher la cible et rentrer. 0 = illimité.")]
+    [ShowIf(nameof(canFight), true)]
     public float leashRadius = 10f;
 
     [Tooltip("Portée d'attaque. 0 = utilise basicAttackSkill.range.")]
+    [ShowIf(nameof(canFight), true)]
     public float attackRange = 0f;
 
     [Tooltip("Cooldown de l'attaque de base en secondes.")]
+    [ShowIf(nameof(canFight), true)]
     public float attackCooldown = 2f;
 
     [Tooltip("Vitesse de déplacement en mode combat. 0 = utilise baseMoveSpeed.")]
+    [ShowIf(nameof(canFight), true)]
     public float combatMoveSpeed = 0f;
 
     // ── Critique ──────────────────────────────────────────────
     [Tooltip("Chance de critique [0..1]. Poussé sur Entity via SetCritChance().")]
+    [ShowIf(nameof(canFight), true)]
     public float critChance     = 0.03f;
     [Tooltip("Multiplicateur dégâts critique. Base 1.5f.")]
+    [ShowIf(nameof(canFight), true)]
     public float critMultiplier = 1.5f;
 
     // =========================================================
@@ -174,6 +196,7 @@ public enum PNJType
 {
     Merchant,       // Achat/vente items consommables et ressources
     Blacksmith,     // Amélioration arme/armure (+0→+10, pas de restriction par ville)
+    Rarity,         // Pari de rareté (r-2→r+7, risque de destruction) — GDD §3.4.8
     Antiquarian,    // Identification et insertion de runes
     FusionNPC,      // Fusion de Gants & Bottes (S0→S6)
     CraftMaster,    // Déblocage activités (Bûcheron, Pêcheur...)

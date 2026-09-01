@@ -108,9 +108,18 @@ public class Player : Entity
 
     /// <summary>
     /// Skills passifs conditionnels — procs sur événements de combat.
-    /// Évalués à runtime par PassiveSkillSystem (abonné à GameEventBus).
+    /// Pool possédé (débloqués via UnlockPassive) — pas encore forcément actifs,
+    /// voir equippedPassives ci-dessous pour ceux réellement évalués en combat.
     /// </summary>
     [HideInInspector] public List<PassiveSkillData> unlockedPassives = new List<PassiveSkillData>();
+
+    /// <summary>
+    /// Les 3 passifs RÉELLEMENT actifs (slots P1/P2/P3 de la PassifBar, GDD §7.5 —
+    /// "assignés hors combat"), choisis parmi unlockedPassives. Seuls ceux-ci sont
+    /// évalués par PassiveSkillSystem — un passif débloqué mais pas équipé ne proc jamais.
+    /// Case à null = slot vide.
+    /// </summary>
+    [HideInInspector] public PassiveSkillData[] equippedPassives = new PassiveSkillData[3];
 
     // ── Progression ───────────────────────────────────────────
     [HideInInspector] public int level         = 1;
@@ -176,6 +185,7 @@ public class Player : Entity
         if (equippedSpiritInstances  == null) equippedSpiritInstances  = new List<SpiritInstance>();
         if (unlockedPermanents       == null) unlockedPermanents       = new List<PermanentSkillData>();
         if (unlockedPassives         == null) unlockedPassives         = new List<PassiveSkillData>();
+        if (equippedPassives         == null || equippedPassives.Length != 3) equippedPassives = new PassiveSkillData[3];
 
         activityCounter    = GetComponent<ActivityCounter>();
         elementalSystem    = GetComponent<ElementalSystem>();

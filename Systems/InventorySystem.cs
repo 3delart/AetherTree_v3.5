@@ -531,6 +531,19 @@ public class InventoryItem
         }
     }
 
+    /// <summary>Nom d'affichage riche (coloré rareté + "(+N)" upgrade) pour Arme/Armure —
+    /// format canonique, voir WeaponInstance/ArmorInstance.DisplayNameRich. Retombe sur
+    /// le nom brut pour tous les autres types (pas de rareté/upgrade).</summary>
+    public string DisplayNameRich
+    {
+        get
+        {
+            if (WeaponInstance != null) return WeaponInstance.DisplayNameRich;
+            if (ArmorInstance  != null) return ArmorInstance.DisplayNameRich;
+            return Name;
+        }
+    }
+
     // ── Icône ─────────────────────────────────────────────────
     public Sprite Icon
     {

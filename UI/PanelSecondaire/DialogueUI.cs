@@ -267,17 +267,12 @@ public class DialogueUI : MonoBehaviour
     {
         if (option == null) { OnClickClose(); return; }
 
+        // OpenShop/OpenForge/OpenRarity/OpenRuneUI ne sont PAS dispatchées ici — elles
+        // le sont déjà par PNJ.HandleDialogueAction, appelé juste en dessous via
+        // SelectOption(). Un double dispatch ici causait une double ouverture de
+        // panel (ex : InventoryUI.Open() appelé deux fois par clic).
         switch (option.action)
         {
-            case DialogueAction.OpenShop:
-                ShopUI.Instance?.OpenShop(_currentPNJ?.data, _currentPlayer);
-                break;
-            case DialogueAction.OpenForge:
-                ForgeUI.Instance?.Open();
-                break;
-            case DialogueAction.OpenRuneUI:
-                Debug.Log("[DialogueUI] RuneUI — TODO Phase 6");
-                break;
             case DialogueAction.AcceptQuest:
                 if (option.questData != null && _currentPlayer != null)
                 {

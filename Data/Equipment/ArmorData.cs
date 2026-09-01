@@ -241,6 +241,13 @@ public class ArmorInstance
     /// <summary>Couleur affichée au joueur — GDD §5.13/§5.13Bis.</summary>
     public string    RarityDisplayColorHex => hasAethernelleSeal ? RarityTier.AethernelleColorHex : RarityTier.GetColorHex(rarityRank);
 
+    /// <summary>Nom d'affichage complet — format canonique utilisé partout où le nom
+    /// d'une armure est montré au joueur : "{RaritéNom} {Nom}" coloré, suivi de
+    /// "(+N)" seulement si upgradeLevel > 0 (rien si +0).</summary>
+    public string    DisplayNameRich =>
+        $"<color={RarityDisplayColorHex}>{RarityDisplayName} {ArmorName}</color>"
+        + (upgradeLevel > 0 ? $" (+{upgradeLevel})" : "");
+
     // ── Raccourcis config (4 slots fusionnés) ─────────────────
     public List<StatBonus>             Bonuses           => data?.config?.bonuses;
     public List<StatusEffectEntry>     StatusEffects     => data?.config?.statusEffects;

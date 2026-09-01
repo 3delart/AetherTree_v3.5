@@ -349,7 +349,7 @@ public class CharacterPanelUI : MonoBehaviour
     private void RefreshCardAttack()
     {
         var w = _player.equippedWeaponInstance;
-        SetText(weaponNameText,     w != null ? $"<color={w.RarityDisplayColorHex}>{w.RarityDisplayName} {w.WeaponName}</color>" : "—");
+        SetText(weaponNameText,     w != null ? w.DisplayNameRich : "—");
         if (weaponTooltipTrigger != null)
         {
             if (w != null) weaponTooltipTrigger.SetItem(new InventoryItem(w));
@@ -369,7 +369,7 @@ public class CharacterPanelUI : MonoBehaviour
     private void RefreshCardDefense()
     {
         var a = _player.equippedArmorInstance;
-        SetText(armorNameText,     a?.data != null ? $"<color={a.RarityDisplayColorHex}>{a.RarityDisplayName} {a.ArmorName}</color>" : "—");
+        SetText(armorNameText,     a?.data != null ? a.DisplayNameRich : "—");
         if (armorTooltipTrigger != null)
         {
             if (a?.data != null) armorTooltipTrigger.SetItem(new InventoryItem(a));

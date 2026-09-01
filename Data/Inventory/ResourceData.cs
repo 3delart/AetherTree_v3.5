@@ -44,23 +44,32 @@ public class ResourceData : ItemData
     public GameObject   prefab;       // prefab objet au sol (WorldLootItem)
 
     // ── Node World (Collectible uniquement) ───────────────────
-    [Header("Node World (resourceType = Collectible)")]
     [Tooltip("Prefab 3D placé dans le monde (plante, rocher, arbre...).")]
+    [ShowIf(nameof(resourceType), ResourceType.Collectible, Header = "Node World (resourceType = Collectible)")]
     public GameObject nodePrefab;
 
     [Tooltip("Quantité minimum ramassée par collecte.")]
-    [Min(1)] public int minQuantity = 1;
+    [Min(1)]
+    [ShowIf(nameof(resourceType), ResourceType.Collectible)]
+    public int minQuantity = 1;
 
     [Tooltip("Quantité maximum ramassée par collecte.")]
-    [Min(1)] public int maxQuantity = 1;
+    [Min(1)]
+    [ShowIf(nameof(resourceType), ResourceType.Collectible)]
+    public int maxQuantity = 1;
 
     [Tooltip("Durée de la barre de progression en secondes.")]
-    [Min(0.1f)] public float collectTime = 5f;
+    [Min(0.1f)]
+    [ShowIf(nameof(resourceType), ResourceType.Collectible)]
+    public float collectTime = 5f;
 
     [Tooltip("Délai de réapparition du node après collecte.")]
-    [Min(1f)] public float respawnDelay = 300f;
+    [Min(1f)]
+    [ShowIf(nameof(resourceType), ResourceType.Collectible)]
+    public float respawnDelay = 300f;
 
     [Tooltip("Distance max à laquelle le joueur peut collecter ce node.")]
+    [ShowIf(nameof(resourceType), ResourceType.Collectible)]
     public float interactionRadius = 2.5f;
 
     // ── Utilitaires ───────────────────────────────────────────

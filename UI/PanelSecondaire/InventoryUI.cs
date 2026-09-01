@@ -311,6 +311,10 @@ public class InventoryUI : MonoBehaviour
     public void Open()
     {
         gameObject.SetActive(true);
+        // Passe devant les autres panels secondaires (Shop/Forge/Rareté...) dans
+        // l'ordre de rendu du Canvas — sinon un panel ouvert après (même sibling
+        // parent) peut couvrir visuellement l'inventaire alors qu'il est bien actif.
+        transform.SetAsLastSibling();
         SwitchTab(_activeTab);
     }
 
