@@ -150,7 +150,12 @@ public class CombatSystem : MonoBehaviour
                 if (target.statusEffects != null)
                     elemResist += target.statusEffects.GetBarrierElementResist();
 
-                elemDamage *= (1f - elemResist);
+                // Clamp local au calcul — une résistance élémentaire peut dépasser 100%
+                // (Fusion sans plafond), mais le facteur de réduction ne doit jamais
+                // repasser négatif (inverserait le signe des dégâts élémentaires, pouvant
+                // annuler la part physique d'un skill mixte phys+élém). Le stat brut
+                // affiché/sauvegardé n'est PAS touché, seul ce calcul l'est.
+                elemDamage *= (1f - Mathf.Clamp01(elemResist));
             }
         }
         // Neutre pur — les bonus offensifs sont appliqués en amont
