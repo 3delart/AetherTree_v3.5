@@ -12,8 +12,10 @@ using TMPro;
 // slot1 == slot2 (même InventoryItem), ou la combinaison dépasse S6.
 //
 // Résolution : ProgressBarUI (même barre que Forge/Rareté/Craft — BarType.Craft) puis
-// FusionSystem.TryFuseXxx. Slot1 ET Slot2 sont TOUJOURS retirés de l'inventaire à la
-// résolution (succès ou échec) — seul un succès ajoute le résultat.
+// FusionSystem.TryFuseXxx. Slot1 ET Slot2 ne sont retirés de l'inventaire que si un jet a
+// réellement eu lieu (Success/Failure) — seul un succès ajoute le résultat. Pour les issues
+// sans jet (InvalidTarget/MissingResource/InvalidCombo/SameItem), rien n'est consommé et les
+// 2 slots restent en place.
 // =============================================================
 public class FusionUI : MonoBehaviour
 {
@@ -67,16 +69,25 @@ public class FusionUI : MonoBehaviour
     public void Open(PNJData pnjData, Player player)
     {
         _player = player;
-        _slot1Item = null;
-        _slot2Item = null;
+        // Ne réinitialise pas les slots si une canalisation est en cours (ex: le joueur
+        // re-clique l'onglet Fusion pendant le jet) — ResolveFusion() lit encore _slot1Item/
+        // _slot2Item plus tard via le callback ProgressBarUI, les nuller ici causerait une NRE.
+        if (!_channeling)
+        {
+            _slot1Item = null;
+            _slot2Item = null;
+        }
         if (panel != null) panel.SetActive(true);
         RefreshSlots();
         RefreshPreview();
     }
 
+    /// <summary>Annule une canalisation en cours (rien n'est consommé — voir le onCancel de
+    /// StartProgress) avant de fermer, même pattern que ForgeUI/RarityUI — évite de laisser le
+    /// panel Fusion visible/orphelin quand PNJWindowUI.Close() ferme la fenêtre parente.</summary>
     public void Close()
     {
-        if (_channeling) return; // ne ferme pas pendant une canalisation en cours
+        if (_channeling) ProgressBarUI.Instance?.Cancel();
         if (panel != null) panel.SetActive(false);
     }
 
@@ -90,6 +101,17 @@ public class FusionUI : MonoBehaviour
         bool isGloves = item.GlovesInstance != null;
         bool isBoots  = item.BootsInstance  != null;
         if (!isGloves && !isBoots) return;
+
+        // Refuse un item actuellement ÉQUIPÉ (glissé depuis le CharacterPanel via
+        // EquipmentSlotHandler) — son instance n'est plus dans InventorySystem._items, donc
+        // RemoveItem() échouerait silencieusement à la résolution : le joueur garderait la
+        // pièce équipée ET obtiendrait quand même le résultat de fusion (duplication).
+        object underlyingInstance = isGloves ? (object)item.GlovesInstance : item.BootsInstance;
+        if (InventorySystem.Instance?.GetItemByInstance(underlyingInstance) == null)
+        {
+            Debug.LogWarning("[FUSION] Déséquipe d'abord cette pièce avant de la fusionner.");
+            return;
+        }
 
         // Si l'autre slot est déjà rempli, il doit être du même type (gants+gants ou bottes+bottes)
         var other = slotIndex == 0 ? _slot2Item : _slot1Item;
@@ -243,12 +265,34 @@ public class FusionUI : MonoBehaviour
             if (outcome == FusionResult.Success) resultItem = new InventoryItem(result);
         }
 
-        // Slot1 et Slot2 sont TOUJOURS retirés — succès ou échec (GDD : les deux détruites).
-        InventorySystem.Instance?.RemoveItem(_slot1Item);
-        InventorySystem.Instance?.RemoveItem(_slot2Item);
+        // InvalidTarget/MissingResource/InvalidCombo/SameItem → aucun jet n'a eu lieu et aucun
+        // coût n'a été consommé (voir FusionSystem.TryFuseGloves/Boots) : rien ne doit être
+        // perdu. On garde les 2 slots tels quels pour que le joueur puisse réessayer sans
+        // re-glisser ses objets (ex: FusionSystem.Instance.table non assigné en Inspector).
+        if (outcome != FusionResult.Success && outcome != FusionResult.Failure)
+        {
+            Debug.LogWarning($"[FUSION] Fusion non résolue ({outcome}) — aucune pièce perdue, rien n'a été consommé.");
+            RefreshSlots();
+            RefreshPreview();
+            if (fuseButton != null) fuseButton.interactable = true;
+            return;
+        }
 
-        if (outcome == FusionResult.Success && resultItem != null)
-            InventorySystem.Instance?.AddItem(resultItem);
+        // Slot1 et Slot2 sont retirés — succès ou échec (GDD : les deux détruites). N'ajoute le
+        // résultat que si les DEUX retraits ont réellement réussi, sinon la pièce fusionnée
+        // pourrait être dupliquée avec l'original (ex: instance déjà absente de l'inventaire).
+        bool removed1 = InventorySystem.Instance != null && InventorySystem.Instance.RemoveItem(_slot1Item);
+        bool removed2 = InventorySystem.Instance != null && InventorySystem.Instance.RemoveItem(_slot2Item);
+
+        if (!removed1 || !removed2)
+        {
+            Debug.LogError($"[FUSION] Retrait inventaire échoué (slot1={removed1}, slot2={removed2}) — résultat NON ajouté pour éviter une duplication.");
+        }
+        else if (outcome == FusionResult.Success && resultItem != null)
+        {
+            if (!InventorySystem.Instance.AddItem(resultItem))
+                Debug.LogError("[FUSION] Réussite mais ajout du résultat à l'inventaire impossible (inventaire plein ?) — pièce perdue.");
+        }
 
         Debug.Log(outcome == FusionResult.Success
             ? "[FUSION] Réussite — nouvelle pièce ajoutée à l'inventaire."

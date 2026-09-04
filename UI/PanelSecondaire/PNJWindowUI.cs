@@ -150,7 +150,8 @@ public class PNJWindowUI : MonoBehaviour
                            tab == PNJTabID.Bricoler || tab == PNJTabID.CraftCasque ||
                            tab == PNJTabID.CraftIntermediaire || tab == PNJTabID.CraftGantsBottes ||
                            tab == PNJTabID.CraftBijoux;
-        bool showPlaceholder = !showShop && !showForge && !showRarity && !showCraft;
+        bool showFusion = tab == PNJTabID.Fusion;
+        bool showPlaceholder = !showShop && !showForge && !showRarity && !showCraft && !showFusion;
 
         if (showShop) ShopUI.Instance?.OpenShop(_pnjData, _player);
         else          ShopUI.Instance?.CloseShop();
@@ -163,6 +164,9 @@ public class PNJWindowUI : MonoBehaviour
 
         if (showCraft) CraftPanelUI.Instance?.Open(_pnjData, _player, ToStation(tab));
         else            CraftPanelUI.Instance?.Close();
+
+        if (showFusion) FusionUI.Instance?.Open(_pnjData, _player);
+        else             FusionUI.Instance?.Close();
 
         if (placeholderPanel != null) placeholderPanel.SetActive(showPlaceholder);
         if (showPlaceholder) SetText(placeholderText, $"{GetTabLabel(tab)} — bientôt disponible");

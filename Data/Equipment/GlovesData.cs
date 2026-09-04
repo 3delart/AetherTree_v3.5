@@ -61,7 +61,7 @@ public class GlovesData : EquipmentDataBase
     // ── Résistances élémentaires de base (fixes — non rollées) ─
     [Header("Résistances élémentaires de base (ratio 0.01 = 1% — fixes, non rollées)")]
     [Tooltip("Résistances de départ de ces gants.\n" +
-             "Additionnées à la fusion — plafonnées à 0.75 (75%) par élément.\n" +
+             "Additionnées à la fusion — sans plafond par élément.\n" +
              "GDD §5.6 / §3.2.")]
     public float baseResistFire      = 0f;
     public float baseResistWater     = 0f;
