@@ -13,7 +13,6 @@ using System.Collections.Generic;
 //   Blacksmith   → ForgeUI (TODO Phase 6)
 //   Antiquarian  → RuneUI (TODO Phase 6)
 //   FusionNPC    → FusionUI (TODO Phase 6)
-//   CraftMaster  → MetierUI (TODO Phase 7)
 //   Quest        → QuestUI (TODO Phase 7)
 //   Mayor        → Dialogue conditionnel + création guilde
 //   FactionNPC   → Services faction Solthars / Umbrans (TODO Phase 9)
@@ -165,17 +164,25 @@ public class PNJ : Entity
         switch (data.pnjType)
         {
             case PNJType.Merchant:     InteractMerchant(player);     break;
-            case PNJType.Blacksmith:   InteractBlacksmith(player);   break;
+            case PNJType.Forge:        InteractForge(player);        break;
+#pragma warning disable CS0618 // Rarity — retiré du design (Pari est un onglet de Forge), ordinal gardé
             case PNJType.Rarity:       InteractRarity(player);       break;
+#pragma warning restore CS0618
             case PNJType.Antiquarian:  InteractAntiquarian(player);  break;
-            case PNJType.FusionNPC:    InteractFusionNPC(player);    break;
-            case PNJType.CraftMaster:  InteractCraftMaster(player);  break;
+            case PNJType.Cordonnier:   InteractCordonnier(player);   break;
             case PNJType.Quest:        InteractQuest(player);        break;
             case PNJType.Guard:        InteractGuard(player);        break;
             case PNJType.Decorative:   InteractDecorative(player);   break;
             case PNJType.Mayor:        InteractMayor(player);        break;
+#pragma warning disable CS0618
             case PNJType.FactionNPC:   InteractFactionNPC(player);   break;
+#pragma warning restore CS0618
             case PNJType.HarborMaster: InteractHarborMaster(player); break;
+            case PNJType.Cook:         InteractGenericShop(player);  break;
+            case PNJType.Tinkerer:     InteractGenericShop(player);  break;
+            case PNJType.Jeweler:      InteractGenericShop(player);  break;
+            case PNJType.Hatter:       InteractGenericShop(player);  break;
+            case PNJType.CraftStation: InteractGenericShop(player);  break;
         }
 
         RegisterKnownPlayer(player);
@@ -187,13 +194,22 @@ public class PNJ : Entity
         StartDialogue(SelectDialogue(player), player);
     }
 
+    // ── PNJ composables génériques (Cook/Tinkerer/Jeweler/Hatter/CraftStation) ──
+    // Dialogue d'abord — la fenêtre (PNJWindowUI → CraftPanelUI/ShopUI selon l'onglet)
+    // ne s'ouvre qu'au clic sur l'option dont Action = OpenPNJWindow, même schéma
+    // que Merchant/Forge/Antiquaire ci-dessus.
+    private void InteractGenericShop(Player player)
+    {
+        StartDialogue(SelectDialogue(player), player);
+    }
+
     // ── Forgeron ──────────────────────────────────────────────
-    // N'ouvre PAS ForgeUI directement — le dialogue s'affiche d'abord,
-    // ForgeUI s'ouvre seulement quand le joueur clique l'option dont
-    // l'Action = DialogueAction.OpenForge (voir HandleDialogueAction
-    // ci-dessous — seul point de dispatch, DialogueUI.OnOptionClicked
+    // N'ouvre PAS la fenêtre directement — le dialogue s'affiche d'abord,
+    // la fenêtre Forge (Boutique/Craft Équipement/Upgrade/Pari) s'ouvre seulement
+    // quand le joueur clique l'option dont l'Action = DialogueAction.OpenForge (voir
+    // HandleDialogueAction ci-dessous — seul point de dispatch, DialogueUI.OnOptionClicked
     // ne fait que forwarder le clic via SelectOption()).
-    private void InteractBlacksmith(Player player)
+    private void InteractForge(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
     }
@@ -214,20 +230,12 @@ public class PNJ : Entity
         Debug.Log($"[PNJ/Antiquaire] {data.pnjName} — identification:{data.canIdentifyRunes} insertion:{data.canInsertRunes} (RuneUI Phase 6)");
     }
 
-    // ── PNJ Fusion ────────────────────────────────────────────
-    private void InteractFusionNPC(Player player)
+    // ── Cordonnier ────────────────────────────────────────────
+    private void InteractCordonnier(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
-        // TODO Phase 6 : FusionUI.Instance?.Open(player)
-        Debug.Log("[PNJ/Fusion] FusionUI Phase 6");
-    }
-
-    // ── Maître de Métier ──────────────────────────────────────
-    private void InteractCraftMaster(Player player)
-    {
-        StartDialogue(SelectDialogue(player), player);
-        // TODO Phase 7 : MetierUI.Instance?.Open(player)
-        Debug.Log("[PNJ/MaîtreMétier] MetierUI Phase 7");
+        // TODO Phase 6 : fenêtre Cordonnier (Boutique/Fusion) — Instance?.Open(player)
+        Debug.Log("[PNJ/Cordonnier] Fenêtre Fusion Phase 6");
     }
 
     // ── Quête ─────────────────────────────────────────────────
@@ -392,9 +400,9 @@ public class PNJ : Entity
             case DialogueAction.OpenShop:           ShopUI.Instance?.OpenShop(data, player); break;
             case DialogueAction.OpenForge:          ForgeUI.Instance?.Open(); break;
             case DialogueAction.OpenRarity:          RarityUI.Instance?.Open(); break;
+            case DialogueAction.OpenPNJWindow:       PNJWindowUI.Instance?.Open(data, player); break;
             case DialogueAction.OpenRuneUI:         Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");   break;
-            case DialogueAction.OpenFusionUI:       Debug.Log("[PNJ] OpenFusionUI — FusionUI Phase 6"); break;
-            case DialogueAction.OpenMetierUI:       Debug.Log("[PNJ] OpenMetierUI — MetierUI Phase 7"); break;
+            case DialogueAction.OpenFusionUI:       FusionUI.Instance?.Open(data, player); break;
             case DialogueAction.OpenQuestLog:       Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");  break;
             case DialogueAction.OpenHarborUI:       Debug.Log("[PNJ] OpenHarborUI — HarborUI Phase 8"); break;
             case DialogueAction.TriggerGuildCreation: TryCreateGuild(player); break;
@@ -462,12 +470,6 @@ public class PNJ : Entity
     {
         if (player == null) return false;
         return knownPlayerIDs.Contains(player.entityName); // TODO: player.playerID
-    }
-
-    public void LoadKnownPlayers(List<string> savedIDs)
-    {
-        knownPlayerIDs.Clear();
-        foreach (string id in savedIDs) knownPlayerIDs.Add(id);
     }
 
     // =========================================================
