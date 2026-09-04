@@ -23,13 +23,14 @@ using System.Collections.Generic;
 //   via config.bonuses (StatType.MoveSpeed) — contribue à moveSpeed
 //   via CharacterStats.RecalculateStats().
 //
-// Fusion (GDD §5.6) — identique aux gants :
-//   fusionLevel = max(slot1, slot2) + 1 — plafonné à S6
-//   Résistances plafonnées à 75% par élément — GDD §3.2
-//   Irréversible — Slot 1 détruite définitivement
+// Fusion (révisé 2026 — voir docs/superpowers/specs/2026-09-04-fusion-system-design.md) :
+//   Slot 1 + Slot 2 → nouvelle 3e instance (identité/def de Slot 2 + résists Slot1+Slot2)
+//   fusionLevel = slot1.fusionLevel + slot2.fusionLevel + 1 — refusé si > S6 (FusionSystem.CanFuse)
+//   Résistances SANS plafond — un joueur peut dépasser 100% (voir CombatSystem.cs:153)
+//   Irréversible — Slot 1 ET Slot 2 détruites, même en cas d'ÉCHEC (voir FusionSystem)
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewBoots", menuName = "AetherTree/Equipment/BootsData")]
+[CreateAssetMenu(fileName = "bts_", menuName = "AetherTree/Inventaire/Equipement/BootsData")]
 public class BootsData : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────
@@ -161,12 +162,17 @@ public class BootsInstance
     // ── Fusion ────────────────────────────────────────────────
 
     /// <summary>
-    /// Fusionne deux paires de bottes. GDD §5.6.
-    /// Slot1 (sacrifiée) est détruite — ses résistances s'additionnent à Slot2.
-    /// fusionLevel = max(slot1, slot2) + 1 — plafonné à S6.
-    /// Résistances sans plafond — un joueur peut dépasser 100%.
-    /// Les défenses rollées (ratio) de Slot2 sont conservées telles quelles —
-    /// la Fusion ne touche que les résistances élémentaires.
+    /// Fusionne deux paires de bottes. GDD §5.6 (révisé 2026 — voir
+    /// docs/superpowers/specs/2026-09-04-fusion-system-design.md).
+    /// Slot1 ET Slot2 sont détruites par l'appelant (FusionUI) — cette méthode calcule
+    /// seulement le résultat, ne touche jamais l'inventaire ni les instances passées en
+    /// paramètre (jamais de mutation en place, évite l'aliasing si slot2 est référencé
+    /// ailleurs, ex: équipé).
+    /// fusionLevel = slot1.fusionLevel + slot2.fusionLevel + 1 — PAS de clamp ici, c'est
+    /// FusionSystem.CanFuse() qui refuse l'action en amont si le résultat dépasserait S6.
+    /// Résistances sans plafond — un joueur peut dépasser 100% (voir CombatSystem.cs:153
+    /// pour le clamp appliqué uniquement au calcul de dégâts, pas au stat lui-même).
+    /// Identité + défenses rollées héritées de Slot2, résistances additionnées Slot1+Slot2.
     /// </summary>
     public static BootsInstance Fuse(BootsInstance slot1, BootsInstance slot2)
     {
@@ -178,7 +184,7 @@ public class BootsInstance
 
         BootsInstance result = new BootsInstance(slot2.data, slot2.rolledRatioMelee, slot2.rolledRatioRanged, slot2.rolledRatioMagic)
         {
-            fusionLevel     = Mathf.Min(6, Mathf.Max(slot1.fusionLevel, slot2.fusionLevel) + 1),
+            fusionLevel     = slot1.fusionLevel + slot2.fusionLevel + 1,
             resistFire      = slot1.resistFire      + slot2.resistFire,
             resistWater     = slot1.resistWater     + slot2.resistWater,
             resistLightning = slot1.resistLightning + slot2.resistLightning,
