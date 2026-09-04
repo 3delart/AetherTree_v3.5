@@ -131,7 +131,10 @@ public class FusionUI : MonoBehaviour
     private void RefreshPreview()
     {
         bool bothFilled = _slot1Item != null && _slot2Item != null;
-        bool sameItem   = bothFilled && ReferenceEquals(_slot1Item, _slot2Item);
+        bool sameItem   = bothFilled && (
+            (_slot1Item.GlovesInstance != null && ReferenceEquals(_slot1Item.GlovesInstance, _slot2Item.GlovesInstance)) ||
+            (_slot1Item.BootsInstance  != null && ReferenceEquals(_slot1Item.BootsInstance,  _slot2Item.BootsInstance))
+        );
 
         if (!bothFilled || sameItem)
         {
@@ -199,7 +202,10 @@ public class FusionUI : MonoBehaviour
     private void OnFuseClicked()
     {
         if (_channeling) return;
-        if (_slot1Item == null || _slot2Item == null || ReferenceEquals(_slot1Item, _slot2Item)) return;
+        if (_slot1Item == null || _slot2Item == null) return;
+        bool sameItem = (_slot1Item.GlovesInstance != null && ReferenceEquals(_slot1Item.GlovesInstance, _slot2Item.GlovesInstance)) ||
+                        (_slot1Item.BootsInstance  != null && ReferenceEquals(_slot1Item.BootsInstance,  _slot2Item.BootsInstance));
+        if (sameItem) return;
 
         int level1 = GetFusionLevel(_slot1Item);
         int level2 = GetFusionLevel(_slot2Item);
