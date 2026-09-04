@@ -6,9 +6,11 @@ using UnityEngine.EventSystems;
 // Path : Assets/Scripts/UI/PanelSecondaire/ForgeDropSlot.cs
 //
 // Poser sur le GameObject du slot dans le Panel Forge (ForgeUI.cs).
-// Accepte un InventoryItem Weapon ou Armor — même schéma que ConsoDropSlot
-// (UI/PanelFixe/ConsoBarUI.cs) : ne fait que référencer, jamais d'appel
-// InventorySystem.RemoveItem — l'item reste dans l'inventaire/équipé.
+// Accepte un InventoryItem Weapon ou Armor venant UNIQUEMENT de
+// l'inventaire — un équipement porté (CharacterPanel) est rejeté (voir
+// GetItemByInstance ci-dessous). ForgeUI.SetStaged() retire l'item de
+// InventorySystem dès l'acceptation — ce composant n'est qu'un pur
+// transport UI, jamais d'appel InventorySystem lui-même.
 //
 // Fichier séparé de ForgeUI.cs — une classe MonoBehaviour additionnelle
 // dans le même fichier compile très bien, mais Unity ne la propose pas
@@ -32,6 +34,15 @@ public class ForgeDropSlot : MonoBehaviour, IDropHandler
         if (item.WeaponInstance == null && item.ArmorInstance == null)
         {
             Debug.Log("[FORGE DROP] Seules les armes et armures peuvent être améliorées.");
+            return;
+        }
+
+        // Refuse un item équipé (ou déjà mis en scène ailleurs, ex: staged dans RarityUI) —
+        // seul l'inventaire peut alimenter ce slot, même garde que FusionSlotDropTarget.
+        object underlyingInstance = item.WeaponInstance != null ? (object)item.WeaponInstance : item.ArmorInstance;
+        if (InventorySystem.Instance?.GetItemByInstance(underlyingInstance) == null)
+        {
+            Debug.Log("[FORGE DROP] Seuls les objets de l'inventaire peuvent être améliorés — déséquipe d'abord.");
             return;
         }
 

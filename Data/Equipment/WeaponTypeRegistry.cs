@@ -18,7 +18,7 @@ using System.Collections.Generic;
 //         et assigner dans GameDataRegistry sur le GameObject _Managers.
 // =============================================================
 
-[CreateAssetMenu(fileName = "WeaponTypeRegistry", menuName = "AetherTree/Weapons/WeaponTypeRegistry")]
+[CreateAssetMenu(fileName = "WeaponTypeRegistry", menuName = "AetherTree/Config/WeaponTypeRegistry")]
 public class WeaponTypeRegistry : ScriptableObject
 {
     public static WeaponTypeRegistry Instance { get; internal set; }

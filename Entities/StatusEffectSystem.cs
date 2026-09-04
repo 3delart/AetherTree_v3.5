@@ -197,8 +197,10 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (buff == null || _entity.isDead) return;
 
-        // Refresh si déjà actif
-        if (_activeBuffs.TryGetValue(buff.buffType, out var existing))
+        // Refresh si déjà actif — sauf Revive, effet instantané (pas de sens à prolonger une
+        // "durée" ; un 2e proc pendant que la 1ère instance est encore active doit quand même
+        // relever le joueur).
+        if (buff.buffType != BuffType.Revive && _activeBuffs.TryGetValue(buff.buffType, out var existing))
         {
             existing.Refresh();
             return;
@@ -236,11 +238,13 @@ public class StatusEffectSystem : MonoBehaviour
                 blindPrecisionMalus += instance.DebuffData.debuffValue;
                 break;
 
+#pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:
                 // §3.1.1.1 — DoT (tick) + réduction soins % (local)
                 isPoisoned = true;
                 poisonHealReduction += instance.DebuffData.healReduction;
                 break;
+#pragma warning restore CS0618
 
             case DebuffType.ArmorBreak:
                 // §3.1.1.1 — réduction défense % (lue dans Entity.GetMeleeDefense etc.)
@@ -321,9 +325,11 @@ public class StatusEffectSystem : MonoBehaviour
                 case DebuffType.Blind:
                     blindPrecisionMalus += d.debuffValue;
                     break;
+#pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
                 case DebuffType.Poison:
                     poisonHealReduction += d.healReduction;
                     break;
+#pragma warning restore CS0618
                 case DebuffType.ArmorBreak:
                     armorBreakReduction += d.defenseReduction;
                     break;
@@ -522,8 +528,31 @@ public class StatusEffectSystem : MonoBehaviour
                 break;
 
             // ── Valeurs numériques (Stats) ────────────────────────
+            // MaxHP/MaxMana : un gain de max doit aussi combler le courant d'autant
+            // (sinon le joueur doit regen pour en profiter) — mesuré avant/après le
+            // recalcul plutôt que recalculé à la main (robuste Flat/Percent). Fait
+            // UNIQUEMENT ici (application, une fois) — jamais dans ModifyEntityStat/
+            // ReapplyActiveModifiers, qui tourne à CHAQUE recalcul (équipement, level up...)
+            // tant que le buff reste actif ; y ajouter le heal soignerait en boucle.
             case BuffType.Stats:
-                RecalculateAndReapply();
+                if (instance.BuffData.buffStatType == StatModifierType.MaxHP)
+                {
+                    float before = _entity.MaxHP;
+                    RecalculateAndReapply();
+                    float gained = _entity.MaxHP - before;
+                    if (gained > 0f) _entity.Heal(gained);
+                }
+                else if (instance.BuffData.buffStatType == StatModifierType.MaxMana)
+                {
+                    float before = _entity.MaxMana;
+                    RecalculateAndReapply();
+                    float gained = _entity.MaxMana - before;
+                    if (gained > 0f) _entity.RecoverMana(gained);
+                }
+                else
+                {
+                    RecalculateAndReapply();
+                }
                 break;
 
             // Regeneration : tick dans BuffInstance.Tick — pas d'action à l'apply
@@ -559,7 +588,9 @@ public class StatusEffectSystem : MonoBehaviour
 
             // Flags dérivés de valeurs numériques — recalculés dans ReapplyActiveModifiers
             case DebuffType.Blind:      isBlinded     = false; break;
+#pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:     isPoisoned    = false; break;
+#pragma warning restore CS0618
             case DebuffType.ArmorBreak: isArmorBroken = false; break;
             case DebuffType.Mark:       isMarked      = false; break;
         }
@@ -576,7 +607,9 @@ public class StatusEffectSystem : MonoBehaviour
             case DebuffType.Slow:
             case DebuffType.Freeze:
             case DebuffType.Blind:
+#pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:
+#pragma warning restore CS0618
             case DebuffType.ArmorBreak:
             case DebuffType.Shocked:
             case DebuffType.Mark:

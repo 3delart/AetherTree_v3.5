@@ -109,6 +109,22 @@ public class SaveSystem : MonoBehaviour
 
     private void OnApplicationQuit()
     {
+        // ⚠ Même garde que Update() — si le chargement initial (Invoke + coroutine
+        // LoadItemsDelayed) n'a pas fini, le Player est encore quasi vide (défauts
+        // d'Awake). Sauvegarder à ce moment-là écraserait la vraie save avec un perso
+        // vide. Skip plutôt que de risquer une perte de progression.
+        if (_isFirstLoad)
+        {
+            Debug.LogWarning("[SAVE] Quit avant la fin du chargement initial — sauvegarde ignorée pour ne pas écraser la save.");
+            return;
+        }
+
+        // Flush explicite AVANT Save() — l'ordre d'OnApplicationQuit entre composants n'est
+        // pas garanti par Unity, donc on ne peut pas compter sur le OnApplicationQuit propre
+        // de ZoneTrigger pour avoir déjà tourné à ce stade.
+        foreach (var zt in FindObjectsOfType<ZoneTrigger>())
+            zt.FlushOnQuit();
+
         var player = FindObjectOfType<Player>();
         if (player != null) Save(player);
     }
@@ -116,6 +132,13 @@ public class SaveSystem : MonoBehaviour
 #if UNITY_EDITOR
     private void OnDisable()
     {
+        // ⚠ Même garde — OnDisable() se déclenche à CHAQUE arrêt du Play Mode ET à
+        // chaque recompilation de script pendant le Play Mode (domain reload). Sans ce
+        // garde, un arrêt/recompile survenant avant la fin du chargement initial écrase
+        // la vraie save avec un Player encore aux valeurs par défaut — c'est la cause
+        // du bug "la save repart à 0" régulièrement pendant une session de dev/test.
+        if (_isFirstLoad) return;
+
         var player = FindObjectOfType<Player>();
         if (player != null) Save(player);
     }
@@ -327,6 +350,10 @@ public class SaveSystem : MonoBehaviour
             foreach (var passive in player.unlockedPassives)
                 if (passive != null) progress.unlockedPassiveNames.Add(passive.name);
 
+        if (player.unlockedRecipes != null)
+            foreach (var recipe in player.unlockedRecipes)
+                if (recipe != null) progress.unlockedRecipeNames.Add(recipe.name);
+
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
             for (int i = 0; i < 10; i++)
@@ -343,6 +370,15 @@ public class SaveSystem : MonoBehaviour
                 var passive = player.equippedPassives[i];
                 if (passive != null)
                     progress.passifBarSlots.Add(new SavedSkillSlot { slotIndex = i, skillName = passive.name });
+            }
+
+        // ⑦Ter ConsoBar (3 slots)
+        if (ConsoBarUI.Instance != null)
+            for (int i = 0; i < 3; i++)
+            {
+                var conso = ConsoBarUI.Instance.GetSlotData(i);
+                if (conso != null)
+                    progress.consoBarSlots.Add(new SavedSkillSlot { slotIndex = i, skillName = conso.name });
             }
 
         // ⑤ Équipements + Inventaire
@@ -576,7 +612,7 @@ public class SaveSystem : MonoBehaviour
                 saved.rewardType         = (int)mail.reward.rewardType;
                 saved.rewardSkillName    = mail.reward.rewardSkill?.name      ?? "";
                 saved.rewardTitle        = mail.reward.rewardTitle             ?? "";
-                saved.rewardRecipeID     = mail.reward.rewardRecipeID          ?? "";
+                saved.rewardRecipeID     = mail.reward.rewardRecipe?.name       ?? "";
                 saved.rewardPetID        = mail.reward.rewardPetID             ?? "";
                 saved.rewardDescription  = mail.reward.rewardDescription       ?? "";
 
@@ -616,6 +652,13 @@ public class SaveSystem : MonoBehaviour
         if (p.level > 1) player.OnLevelUp(p.level);
         player.xpCombat    = p.xpCombat;
         player.activeTitle = p.activeTitle;
+
+        // xpToNextLevel n'est pas persisté (dérivé du niveau) — jamais recalculé au chargement
+        // sinon, reste à sa valeur par défaut (100, niveau 1) jusqu'au premier AddCombatXP().
+        // Même formule que AddCombatXP() — voir Player.cs.
+        player.xpToNextLevel = player.characterData != null
+            ? player.characterData.GetXPThreshold(player.level)
+            : XPSystem.CalculateXPForLevel(player.level);
 
         // StatPoints — APRÈS OnLevelUp (qui distribue les points du niveau) :
         // on écrase le pool avec l'état réel sauvegardé (rangs investis + points restants).
@@ -664,6 +707,13 @@ public class SaveSystem : MonoBehaviour
                 if (passive != null) player.UnlockPassive(passive);
             }
 
+        if (p.unlockedRecipeNames != null)
+            foreach (var name in p.unlockedRecipeNames)
+            {
+                var recipe = FindSOByName<RecipeData>(name);
+                if (recipe != null) player.UnlockRecipe(recipe);
+            }
+
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
         {
@@ -694,6 +744,23 @@ public class SaveSystem : MonoBehaviour
                 var passive = FindSOByName<PassiveSkillData>(savedSlot.skillName);
                 if (passive != null && savedSlot.slotIndex >= 0 && savedSlot.slotIndex < player.equippedPassives.Length)
                 {
+                    // Ignore une entrée dupliquée (même passif déjà écrit dans un autre slot par
+                    // une entrée précédente) — évite un double-proc, voir PassiveSkillSystem.
+                    bool alreadyEquipped = false;
+                    for (int i = 0; i < player.equippedPassives.Length; i++)
+                    {
+                        if (i != savedSlot.slotIndex && player.equippedPassives[i] == passive)
+                        {
+                            alreadyEquipped = true;
+                            break;
+                        }
+                    }
+                    if (alreadyEquipped)
+                    {
+                        Debug.LogWarning($"[SAVE] Passif '{passive.name}' dupliqué dans passifBarSlots — entrée slot {savedSlot.slotIndex} ignorée.");
+                        continue;
+                    }
+
                     // Garantit que le passif est débloqué même s'il manque dans unlockedPassiveNames
                     player.UnlockPassive(passive);
                     player.equippedPassives[savedSlot.slotIndex] = passive;
@@ -728,7 +795,6 @@ public class SaveSystem : MonoBehaviour
                 {
                     rewardType               = (RewardType)saved.rewardType,
                     rewardTitle              = saved.rewardTitle,
-                    rewardRecipeID           = saved.rewardRecipeID,
                     rewardPetID              = saved.rewardPetID,
                     rewardDescription        = saved.rewardDescription,
                     rewardResourceQuantity   = saved.rewardResourceQuantity,
@@ -750,6 +816,10 @@ public class SaveSystem : MonoBehaviour
                 // Consommable
                 if (!string.IsNullOrEmpty(saved.rewardConsumableName))
                     reward.rewardConsumable = FindSOByName<ConsumableData>(saved.rewardConsumableName);
+
+                // Recette
+                if (!string.IsNullOrEmpty(saved.rewardRecipeID))
+                    reward.rewardRecipe = FindSOByName<RecipeData>(saved.rewardRecipeID);
             }
 
             DateTime sentAt = DateTime.Now;
@@ -781,10 +851,31 @@ public class SaveSystem : MonoBehaviour
     {
         yield return null;
 
+        // Fenêtre courte — UnequipAll()/RestoreItems() appellent EquipWeapon()/UnequipWeapon(),
+        // qui ne doivent pas écraser le slot 0 déjà posé depuis skillBarSlots pendant cette
+        // restauration. Remis à false juste après, contrairement à skillBarRestoredFromSave
+        // (permanent) — les équip/déséquip normaux du reste de la partie restent fonctionnels.
+        player.isRestoringEquipment = true;
+
         InventorySystem.Instance?.UnequipAll(player);
         InventorySystem.Instance?.ClearAll();
 
         RestoreItems(player, p);
+
+        player.isRestoringEquipment = false;
+
+        // ⑦Ter ConsoBar (3 slots) — après RestoreItems : a besoin de l'inventaire déjà
+        // peuplé pour retrouver la ConsumableInstance vivante (même référence que celle
+        // manipulée par ConsoBarUI.TryUseSlot(), pas une instance détachée).
+        if (ConsoBarUI.Instance != null && p.consoBarSlots != null)
+            foreach (var savedSlot in p.consoBarSlots)
+            {
+                var data = FindSOByName<ConsumableData>(savedSlot.skillName);
+                if (data == null) continue;
+                var item = InventorySystem.Instance?.GetAllItems().Find(i => i.ConsumableInstance?.data == data);
+                if (item?.ConsumableInstance != null)
+                    ConsoBarUI.Instance.AssignConsoInstance(savedSlot.slotIndex, item.ConsumableInstance);
+            }
 
         if (QuestSystem.Instance != null && p.quests != null && p.quests.Count > 0)
         {

@@ -22,7 +22,7 @@ using System.Collections.Generic;
 //   ⚠ Pas de CritChance, CritMultiplier ni Points élémentaires sur le casque.
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewHelmet", menuName = "AetherTree/Equipment/HelmetData")]
+[CreateAssetMenu(fileName = "hlm_", menuName = "AetherTree/Inventaire/Equipement/HelmetData")]
 public class HelmetData : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────

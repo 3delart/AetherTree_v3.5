@@ -277,10 +277,14 @@ public class SocialUI : MonoBehaviour
         var tmp = go.GetComponentInChildren<TextMeshProUGUI>();
         if (tmp != null)
         {
-            string unread  = mail.isRead ? "" : "● ";
-            string sender  = mail.isFromServer ? "[Système]" : $"[{mail.senderName}]";
-            string reward  = mail.CanClaim ? " [+]" : "";
-            tmp.text  = $"{unread}{sender} {mail.subject}{reward}";
+            // 2 lignes dans le même champ (pas de champ dédié — expéditeur en petit/teinté,
+            // sujet en dessous) plutôt qu'une seule ligne compacte qui wrap n'importe où.
+            string unreadDot = mail.isRead ? "" : "<color=#4CDB57>●</color> ";
+            string sender    = mail.isFromServer ? "Système" : mail.senderName;
+            string rewardTag = mail.CanClaim ? "  <color=#FFD966>[+]</color>" : "";
+
+            tmp.richText = true;
+            tmp.text  = $"{unreadDot}<size=80%><color=#A9A0C9>{sender}</color></size>\n{mail.subject}{rewardTag}";
             tmp.color = mail.isRead ? new Color(0.6f, 0.55f, 0.75f) : Color.white;
         }
 
@@ -358,6 +362,11 @@ public class SocialUI : MonoBehaviour
             var icon = go.transform.Find("Icon")?.GetComponent<Image>();
             if (icon != null && rewardIcon != null)
                 icon.sprite = rewardIcon;
+
+            // Tooltip au survol — TooltipTrigger a besoin qu'on lui passe la donnée
+            // (SetItem/SetSkill), sinon OnPointerEnter n'affiche jamais rien.
+            var tooltip = go.GetComponentInChildren<TooltipTrigger>();
+            if (tooltip != null) SetRewardTooltip(tooltip, reward);
         }
         else
         {
@@ -370,6 +379,66 @@ public class SocialUI : MonoBehaviour
             tmp.color    = new Color(0.85f, 0.75f, 1f);
         }
     }
+
+    /// <summary>Alimente le TooltipTrigger de l'icône selon le rewardType — Skill a son propre
+    /// tooltip dédié, tout le reste (équipement générique, ressource, consommable, recette)
+    /// passe par un InventoryItem jetable construit juste pour la preview (jamais ajouté à
+    /// l'inventaire). Title/Pet/Other n'ont pas de SO à prévisualiser — tooltip reste inactif.</summary>
+    private void SetRewardTooltip(TooltipTrigger tooltip, MailReward reward)
+    {
+        switch (reward.rewardType)
+        {
+            case RewardType.Skill:
+            case RewardType.SkillAndTitle:
+                if (reward.rewardSkill != null) tooltip.SetSkill(reward.rewardSkill);
+                break;
+
+            case RewardType.Recipe:
+                if (reward.rewardRecipe?.result != null)
+                {
+                    var previewItem = BuildPreviewItem(reward.rewardRecipe.result, reward.rewardRecipe.resultQuantity);
+                    if (previewItem != null) tooltip.SetItem(previewItem);
+                }
+                break;
+
+            case RewardType.Resource:
+                if (reward.rewardResource != null)
+                    tooltip.SetItem(BuildPreviewItem(reward.rewardResource, reward.rewardResourceQuantity));
+                break;
+
+            case RewardType.Consumable:
+                if (reward.rewardConsumable != null)
+                    tooltip.SetItem(BuildPreviewItem(reward.rewardConsumable, reward.rewardConsumableQuantity));
+                break;
+
+            default:
+                if (reward.rewardEquipment is ItemData equip)
+                {
+                    var previewItem = BuildPreviewItem(equip);
+                    if (previewItem != null) tooltip.SetItem(previewItem);
+                }
+                break;
+        }
+    }
+
+    /// <summary>Instance jetable (jamais ajoutée à l'inventaire) juste pour le tooltip —
+    /// même dispatch par sous-type que CraftSystem.ResolveCraft/ShopUI.ResolveItemFromEntry.</summary>
+    private InventoryItem BuildPreviewItem(ItemData item, int quantity = 1) => item switch
+    {
+        WeaponData wd        => new InventoryItem(wd.CreateDropInstance()),
+        ArmorData ad         => new InventoryItem(ad.CreateDropInstance()),
+        HelmetData hd        => new InventoryItem(hd.CreateInstance()),
+        GlovesData gd        => new InventoryItem(gd.CreateInstance()),
+        BootsData bd         => new InventoryItem(bd.CreateInstance()),
+        JewelryData jd       => new InventoryItem(jd.CreateInstance()),
+        SpiritData sd        => new InventoryItem(new SpiritInstance(sd)),
+        CosmeticDataHead chd => new InventoryItem(chd.CreateInstance()),
+        CosmeticDataBody cbd => new InventoryItem(cbd.CreateInstance()),
+        CardData cad         => new InventoryItem(cad.CreateInstance()),
+        ResourceData rd      => new InventoryItem(rd.CreateInstance(quantity)),
+        ConsumableData cd    => new InventoryItem(cd.CreateInstance(quantity)),
+        _                    => null,
+    };
 
     private void ClearMailDetail()
     {

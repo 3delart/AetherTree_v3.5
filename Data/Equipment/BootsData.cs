@@ -195,8 +195,8 @@ public class BootsInstance
         };
 
         Debug.Log($"[BootsInstance] Fusion → {result.FusionLabel} | " +
-                  $"Fire {result.resistFire:P0} | Water {result.resistWater:P0} | " +
-                  $"Lightning {result.resistLightning:P0}");
+                  $"Fire {Mathf.RoundToInt(result.resistFire * 100f)}% | Water {Mathf.RoundToInt(result.resistWater * 100f)}% | " +
+                  $"Lightning {Mathf.RoundToInt(result.resistLightning * 100f)}%");
         return result;
     }
 }

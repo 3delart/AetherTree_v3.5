@@ -32,6 +32,13 @@ public class SkillBar : MonoBehaviour
 {
     public static SkillBar Instance { get; private set; }
 
+    [Header("Chargement forcé")]
+    [Tooltip("N'est jamais lu directement — juste glisser l'asset ici pour forcer Unity à le " +
+             "charger en mémoire (déclenche son propre OnEnable() → WeaponTypeRegistry.Instance). " +
+             "Sans ce champ, rien dans la scène ne référence l'asset, donc il n'est jamais chargé " +
+             "et Player.SetStartingSkillBar() timeout après 5s (\"WeaponTypeRegistry introuvable\").")]
+    public WeaponTypeRegistry weaponTypeRegistry;
+
     // Slots 0-8 = actifs, slot 9 = ultime
     private SkillData[] _slots          = new SkillData[10];
     private float[]     _cooldownTimers = new float[10];

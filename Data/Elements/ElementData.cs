@@ -361,37 +361,6 @@ public static class ElementDataExtensions
     }
 }
 
-// =============================================================
-// ELEMENTDATA SO — config par élément (données designer)
-// =============================================================
-[CreateAssetMenu(fileName = "Element_", menuName = "AetherTree/Elemental/ElementData")]
-public class ElementData : ScriptableObject
-{
-    [Header("Identification")]
-    public ElementType element;
-
-    [Header("Effets thématiques")]
-    [TextArea] public string primaryEffect;
-    [TextArea] public string advancedEffect;
-
-    [Header("Contenu associé")]
-    public List<MobData> associatedMobs = new List<MobData>();
-    public SkillData     firstSkill;
-
-    // ── API statique (proxy vers extensions) ─────────────────
-    public static string      GetLabel(ElementType t)              => t.GetLabel();
-    public static Color       GetColor(ElementType t)              => t.GetColor();
-    public static ElementType GetCounter(ElementType t)            => t.GetCounter();
-    public static bool        IsNeutral(ElementType t)             => t.IsNeutral();
-    public static string      GetEpithet(ElementType t, WeaponType w) => t.GetEpithet(w);
-}
-
-// =============================================================
-// ELEMENTAFFINITYREQ — condition de déblocage par affinité
-// Utilisée par IConditionChecker pour vérifier l'affinité minimale.
-// =============================================================
-public class ElementAffinityReq
-{
-    public ElementType element;
-    [Range(0f, 1f)] public float minAffinity = 0.20f;
-}
+// Pas de ElementData SO — tout est piloté par [ElementInfo] sur ElementType directement
+// (voir ElementDataExtensions ci-dessus). Aucun asset .asset de ce type n'a jamais existé
+// dans le projet, ni ElementAffinityReq (retirés tous les deux, code mort — 2026).

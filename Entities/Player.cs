@@ -113,6 +113,10 @@ public class Player : Entity
     /// </summary>
     [HideInInspector] public List<PassiveSkillData> unlockedPassives = new List<PassiveSkillData>();
 
+    /// <summary>Recettes de craft connues du joueur — Base auto-accordées par
+    /// CraftSystem.GrantBaseRecipes(), Unlocked via ConditionReward/UnlockRecipe().</summary>
+    [HideInInspector] public List<RecipeData> unlockedRecipes = new List<RecipeData>();
+
     /// <summary>
     /// Les 3 passifs RÉELLEMENT actifs (slots P1/P2/P3 de la PassifBar, GDD §7.5 —
     /// "assignés hors combat"), choisis parmi unlockedPassives. Seuls ceux-ci sont
@@ -140,7 +144,6 @@ public class Player : Entity
 
     // ── Contexte combat ───────────────────────────────────────
     [HideInInspector] public SkillData lastSkillUsed = null;
-    [HideInInspector] public bool      isInStealth   = false;
     [HideInInspector] public string    currentZoneID = "";
 
     [HideInInspector] public bool IsAFK = false;
@@ -185,6 +188,7 @@ public class Player : Entity
         if (equippedSpiritInstances  == null) equippedSpiritInstances  = new List<SpiritInstance>();
         if (unlockedPermanents       == null) unlockedPermanents       = new List<PermanentSkillData>();
         if (unlockedPassives         == null) unlockedPassives         = new List<PassiveSkillData>();
+        if (unlockedRecipes          == null) unlockedRecipes          = new List<RecipeData>();
         if (equippedPassives         == null || equippedPassives.Length != 3) equippedPassives = new PassiveSkillData[3];
 
         activityCounter    = GetComponent<ActivityCounter>();
@@ -332,6 +336,13 @@ public class Player : Entity
     /// Empêche SetStartingSkillBar d'écraser le slot 0 sauvegardé.
     /// </summary>
     [HideInInspector] public bool skillBarRestoredFromSave = false;
+
+    /// <summary>Mis à true par SaveSystem juste avant RestoreItems() (équipement), remis à
+    /// false juste après — fenêtre courte, contrairement à skillBarRestoredFromSave qui
+    /// reste vrai toute la session. Empêche uniquement EquipWeapon() pendant la restauration
+    /// d'écraser le slot 0 déjà posé depuis skillBarSlots ; les équip/déséquip normaux du
+    /// reste de la partie (CharacterPanel...) doivent continuer à mettre à jour RefreshSlot0().</summary>
+    [HideInInspector] public bool isRestoringEquipment = false;
 
     private IEnumerator SetStartingSkillBar()
     {
@@ -538,6 +549,14 @@ public class Player : Entity
         Debug.Log($"[PLAYER] Passive débloquée : {passive.name}");
     }
 
+    public void UnlockRecipe(RecipeData recipe)
+    {
+        if (recipe == null || unlockedRecipes.Contains(recipe)) return;
+        unlockedRecipes.Add(recipe);
+        CraftJournalUI.Instance?.RefreshIfOpen();
+        Debug.Log($"[PLAYER] Recette débloquée : {recipe.name}");
+    }
+
         // ── AJOUTER RefreshSlot0() ────────────────────────────────
     /// <summary>
     /// Met à jour le slot 0 de SkillBar selon l'arme équipée.
@@ -550,9 +569,13 @@ public class Player : Entity
     {
         if (SkillBar.Instance == null) return;
 
-        // Si la save a déjà restauré la SkillBar (ex: pendant LoadItemsDelayed),
-        // on ne touche pas au slot 0 — UnequipAll/EquipItem ne doivent pas écraser.
-        if (skillBarRestoredFromSave) return;
+        // Suppression UNIQUEMENT pendant la restauration d'équipement au chargement
+        // (SaveSystem.RestoreItems() appelle EquipWeapon(), qui ne doit pas écraser le
+        // slot 0 déjà restauré depuis skillBarSlots). isRestoringEquipment est remis à
+        // false juste après par SaveSystem — contrairement à skillBarRestoredFromSave
+        // (permanent pour la session), ce flag-ci ne bloque QUE cette fenêtre précise,
+        // pas les équip/déséquip normaux du reste de la partie (ex: CharacterPanel).
+        if (isRestoringEquipment) return;
  
         // ── Pas d'arme → Unarmed ─────────────────────────────
         if (equippedWeapon == null)
@@ -574,24 +597,33 @@ public class Player : Entity
  
         // ── Arme équipée → BasicAttack de la famille ──────────
         WeaponType family = equippedWeapon.weaponType.GetStartingFamily();
- 
-        // Priorité 1 : skill BasicAttack déjà débloqué et compatible avec cette famille
-        // (le joueur peut avoir débloqué une BasicAttack alternative — ex: BasicAttackFeu)
-        SkillData chosen = unlockedSkills.Find(s =>
-            s != null
+        var        familyRegistry = WeaponTypeRegistry.Instance;
+        SkillData  currentUnarmedSkill = familyRegistry?.GetBasicAttackSkill(WeaponType.UnArmed);
+
+        bool IsCompatible(SkillData s) => s != null
+            && s != currentUnarmedSkill // compatibleWeapons vide = "universel", mais l'UnArmedSkill
+                                         // ne doit jamais survivre à un équipement d'arme réelle
             && (s.skillType == SkillType.BasicAttack || s.HasTag(SkillTag.BasicAttack))
             && (s.compatibleWeapons == null
                 || s.compatibleWeapons.Count == 0
                 || s.compatibleWeapons.Contains(family)
-                || s.compatibleWeapons.Contains(WeaponType.Any)));
- 
-        // Priorité 2 : BasicAttack de départ du registry
+                || s.compatibleWeapons.Contains(WeaponType.Any));
+
+        // Priorité 0 : garder le choix déjà en slot 0 s'il reste compatible avec la
+        // nouvelle arme (ex: switch entre deux Shortsword — le joueur avait choisi la
+        // variante Eau, changer d'arme de la même famille ne doit pas revenir au neutre).
+        SkillData chosen = IsCompatible(SkillBar.Instance.GetSkillAtSlot(0))
+            ? SkillBar.Instance.GetSkillAtSlot(0)
+            : null;
+
+        // Priorité 1 : skill BasicAttack débloqué et compatible avec cette famille
+        // (le joueur peut avoir débloqué une BasicAttack alternative — ex: BasicAttackFeu)
         if (chosen == null)
-        {
-            var registry = WeaponTypeRegistry.Instance;
-            if (registry != null)
-                chosen = registry.GetBasicAttackSkill(family);
-        }
+            chosen = unlockedSkills.Find(IsCompatible);
+
+        // Priorité 2 : BasicAttack de départ du registry
+        if (chosen == null && familyRegistry != null)
+            chosen = familyRegistry.GetBasicAttackSkill(family);
  
         if (chosen != null)
         {
@@ -995,25 +1027,6 @@ public class Player : Entity
     // ÉVÉNEMENTS DIVERS
     // =========================================================
 
-    public void OnEnterZone(string zoneID)
-    {
-        currentZoneID = zoneID;
-        activityCounter.Increment($"ZONE_{zoneID}");
-        GameEventBus.Publish(new ZoneEvent { zoneID = zoneID, timeSpentSeconds = 0f, isAFK = false });
-    }
-
-    public void OnZoneTick(string zoneID, float duration, bool isAFK)
-        => GameEventBus.Publish(new ZoneEvent { zoneID = zoneID, timeSpentSeconds = duration, isAFK = isAFK });
-
-    public void OnItemConsumed(string itemID, bool wastePotion = false)
-        => activityCounter.Increment(wastePotion ? "POTIONS_WASTED" : "POTIONS_USED");
-
-    public void OnItemCrafted(string itemID)
-    {
-        activityCounter.Increment(CounterKeys.CRAFTS_TOTAL);
-        GameEventBus.Publish(new ItemEvent { itemID = itemID, action = ItemAction.Craft, quantity = 1 });
-    }
-
     public void OnItemSold(string itemID, int aeris)
     {
         activityCounter.Increment("ITEMS_SOLD");
@@ -1025,17 +1038,8 @@ public class Player : Entity
     public void OnHdVListingCancelled()      { activityCounter.Increment("HDV_CANCELLATIONS"); AddWorldReputation(-1); }
     public void OnPlayerMet(string playerID) { activityCounter.Increment(CounterKeys.PLAYERS_MET); GameEventBus.Publish(new SocialEvent { action = SocialAction.MeetPlayer, otherPlayerID = playerID }); }
 
-    public void OnActivitySessionCompleted(string activityID)
-    {
-        activityCounter.Increment($"ACTIVITY_{activityID}");
-        int today = activityCounter.GetToday("WORLD_REP_ACTIVITY_DAILY");
-        if (today < 5) { activityCounter.IncrementToday("WORLD_REP_ACTIVITY_DAILY"); AddWorldReputation(1); }
-        GameEventBus.Publish(new MetierEvent { metierID = activityID, actionType = "session_complete", newLevel = 0 });
-    }
-
     public void OnPetCaptured(MobData mob)                  { activityCounter.Increment("PETS_CAPTURED");    GameEventBus.Publish(new PetEvent { action = PetAction.Capture, mob = mob }); }
     public void OnAnimalCaressed(string id)                 { activityCounter.Increment("ANIMALS_CARESSED"); GameEventBus.Publish(new PetEvent { action = PetAction.Talk, npcID = id }); }
-    public void OnMetierAction(string m, string a, int l=0) => GameEventBus.Publish(new MetierEvent { metierID = m, actionType = a, newLevel = l });
     public void OnServerConnect(bool isFirst)               { if (isFirst) activityCounter.Increment("FIRST_ON_SERVER"); GameEventBus.Publish(new ServerEvent { firstConnection = isFirst }); }
 
     // =========================================================
@@ -1047,12 +1051,6 @@ public class Player : Entity
 
     public float GetElementPoints(ElementType element)
         => stats.GetElementalPoints(element);
-
-    /// <summary>
-    /// Réduction de dégâts critiques reçus [0..1].
-    /// Source : StatPoints Défense. Lue par CombatSystem au moment du calcul.
-    /// </summary>
-    public float GetCritDamageReduction() => critDamageReduction;
 
     // =========================================================
     // SETTERS ENTITY spécifiques au joueur

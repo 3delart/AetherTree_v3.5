@@ -11,10 +11,14 @@ using TMPro;
 // une seule différence de contenu : 1 seule ligne de ressource + Aeris (pas
 // de 2e ressource/item spécial ici, GDD §3.4.8 n'en prévoit pas), et un
 // résultat à 3 issues au lieu de 2 (Amélioration/Stagnation/Destruction).
-// Le jet + la mutation de rareté sont délégués à RaritySystem ; la
-// destruction de l'item (retrait inventaire/déséquipement) est gérée ICI,
-// car seul ce script connaît la provenance réelle de l'InventoryItem staged
-// (inventaire vs équipé, voir CharacterPanelUI/EquipmentSlotHandler).
+// Le jet + la mutation de rareté sont délégués à RaritySystem.
+//
+// L'item staged est retiré de InventorySystem DÈS SetStaged() (RarityDropSlot rejette déjà
+// tout ce qui n'est pas dans l'inventaire — jamais un équipement porté) — lisibilité +
+// remis en inventaire si le slot est remplacé, si le panel ferme sans lancer le pari, ou si
+// le joueur re-glisse l'item hors du slot (StagedItemDragSource). À la résolution : Destroyed
+// = déjà retiré, rien à faire de plus ; tout autre résultat = l'item survit (rareté
+// éventuellement mutée en place par RaritySystem) et revient en inventaire.
 // =============================================================
 
 public class RarityUI : MonoBehaviour
@@ -23,6 +27,9 @@ public class RarityUI : MonoBehaviour
 
     [Header("Panel")]
     public GameObject panel;
+
+    [Header("Header")]
+    public TextMeshProUGUI titleText;
 
     [Header("Slot (glisser arme/armure ici)")]
     public Image slotIcon;
@@ -64,6 +71,8 @@ public class RarityUI : MonoBehaviour
         _player = FindObjectOfType<Player>();
         if (gambleButton != null) gambleButton.onClick.AddListener(StartGambleChannel);
         if (closeButton  != null) closeButton.onClick.AddListener(Close);
+        // Drag inversé — re-glisser l'item hors du slot pour le remettre en inventaire.
+        slotIcon?.GetComponent<StagedItemDragSource>()?.Init(() => _staged, OnStagedReturnedToInventory);
         Close();
     }
 
@@ -72,24 +81,53 @@ public class RarityUI : MonoBehaviour
     public void Open()
     {
         if (panel != null) panel.SetActive(true);
+        if (titleText != null) titleText.text = "Rareté";
         InventoryUI.Instance?.Open();
         SetStaged(null);
     }
 
     /// <summary>Annule une canalisation en cours (rien n'est consommé — voir
-    /// OnChannelCancelled) avant de fermer, puis ferme aussi l'inventaire ouvert
-    /// avec le panel.</summary>
+    /// OnChannelCancelled) avant de fermer, remet l'item staged en inventaire s'il y en a
+    /// un (fermer sans lancer le pari ne doit jamais faire "disparaître" l'objet), puis
+    /// ferme aussi l'inventaire ouvert avec le panel.</summary>
     public void Close()
     {
         if (_channeling) ProgressBarUI.Instance?.Cancel();
+        if (_staged != null)
+        {
+            InventorySystem.Instance?.AddItem(_staged);
+            _staged = null;
+        }
         if (panel != null) panel.SetActive(false);
         InventoryUI.Instance?.Close();
     }
 
-    /// <summary>Appelé par RarityDropSlot.OnDrop() — accepte uniquement Weapon/Armor.</summary>
+    /// <summary>Appelé par RarityDropSlot.OnDrop() — accepte uniquement Weapon/Armor déjà
+    /// vérifiés présents dans l'inventaire (jamais équipé, voir RarityDropSlot). Retire
+    /// l'item dès qu'il est posé (lisibilité + rend impossible de le reposer ailleurs — il
+    /// n'est plus dans InventorySystem._items), remet l'ancien staged en inventaire avant
+    /// de le remplacer.</summary>
     public void SetStaged(InventoryItem item)
     {
+        if (_staged != null && _staged != item)
+            InventorySystem.Instance?.AddItem(_staged);
+
         _staged = item;
+
+        if (_staged != null)
+            InventorySystem.Instance?.RemoveItem(_staged);
+
+        SetText(resultText, "");
+        Refresh();
+    }
+
+    /// <summary>Callback de StagedItemDragSource — le joueur a re-glissé l'item du slot vers
+    /// une cellule d'inventaire (le retrait fait par SetStaged est annulé ici).</summary>
+    private void OnStagedReturnedToInventory()
+    {
+        if (_staged == null) return;
+        InventorySystem.Instance?.AddItem(_staged);
+        _staged = null;
         SetText(resultText, "");
         Refresh();
     }
@@ -217,16 +255,23 @@ public class RarityUI : MonoBehaviour
     {
         _channeling = false;
 
+        var stagedItem = _staged;
         RarityGambleResult result;
-        if (_staged?.WeaponInstance != null)
-            result = RaritySystem.Instance?.TryGambleWeapon(_staged.WeaponInstance, _player) ?? RarityGambleResult.InvalidTarget;
-        else if (_staged?.ArmorInstance != null)
-            result = RaritySystem.Instance?.TryGambleArmor(_staged.ArmorInstance, _player) ?? RarityGambleResult.InvalidTarget;
+        if (stagedItem?.WeaponInstance != null)
+            result = RaritySystem.Instance?.TryGambleWeapon(stagedItem.WeaponInstance, _player) ?? RarityGambleResult.InvalidTarget;
+        else if (stagedItem?.ArmorInstance != null)
+            result = RaritySystem.Instance?.TryGambleArmor(stagedItem.ArmorInstance, _player) ?? RarityGambleResult.InvalidTarget;
         else
             result = RarityGambleResult.InvalidTarget;
 
-        if (result == RarityGambleResult.Destroyed)
-            DestroyStagedItem();
+        // L'item a été retiré de l'inventaire dès sa mise en scène (SetStaged) — ici on
+        // décide de son sort final : Destroyed = déjà retiré, rien de plus à faire (perdu).
+        // Tout autre résultat = l'item survit (rareté éventuellement mutée en place par
+        // RaritySystem) et doit revenir dans l'inventaire.
+        if (result != RarityGambleResult.Destroyed && stagedItem != null)
+            InventorySystem.Instance?.AddItem(stagedItem);
+
+        _staged = null;
 
         SetText(resultText, result switch
         {
@@ -238,29 +283,9 @@ public class RarityUI : MonoBehaviour
             _                                   => "",
         });
 
-        if (result == RarityGambleResult.Destroyed)
-            SetStaged(null); // objet détruit — libère le slot
-        else
-            Refresh();
-
+        Refresh();
         CharacterPanelUI.Instance?.Refresh();
         InventoryUI.Instance?.RefreshGrid();
-    }
-
-    /// <summary>Retire l'item staged du jeu — équipé (déséquipe sans le renvoyer en
-    /// inventaire) ou en inventaire (retiré directement, pas de remplacement).</summary>
-    private void DestroyStagedItem()
-    {
-        if (_staged?.WeaponInstance != null)
-        {
-            if (_player.equippedWeaponInstance == _staged.WeaponInstance) _player.UnequipWeapon();
-            else InventorySystem.Instance?.RemoveItem(_staged);
-        }
-        else if (_staged?.ArmorInstance != null)
-        {
-            if (_player.equippedArmorInstance == _staged.ArmorInstance) _player.UnequipArmor();
-            else InventorySystem.Instance?.RemoveItem(_staged);
-        }
     }
 
     private void OnChannelCancelled()

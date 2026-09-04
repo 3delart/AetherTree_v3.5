@@ -704,8 +704,10 @@ public class SkillSystem : MonoBehaviour
         {
             case EntityType.Player:
                 Player p = caster as Player;
-                if (p?.equippedWeaponInstance == null)
-                    return 10f * skill.damageMultiplier;
+                if (p == null) return 0f;
+                // p.equippedWeaponInstance == null (unarmed) → weapon null passé tel quel,
+                // jamais lu dans CalculateDamage (uniquement dans le log désactivé) — le
+                // pipeline complet (ATK scalé au niveau, défense, crit, élémentaire) s'applique.
                 return CombatSystem.Instance.CalculateDamage(
                     p.equippedWeaponInstance,
                     skill,
@@ -811,7 +813,7 @@ public class SkillSystem : MonoBehaviour
                         break;
                     case DebuffData debuff:
                         if (statusSystem.TryApplyDebuff(debuff, player))
-                            Debug.Log($"[EQUIP] {sourceName} → {debuff.effectName} sur {target.entityName}.");
+                            Debug.Log($"[EQUIP] {sourceName} → {debuff.effectName.Get(LocalizationManager.CurrentLanguage)} sur {target.entityName}.");
                         break;
                 }
             }

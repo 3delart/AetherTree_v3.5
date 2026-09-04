@@ -61,7 +61,7 @@ public abstract class ItemData : ScriptableObject
     protected virtual void OnValidate()
     {
         if (string.IsNullOrEmpty(itemID))
-            Debug.LogWarning($"[ItemData] {name} : itemID vide — à remplir avant utilisation en jeu.", this);
+            itemID = name;
     }
 #endif
 }

@@ -340,7 +340,7 @@ public class DialogueUI : MonoBehaviour
     private Color GetPortraitColor(PNJType type) => type switch
     {
         PNJType.Merchant   => colorMerchant,
-        PNJType.Blacksmith => colorBlacksmith,
+        PNJType.Forge      => colorBlacksmith,
         PNJType.Guard      => colorGuard,
         PNJType.Mayor      => colorMayor,
         PNJType.Quest      => colorQuest,

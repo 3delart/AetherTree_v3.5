@@ -11,11 +11,14 @@ using UnityEngine;
 //
 // Types de consommables :
 //   Potion        — restaure HP/Mana, applique un BuffData
+//   Food          — nourriture (Cuisiner) — mêmes champs que Potion, catégorie distincte
 //   DungeonStone  — pierre d'accès à un donjon
 //   TeleportItem  — téléportation vers une zone
-//   Rune          — wrapper pour RuneInstance (géré séparément)
-//   Gem           — wrapper pour GemInstance  (géré séparément)
 //   Other         — effet spécial custom
+//
+// RuneData/GemData ne sont PAS des ConsumableType — ce sont des ScriptableObject à
+// part entière (RuneInstance/GemInstance gérés séparément, voir Data/Inventory/RuneData.cs
+// et GemData.cs), jamais wrappés dans un consommable.
 //
 // Usage :
 //   ConsumableData SO → CreateInstance() → ConsumableInstance
@@ -25,12 +28,13 @@ using UnityEngine;
 public enum ConsumableType
 {
     Potion,       // Restaure HP et/ou Mana, applique un BuffData
+    Food,         // Nourriture (Cuisiner) — mêmes champs que Potion, catégorie distincte
     DungeonStone, // Ouvre l'accès à un donjon spécifique
     TeleportItem, // Téléporte vers une zone
     Other,        // Effet custom
 }
 
-[CreateAssetMenu(fileName = "Consumable_", menuName = "AetherTree/Inventory/ConsumableData")]
+[CreateAssetMenu(fileName = "cons_", menuName = "AetherTree/Inventaire/ConsumableData")]
 public class ConsumableData : ItemData
 {
     // ── Identité ──────────────────────────────────────────────
@@ -38,19 +42,19 @@ public class ConsumableData : ItemData
     public ConsumableType  consumableType = ConsumableType.Potion;
     public GameObject      prefab;
 
-    // ── Potion ────────────────────────────────────────────────
+    // ── Potion / Food — mêmes champs, à plat, pas de sous-section ──
+    [Tooltip("Cooldown avant de pouvoir réutiliser cet objet (secondes).")]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion, ConsumableType.Food)]
+    public float cooldown = 30f;
     [Tooltip("HP restaurés. 0 = pas de soin HP.")]
-    [ShowIf(nameof(consumableType), ConsumableType.Potion, Header = "Potion (si consumableType = Potion)")]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion, ConsumableType.Food)]
     public float healHP   = 0f;
     [Tooltip("Mana restaurée. 0 = pas de soin Mana.")]
-    [ShowIf(nameof(consumableType), ConsumableType.Potion)]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion, ConsumableType.Food)]
     public float healMana = 0f;
-    [Tooltip("Buff appliqué à l'utilisation (optionnel).")]
-    [ShowIf(nameof(consumableType), ConsumableType.Potion)]
+    [Tooltip("Buff appliqué à l'utilisation (optionnel) — sa propre durée est définie sur le BuffData lui-même.")]
+    [ShowIf(nameof(consumableType), ConsumableType.Potion, ConsumableType.Food)]
     public BuffData buffEffect;
-    [Tooltip("Cooldown avant de pouvoir réutiliser cette potion (secondes).")]
-    [ShowIf(nameof(consumableType), ConsumableType.Potion)]
-    public float cooldown = 30f;
 
     // ── Pierre de donjon ──────────────────────────────────────
     [Tooltip("ID du donjon accessible avec cette pierre.")]

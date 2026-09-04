@@ -12,7 +12,7 @@ public class DebuffChecker : ConditionCheckerBase
     [Tooltip("True = n'importe quel debuff reçu")]
     public bool       anyDebuff  = false;
     [Tooltip("Ignoré si anyDebuff est coché")]
-    public DebuffType debuffType = DebuffType.Poison;
+    public DebuffType debuffType = DebuffType.Dot;
 
     public override System.Type RelevantEventType => typeof(DebuffReceivedEvent);
 

@@ -36,7 +36,7 @@ public class AccountProgress
 
     // ── Compteurs cumulés cross-perso ─────────────────────────
     // Même format que activityCountersList dans CharacterProgress —
-    // clés définies dans CounterKeys.cs.
+    // clés définies dans CounterKeys (Utils/ActivityCounter.cs).
     // Mis à jour à chaque Save() en additionnant les deltas du perso actif.
     public List<StringIntPair> accountCountersList = new List<StringIntPair>();
 

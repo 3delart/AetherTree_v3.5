@@ -93,6 +93,22 @@ public class InventoryUI : MonoBehaviour
     public static InventoryItemCell DraggedCell { get; private set; }
     public static InventoryItem     DraggedItem { get; private set; }
 
+    /// <summary>Callback optionnel armé par BeginDragFromExternalSlot() (Fusion/Rareté/
+    /// Forge...) — si non-null, InventoryItemCell.OnDrop() l'appelle à la place du
+    /// "déséquiper" par défaut quand un drag sans DraggedCell atterrit sur la grille
+    /// inventaire. Lu et consommé UNIQUEMENT via ConsumeReturnToSource() (jamais deux fois),
+    /// toujours nettoyé par EndDrag() si jamais consommé (drop hors cible valide).</summary>
+    private static System.Action _onReturnToSource;
+
+    /// <summary>Récupère puis efface le callback de retour armé par BeginDragFromExternalSlot
+    /// (ou null si le drag en cours vient d'ailleurs — équipement, ou pas de drag actif).</summary>
+    public static System.Action ConsumeReturnToSource()
+    {
+        var callback = _onReturnToSource;
+        _onReturnToSource = null;
+        return callback;
+    }
+
     // =========================================================
     // INIT
     // =========================================================
@@ -265,12 +281,15 @@ public class InventoryUI : MonoBehaviour
         if (_inventory == null) _inventory = InventorySystem.Instance;
         if (_player == null) return;
 
+        // Nom capturé AVANT EquipItem() — OnInventoryChanged reconstruit la grille en
+        // synchrone dans EquipItem(), qui remet cell.Item à null (item quitte l'inventaire).
+        string itemName = cell.Item.Name;
         bool success = _inventory?.EquipItem(cell.Item, _player) ?? false;
         if (success)
         {
             GameEventBus.Publish(new StatsChangedEvent { player = _player });
             CharacterPanelUI.Instance?.Refresh();
-            Debug.Log($"[INVENTORY UI] {cell.Item.Name} équipé (double clic).");
+            Debug.Log($"[INVENTORY UI] {itemName} équipé (double clic).");
         }
     }
 
@@ -287,14 +306,28 @@ public class InventoryUI : MonoBehaviour
     /// <summary>Démarre un drag depuis un slot équipé du CharacterPanel.</summary>
     public static void BeginDragEquipped(InventoryItem item)
     {
-        DraggedCell = null;  // pas de cellule source
-        DraggedItem = item;
+        DraggedCell       = null;  // pas de cellule source
+        DraggedItem       = item;
+        _onReturnToSource = null;
+    }
+
+    /// <summary>Démarre un drag depuis un slot de mise en scène externe (Fusion/Rareté/
+    /// Forge...). `onReturned` est appelé UNE fois si le joueur dépose l'item sur une
+    /// cellule d'inventaire (via ConsumeReturnToSource dans InventoryItemCell.OnDrop) — à
+    /// charge de ce callback de vraiment remettre l'item dans InventorySystem et de nettoyer
+    /// la référence locale du panel appelant (_staged, _slot1Item...).</summary>
+    public static void BeginDragFromExternalSlot(InventoryItem item, System.Action onReturned)
+    {
+        DraggedCell       = null;
+        DraggedItem       = item;
+        _onReturnToSource = onReturned;
     }
 
     public static void EndDrag()
     {
-        DraggedCell = null;
-        DraggedItem = null;
+        DraggedCell       = null;
+        DraggedItem       = null;
+        _onReturnToSource = null;
     }
 
     // =========================================================

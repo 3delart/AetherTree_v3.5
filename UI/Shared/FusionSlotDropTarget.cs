@@ -20,6 +20,8 @@ public class FusionSlotDropTarget : MonoBehaviour, IDropHandler
 
     public void OnDrop(PointerEventData eventData)
     {
+        if (FusionUI.Instance != null && FusionUI.Instance.IsChanneling) return;
+
         var item = InventoryUI.DraggedItem;
         if (item == null) return;
 

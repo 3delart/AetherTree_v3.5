@@ -102,10 +102,10 @@ public class UnlockManager : MonoBehaviour
     private System.Action<SocialEvent>         _onSocialAction;
     private System.Action<PetEvent>            _onPetAction;
     private System.Action<TimeEvent>           _onTimeAction;
-    private System.Action<MetierEvent>         _onMetierAction;
     private System.Action<ServerEvent>         _onServerEvent;
     private System.Action<StatsChangedEvent>   _onStatsChanged;
     private System.Action<QuestEvent>          _onQuestAction;
+    private System.Action<RecipeCraftedEvent>  _onRecipeCrafted;
 
     // =========================================================
     // LIFECYCLE
@@ -132,10 +132,10 @@ public class UnlockManager : MonoBehaviour
         _onSocialAction   = e => EvaluateAll(e);
         _onPetAction      = e => EvaluateAll(e);
         _onTimeAction     = e => EvaluateAll(e);
-        _onMetierAction   = e => EvaluateAll(e);
         _onServerEvent    = e => EvaluateAll(e);
         _onStatsChanged   = e => EvaluateAll(e);
         _onQuestAction    = e => EvaluateAll(e);
+        _onRecipeCrafted  = e => EvaluateAll(e);
     }
 
     // Vide _pendingUnlocks une fois par frame — hors du chemin chaud des events
@@ -183,10 +183,10 @@ public class UnlockManager : MonoBehaviour
         GameEventBus.OnSocialAction   += _onSocialAction;
         GameEventBus.OnPetAction      += _onPetAction;
         GameEventBus.OnTimeAction     += _onTimeAction;
-        GameEventBus.OnMetierAction   += _onMetierAction;
         GameEventBus.OnServerEvent    += _onServerEvent;
         GameEventBus.OnStatsChanged   += _onStatsChanged;
         GameEventBus.OnQuestAction    += _onQuestAction;
+        GameEventBus.OnRecipeCrafted  += _onRecipeCrafted;
     }
 
     private void Unsubscribe()
@@ -206,10 +206,10 @@ public class UnlockManager : MonoBehaviour
         GameEventBus.OnSocialAction   -= _onSocialAction;
         GameEventBus.OnPetAction      -= _onPetAction;
         GameEventBus.OnTimeAction     -= _onTimeAction;
-        GameEventBus.OnMetierAction   -= _onMetierAction;
         GameEventBus.OnServerEvent    -= _onServerEvent;
         GameEventBus.OnStatsChanged   -= _onStatsChanged;
         GameEventBus.OnQuestAction    -= _onQuestAction;
+        GameEventBus.OnRecipeCrafted  -= _onRecipeCrafted;
     }
 
     // =========================================================
@@ -504,9 +504,7 @@ public class UnlockManager : MonoBehaviour
         };
         records[condition.conditionID] = record;
 
-        Debug.Log(condition.isHidden
-            ? "[UNLOCK SECRET] Condition mystère débloquée !"
-            : $"[UNLOCK] {condition.displayName} — scope:{condition.GetDominantScope()}");
+        Debug.Log($"[UNLOCK] {condition.displayName} — scope:{condition.GetDominantScope()}");
 
         foreach (var reward in eligibleRewards)
             MailboxSystem.Instance.SendRewardMail(condition, reward);
@@ -549,7 +547,18 @@ public class UnlockManager : MonoBehaviour
         {
             if (string.IsNullOrEmpty(saved.conditionID))         continue;
             if (records.ContainsKey(saved.conditionID))          continue;
-            if (!privateCounters.ContainsKey(saved.conditionID)) continue;
+            if (!privateCounters.ContainsKey(saved.conditionID))
+            {
+                // Condition absente du suivi (plus éligible, ou retirée de allConditions) —
+                // toute progression déjà sauvegardée est droppée ici. Log toujours visible
+                // (pas gated verboseLogs) seulement s'il y avait vraiment quelque chose à
+                // perdre, pour repérer un changement de config qui casse une save existante.
+                bool hadProgress = saved.entryCompleted.Contains(true) || saved.entryCounters.Exists(c => c > 0);
+                if (hadProgress)
+                    Debug.LogWarning($"[UNLOCK] Progression sauvegardée perdue pour '{saved.conditionID}' " +
+                                      "— condition non trackée cette session (plus éligible ou retirée).");
+                continue;
+            }
 
             var counters  = privateCounters[saved.conditionID];
             var completed = completedEntries[saved.conditionID];

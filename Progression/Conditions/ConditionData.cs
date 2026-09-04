@@ -78,17 +78,17 @@ public class ConditionReward
     public RewardType rewardType = RewardType.None;
 
     // ── Skill / Passif ────────────────────────────────────────
-    [Header("Skill / Passif")]
-    [Tooltip("Utilisé si rewardType = Skill ou SkillAndTitle")]
+    [ShowIf(nameof(rewardType), RewardType.Skill, RewardType.SkillAndTitle, Header = "Skill / Passif")]
     public SkillData rewardSkill;
 
     // ── Titre ─────────────────────────────────────────────────
-    [Header("Titre")]
-    [Tooltip("Utilisé si rewardType = Title, SkillAndTitle")]
+    [ShowIf(nameof(rewardType), RewardType.Title, RewardType.SkillAndTitle, Header = "Titre")]
     public string rewardTitle;
 
     // ── Équipement (générique) ────────────────────────────────
-    [Header("Équipement")]
+    [ShowIf(nameof(rewardType), RewardType.Weapon, RewardType.Armor, RewardType.Helmet, RewardType.Gloves,
+        RewardType.Boots, RewardType.Jewelry, RewardType.Spirit, RewardType.CosmeticHead, RewardType.CosmeticBody,
+        RewardType.Card, Header = "Équipement")]
     [Tooltip(
         "Glisser ici le SO d'équipement correspondant au rewardType :\n" +
         "  Weapon      → WeaponData\n" +
@@ -104,32 +104,24 @@ public class ConditionReward
     public ScriptableObject rewardEquipment;
 
     // ── Ressource ─────────────────────────────────────────────
-    [Header("Ressource")]
-    [Tooltip("Utilisé si rewardType = Resource")]
+    [ShowIf(nameof(rewardType), RewardType.Resource, Header = "Ressource")]
     public ResourceData    rewardResource;
-    [Tooltip("Quantité de ressource envoyée")]
+    [ShowIf(nameof(rewardType), RewardType.Resource)]
     public int             rewardResourceQuantity = 1;
 
     // ── Consommable ───────────────────────────────────────────
-    [Header("Consommable")]
-    [Tooltip("Utilisé si rewardType = Consumable")]
+    [ShowIf(nameof(rewardType), RewardType.Consumable, Header = "Consommable")]
     public ConsumableData  rewardConsumable;
-    [Tooltip("Quantité de consommable envoyée")]
+    [ShowIf(nameof(rewardType), RewardType.Consumable)]
     public int             rewardConsumableQuantity = 1;
 
     // ── Pet (string ID — SO à venir) ──────────────────────────
-    [Header("Pet (string ID — SO à venir)")]
-    [Tooltip("Utilisé si rewardType = Pet")]
+    [ShowIf(nameof(rewardType), RewardType.Pet, Header = "Pet (string ID — SO à venir)")]
     public string rewardPetID;
 
-    // ── Recipe (string ID — SO à venir) ───────────────────────
-    [Header("Recipe (string ID — SO à venir)")]
-    [Tooltip("Utilisé si rewardType = Recipe")]
-    public string rewardRecipeID;
-
-    // ── Description mail ──────────────────────────────────────
-    [Header("Description (mail)")]
-    [TextArea] public string rewardDescription;
+    // ── Recette ────────────────────────────────────────────────
+    [ShowIf(nameof(rewardType), RewardType.Recipe, Header = "Recette")]
+    public RecipeData rewardRecipe;
 
     // ── Utilitaires ───────────────────────────────────────────
 
@@ -155,7 +147,7 @@ public class ConditionReward
             case RewardType.Resource:      return rewardResource   != null;
             case RewardType.Consumable:    return rewardConsumable != null;
             case RewardType.Pet:           return !string.IsNullOrEmpty(rewardPetID);
-            case RewardType.Recipe:        return !string.IsNullOrEmpty(rewardRecipeID);
+            case RewardType.Recipe:        return rewardRecipe != null;
             default:                       return true;
         }
     }
@@ -167,7 +159,7 @@ public class ConditionReward
     public T GetEquipment<T>() where T : ScriptableObject => rewardEquipment as T;
 }
 
-[CreateAssetMenu(fileName = "Condition_", menuName = "AetherTree/Progression/ConditionData")]
+[CreateAssetMenu(fileName = "cond_", menuName = "AetherTree/Progression/ConditionData")]
 public class ConditionData : ScriptableObject
 {
     [Header("Identifiant unique")]
@@ -185,13 +177,16 @@ public class ConditionData : ScriptableObject
 
     [Header("Récompenses")]
     public List<ConditionReward> rewards = new List<ConditionReward>();
-    [TextArea] public string rewardDescription;
 
-    [Header("Affichage")]
-    public bool   isHidden = false;
+    // ── Mail (sujet + corps envoyés au déblocage — voir MailboxSystem.SendRewardMail) ──
+    // Secret : pas de champ dédié — le designer choisit lui-même un nom/description
+    // qui ne spoil pas la condition plutôt qu'un mode "caché" séparé.
+    [Header("Mail")]
+    [Tooltip("Nom utilisé dans le sujet du mail.")]
     public string displayName;
-    [TextArea] public string description;
-    public Sprite icon;
+    [TextArea]
+    [Tooltip("Corps du mail.")]
+    public string description;
 
     // ── Utilitaires ───────────────────────────────────────────
 
@@ -226,6 +221,9 @@ public class ConditionData : ScriptableObject
     /// </summary>
     private void OnValidate()
     {
+        if (string.IsNullOrEmpty(conditionID))
+            conditionID = name;
+
         if (rewards == null) return;
         for (int i = 0; i < rewards.Count; i++)
         {

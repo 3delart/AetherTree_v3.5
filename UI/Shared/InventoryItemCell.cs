@@ -158,6 +158,16 @@ public class InventoryItemCell : MonoBehaviour,
         }
         else if (InventoryUI.DraggedCell == null)
         {
+            var returnCallback = InventoryUI.ConsumeReturnToSource();
+            if (returnCallback != null)
+            {
+                // Drop depuis un slot de mise en scène externe (Fusion/Rareté/Forge...) —
+                // le panel appelant sait lui-même remettre l'item en inventaire et nettoyer
+                // sa propre référence (_staged, _slot1Item...), voir BeginDragFromExternalSlot.
+                returnCallback.Invoke();
+                return;
+            }
+
             // Drop depuis slot équipé → déséquipe vers l'inventaire
             var player = UnityEngine.Object.FindObjectOfType<Player>();
             if (player == null) return;

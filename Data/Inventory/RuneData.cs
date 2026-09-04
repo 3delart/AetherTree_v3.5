@@ -48,11 +48,15 @@ public class RuneStatEntry
 
 // =============================================================
 // RuneData SO
+// Hors scope actuel — refonte prévue, CreateAssetMenu retiré volontairement
+// pour ne pas en créer par accident en attendant (voir note-rune-gem-hors-scope.md).
 // =============================================================
-[CreateAssetMenu(fileName = "NewRune", menuName = "AetherTree/Equipment/RuneData")]
 public class RuneData : ScriptableObject
 {
     [Header("Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"rune_\"\n" +
+             "(ex: \"rune_weapon_t2\"). Ne JAMAIS afficher au joueur — voir runeName pour l'affichage.")]
+    public string       runeID;
     public string       runeName = "Rune";
     public Sprite       icon;
 
@@ -179,6 +183,14 @@ public class RuneData : ScriptableObject
 
         return new RuneInstance(this, rolledLevel, rolledRarity, rolledBonuses);
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(runeID))
+            runeID = name;
+    }
+#endif
 }
 
 // =============================================================

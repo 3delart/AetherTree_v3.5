@@ -11,7 +11,7 @@ using UnityEngine;
 // Assets > Create > AetherTree > StatusEffects > BuffData
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewBuff", menuName = "AetherTree/StatusEffects/BuffData")]
+[CreateAssetMenu(fileName = "buff_", menuName = "AetherTree/StatusEffects/BuffData")]
 public class BuffData : StatusEffectData
 {
     [Header("Type de buff")]

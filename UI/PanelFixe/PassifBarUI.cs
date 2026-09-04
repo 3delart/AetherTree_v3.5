@@ -50,6 +50,10 @@ public class PassifBarUI : MonoBehaviour
             if (drop == null) drop = slots[i].AddComponent<SkillDropTarget>();
             drop.slotIndex = i;
             drop.slotType  = SlotType.Passive;
+
+            // Ajoute TooltipTrigger si absent — même pattern que SkillBarUI
+            if (slots[i].GetComponent<TooltipTrigger>() == null)
+                slots[i].AddComponent<TooltipTrigger>();
         }
     }
 
@@ -72,6 +76,21 @@ public class PassifBarUI : MonoBehaviour
     {
         if (_player == null) _player = FindObjectOfType<Player>();
         if (_player == null || index < 0 || index >= 3) return;
+
+        // Retire le passif de tout autre slot où il apparaîtrait déjà — évite un double-proc
+        // (PassiveSkillSystem itère equippedPassives sans déduplication).
+        if (passive != null)
+        {
+            for (int i = 0; i < _player.equippedPassives.Length; i++)
+            {
+                if (i == index) continue;
+                if (_player.equippedPassives[i] == passive)
+                {
+                    _player.equippedPassives[i] = null;
+                    _slotUIs[i]?.SetPassif(null);
+                }
+            }
+        }
 
         _player.equippedPassives[index] = passive;
         _slotUIs[index]?.SetPassif(passive);
@@ -135,6 +154,8 @@ public class PassifSlotBarUI : MonoBehaviour
             passifIcon.color   = Color.white;
             passifIcon.enabled = true;
         }
+
+        GetComponent<TooltipTrigger>()?.SetPassiveSkill(passive);
     }
 
     public void SetCooldown(float remaining, float total)

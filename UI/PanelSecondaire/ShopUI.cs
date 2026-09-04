@@ -6,7 +6,15 @@ using System.Collections.Generic;
 // =============================================================
 // SHOPUI — Interface de shop PNJ
 // Path : Assets/Scripts/UI/PanelSecondaire/ShopUI.cs
-// AetherTree GDD v30 — §19 / §14
+// AetherTree GDD v3.6 — §13.2 / §19 / §14
+//
+// Achat uniquement dans la grille — pas d'onglet Vente. Vendre = glisser un
+// item depuis l'inventaire vers ShopSellDropSlot (même schéma que
+// RarityDropSlot/ForgeDropSlot). Clic sur une cellule = sélection (liseré),
+// aucune action tant que le joueur ne clique pas buyButton (ou double-clic
+// direct sur la cellule, raccourci qui saute la sélection). Ouvre ensuite
+// TransactionConfirmUI — étape Quantité puis étape Confirmation, pas de
+// canalisation (réservée à Craft/Upgrade/Pari).
 // =============================================================
 
 public class ShopUI : MonoBehaviour
@@ -18,45 +26,20 @@ public class ShopUI : MonoBehaviour
     public TextMeshProUGUI aerisText;
     public Button          closeButton;
 
-    [Header("Onglets")]
-    public Button tabBuyButton;
-    public Button tabSellButton;
-
-    [Header("Grille")]
+    [Header("Grille (achat)")]
     public Transform  shopGridContent;
     public GameObject shopCellPrefab;
+    public Button      buyButton;
 
-    [Header("Panel Détail")]
-    public GameObject           detailPanel;
-    public Image                detailIcon;
-    public TextMeshProUGUI      detailNameText;
-    public TextMeshProUGUI      detailDescText;
-    public TextMeshProUGUI      detailPriceText;
-    public Button               btnMinus;
-    public Button               btnPlus;
-    public Button               btnMin;
-    public Button               btnMax;
-    public Slider               quantitySlider;
-    public TMP_InputField       quantityInput;
-    public Button               actionButton;
-    public TextMeshProUGUI      actionButtonText;
-    public TextMeshProUGUI      reputationWarning;
-
-    private static readonly Color TAB_ACTIVE   = new Color(0.35f, 0.22f, 0.65f);
-    private static readonly Color TAB_INACTIVE = new Color(0.15f, 0.15f, 0.25f);
-    private static readonly float[] SELL_MULTIPLIERS = { 1.0f, 1.05f, 1.10f, 1.20f, 1.35f, 1.50f };
+    private const float DOUBLE_CLICK_DELAY = 0.3f; // même valeur que InventoryItemCell
 
     private PNJData  _pnjData;
     private Player   _player;
-    private ShopTab  _activeTab = ShopTab.Buy;
-    private int      _quantity  = 1;
 
-    private ShopEntry     _selectedEntry;
-    private InventoryItem _selectedItem;
+    private ShopEntry  _selectedEntry;
+    private GameObject _selectedCell;
 
     private readonly List<GameObject> _cells = new List<GameObject>();
-
-    private enum ShopTab { Buy, Sell }
 
     // =========================================================
     private void Awake()
@@ -69,34 +52,13 @@ public class ShopUI : MonoBehaviour
     private void Start()
     {
         closeButton?.onClick.AddListener(CloseShop);
-        tabBuyButton?.onClick.AddListener(() => SwitchTab(ShopTab.Buy));
-        tabSellButton?.onClick.AddListener(() => SwitchTab(ShopTab.Sell));
-        btnMinus?.onClick.AddListener(() => ChangeQuantity(-1));
-        btnPlus?.onClick.AddListener(() => ChangeQuantity(1));
-        btnMin?.onClick.AddListener(() => SetQuantity(1));
-        btnMax?.onClick.AddListener(() => SetQuantity(GetMaxQuantity()));
-        actionButton?.onClick.AddListener(OnActionClicked);
-
-
-        // Slider → met à jour la quantité
-        if (quantitySlider != null)
+        buyButton?.onClick.AddListener(() =>
         {
-            quantitySlider.wholeNumbers = true;
-            quantitySlider.minValue     = 1;
-            quantitySlider.onValueChanged.AddListener(OnSliderChanged);
-        }
-
-        // InputField → met à jour la quantité
-        if (quantityInput != null)
-        {
-            quantityInput.contentType = TMP_InputField.ContentType.IntegerNumber;
-            quantityInput.onEndEdit.AddListener(OnInputChanged);
-        }
+            if (_selectedEntry != null) OpenQuantityStep(_selectedEntry);
+        });
 
         if (AerisSystem.Instance != null)
             AerisSystem.Instance.OnAerisChanged += RefreshAeris;
-
-        ClearDetail();
     }
 
     private void OnDestroy()
@@ -112,16 +74,14 @@ public class ShopUI : MonoBehaviour
     public void OpenShop(PNJData pnjData, Player player)
     {
         if (pnjData == null || player == null) return;
-        _pnjData  = pnjData;
-        _player   = player;
-        _quantity = 1;
+        _pnjData = pnjData;
+        _player  = player;
 
         gameObject.SetActive(true);
         if (shopTitleText != null) shopTitleText.text = pnjData.pnjName;
 
         RefreshAeris(AerisSystem.Instance?.Aeris ?? 0);
-        SwitchTab(ShopTab.Buy);
-        ClearDetail();
+        RefreshGrid();
 
         // Ouvre l'inventaire du joueur automatiquement
         InventoryUI.Instance?.Open();
@@ -131,52 +91,25 @@ public class ShopUI : MonoBehaviour
     {
         gameObject.SetActive(false);
         InventoryUI.Instance?.Close();
-        _pnjData       = null;
-        _player        = null;
-        _selectedEntry = null;
-        _selectedItem  = null;
+        TransactionConfirmUI.Instance?.Close();
+        _pnjData = null;
+        _player  = null;
         ClearGrid();
-        ClearDetail();
     }
 
     // =========================================================
-    // ONGLETS
-    // =========================================================
-
-    private void SwitchTab(ShopTab tab)
-    {
-        _activeTab     = tab;
-        _selectedEntry = null;
-        _selectedItem  = null;
-        _quantity      = 1;
-
-        if (tabBuyButton  != null) tabBuyButton .image.color = tab == ShopTab.Buy  ? TAB_ACTIVE : TAB_INACTIVE;
-        if (tabSellButton != null) tabSellButton.image.color = tab == ShopTab.Sell ? TAB_ACTIVE : TAB_INACTIVE;
-
-        ClearDetail();
-        RefreshGrid();
-    }
-
-    // =========================================================
-    // GRILLE
+    // GRILLE (achat uniquement)
     // =========================================================
 
     private void RefreshGrid()
     {
         ClearGrid();
+        _selectedEntry = null;
+        _selectedCell  = null;
+        if (buyButton != null) buyButton.interactable = false;
         if (_pnjData == null || shopCellPrefab == null || shopGridContent == null) return;
 
-        if (_activeTab == ShopTab.Buy) BuildBuyGrid();
-        else                           BuildSellGrid();
-    }
-
-    private void BuildBuyGrid()
-    {
-        var allEntries = new List<ShopEntry>();
-        if (_pnjData.shopItems  != null) allEntries.AddRange(_pnjData.shopItems);
-        if (_pnjData.shopSkills != null) allEntries.AddRange(_pnjData.shopSkills);
-
-        foreach (ShopEntry entry in allEntries)
+        foreach (ShopEntry entry in _pnjData.shopItems)
         {
             if (entry?.item == null) continue;
 
@@ -186,64 +119,89 @@ public class ShopUI : MonoBehaviour
             bool locked           = reputationLocked || exhausted;
 
             Sprite icon = GetEntryIcon(entry);
-            string name = GetEntryName(entry);
-            string desc = GetEntryDesc(entry);
 
-            // Label affiché sous l'icône
-            string priceLabel = exhausted ? "Acheté" : null;
-
-            // Aperçu pour le tooltip au survol — instance jetable (ResolveItemFromEntry,
-            // déjà utilisée à l'achat) pour les items, SkillData/PermanentSkillData
-            // directement pour les sorts (pas d'instance à rouler, ce sont déjà des SO).
+            // Aperçu pour le tooltip au survol (TooltipTrigger) — instance jetable pour
+            // les items, SkillData/PermanentSkillData/PassiveSkillData directement.
             InventoryItem      previewItem      = ResolveItemFromEntry(entry);
             SkillData          previewSkill     = entry.item as SkillData;
             PermanentSkillData previewPermanent = entry.item as PermanentSkillData;
             PassiveSkillData   previewPassive   = entry.item as PassiveSkillData;
 
             var capturedEntry = entry;
-            var capturedIcon  = icon;
-            var capturedName  = name;
-            var capturedDesc  = desc;
 
-            SpawnCell(
+            GameObject cell = SpawnCell(
                 icon                 : icon,
                 price                : entry.aerisCost,
                 locked               : locked,
                 exhausted            : exhausted,
-                priceLabel           : priceLabel,
+                priceLabel           : exhausted ? "Acheté" : null,
                 tooltipItem          : previewItem,
                 tooltipSkill         : previewSkill,
                 tooltipPermanentSkill: previewPermanent,
-                tooltipPassiveSkill  : previewPassive,
-                onSelect             : () => SelectBuyEntry(capturedEntry, capturedIcon, capturedName, capturedDesc)
+                tooltipPassiveSkill  : previewPassive
             );
+
+            if (locked) continue;
+
+            var btn = cell.GetComponent<Button>() ?? cell.GetComponentInChildren<Button>();
+            if (btn == null) continue;
+
+            // Simple clic = sélection seulement (idempotent, aucune action irréversible) —
+            // un double-clic peut donc être détecté nativement sans risque de double
+            // déclenchement : le 1er clic sélectionne, le 2e (dans le délai) enchaîne direct
+            // sur la popup Quantité, sans passer par buyButton.
+            var capturedCell = cell;
+            float lastClickTime = -10f;
+            btn.onClick.AddListener(() =>
+            {
+                bool isDoubleClick = Time.unscaledTime - lastClickTime < DOUBLE_CLICK_DELAY;
+                lastClickTime = Time.unscaledTime;
+
+                Debug.Log($"[SHOP-DEBUG] Clic reçu sur '{capturedCell.name}' (doubleClick={isDoubleClick}).");
+                SelectEntry(capturedEntry, capturedCell);
+                if (isDoubleClick) OpenQuantityStep(capturedEntry);
+            });
         }
     }
 
-    private void BuildSellGrid()
+    /// <summary>Sélectionne une cellule (liseré) — aucune action tant que buyButton
+    /// n'est pas cliqué (ou double-clic direct sur la cellule).</summary>
+    private void SelectEntry(ShopEntry entry, GameObject cell)
     {
-        if (InventorySystem.Instance == null) return;
-
-        foreach (InventoryItem item in InventorySystem.Instance.GetAllItems())
-        {
-            if (item == null) continue;
-            int sellPrice = GetSellPrice(item);
-            if (sellPrice <= 0) continue;
-
-            var captured = item;
-            SpawnCell(
-                icon        : item.Icon,
-                price       : sellPrice,
-                locked      : false,
-                tooltipItem : item,
-                onSelect    : () => SelectSellItem(captured, sellPrice)
-            );
-        }
+        if (_selectedCell != null) SetCellSelected(_selectedCell, false);
+        _selectedEntry = entry;
+        _selectedCell  = cell;
+        SetCellSelected(cell, true);
+        if (buyButton != null) buyButton.interactable = true;
     }
 
-    private void SpawnCell(Sprite icon, int price, bool locked, bool exhausted = false, string priceLabel = null,
+    private void SetCellSelected(GameObject cell, bool selected)
+    {
+        var outline = cell.transform.Find("SelectedOutline");
+        if (outline != null) outline.gameObject.SetActive(selected);
+        else Debug.LogWarning($"[SHOP-DEBUG] 'SelectedOutline' introuvable sur la cellule '{cell.name}'.");
+    }
+
+    private void OpenQuantityStep(ShopEntry entry)
+    {
+        if (entry == null) return;
+
+        int maxQty = !entry.isUnlimitedStock
+            ? (ShopStockRegistry.Instance?.GetRemainingStock(_pnjData.pnjName, entry) ?? entry.stockCount)
+            : 99;
+        if (maxQty <= 0) return;
+
+        TransactionConfirmUI.Instance?.OpenBuyFlow(
+            itemName : GetEntryName(entry),
+            unitPrice: entry.aerisCost,
+            maxQty   : maxQty,
+            onConfirm: quantity => BuyEntry(entry, quantity)
+        );
+    }
+
+    private GameObject SpawnCell(Sprite icon, int price, bool locked, bool exhausted = false, string priceLabel = null,
         InventoryItem tooltipItem = null, SkillData tooltipSkill = null, PermanentSkillData tooltipPermanentSkill = null,
-        PassiveSkillData tooltipPassiveSkill = null, System.Action onSelect = null)
+        PassiveSkillData tooltipPassiveSkill = null)
     {
         var go = Instantiate(shopCellPrefab, shopGridContent);
         _cells.Add(go);
@@ -254,7 +212,8 @@ public class ShopUI : MonoBehaviour
         else if (tooltipPermanentSkill != null) trigger?.SetPermanentSkill(tooltipPermanentSkill);
         else if (tooltipPassiveSkill   != null) trigger?.SetPassiveSkill(tooltipPassiveSkill);
 
-        var iconImg = go.GetComponent<Image>();
+        // Icône sur l'enfant "Icon" — pas la racine (qui porte le Button/le fond de cellule).
+        var iconImg = go.transform.Find("Icon")?.GetComponent<Image>() ?? go.GetComponent<Image>();
         if (iconImg != null)
         {
             iconImg.sprite = icon;
@@ -287,14 +246,19 @@ public class ShopUI : MonoBehaviour
         if (exhaustedOverlay != null)
             exhaustedOverlay.gameObject.SetActive(exhausted);
 
-        // Cherche le Button sur la racine OU dans les enfants
+        // Cherche le Button sur la racine OU dans les enfants — interactable/listener
+        // gérés par l'appelant (RefreshGrid), pas ici.
         var btn = go.GetComponent<Button>() ?? go.GetComponentInChildren<Button>();
         if (btn != null)
         {
             btn.interactable = !locked;
             btn.onClick.RemoveAllListeners();
-            if (!locked && onSelect != null) btn.onClick.AddListener(() => onSelect());
         }
+
+        var selectedOutline = go.transform.Find("SelectedOutline");
+        if (selectedOutline != null) selectedOutline.gameObject.SetActive(false);
+
+        return go;
     }
 
     private void ClearGrid()
@@ -304,253 +268,125 @@ public class ShopUI : MonoBehaviour
     }
 
     // =========================================================
-    // SÉLECTION
+    // ACHAT
     // =========================================================
 
-    private void SelectBuyEntry(ShopEntry entry, Sprite icon, string name, string desc)
+    private void BuyEntry(ShopEntry entry, int quantity)
     {
-        _selectedEntry = entry;
-        _selectedItem  = null;
-        _quantity      = 1;
+        if (entry == null || _player == null || quantity <= 0) return;
 
-        if (detailPanel != null) detailPanel.SetActive(true);
-
-        SetDetailIcon(icon);
-        SetText(detailNameText,   name);
-        SetText(detailDescText,   desc);
-        SetText(actionButtonText, "Acheter");
-
-        int max = !entry.isUnlimitedStock
-            ? (ShopStockRegistry.Instance?.GetRemainingStock(_pnjData.pnjName, entry) ?? entry.stockCount)
-            : 99;
-        SetQuantityRange(max);
-        SetQuantity(1);
-        RefreshBuyPrice();
-        HideReputationWarning();
-    }
-
-    private void SelectSellItem(InventoryItem item, int unitPrice)
-    {
-        _selectedItem  = item;
-        _selectedEntry = null;
-
-        if (detailPanel != null) detailPanel.SetActive(true);
-
-        SetDetailIcon(item.Icon);
-        SetText(detailNameText,   item.DisplayNameRich);
-        SetText(detailDescText,   GetItemDescription(item));
-        SetText(actionButtonText, "Vendre");
-
-        int max = GetAvailableQuantity(item);
-        SetQuantityRange(max);
-        SetQuantity(1);
-        RefreshSellPrice(unitPrice);
-        HideReputationWarning();
-    }
-
-    // =========================================================
-    // QUANTITÉ
-    // =========================================================
-
-    private void ChangeQuantity(int delta)
-    {
-        SetQuantity(_quantity + delta);
-    }
-
-    private void OnSliderChanged(float value)
-    {
-        int val = Mathf.RoundToInt(value);
-        if (val == _quantity) return; // évite la boucle slider↔input
-        SetQuantity(val);
-    }
-
-    private void OnInputChanged(string text)
-    {
-        if (int.TryParse(text, out int val))
-            SetQuantity(val);
-        else
-            RefreshQuantityDisplay(); // remet la valeur valide
-    }
-
-    private void SetQuantity(int value)
-    {
-        int max = GetMaxQuantity();
-        _quantity = Mathf.Clamp(value, 1, max);
-        RefreshQuantityDisplay();
-
-        if (_activeTab == ShopTab.Buy)  RefreshBuyPrice();
-        else if (_selectedItem != null) RefreshSellPrice(GetSellPrice(_selectedItem));
-    }
-
-    private int GetMaxQuantity()
-    {
-        if (_activeTab == ShopTab.Buy && _selectedEntry != null && !_selectedEntry.isUnlimitedStock)
-        {
-            return ShopStockRegistry.Instance?.GetRemainingStock(_pnjData.pnjName, _selectedEntry)
-                ?? _selectedEntry.stockCount;
-        }
-        if (_activeTab == ShopTab.Sell && _selectedItem != null)
-            return GetAvailableQuantity(_selectedItem);
-        return 99;
-    }
-
-    private void RefreshQuantityDisplay()
-    {
-        // InputField — évite de retriggerer OnInputChanged
-        if (quantityInput != null && !quantityInput.isFocused)
-            quantityInput.SetTextWithoutNotify(_quantity.ToString());
-
-        // Slider — évite de retriggerer OnSliderChanged
-        if (quantitySlider != null)
-        {
-            quantitySlider.SetValueWithoutNotify(_quantity);
-        }
-    }
-
-    private void SetQuantityRange(int max)
-    {
-        if (quantitySlider != null)
-        {
-            quantitySlider.minValue = 1;
-            quantitySlider.maxValue = Mathf.Max(1, max);
-        }
-    }
-
-    private void RefreshBuyPrice()
-    {
-        if (_selectedEntry == null) return;
-        int unit  = _selectedEntry.aerisCost;
-        int total = unit * _quantity;
-        bool canAfford = (AerisSystem.Instance?.Aeris ?? 0) >= total;
-        SetText(detailPriceText, $"{unit} × {_quantity} = {total} ¤");
-        if (detailPriceText != null)
-            detailPriceText.color = canAfford ? new Color(1f, 0.85f, 0.2f) : new Color(0.9f, 0.3f, 0.3f);
-        if (actionButton != null)
-            actionButton.interactable = canAfford;
-    }
-
-    private void RefreshSellPrice(int unitPrice)
-    {
-        int total = unitPrice * _quantity;
-        SetText(detailPriceText, $"{unitPrice} × {_quantity} = +{total} ¤");
-        if (detailPriceText != null)
-            detailPriceText.color = new Color(0.4f, 0.9f, 0.4f);
-        // Toujours réactiver le bouton en mode Sell — RefreshBuyPrice peut l'avoir
-        // désactivé si le joueur n'avait pas assez d'Aeris lors du dernier Buy.
-        if (actionButton != null)
-            actionButton.interactable = true;
-    }
-
-    // =========================================================
-    // ACTION — Acheter / Vendre
-    // =========================================================
-
-    private void OnActionClicked()
-    {
-        if (_activeTab == ShopTab.Buy) BuySelected();
-        else                           SellSelected();
-    }
-
-    private void BuySelected()
-    {
-        if (_selectedEntry == null || _player == null) return;
-
-        int total = _selectedEntry.aerisCost * _quantity;
+        int total = entry.aerisCost * quantity;
         if (!(AerisSystem.Instance?.Spend(total) ?? false))
         {
             Debug.Log("[SHOP] Aeris insuffisants.");
             return;
         }
 
-        if (_selectedEntry.item is SkillData skill)
+        if (entry.item is SkillData skill)
         {
             _player.UnlockSkill(skill);
             FloatingText.Spawn($"Skill débloqué !", _player.transform.position, new Color(0.6f, 0.4f, 1f));
         }
-        else if (_selectedEntry.item is PermanentSkillData permanent)
+        else if (entry.item is PermanentSkillData permanent)
         {
             _player.UnlockPermanent(permanent);
             FloatingText.Spawn($"Passif débloqué !", _player.transform.position, new Color(0.6f, 0.4f, 1f));
         }
-        else if (_selectedEntry.item is PassiveSkillData passive)
+        else if (entry.item is PassiveSkillData passive)
         {
             _player.UnlockPassive(passive);
             FloatingText.Spawn($"Passif débloqué !", _player.transform.position, new Color(0.6f, 0.4f, 1f));
         }
         else
         {
-            for (int i = 0; i < _quantity; i++)
+            for (int i = 0; i < quantity; i++)
             {
-                InventoryItem item = ResolveItemFromEntry(_selectedEntry);
+                InventoryItem item = ResolveItemFromEntry(entry);
                 if (item != null) InventorySystem.Instance?.AddItem(item);
             }
         }
 
-        if (!_selectedEntry.isUnlimitedStock)
+        if (!entry.isUnlimitedStock)
         {
-            ShopStockRegistry.Instance?.RecordPurchase(_pnjData.pnjName, _selectedEntry, _quantity);
-            _selectedEntry.stockCount -= _quantity;
-            if (_selectedEntry.stockCount <= 0)
-            {
-                ClearDetail();
-                RefreshGrid();
-                return;
-            }
+            ShopStockRegistry.Instance?.RecordPurchase(_pnjData.pnjName, entry, quantity);
+            entry.stockCount -= quantity;
         }
 
         FloatingText.Spawn($"-{total} ¤", _player.transform.position, new Color(0.9f, 0.3f, 0.3f));
-        RefreshBuyPrice();
-        Debug.Log($"[SHOP] Acheté ×{_quantity} {_selectedEntry.item?.name} pour {total} ¤");
+        Debug.Log($"[SHOP] Acheté ×{quantity} {entry.item?.name} pour {total} ¤");
+        RefreshGrid();
     }
 
-    private void SellSelected()
+    // =========================================================
+    // VENTE — drop depuis l'inventaire (voir ShopSellDropSlot)
+    // =========================================================
+
+    /// <summary>Appelé par ShopSellDropSlot.OnDrop() — ouvre le flux Quantité → Confirmation,
+    /// quantité bornée à celle possédée.</summary>
+    public void OnSellDropped(InventoryItem item)
     {
-        if (_selectedItem == null || _player == null) return;
+        if (item == null || _player == null) return;
 
-        // ── Vérification quantité disponible ─────────────────
-        int available = GetAvailableQuantity(_selectedItem);
+        int sellPrice = GetSellPrice(item);
+        if (sellPrice <= 0)
+        {
+            Debug.Log("[SHOP] Cet objet ne peut pas être vendu.");
+            return;
+        }
+
+        int maxQty = GetAvailableQuantity(item);
+        if (maxQty <= 0) return;
+
+        TransactionConfirmUI.Instance?.OpenSellFlow(
+            itemName : item.DisplayNameRich,
+            unitPrice: sellPrice,
+            maxQty   : maxQty,
+            onConfirm: quantity => SellItem(item, quantity)
+        );
+    }
+
+    private void SellItem(InventoryItem item, int quantity)
+    {
+        if (item == null || _player == null || quantity <= 0) return;
+
+        int available = GetAvailableQuantity(item);
         if (available <= 0) return;
-        _quantity = Mathf.Min(_quantity, available);
+        quantity = Mathf.Min(quantity, available);
 
-        int unitPrice = GetSellPrice(_selectedItem);
-        int total     = unitPrice * _quantity;
+        int unitPrice = GetSellPrice(item);
+        int total     = unitPrice * quantity;
 
         // ── Retrait du stock ──────────────────────────────────
         bool removed = false;
 
-        if (_selectedItem.ResourceInstance != null)
+        if (item.ResourceInstance != null)
         {
-            removed = _selectedItem.ResourceInstance.Remove(_quantity);
-            // Si le stack est vide, retirer l'item de l'inventaire
-            if (_selectedItem.ResourceInstance.IsEmpty)
-                InventorySystem.Instance?.RemoveItem(_selectedItem);
+            removed = item.ResourceInstance.Remove(quantity);
+            if (item.ResourceInstance.IsEmpty)
+                InventorySystem.Instance?.RemoveItem(item);
         }
-        else if (_selectedItem.ConsumableInstance != null)
+        else if (item.ConsumableInstance != null)
         {
-            removed = _selectedItem.ConsumableInstance.Remove(_quantity);
-            if (_selectedItem.ConsumableInstance.IsEmpty)
-                InventorySystem.Instance?.RemoveItem(_selectedItem);
+            removed = item.ConsumableInstance.Remove(quantity);
+            if (item.ConsumableInstance.IsEmpty)
+                InventorySystem.Instance?.RemoveItem(item);
         }
         else
         {
             // Équipement — vend 1 seul
-            removed = InventorySystem.Instance?.RemoveItem(_selectedItem) ?? false;
+            removed = InventorySystem.Instance?.RemoveItem(item) ?? false;
         }
 
         if (!removed) return;
 
         AerisSystem.Instance?.Add(total);
         FloatingText.Spawn($"+{total} ¤", _player.transform.position, new Color(0.4f, 0.9f, 0.4f));
-        _player.OnItemSold(_selectedItem.Name, total);
+        _player.OnItemSold(item.Name, total);
 
-        Debug.Log($"[SHOP] Vendu ×{_quantity} {_selectedItem.Name} pour {total} ¤");
+        Debug.Log($"[SHOP] Vendu ×{quantity} {item.Name} pour {total} ¤");
 
-        // Refresh inventaire immédiatement
         InventorySystem.Instance?.OnInventoryChanged?.Invoke();
         InventoryUI.Instance?.RefreshGrid();
-
-        ClearDetail();
-        RefreshGrid();
     }
 
     /// <summary>Quantité réellement disponible pour la vente.</summary>
@@ -581,8 +417,8 @@ public class ShopUI : MonoBehaviour
             case ConsumableData cd: return new InventoryItem(cd.CreateInstance());
             case ResourceData rd:   return new InventoryItem(rd.CreateInstance());
             case SkillData:             return null;
-            case PermanentSkillData:    return null; // géré dans BuySelected
-            case PassiveSkillData:      return null; // géré dans BuySelected
+            case PermanentSkillData:    return null; // géré dans BuyEntry
+            case PassiveSkillData:      return null; // géré dans BuyEntry
             default:
                 Debug.LogWarning($"[SHOP] Type SO non géré : {entry.item.GetType().Name}");
                 return null;
@@ -624,18 +460,6 @@ public class ShopUI : MonoBehaviour
         }
     }
 
-    private string GetEntryDesc(ShopEntry entry)
-    {
-        switch (entry.item)
-        {
-            case ItemData id:           return id.description.Get(LocalizationManager.CurrentLanguage);
-            case SkillData sd:          return sd.description.Get(LocalizationManager.CurrentLanguage);
-            case PermanentSkillData pd: return !pd.description.IsEmpty ? pd.description.Get(LocalizationManager.CurrentLanguage) : pd.GetBonusSummary();
-            case PassiveSkillData psd:  return psd.description.Get(LocalizationManager.CurrentLanguage);
-            default:                    return "";
-        }
-    }
-
     // =========================================================
     // PRIX DE VENTE
     // =========================================================
@@ -658,6 +482,8 @@ public class ShopUI : MonoBehaviour
     /// arme/armure.</summary>
     private int RarityAdjustedSellPrice(int vendorPrice, int rarityRank)
         => Mathf.RoundToInt(vendorPrice * (1f + rarityRank * 0.10f));
+
+    private static readonly float[] SELL_MULTIPLIERS = { 1.0f, 1.05f, 1.10f, 1.20f, 1.35f, 1.50f };
 
     private int GetSellPrice(InventoryItem item)
     {
@@ -697,45 +523,5 @@ public class ShopUI : MonoBehaviour
     private void RefreshAeris(int amount)
     {
         if (aerisText != null) aerisText.text = $"{amount:N0} ¤";
-        if (_activeTab == ShopTab.Buy && _selectedEntry != null) RefreshBuyPrice();
-    }
-
-    private void SetDetailIcon(Sprite sprite)
-    {
-        if (detailIcon == null) return;
-        detailIcon.sprite  = sprite;
-        detailIcon.enabled = sprite != null;
-    }
-
-    private string GetItemDescription(InventoryItem item)
-    {
-        if (item == null) return "";
-        Language lang = LocalizationManager.CurrentLanguage;
-        if (item.WeaponInstance?.data     != null) return item.WeaponInstance.data.description.Get(lang);
-        if (item.ArmorInstance?.data      != null) return item.ArmorInstance.data.description.Get(lang);
-        if (item.HelmetInstance?.data     != null) return item.HelmetInstance.data.description.Get(lang);
-        if (item.GlovesInstance?.data     != null) return item.GlovesInstance.data.description.Get(lang);
-        if (item.BootsInstance?.data      != null) return item.BootsInstance.data.description.Get(lang);
-        if (item.ConsumableInstance?.data != null) return item.ConsumableInstance.data.description.Get(lang);
-        if (item.ResourceInstance?.data   != null) return item.ResourceInstance.data.description.Get(lang);
-        return "";
-    }
-
-    private void ClearDetail()
-    {
-        if (detailPanel != null) detailPanel.SetActive(false);
-        _selectedEntry = null;
-        _selectedItem  = null;
-        _quantity      = 1;
-    }
-
-    private void HideReputationWarning()
-    {
-        if (reputationWarning != null) reputationWarning.gameObject.SetActive(false);
-    }
-
-    private void SetText(TextMeshProUGUI label, string value)
-    {
-        if (label != null) label.text = value ?? "";
     }
 }

@@ -221,7 +221,8 @@ public class SavedMail
     public string rewardConsumableName;     // nom du SO ConsumableData
     public int    rewardConsumableQuantity;
     public string rewardPetID;              // string ID — SO à venir
-    public string rewardRecipeID;           // string ID — SO à venir
+    public string rewardRecipeID;           // nom du SO RecipeData — string volontairement (mail déjà
+                                             // en boîte doit rester lisible même si l'asset est renommé)
     public string rewardDescription;
 }
 
@@ -232,14 +233,6 @@ public class StringIntPair
     public string key;
     public int    value;
     public StringIntPair(string k, int v) { key = k; value = v; }
-}
-
-[System.Serializable]
-public class StringFloatPair
-{
-    public string key;
-    public float  value;
-    public StringFloatPair(string k, float v) { key = k; value = v; }
 }
 
 // =============================================================
@@ -296,6 +289,7 @@ public class CharacterProgress
     public List<string> unlockedSkillNames      = new List<string>();
     public List<string> unlockedPermanentNames  = new List<string>(); // PermanentSkillData
     public List<string> unlockedPassiveNames    = new List<string>(); // PassiveSkillData
+    public List<string> unlockedRecipeNames     = new List<string>(); // RecipeData
 
     // ⑦ Slots SkillBar (0–9)
     public List<SavedSkillSlot> skillBarSlots = new List<SavedSkillSlot>();
@@ -303,6 +297,10 @@ public class CharacterProgress
     // ⑦Bis Slots PassifBar (P1-P3) — les 3 PassiveSkillData réellement équipés,
     // distinct de unlockedPassiveNames (le pool possédé, voir ⑥)
     public List<SavedSkillSlot> passifBarSlots = new List<SavedSkillSlot>();
+
+    // ⑦Ter Slots ConsoBar (0-2) — SavedSkillSlot réutilisé (slotIndex + nom du SO),
+    // skillName contient ici un nom de ConsumableData, pas un skill.
+    public List<SavedSkillSlot> consoBarSlots = new List<SavedSkillSlot>();
 
     // ⑧ Conditions débloquées
     public List<string> unlockedConditionIDs = new List<string>();

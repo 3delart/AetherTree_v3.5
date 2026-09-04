@@ -182,17 +182,12 @@ public class ConditionDataEditor : Editor
         EditorGUILayout.PropertyField(
             serializedObject.FindProperty("rewards"),
             new GUIContent("Rewards"), true);
-        EditorGUILayout.PropertyField(
-            serializedObject.FindProperty("rewardDescription"),
-            new GUIContent("Description globale"));
 
-        // ── Affichage ─────────────────────────────────────────
+        // ── Mail ──────────────────────────────────────────────
         EditorGUILayout.Space(12);
-        DrawSectionLabel("AFFICHAGE");
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("isHidden"),    new GUIContent("Caché"));
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("displayName"), new GUIContent("Nom affiché"));
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("description"), new GUIContent("Description"));
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("icon"),        new GUIContent("Icône"));
+        DrawSectionLabel("MAIL");
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("displayName"), new GUIContent("Nom (sujet du mail)"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("description"), new GUIContent("Description (corps du mail)"));
 
         serializedObject.ApplyModifiedProperties();
     }

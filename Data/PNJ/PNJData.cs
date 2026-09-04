@@ -23,11 +23,14 @@ using System.Collections.Generic;
 // Créer via : Assets > Create > AetherTree > PNJ > PNJData
 // =============================================================
 
-[CreateAssetMenu(fileName = "PNJ_New", menuName = "AetherTree/PNJ/PNJData")]
+[CreateAssetMenu(fileName = "pnj_", menuName = "AetherTree/PNJ/PNJData")]
 public class PNJData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"pnj_\"\n" +
+             "(ex: \"pnj_forgeron_braven\"). Ne JAMAIS afficher au joueur — voir pnjName pour l'affichage.")]
+    public string  pnjID;
     public string  pnjName = "PNJ";
     public PNJType pnjType = PNJType.Decorative;
     public Sprite  portrait;
@@ -40,11 +43,15 @@ public class PNJData : ScriptableObject
     [Tooltip("Rang de Réputation Monde minimum pour le dialogue premium (0 = désactivé)")]
     public int reputationDialogueThreshold = 0;
 
-    // ── Marchand ──────────────────────────────────────────────
-    [ShowIf(nameof(pnjType), PNJType.Merchant, Header = "Marchand (PNJType.Merchant)")]
-    public List<ShopEntry> shopItems  = new List<ShopEntry>();
-    [ShowIf(nameof(pnjType), PNJType.Merchant)]
-    public List<ShopEntry> shopSkills = new List<ShopEntry>();
+    // ── Boutique — tout PNJType.HasShop() (modèle composable §13.2) ─────────
+    // Une seule liste — ShopEntry.item est un ScriptableObject générique (WeaponData,
+    // ResourceData, SkillData, PermanentSkillData, PassiveSkillData...), ShopUI dispatch
+    // déjà par type. Un PNJ "coach" qui vend des skills utilise cette même liste, glisser
+    // les SkillData dedans — pas de liste séparée.
+    [ShowIf(nameof(pnjType), PNJType.Merchant, PNJType.Forge, PNJType.Antiquarian,
+        PNJType.Cordonnier, PNJType.Cook, PNJType.Tinkerer, PNJType.Jeweler, PNJType.Hatter,
+        PNJType.CraftStation, Header = "Boutique (PNJType.HasShop())")]
+    public List<ShopEntry> shopItems = new List<ShopEntry>();
 
     // ── Antiquaire ────────────────────────────────────────────
     [ShowIf(nameof(pnjType), PNJType.Antiquarian, Header = "Antiquaire (PNJType.Antiquarian)")]
@@ -65,11 +72,13 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(pnjType), PNJType.Mayor)]
     public int guildCreationCost = 0;
 
-    // ── PNJ Faction ───────────────────────────────────────────
+    // ── PNJ Faction (obsolète, gardé pour compat assets existants) ──
+#pragma warning disable CS0618
     [ShowIf(nameof(pnjType), PNJType.FactionNPC, Header = "Faction (PNJType.FactionNPC)")]
     public FactionType  faction = FactionType.None;
     [ShowIf(nameof(pnjType), PNJType.FactionNPC)]
     public DialogueData hostileDialogue;
+#pragma warning restore CS0618
 
     // ── Capitaine de Port ─────────────────────────────────────
     [ShowIf(nameof(pnjType), PNJType.HarborMaster, Header = "Capitaine de Port (PNJType.HarborMaster)")]
@@ -176,6 +185,9 @@ public class PNJData : ScriptableObject
 #if UNITY_EDITOR
     private void OnValidate()
     {
+        if (string.IsNullOrEmpty(pnjID))
+            pnjID = name;
+
         if (canFight && basicAttackSkill == null)
             Debug.LogWarning($"[PNJData] {pnjName} : canFight = true mais basicAttackSkill non assigné !");
 
@@ -191,21 +203,107 @@ public class PNJData : ScriptableObject
 #endif
 }
 
-// ── Types de PNJ — GDD v3.5 §3.4 ─────────────────────────────
+// ── Types de PNJ — GDD v3.5 §3.4, modèle composable "Boutique + onglets" §13.2 ──
+//
+// Depuis §13.2 : la plupart des PNJ marchands suivent le même modèle — une Boutique
+// (achat/vente, ShopUI) + un ou plusieurs onglets complémentaires propres à leur métier.
+// Seuls Guard/Decorative/Mayor/Quest/HarborMaster restent dialogue-only, sans fenêtre.
+//
+// Ordinaux figés : Unity sérialise un enum par sa position int, pas son nom (voir
+// [[project_aethertree_passive_system_unification]] pour le précédent qui a motivé cette
+// règle). Blacksmith/FusionNPC ont juste été RENOMMÉS (Forge/Cordonnier) — même ordinal,
+// aucune migration d'asset nécessaire. CraftMaster/FactionNPC sont retirés du design mais
+// gardés ici comme placeholders [Obsolete] pour ne pas décaler Quest/Mayor/HarborMaster/
+// Guard/Decorative qui suivent (des .asset existants sérialisent déjà ces ordinaux — voir
+// PNJ_01.asset/PNJ_02.asset pour CraftMaster, TestPnjData.asset pour HarborMaster). Les 5
+// nouveaux types (Cook..CraftStation) sont ajoutés en fin d'enum, jamais au milieu.
 public enum PNJType
 {
-    Merchant,       // Achat/vente items consommables et ressources
-    Blacksmith,     // Amélioration arme/armure (+0→+10, pas de restriction par ville)
-    Rarity,         // Pari de rareté (r-2→r+7, risque de destruction) — GDD §3.4.8
-    Antiquarian,    // Identification et insertion de runes
-    FusionNPC,      // Fusion de Gants & Bottes (S0→S6)
-    CraftMaster,    // Déblocage activités (Bûcheron, Pêcheur...)
-    Quest,          // Donneur de quêtes — conditions + récompenses
-    Mayor,          // Création de guilde — dialogue conditionnel
-    FactionNPC,     // Services et quêtes Solthars / Umbrans
-    HarborMaster,   // Navigation bateau — choix de destination
-    Guard,          // Dialogue neutre + IA combat mobs proches
-    Decorative,     // Ambiance, lore, rumeurs — pas de service
+    Merchant,       // 0 — Boutique seule
+    Forge,          // 1 — Boutique + Craft Équipement + Upgrade (+0→+10) + Pari (rareté) — ex-Blacksmith
+
+    [System.Obsolete("Retiré du design (2026) — Pari de rareté est un onglet de PNJType.Forge, " +
+                      "plus un PNJ séparé. Réassigner les PNJData existants (ex: PNJ_rareté.asset) " +
+                      "vers Forge. Ordinal gardé pour ne pas décaler Antiquarian/Cordonnier/... qui suivent.")]
+    Rarity,         // 2 — RETIRÉ, placeholder — voir PNJType.Forge
+
+    Antiquarian,    // 3 — Boutique + Identification (runes)
+    Cordonnier,     // 4 — Boutique + Fusion Gants/Bottes (S0→S6) — ex-FusionNPC
+
+    [System.Obsolete("Retiré du design (2026) — déblocage métiers jamais implémenté. " +
+                      "Ordinal gardé pour ne pas décaler Quest/Mayor/HarborMaster/Guard/Decorative " +
+                      "déjà sérialisés sur des .asset existants (PNJ_01/PNJ_02).")]
+    CraftMaster,    // 5 — RETIRÉ, placeholder
+
+    Quest,          // 6 — Donneur de quêtes — conditions + récompenses
+    Mayor,          // 7 — Création de guilde — dialogue conditionnel
+
+    [System.Obsolete("Retiré du design (2026) — quêtes de faction pas prioritaires actuellement. " +
+                      "Ordinal gardé pour ne pas décaler HarborMaster/Guard/Decorative déjà sérialisés.")]
+    FactionNPC,     // 8 — RETIRÉ, placeholder
+
+    HarborMaster,   // 9 — Navigation bateau — choix de destination (dialogue seul)
+    Guard,          // 10 — Dialogue neutre + IA combat mobs proches (dialogue seul)
+    Decorative,     // 11 — Ambiance, lore, rumeurs — pas de service (dialogue seul)
+
+    // ── Ajoutés §13.2 — modèle composable Boutique + onglets ──────────────────
+    Cook,           // 12 — Boutique + Cuisiner (nourriture + potions, partagé Alchimie)
+    Tinkerer,       // 13 — Boutique + Bricoler (fusion ressources + déco housing)
+    Jeweler,        // 14 — Boutique + Gemmes (pose sur bijoux)
+    Hatter,         // 15 — Boutique + Craft de casques
+    CraftStation,   // 16 — Boutique + Craft (ressources intermédiaires, tous domaines)
+}
+
+// ── Onglets de la fenêtre PNJ partagée — GDD §13.2 ────────────────────────────
+// Boutique toujours en 1er (onglet par défaut à l'ouverture) pour tout PNJType
+// composable. Le contenu réel de chaque onglet est résolu par PNJWindowUI —
+// certains (CraftEquipement, Cuisiner...) n'ont pas encore d'écran, affichés
+// avec un panneau placeholder en attendant (voir PNJWindowUI.cs).
+public enum PNJTabID
+{
+    Boutique,
+    CraftEquipement,     // Forgeron
+    Upgrade,             // Forgeron
+    Pari,                // Forgeron
+    Cuisiner,            // Cuisinier
+    Fusion,              // Cordonnier
+    Bricoler,            // Bricoleur
+    Gemmes,              // Bijoutier
+    CraftCasque,         // Tailleur
+    Identification,      // Antiquaire
+    CraftIntermediaire,  // Station de Craft
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety).
+    CraftGantsBottes,    // Cordonnier — craft de base, distinct de Fusion
+    CraftBijoux,         // Bijoutier — craft de base, distinct de Gemmes
+}
+
+// ── PNJ ayant une Boutique (ShopUI) — modèle composable §13.2 ────────────────
+public static class PNJTypeExtensions
+{
+    public static bool HasShop(this PNJType type) => type switch
+    {
+        PNJType.Merchant or PNJType.Forge or PNJType.Antiquarian or
+        PNJType.Cordonnier or PNJType.Cook or PNJType.Tinkerer or PNJType.Jeweler or
+        PNJType.Hatter or PNJType.CraftStation => true,
+        _ => false,
+    };
+
+    /// <summary>Liste ordonnée des onglets de la fenêtre PNJ partagée pour ce type —
+    /// Boutique toujours en premier. Liste vide pour les PNJ dialogue-only.</summary>
+    public static List<PNJTabID> GetTabs(this PNJType type) => type switch
+    {
+        PNJType.Merchant     => new List<PNJTabID> { PNJTabID.Boutique },
+        PNJType.Forge        => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.CraftEquipement, PNJTabID.Upgrade, PNJTabID.Pari },
+        PNJType.Cook         => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.Cuisiner },
+        PNJType.Cordonnier   => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.CraftGantsBottes, PNJTabID.Fusion },
+        PNJType.Tinkerer     => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.Bricoler },
+        PNJType.Jeweler      => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.CraftBijoux, PNJTabID.Gemmes },
+        PNJType.Hatter       => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.CraftCasque },
+        PNJType.Antiquarian  => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.Identification },
+        PNJType.CraftStation => new List<PNJTabID> { PNJTabID.Boutique, PNJTabID.CraftIntermediaire },
+        _                    => new List<PNJTabID>(),
+    };
 }
 
 // ── Entrée de shop ────────────────────────────────────────────

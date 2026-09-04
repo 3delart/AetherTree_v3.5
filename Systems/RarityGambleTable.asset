@@ -24,7 +24,7 @@ MonoBehaviour:
   - label: r-1
     improveChance: 0.6
     stagnateChance: 0.25
-    destroyChance: 0.14
+    destroyChance: 0.15
   - label: r0
     improveChance: 0.5
     stagnateChance: 0.3

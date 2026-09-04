@@ -172,15 +172,6 @@ public struct TimeEvent
     public float      accountPlaytimeMinutes;
 }
 
-// ── Métier / Activité ────────────────────────────────────────
-// Publié par : Systèmes de métiers
-public struct MetierEvent
-{
-    public string metierID;
-    public string actionType;
-    public int    newLevel;
-}
-
 // ── Serveur ──────────────────────────────────────────────────
 // Publié par : ConnectionManager
 public struct ServerEvent
@@ -204,4 +195,13 @@ public struct QuestEvent
     public QuestAction action;
     public int         objectiveIndex;
     public Player      player;
+}
+
+// ── Recette craftée ──────────────────────────────────────────
+// Publié par : CraftSystem.ResolveCraft() → onComplete de la barre de canalisation
+public struct RecipeCraftedEvent
+{
+    public RecipeData recipe;
+    public Player      player;
+    public int         quantity;
 }

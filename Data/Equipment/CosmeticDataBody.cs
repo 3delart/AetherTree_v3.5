@@ -17,7 +17,7 @@ using System.Collections.Generic;
 // Aucune restriction par WeaponCategory ni ArmorType.
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewCosmeticBody", menuName = "AetherTree/Cosmetics/CosmeticDataBody")]
+[CreateAssetMenu(fileName = "cos_body_", menuName = "AetherTree/Inventaire/Equipement/CosmeticDataBody")]
 public class CosmeticDataBody : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────

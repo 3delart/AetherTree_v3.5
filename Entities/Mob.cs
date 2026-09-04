@@ -63,7 +63,6 @@ public class Mob : Entity
 
     // Aggro
     private Vector3     aggroPos;
-    private ElementType lastDamageElement = ElementType.Neutral;
 
     // =========================================================
     // INITIALISATION
@@ -417,7 +416,6 @@ public class Mob : Entity
         isWaiting         = false;
         patrolPointsSet   = false;
         currentState      = MobState.Patrol;
-        lastDamageElement = ElementType.Neutral;
         _skillCooldowns.Clear();
         enemyList.Clear();
         damageContributions.Clear();
@@ -454,7 +452,6 @@ public class Mob : Entity
         }
 
         base.TakeDamage(amount, sourceElement, source);
-        lastDamageElement = sourceElement;
 
         // ── Aggro automatique — GDD v3.5 §3.3 ────────────────
         // Tout mob agressé entre en Chase même s'il est Passif

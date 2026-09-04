@@ -222,10 +222,8 @@ public class TooltipSystem : MonoBehaviour
     public Image           consumableIcon;
     public TextMeshProUGUI consumableNameText;
     public TextMeshProUGUI consumableTypeText;
-    public TextMeshProUGUI consumableHealHPText;
-    public TextMeshProUGUI consumableHealManaText;
+    public TextMeshProUGUI consumableBuffText;
     public TextMeshProUGUI consumableCooldownText;
-    public TextMeshProUGUI consumableQuantityText;
     public TextMeshProUGUI consumableDescText;
 
     // ⑫ RESOURCE
@@ -407,9 +405,9 @@ public class TooltipSystem : MonoBehaviour
         SetText(glovesNameText,   g.GlovesName);
         SetText(glovesLevelText,  g.data != null ? LevelTag(g.data.requiredLevel) : "");
         SetText(glovesFusionText, $"Fusion : {g.FusionLabel}");
-        SetText(glovesMeleeText,  $"Déf. mêlée : {g.MeleeDefense}");
-        SetText(glovesRangedText, $"Déf. distance : {g.RangedDefense}");
-        SetText(glovesMagicText,  $"Déf. magie : {g.MagicDefense}");
+        SetText(glovesMeleeText,  $"Déf. mêlée : {Mathf.RoundToInt(g.MeleeDefense)}");
+        SetText(glovesRangedText, $"Déf. distance : {Mathf.RoundToInt(g.RangedDefense)}");
+        SetText(glovesMagicText,  $"Déf. magie : {Mathf.RoundToInt(g.MagicDefense)}");
         ShowSection(glovesResistElemSection,   glovesResistElemText,   BuildElemResist(g.resistFire, g.resistWater, g.resistLightning, g.resistEarth, g.resistNature, g.resistDarkness, g.resistLight));
         ShowSection(glovesBonusSection,        glovesBonusText,        BuildBonuses(g.Bonuses));
         ShowSection(glovesStatusSection,       glovesStatusText,       BuildStatusEffects(g.StatusEffects));
@@ -430,9 +428,9 @@ public class TooltipSystem : MonoBehaviour
         SetText(bootsNameText,   b.BootsName);
         SetText(bootsLevelText,  b.data != null ? LevelTag(b.data.requiredLevel) : "");
         SetText(bootsFusionText, $"Fusion : {b.FusionLabel}");
-        SetText(bootsMeleeText,  $"Déf. mêlée : {b.MeleeDefense}");
-        SetText(bootsRangedText, $"Déf. distance : {b.RangedDefense}");
-        SetText(bootsMagicText,  $"Déf. magie : {b.MagicDefense}");
+        SetText(bootsMeleeText,  $"Déf. mêlée : {Mathf.RoundToInt(b.MeleeDefense)}");
+        SetText(bootsRangedText, $"Déf. distance : {Mathf.RoundToInt(b.RangedDefense)}");
+        SetText(bootsMagicText,  $"Déf. magie : {Mathf.RoundToInt(b.MagicDefense)}");
         ShowSection(bootsResistElemSection,   bootsResistElemText,   BuildElemResist(b.resistFire, b.resistWater, b.resistLightning, b.resistEarth, b.resistNature, b.resistDarkness, b.resistLight));
         ShowSection(bootsBonusSection,        bootsBonusText,        BuildBonuses(b.Bonuses));
         ShowSection(bootsStatusSection,       bootsStatusText,       BuildStatusEffects(b.StatusEffects));
@@ -558,7 +556,7 @@ public class TooltipSystem : MonoBehaviour
     }
 
     // =========================================================
-    // ⑭ PERMANENT SKILL — bonus permanent débloquable (Antre/PNJ CraftMaster...).
+    // ⑭ PERMANENT SKILL — bonus permanent débloquable (Antre...).
     // Uniquement icône+nom+description : le texte (rédigé par le designer) porte
     // l'effet, pas de breakdown auto — c'est juste un ajout de stats.
     // =========================================================
@@ -600,10 +598,8 @@ public class TooltipSystem : MonoBehaviour
         SetIcon(consumableIcon, c.Icon);
         SetText(consumableNameText,     c.Name);
         SetText(consumableTypeText,     c.data?.consumableType.ToString() ?? "");
-        SetText(consumableHealHPText,   c.data?.healHP   > 0f ? $"Soin HP : +{c.data.healHP}"     : "");
-        SetText(consumableHealManaText, c.data?.healMana > 0f ? $"Soin Mana : +{c.data.healMana}" : "");
+        SetText(consumableBuffText,     c.data?.buffEffect?.description.Get(LocalizationManager.CurrentLanguage) ?? "");
         SetText(consumableCooldownText, c.data?.cooldown > 0f ? $"CD : {c.data.cooldown}s"        : "");
-        SetText(consumableQuantityText, $"Quantité : {c.quantity} / {c.MaxStack}");
         SetText(consumableDescText,     FormatDesc(c.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -638,8 +634,9 @@ public class TooltipSystem : MonoBehaviour
         SetText(seTypeText,     entry.isDebuff ? "Debuff" : "Buff");
         SetText(seDurationText, entry.totalDuration > 0f
             ? $"Durée : {entry.remainingTime:F1}s / {entry.totalDuration:F1}s" : "");
-        SetText(seDescText, entry.data != null && !string.IsNullOrEmpty(entry.data.effectName)
-            ? $"<i>{entry.data.effectName}</i>" : "");
+        SetText(seDescText, entry.data != null
+            ? FormatDesc(entry.data.description.Get(LocalizationManager.CurrentLanguage))
+            : "");
         Show();
     }
 
@@ -719,7 +716,7 @@ public class TooltipSystem : MonoBehaviour
         if (effects == null || effects.Count == 0) return "";
         var sb = new System.Text.StringBuilder();
         foreach (var e in effects)
-            if (e?.effect != null) sb.AppendLine($"{e.effect.effectName} : {e.chance * 100f:F0}%");
+            if (e?.effect != null) sb.AppendLine($"{e.effect.effectName.Get(LocalizationManager.CurrentLanguage)} : {e.chance * 100f:F0}%");
         return sb.ToString().TrimEnd();
     }
 

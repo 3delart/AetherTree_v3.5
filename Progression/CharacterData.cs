@@ -185,8 +185,12 @@ public class CharacterData : ScriptableObject
         int idx = currentLevel - 1;
         if (idx < 0) return xpThresholds.Count > 0 ? xpThresholds[0] : 100;
         if (idx < xpThresholds.Count) return xpThresholds[idx];
-        return Mathf.RoundToInt(
-            xpThresholds[xpThresholds.Count - 1] *
-            Mathf.Pow(1.5f, idx - xpThresholds.Count + 1));
+
+        // double + clamp — 1.5^n explose largement au-delà de l'int à haut niveau
+        // (ex: niveau 85 avec 5 paliers auteur → exposant 80 → dépasse int.MaxValue,
+        // Mathf.RoundToInt wrap silencieusement en négatif sans le clamp).
+        double extrapolated = xpThresholds[xpThresholds.Count - 1] *
+            System.Math.Pow(1.5, idx - xpThresholds.Count + 1);
+        return extrapolated >= int.MaxValue ? int.MaxValue : (int)System.Math.Round(extrapolated);
     }
 }

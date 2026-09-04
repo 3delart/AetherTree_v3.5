@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 25f02b6521bccdf45a71a068467a3934, type: 3}
+  m_Name: FusionTable
+  m_EditorClassIdentifier: 
+  channelDuration: 2.5
+  tiers:
+  - label: "\u2192 S1"
+    successRate: 1
+    aerisCost: 1000
+  - label: "\u2192 S2"
+    successRate: 1
+    aerisCost: 2500
+  - label: "\u2192 S3"
+    successRate: 0.8
+    aerisCost: 5000
+  - label: "\u2192 S4"
+    successRate: 0.7
+    aerisCost: 10000
+  - label: "\u2192 S5"
+    successRate: 0.5
+    aerisCost: 20000
+  - label: "\u2192 S6"
+    successRate: 0.2
+    aerisCost: 50000

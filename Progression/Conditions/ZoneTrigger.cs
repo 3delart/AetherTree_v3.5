@@ -50,37 +50,64 @@ public class ZoneTrigger : MonoBehaviour
     private float   _continuousNightTime    = 0f;
     private float   _continuousAFKNightTime = 0f;
 
+    // Borne le delta utilisé pour les compteurs de zone — évite qu'un alt-tab/veille (deltaTime
+    // énorme sur la frame de reprise) ne valide instantanément une condition de continuité.
+    private const float MaxZoneDeltaTime = 1f;
+
     // ─────────────────────────────────────────────────────────
+
+    private void OnEnable()
+    {
+        GameEventBus.OnPlayerDeath += HandlePlayerDeath;
+    }
+
+    private void OnDisable()
+    {
+        GameEventBus.OnPlayerDeath -= HandlePlayerDeath;
+    }
+
+    private void HandlePlayerDeath(PlayerDeathEvent e) => OnPlayerDied();
+
+    /// <summary>
+    /// Flush la progression de continuité en cours — appelé par SaveSystem juste avant Save()
+    /// au quit, PAS via un OnApplicationQuit local ici : l'ordre d'appel d'OnApplicationQuit
+    /// entre composants différents n'est pas garanti par Unity, donc rien ne garantirait que ce
+    /// flush arrive avant que SaveSystem lise/écrive la progression des conditions. Sans ça, un
+    /// ZoneChecker.onlyFinalExit ne pourrait jamais se valider si la session se termine pendant
+    /// que le joueur est encore dans la zone.
+    /// </summary>
+    public void FlushOnQuit()
+    {
+        if (_playerInZone) ExitZone();
+    }
 
     private void Update()
     {
         if (!_playerInZone || _player == null) return;
         if (zoneData == null)                  return;
 
-        _timeInZone    += Time.deltaTime;
-        _timeSinceTick += Time.deltaTime;
+        float dt = Mathf.Min(Time.deltaTime, MaxZoneDeltaTime);
+        _timeInZone    += dt;
+        _timeSinceTick += dt;
 
         bool afk   = _player.IsAFK;
         bool night = DayNightCycle.Instance?.IsNight ?? false;
 
-        _continuousAFKTime      = afk           ? _continuousAFKTime      + Time.deltaTime : 0f;
-        _continuousNightTime    = night         ? _continuousNightTime    + Time.deltaTime : 0f;
-        _continuousAFKNightTime = (afk && night) ? _continuousAFKNightTime + Time.deltaTime : 0f;
+        _continuousAFKTime      = afk           ? _continuousAFKTime      + dt : 0f;
+        _continuousNightTime    = night         ? _continuousNightTime    + dt : 0f;
+        _continuousAFKNightTime = (afk && night) ? _continuousAFKNightTime + dt : 0f;
 
         if (tickIntervalSeconds <= 0f) return;
 
         if (_timeSinceTick >= tickIntervalSeconds)
         {
             _timeSinceTick = 0f;
-            Debug.Log($"[ZONE] Tick publié — zone={zoneData.zoneID} timeInZone={_timeInZone} " +
-                      $"continuousAFK={_continuousAFKTime:F0} continuousNight={_continuousNightTime:F0}");
             PublishZoneEvent(isFinalExit: false);
         }
     }
 
     private void OnTriggerEnter(Collider other)
     {
-        Debug.Log($"[ZONE-DEBUG] OnTriggerEnter — other={other.name}, a un Player={other.GetComponent<Player>() != null}");
         var p = other.GetComponent<Player>();
         if (p == null) return;
 
@@ -91,17 +118,15 @@ public class ZoneTrigger : MonoBehaviour
         _continuousAFKTime      = 0f;
         _continuousNightTime    = 0f;
         _continuousAFKNightTime = 0f;
-        Debug.Log($"[ZONE-DEBUG] _playerInZone=true, zoneData={(zoneData != null ? zoneData.zoneID : "NULL")}, tickIntervalSeconds={tickIntervalSeconds}");
     }
 
     private void OnTriggerExit(Collider other)
     {
-        Debug.Log($"[ZONE-DEBUG] OnTriggerExit — other={other.name}");
         if (other.GetComponent<Player>() != _player) return;
         ExitZone();
     }
 
-    // Appelé par Player.Die() si le joueur meurt dans la zone
+    // Appelé via GameEventBus.OnPlayerDeath (voir HandlePlayerDeath) quand le joueur meurt
     public void OnPlayerDied()
     {
         if (_playerInZone) ExitZone();

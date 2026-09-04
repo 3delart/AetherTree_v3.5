@@ -175,12 +175,4 @@ public class DayNightCycle : MonoBehaviour
 
     private bool IsHourNight(float hour)
         => hour < sunriseHour || hour >= sunsetHour;
-
-    /// <summary>Force une heure spécifique (debug / save).</summary>
-    public void SetHour(float hour)
-    {
-        _currentHour = Mathf.Clamp(hour, 0f, 24f);
-        _isNight     = IsHourNight(_currentHour);
-        UpdateLight();
-    }
 }

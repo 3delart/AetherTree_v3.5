@@ -35,10 +35,6 @@ public class LootEntry
     [Range(0f, 1f)]
     [Tooltip("Biais vers la quantité max — 0 = toujours min | 0.5 = uniforme | 1 = toujours max")]
     public float quantityBias = 0.5f;
-
-    // Rétrocompat itemID string
-    [Tooltip("ID legacy (optionnel — non utilisé si itemSO assigné)")]
-    public string itemID;
 }
 
 // ── Résultat d'un roll ────────────────────────────────────────
@@ -58,9 +54,15 @@ public class LootResult
     public LootResult(string id, int qty) { itemID = id; quantity = qty; }
 }
 
-[CreateAssetMenu(fileName = "LootTable_", menuName = "AetherTree/Loot/LootTable")]
+[CreateAssetMenu(fileName = "loot_", menuName = "AetherTree/Mob/LootTable")]
 public class LootTable : ScriptableObject
 {
+    [Header("Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"loot_\"\n" +
+             "(ex: \"loot_loup\"). Purement pour l'uniformité du Project window — jamais lu par\n" +
+             "string en code, LootTable est toujours référencé par lien direct.")]
+    public string lootID;
+
     [Header("Drops d'items")]
     public List<LootEntry> entries = new List<LootEntry>();
 
@@ -197,8 +199,7 @@ public class LootTable : ScriptableObject
             if (Random.value > entry.dropChance) continue;
             int qty = RollQuantity(entry);
             if (qty <= 0) continue;
-            string id = !string.IsNullOrEmpty(entry.itemID) ? entry.itemID
-                      : entry.itemSO != null ? entry.itemSO.name : "";
+            string id = entry.itemSO != null ? entry.itemSO.name : "";
             if (!string.IsNullOrEmpty(id))
                 result.Add(new LootResult(id, qty));
         }
@@ -206,4 +207,12 @@ public class LootTable : ScriptableObject
     }
 
     public int RollAeris() => Random.value <= aerisDropChance ? Random.Range(minAeris, maxAeris + 1) : 0;
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(lootID))
+            lootID = name;
+    }
+#endif
 }

@@ -18,11 +18,14 @@ using System.Collections.Generic;
 //   fixes — ils ne scalent pas avec le niveau.
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewMob", menuName = "AetherTree/Mob/MobData")]
+[CreateAssetMenu(fileName = "mob_", menuName = "AetherTree/Mob/MobData")]
 public class MobData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"mob_\"\n" +
+             "(ex: \"mob_loup_gris\"). Ne JAMAIS afficher au joueur — voir mobName pour l'affichage.")]
+    public string    mobID;
     public string    mobName = "Mob";
     public MobType   mobType = MobType.Normal;
     public MobAIType aiType  = MobAIType.Passive;
@@ -164,6 +167,9 @@ public class MobData : ScriptableObject
 #if UNITY_EDITOR
     private void OnValidate()
     {
+        if (string.IsNullOrEmpty(mobID))
+            mobID = name;
+
         if (baseAtkMax < baseAtkMin)
             baseAtkMax = baseAtkMin;
 

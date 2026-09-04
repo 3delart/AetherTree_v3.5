@@ -329,9 +329,6 @@ public abstract class Entity : MonoBehaviour
         return Mathf.Max(0f, base_);
     }
 
-    /// <summary>Alias legacy — retourne GetMeleeDefense().</summary>
-    public float GetPhysicalDefense() => GetMeleeDefense();
-
     // =========================================================
     // STATS EFFECTIVES — intègrent les bonus de buffs actifs
     // CombatSystem doit lire ces getters plutôt que les propriétés brutes

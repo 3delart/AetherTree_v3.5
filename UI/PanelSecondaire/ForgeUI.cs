@@ -8,11 +8,15 @@ using TMPro;
 // Path : Assets/Scripts/UI/PanelSecondaire/ForgeUI.cs
 // GDD v3.6 — §5.14, ouvert depuis PNJ Blacksmith (Entities/PNJ.cs)
 //
-// Un seul slot, accepte Arme OU Armure (glissée depuis l'inventaire ou
-// depuis le CharacterPanel si équipée — même InventoryUI.DraggedItem que
-// le reste du drag&drop, voir EquipmentSlotHandler/ConsoDropSlot pour le
-// même schéma). L'item n'est PAS retiré de l'inventaire — juste référencé
-// pour affichage/action, comme un pointeur de sélection.
+// Un seul slot, accepte Arme OU Armure venant UNIQUEMENT de l'inventaire —
+// un équipement porté (CharacterPanel) est rejeté par ForgeDropSlot. L'item
+// est retiré de InventorySystem DÈS SetStaged() (lisibilité + rend
+// impossible de le poser ailleurs), remis en inventaire si le slot est
+// remplacé, si le panel ferme sans lancer l'upgrade, ou si le joueur
+// re-glisse l'item hors du slot (StagedItemDragSource). L'upgrade ne
+// détruit jamais l'item (succès = amélioré, échec = ressources perdues
+// mais objet inchangé) — il revient donc TOUJOURS en inventaire après
+// résolution, contrairement à RarityUI où Destroyed est possible.
 //
 // Affiche les ressources requises pour le palier SUIVANT (2 lignes fixes —
 // le GDD n'a jamais plus de 1 ressource de base + 1 item spécial par
@@ -27,6 +31,9 @@ public class ForgeUI : MonoBehaviour
 
     [Header("Panel")]
     public GameObject panel;
+
+    [Header("Header")]
+    public TextMeshProUGUI titleText;
 
     [Header("Slot (glisser arme/armure ici)")]
     public Image slotIcon;
@@ -71,6 +78,8 @@ public class ForgeUI : MonoBehaviour
         _player = FindObjectOfType<Player>();
         if (upgradeButton != null) upgradeButton.onClick.AddListener(StartUpgradeChannel);
         if (closeButton   != null) closeButton.onClick.AddListener(Close);
+        // Drag inversé — re-glisser l'item hors du slot pour le remettre en inventaire.
+        slotIcon?.GetComponent<StagedItemDragSource>()?.Init(() => _staged, OnStagedReturnedToInventory);
         Close();
     }
 
@@ -79,24 +88,53 @@ public class ForgeUI : MonoBehaviour
     public void Open()
     {
         if (panel != null) panel.SetActive(true);
+        if (titleText != null) titleText.text = "Forge";
         InventoryUI.Instance?.Open();
         SetStaged(null);
     }
 
     /// <summary>Annule une canalisation en cours (rien n'est consommé — voir
-    /// OnChannelCancelled) avant de fermer, puis ferme aussi l'inventaire ouvert
-    /// avec la forge.</summary>
+    /// OnChannelCancelled) avant de fermer, remet l'item staged en inventaire s'il y en a
+    /// un (fermer sans lancer l'upgrade ne doit jamais faire "disparaître" l'objet), puis
+    /// ferme aussi l'inventaire ouvert avec la forge.</summary>
     public void Close()
     {
         if (_channeling) ProgressBarUI.Instance?.Cancel();
+        if (_staged != null)
+        {
+            InventorySystem.Instance?.AddItem(_staged);
+            _staged = null;
+        }
         if (panel != null) panel.SetActive(false);
         InventoryUI.Instance?.Close();
     }
 
-    /// <summary>Appelé par ForgeDropSlot.OnDrop() — accepte uniquement Weapon/Armor.</summary>
+    /// <summary>Appelé par ForgeDropSlot.OnDrop() — accepte uniquement Weapon/Armor déjà
+    /// vérifiés présents dans l'inventaire (jamais équipé, voir ForgeDropSlot). Retire
+    /// l'item dès qu'il est posé (lisibilité + rend impossible de le reposer ailleurs — il
+    /// n'est plus dans InventorySystem._items), remet l'ancien staged en inventaire avant
+    /// de le remplacer.</summary>
     public void SetStaged(InventoryItem item)
     {
+        if (_staged != null && _staged != item)
+            InventorySystem.Instance?.AddItem(_staged);
+
         _staged = item;
+
+        if (_staged != null)
+            InventorySystem.Instance?.RemoveItem(_staged);
+
+        SetText(resultText, "");
+        Refresh();
+    }
+
+    /// <summary>Callback de StagedItemDragSource — le joueur a re-glissé l'item du slot vers
+    /// une cellule d'inventaire (le retrait fait par SetStaged est annulé ici).</summary>
+    private void OnStagedReturnedToInventory()
+    {
+        if (_staged == null) return;
+        InventorySystem.Instance?.AddItem(_staged);
+        _staged = null;
         SetText(resultText, "");
         Refresh();
     }
@@ -228,13 +266,22 @@ public class ForgeUI : MonoBehaviour
     {
         _channeling = false;
 
+        var stagedItem = _staged;
         UpgradeResult result;
-        if (_staged?.WeaponInstance != null)
-            result = UpgradeSystem.Instance?.TryUpgradeWeapon(_staged.WeaponInstance, _player) ?? UpgradeResult.InvalidTarget;
-        else if (_staged?.ArmorInstance != null)
-            result = UpgradeSystem.Instance?.TryUpgradeArmor(_staged.ArmorInstance, _player) ?? UpgradeResult.InvalidTarget;
+        if (stagedItem?.WeaponInstance != null)
+            result = UpgradeSystem.Instance?.TryUpgradeWeapon(stagedItem.WeaponInstance, _player) ?? UpgradeResult.InvalidTarget;
+        else if (stagedItem?.ArmorInstance != null)
+            result = UpgradeSystem.Instance?.TryUpgradeArmor(stagedItem.ArmorInstance, _player) ?? UpgradeResult.InvalidTarget;
         else
             result = UpgradeResult.InvalidTarget;
+
+        // Upgrade ne détruit jamais l'item (succès = amélioré, échec = ressources perdues
+        // mais objet inchangé) — il revient toujours à l'inventaire, retiré depuis sa mise
+        // en scène (SetStaged).
+        if (stagedItem != null)
+            InventorySystem.Instance?.AddItem(stagedItem);
+
+        _staged = null;
 
         SetText(resultText, result switch
         {

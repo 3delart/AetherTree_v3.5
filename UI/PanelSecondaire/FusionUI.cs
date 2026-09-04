@@ -11,11 +11,20 @@ using TMPro;
 // lecture seule, recalculée live). Bouton Fuse désactivé tant que : un slot est vide,
 // slot1 == slot2 (même InventoryItem), ou la combinaison dépasse S6.
 //
+// Slot1/Slot2 sont retirés de InventorySystem DÈS le dépôt (OnSlotDropped), pas seulement à
+// la résolution — lisibilité (l'item ne traîne plus visuellement dans la grille ET dans le
+// slot) et surtout ça empêche STRUCTURELLEMENT de reposer le même item dans l'autre slot
+// (il n'est plus dans InventorySystem._items, GetItemByInstance échoue). Remis en
+// inventaire si : le slot est remplacé par un autre item, le panel se ferme sans résoudre,
+// le joueur re-glisse l'item hors du slot (StagedItemDragSource), ou l'issue de résolution
+// n'a impliqué aucun jet (InvalidTarget/MissingResource/InvalidCombo/SameItem).
+//
 // Résolution : ProgressBarUI (même barre que Forge/Rareté/Craft — BarType.Craft) puis
-// FusionSystem.TryFuseXxx. Slot1 ET Slot2 ne sont retirés de l'inventaire que si un jet a
-// réellement eu lieu (Success/Failure) — seul un succès ajoute le résultat. Pour les issues
-// sans jet (InvalidTarget/MissingResource/InvalidCombo/SameItem), rien n'est consommé et les
-// 2 slots restent en place.
+// FusionSystem.TryFuseXxx. Succès ou échec = les 2 pièces restent définitivement hors de
+// l'inventaire (déjà retirées au dépôt) — seul un succès ajoute le résultat.
+//
+// Ne peut contenir QUE des objets de l'inventaire — un équipement porté (CharacterPanel) est
+// toujours rejeté par OnSlotDropped (GetItemByInstance), jamais insérable ici.
 // =============================================================
 public class FusionUI : MonoBehaviour
 {
@@ -23,28 +32,42 @@ public class FusionUI : MonoBehaviour
 
     [Header("Panel")]
     public GameObject panel;
-    public Button     closeButton;
+
+    [Header("Header")]
+    public TextMeshProUGUI titleText;
+    public Button          closeButton;
 
     [Header("Slots d'entrée (drag & drop)")]
     public FusionSlotDropTarget slot1DropTarget;
     public FusionSlotDropTarget slot2DropTarget;
     public Image           slot1Icon;
     public Image           slot2Icon;
-    public TextMeshProUGUI slot1Label; // "S{n} — {nom}" ou "Glisse un objet ici"
-    public TextMeshProUGUI slot2Label;
 
     [Header("Slot 3 — preview résultat")]
     public Image           resultIcon;
-    public TextMeshProUGUI resultLabel;       // "S{target} — {nom}"
-    public TextMeshProUGUI resultResistances; // "Feu 21% | Eau 21% | ..."
     public TextMeshProUGUI successRateText;   // "Réussite : 80%"
     public TextMeshProUGUI costText;          // "Coût : 150 Aeris"
     public Button           fuseButton;
+
+    [Header("Résultat de la dernière tentative")]
+    [Tooltip("\"Réussite !\" / \"Échec — les 2 pièces sont détruites\" — vidé dès qu'un slot change.")]
+    public TextMeshProUGUI resultOutcomeText;
+
+    private const string ColorOk  = "#4CDB57"; // même famille que ForgeUI/CraftPanelUI
+    private const string ColorBad = "#E0455F";
+
+    // Nom/palier/résistances/défenses — plus de texte dédié, tout passe par le
+    // TooltipTrigger posé sur chaque slot (Slot1/Slot2/Slot3 dans l'Inspector) au survol,
+    // même pattern que le reste du jeu (SkillBar, PassifBar, ConsoBar...).
 
     private Player        _player;
     private InventoryItem  _slot1Item;
     private InventoryItem  _slot2Item;
     private bool           _channeling;
+
+    /// <summary>True pendant la canalisation de fusion — FusionSlotDropTarget ignore les
+    /// drops tant que c'est actif (pas de changement d'objet en cours de résolution).</summary>
+    public bool IsChanneling => _channeling;
 
     private void Awake()
     {
@@ -60,6 +83,10 @@ public class FusionUI : MonoBehaviour
 
         if (slot1DropTarget != null) slot1DropTarget.OnItemDropped += OnSlotDropped;
         if (slot2DropTarget != null) slot2DropTarget.OnItemDropped += OnSlotDropped;
+
+        // Drag inversé — re-glisser l'item hors du slot pour le remettre en inventaire.
+        slot1Icon?.GetComponent<StagedItemDragSource>()?.Init(() => _slot1Item, OnSlot1ReturnedToInventory);
+        slot2Icon?.GetComponent<StagedItemDragSource>()?.Init(() => _slot2Item, OnSlot2ReturnedToInventory);
     }
 
     // =========================================================
@@ -74,21 +101,33 @@ public class FusionUI : MonoBehaviour
         // _slot2Item plus tard via le callback ProgressBarUI, les nuller ici causerait une NRE.
         if (!_channeling)
         {
-            _slot1Item = null;
-            _slot2Item = null;
+            RestoreAndClearSlots();
+            if (resultOutcomeText != null) resultOutcomeText.text = "";
         }
         if (panel != null) panel.SetActive(true);
+        if (titleText != null) titleText.text = "Fusion";
         RefreshSlots();
         RefreshPreview();
     }
 
     /// <summary>Annule une canalisation en cours (rien n'est consommé — voir le onCancel de
     /// StartProgress) avant de fermer, même pattern que ForgeUI/RarityUI — évite de laisser le
-    /// panel Fusion visible/orphelin quand PNJWindowUI.Close() ferme la fenêtre parente.</summary>
+    /// panel Fusion visible/orphelin quand PNJWindowUI.Close() ferme la fenêtre parente.
+    /// Remet aussi les 2 slots en inventaire — fermer sans avoir lancé la fusion ne doit
+    /// jamais faire "disparaître" les objets déposés.</summary>
     public void Close()
     {
         if (_channeling) ProgressBarUI.Instance?.Cancel();
+        RestoreAndClearSlots();
         if (panel != null) panel.SetActive(false);
+    }
+
+    /// <summary>Remet en inventaire tout ce qui est dans les 2 slots, puis les vide — jamais
+    /// pendant une résolution en cours (ResolveFusion gère lui-même le sort final).</summary>
+    private void RestoreAndClearSlots()
+    {
+        if (_slot1Item != null) { InventorySystem.Instance?.AddItem(_slot1Item); _slot1Item = null; }
+        if (_slot2Item != null) { InventorySystem.Instance?.AddItem(_slot2Item); _slot2Item = null; }
     }
 
     // =========================================================
@@ -121,26 +160,66 @@ public class FusionUI : MonoBehaviour
             if (otherIsGloves != isGloves) return; // type incompatible, drop ignoré
         }
 
+        // Remet l'ancien occupant de CE slot en inventaire avant de le remplacer — le joueur
+        // peut glisser un nouvel objet directement par-dessus sans d'abord vider le slot.
+        var previous = slotIndex == 0 ? _slot1Item : _slot2Item;
+        if (previous != null) InventorySystem.Instance?.AddItem(previous);
+
         if (slotIndex == 0) _slot1Item = item;
         else                 _slot2Item = item;
 
+        // Retiré dès le dépôt — lisibilité + empêche structurellement de reposer le même
+        // item dans l'autre slot (le GetItemByInstance ci-dessus le rejettera, plus dans
+        // _items tant qu'il reste ici).
+        InventorySystem.Instance?.RemoveItem(item);
+
+        if (resultOutcomeText != null) resultOutcomeText.text = "";
         RefreshSlots();
         RefreshPreview();
     }
 
+    private void OnSlot1ReturnedToInventory()
+    {
+        if (_slot1Item == null) return;
+        InventorySystem.Instance?.AddItem(_slot1Item);
+        _slot1Item = null;
+        if (resultOutcomeText != null) resultOutcomeText.text = "";
+        RefreshSlots();
+        RefreshPreview();
+    }
+
+    private void OnSlot2ReturnedToInventory()
+    {
+        if (_slot2Item == null) return;
+        InventorySystem.Instance?.AddItem(_slot2Item);
+        _slot2Item = null;
+        if (resultOutcomeText != null) resultOutcomeText.text = "";
+        RefreshSlots();
+        RefreshPreview();
+    }
+
+    private static readonly Color FilledSlotColor = Color.white;
+    private static readonly Color EmptySlotColor  = new Color(1f, 1f, 1f, 0.15f);
+
+    // ⚠ Ne JAMAIS mettre Icon.enabled = false sur un slot vide — FusionSlotDropTarget est
+    // sur ce même GameObject, et Unity ne raycast pas un Graphic désactivé : un slot "vide
+    // et invisible" devient aussi indroppable. On garde l'Image active en permanence, on
+    // estompe juste sa couleur (même pattern que InventoryItemCell.bgImage).
     private void RefreshSlots()
     {
-        if (slot1Icon  != null) slot1Icon.sprite  = _slot1Item?.Icon;
-        if (slot1Icon  != null) slot1Icon.enabled  = _slot1Item?.Icon != null;
-        if (slot1Label != null) slot1Label.text    = _slot1Item != null
-            ? $"S{GetFusionLevel(_slot1Item)} — {_slot1Item.Name}"
-            : "Glisse un objet ici";
+        if (slot1Icon != null)
+        {
+            slot1Icon.sprite = _slot1Item?.Icon;
+            slot1Icon.color  = _slot1Item?.Icon != null ? FilledSlotColor : EmptySlotColor;
+            slot1Icon.GetComponent<TooltipTrigger>()?.SetItem(_slot1Item);
+        }
 
-        if (slot2Icon  != null) slot2Icon.sprite  = _slot2Item?.Icon;
-        if (slot2Icon  != null) slot2Icon.enabled  = _slot2Item?.Icon != null;
-        if (slot2Label != null) slot2Label.text    = _slot2Item != null
-            ? $"S{GetFusionLevel(_slot2Item)} — {_slot2Item.Name}"
-            : "Glisse un objet ici";
+        if (slot2Icon != null)
+        {
+            slot2Icon.sprite = _slot2Item?.Icon;
+            slot2Icon.color  = _slot2Item?.Icon != null ? FilledSlotColor : EmptySlotColor;
+            slot2Icon.GetComponent<TooltipTrigger>()?.SetItem(_slot2Item);
+        }
     }
 
     private int GetFusionLevel(InventoryItem item)
@@ -160,61 +239,62 @@ public class FusionUI : MonoBehaviour
 
         if (!bothFilled || sameItem)
         {
-            if (resultIcon  != null) resultIcon.enabled = false;
-            if (resultLabel != null) resultLabel.text    = sameItem ? "Objet identique aux 2 slots" : "";
-            if (resultResistances != null) resultResistances.text = "";
-            if (successRateText   != null) successRateText.text   = "";
-            if (costText           != null) costText.text           = "";
-            if (fuseButton          != null) fuseButton.interactable = false;
+            if (resultIcon != null)
+            {
+                resultIcon.sprite = null;
+                resultIcon.color  = EmptySlotColor;
+                resultIcon.GetComponent<TooltipTrigger>()?.SetItem(null);
+            }
+            if (successRateText != null) successRateText.text = "";
+            if (costText         != null) costText.text         = "";
+            if (fuseButton        != null) fuseButton.interactable = false;
             return;
         }
 
         int level1 = GetFusionLevel(_slot1Item);
         int level2 = GetFusionLevel(_slot2Item);
-        bool canFuse = FusionSystem.Instance != null && FusionSystem.Instance.CanFuse(level1, level2, out int target);
+        int target = 0;
+        bool canFuse = FusionSystem.Instance != null && FusionSystem.Instance.CanFuse(level1, level2, out target);
 
         if (!canFuse)
         {
-            if (resultIcon  != null) resultIcon.enabled = false;
-            if (resultLabel != null) resultLabel.text    = $"Combo invalide — dépasse S6 (S{level1}+S{level2} → S{level1 + level2 + 1})";
-            if (resultResistances != null) resultResistances.text = "";
-            if (successRateText   != null) successRateText.text   = "";
-            if (costText           != null) costText.text           = "";
-            if (fuseButton          != null) fuseButton.interactable = false;
+            if (resultIcon != null)
+            {
+                resultIcon.sprite = null;
+                resultIcon.color  = EmptySlotColor;
+                resultIcon.GetComponent<TooltipTrigger>()?.SetItem(null);
+            }
+            if (successRateText != null) successRateText.text = $"Combo invalide — dépasse S6 (S{level1}+S{level2} → S{level1 + level2 + 1})";
+            if (costText         != null) costText.text         = "";
+            if (fuseButton        != null) fuseButton.interactable = false;
             return;
         }
 
         var tier = FusionSystem.Instance.table.GetTier(target);
 
-        if (resultIcon  != null) { resultIcon.sprite = _slot2Item.Icon; resultIcon.enabled = _slot2Item.Icon != null; }
-        if (resultLabel != null) resultLabel.text     = $"S{target} — {_slot2Item.Name}";
-        if (resultResistances != null) resultResistances.text = BuildResistancePreviewText();
-        if (successRateText   != null) successRateText.text   = tier != null ? $"Réussite : {tier.successRate:P0}" : "";
-        if (costText           != null) costText.text           = tier != null ? $"Coût : {tier.aerisCost} Aeris" : "";
-        if (fuseButton          != null) fuseButton.interactable = tier != null;
+        // Preview réelle — Fuse() est pure (ne mute jamais slot1/slot2, aucune consommation),
+        // donc l'appeler ici juste pour afficher le tooltip du résultat exact (nom, def,
+        // résistances) est sûr. L'objet preview est jeté après ce refresh, jamais persisté —
+        // la vraie fusion (ResolveFusion) rappelle Fuse() séparément à la résolution.
+        InventoryItem previewItem = BuildPreviewResultItem();
+        if (resultIcon != null)
+        {
+            resultIcon.sprite = previewItem?.Icon;
+            resultIcon.color  = previewItem?.Icon != null ? FilledSlotColor : EmptySlotColor;
+            resultIcon.GetComponent<TooltipTrigger>()?.SetItem(previewItem);
+        }
+        if (successRateText != null) successRateText.text = tier != null ? $"Réussite : {Mathf.RoundToInt(tier.successRate * 100f)}%" : "";
+        if (costText         != null) costText.text         = tier != null ? $"Coût : {tier.aerisCost} Aeris" : "";
+        if (fuseButton        != null) fuseButton.interactable = tier != null;
     }
 
-    private string BuildResistancePreviewText()
+    private InventoryItem BuildPreviewResultItem()
     {
         if (_slot1Item.GlovesInstance != null && _slot2Item.GlovesInstance != null)
-        {
-            var g1 = _slot1Item.GlovesInstance;
-            var g2 = _slot2Item.GlovesInstance;
-            return $"Feu {(g1.resistFire + g2.resistFire):P0} | Eau {(g1.resistWater + g2.resistWater):P0} | " +
-                   $"Foudre {(g1.resistLightning + g2.resistLightning):P0} | Terre {(g1.resistEarth + g2.resistEarth):P0} | " +
-                   $"Nature {(g1.resistNature + g2.resistNature):P0} | Ténèbres {(g1.resistDarkness + g2.resistDarkness):P0} | " +
-                   $"Lumière {(g1.resistLight + g2.resistLight):P0}";
-        }
+            return new InventoryItem(GlovesInstance.Fuse(_slot1Item.GlovesInstance, _slot2Item.GlovesInstance));
         if (_slot1Item.BootsInstance != null && _slot2Item.BootsInstance != null)
-        {
-            var b1 = _slot1Item.BootsInstance;
-            var b2 = _slot2Item.BootsInstance;
-            return $"Feu {(b1.resistFire + b2.resistFire):P0} | Eau {(b1.resistWater + b2.resistWater):P0} | " +
-                   $"Foudre {(b1.resistLightning + b2.resistLightning):P0} | Terre {(b1.resistEarth + b2.resistEarth):P0} | " +
-                   $"Nature {(b1.resistNature + b2.resistNature):P0} | Ténèbres {(b1.resistDarkness + b2.resistDarkness):P0} | " +
-                   $"Lumière {(b1.resistLight + b2.resistLight):P0}";
-        }
-        return "";
+            return new InventoryItem(BootsInstance.Fuse(_slot1Item.BootsInstance, _slot2Item.BootsInstance));
+        return null;
     }
 
     // =========================================================
@@ -272,23 +352,18 @@ public class FusionUI : MonoBehaviour
         if (outcome != FusionResult.Success && outcome != FusionResult.Failure)
         {
             Debug.LogWarning($"[FUSION] Fusion non résolue ({outcome}) — aucune pièce perdue, rien n'a été consommé.");
+            if (resultOutcomeText != null)
+                resultOutcomeText.text = $"<color={ColorBad}>Fusion impossible ({outcome})</color>";
             RefreshSlots();
             RefreshPreview();
             if (fuseButton != null) fuseButton.interactable = true;
             return;
         }
 
-        // Slot1 et Slot2 sont retirés — succès ou échec (GDD : les deux détruites). N'ajoute le
-        // résultat que si les DEUX retraits ont réellement réussi, sinon la pièce fusionnée
-        // pourrait être dupliquée avec l'original (ex: instance déjà absente de l'inventaire).
-        bool removed1 = InventorySystem.Instance != null && InventorySystem.Instance.RemoveItem(_slot1Item);
-        bool removed2 = InventorySystem.Instance != null && InventorySystem.Instance.RemoveItem(_slot2Item);
-
-        if (!removed1 || !removed2)
-        {
-            Debug.LogError($"[FUSION] Retrait inventaire échoué (slot1={removed1}, slot2={removed2}) — résultat NON ajouté pour éviter une duplication.");
-        }
-        else if (outcome == FusionResult.Success && resultItem != null)
+        // Slot1 et Slot2 sont déjà hors de l'inventaire depuis leur dépôt (OnSlotDropped) —
+        // succès ou échec, ils y restent définitivement (GDD : les deux détruites). Un
+        // succès ajoute seulement le résultat.
+        if (outcome == FusionResult.Success && resultItem != null)
         {
             if (!InventorySystem.Instance.AddItem(resultItem))
                 Debug.LogError("[FUSION] Réussite mais ajout du résultat à l'inventaire impossible (inventaire plein ?) — pièce perdue.");
@@ -297,6 +372,11 @@ public class FusionUI : MonoBehaviour
         Debug.Log(outcome == FusionResult.Success
             ? "[FUSION] Réussite — nouvelle pièce ajoutée à l'inventaire."
             : $"[FUSION] {outcome} — les 2 pièces sont perdues.");
+
+        if (resultOutcomeText != null)
+            resultOutcomeText.text = outcome == FusionResult.Success
+                ? $"<color={ColorOk}>Réussite !</color>"
+                : $"<color={ColorBad}>Échec — les 2 pièces sont détruites</color>";
 
         _slot1Item = null;
         _slot2Item = null;

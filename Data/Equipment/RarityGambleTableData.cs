@@ -15,7 +15,7 @@ using UnityEngine;
 //     résultat s'applique toujours, même s'il est inférieur à l'actuelle.
 // =============================================================
 
-[CreateAssetMenu(fileName = "RarityGambleTable", menuName = "AetherTree/Equipment/RarityGambleTableData")]
+[CreateAssetMenu(fileName = "RarityGambleTable", menuName = "AetherTree/Config/RarityGambleTableData")]
 public class RarityGambleTableData : ScriptableObject
 {
     [System.Serializable]

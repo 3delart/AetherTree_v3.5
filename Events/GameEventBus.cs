@@ -29,10 +29,10 @@ public static class GameEventBus
     public static event Action<SocialEvent>         OnSocialAction;
     public static event Action<PetEvent>            OnPetAction;
     public static event Action<TimeEvent>           OnTimeAction;
-    public static event Action<MetierEvent>         OnMetierAction;
     public static event Action<ServerEvent>         OnServerEvent;
     public static event Action<StatsChangedEvent>   OnStatsChanged;
     public static event Action<QuestEvent>          OnQuestAction;
+    public static event Action<RecipeCraftedEvent>  OnRecipeCrafted;
     public static event System.Action OnSaveLoaded;
 
     // ── Publish ──────────────────────────────────────────────
@@ -49,10 +49,10 @@ public static class GameEventBus
     public static void Publish(SocialEvent e)         => OnSocialAction?.Invoke(e);
     public static void Publish(PetEvent e)            => OnPetAction?.Invoke(e);
     public static void Publish(TimeEvent e)           => OnTimeAction?.Invoke(e);
-    public static void Publish(MetierEvent e)         => OnMetierAction?.Invoke(e);
     public static void Publish(ServerEvent e)         => OnServerEvent?.Invoke(e);
     public static void Publish(StatsChangedEvent e)   => OnStatsChanged?.Invoke(e);
     public static void Publish(QuestEvent e)          => OnQuestAction?.Invoke(e);
+    public static void Publish(RecipeCraftedEvent e)  => OnRecipeCrafted?.Invoke(e);
     public static void PublishSaveLoaded() => OnSaveLoaded?.Invoke();
 
     // ── Reset ────────────────────────────────────────────────
@@ -71,10 +71,10 @@ public static class GameEventBus
         OnSocialAction   = null;
         OnPetAction      = null;
         OnTimeAction     = null;
-        OnMetierAction   = null;
         OnServerEvent    = null;
         OnStatsChanged   = null;
         OnQuestAction    = null;
+        OnRecipeCrafted  = null;
 
         // Chaque singleton se réabonne lui-même
         UnlockManager.Instance?.Resubscribe();

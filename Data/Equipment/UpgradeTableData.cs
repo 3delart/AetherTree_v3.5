@@ -15,7 +15,7 @@ using UnityEngine;
 // (UpgradeBonus), ce SO ne porte que ce qui manquait : succès + ressources.
 // =============================================================
 
-[CreateAssetMenu(fileName = "UpgradeTable", menuName = "AetherTree/Equipment/UpgradeTableData")]
+[CreateAssetMenu(fileName = "UpgradeTable", menuName = "AetherTree/Config/UpgradeTableData")]
 public class UpgradeTableData : ScriptableObject
 {
     [System.Serializable]

@@ -25,10 +25,14 @@ using System.Collections.Generic;
 // ── Enums debuff ──────────────────────────────────────────────
 public enum DebuffType
 {
-    // DoT
-    Burn,       // Brûlure    — Feu        — dégâts sur la durée, tick/s (§3.1.1.1)
-    Poison,     // Poison     — Nature     — DoT + réduction soins reçus % (§3.1.1.1)
-    Bleed,      // Saignement — Neutre     — dégâts sur la durée
+    // DoT — retirés du design, utiliser Dot (fin d'enum) avec damageElement à la place.
+    // Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser ces 3 positions.
+    [System.Obsolete("Retiré du design — utilise Dot + damageElement = Fire à la place.")]
+    Burn,
+    [System.Obsolete("Retiré du design — utilise Dot + damageElement = Nature à la place.")]
+    Poison,
+    [System.Obsolete("Retiré du design — utilise Dot + damageElement = Neutral à la place.")]
+    Bleed,
 
     // Ralentissement & Immobilisation
     Freeze,     // Gel        — Eau        — immobilisation totale (réattribué Eau v3.0 — §3.1.1.1)
@@ -59,6 +63,13 @@ public enum DebuffType
     Stats,      // Réduction de stat spécifique (utilise StatModifierType)
     Mark,       // Marque pour bonus dégâts (design decision)
     Other,      // Effet spécial custom
+
+    // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
+    Dot,        // DoT générique réutilisable pour tout élément (voir damageElement) —
+                // même formule que Burn/Poison/Bleed, juste pas un nom/élément figé.
+                // Futurs debuffs par élément (noyade=Eau, etc.) : soit ce type générique
+                // avec damageElement + effectName/icon dédiés, soit un DebuffType propre —
+                // au choix du designer au moment de les créer.
 }
 
 // ── Enums buff ────────────────────────────────────────────────
@@ -70,10 +81,30 @@ public enum BuffType
 
     // Défense
     Shield,         // Bouclier — absorbe les dégâts en priorité avant les HP (§3.1.1.2)
-    // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp
-    // retirés (2026) — redondants avec Stats (StatModifierType couvre déjà chaque
-    // stat individuellement : AllResistances, MeleeDefense/RangedDefense/MagicDefense,
-    // Dodge, Precision, AttackDamage, MoveSpeed, CritChance, CritDamage).
+
+    // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp retirés
+    // (2026) — redondants avec Stats (StatModifierType couvre déjà chaque stat individuellement :
+    // AllResistances, MeleeDefense/RangedDefense/MagicDefense, Dodge, Precision, AttackDamage,
+    // MoveSpeed, CritChance, CritDamage). Gardés ici comme placeholders [Obsolete] pour ne pas
+    // décaler les ordinaux sérialisés de Purified/Invincible/Stealth/Dispel/Stats/Other qui
+    // suivent — Unity sérialise un enum par sa position int, pas son nom. Ne jamais réutiliser
+    // ces slots pour une nouvelle valeur ; ajouter en fin d'enum à la place (voir Revive).
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.AllResistances.")]
+    Removed_Barrier,
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.MeleeDefense/RangedDefense/MagicDefense.")]
+    Removed_DefenseUp,
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.Dodge.")]
+    Removed_DodgeUp,
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.Precision.")]
+    Removed_PrecisionUp,
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.AttackDamage.")]
+    Removed_AttackUp,
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.MoveSpeed.")]
+    Removed_Haste,
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.CritChance.")]
+    Removed_CritChanceUp,
+    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.CritDamage.")]
+    Removed_CritDamageUp,
 
     // Spéciaux
     Purified,       // Suppression de tous les debuffs actifs — Lumière (§3.1.1.2)
@@ -108,7 +139,14 @@ public enum StatModifierType
 public abstract class StatusEffectData : ScriptableObject
 {
     [Header("Identité")]
-    public string effectName = "Effect";
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"buff_\"\n" +
+             "ou \"dbf_\" selon le type (ex: \"buff_shield\", \"dbf_poison\"). Ne JAMAIS afficher au\n" +
+             "joueur — voir effectName pour l'affichage.")]
+    public string effectID;
+    [Tooltip("Nom affiché au joueur (fr/en).")]
+    public LocalizedText effectName = new LocalizedText();
+    [Tooltip("Description affichée au joueur (fr/en) — tooltip consommable, icône de statut actif.")]
+    public LocalizedText description = new LocalizedText();
     public Sprite icon;
 
     [Header("Durée")]
@@ -117,6 +155,14 @@ public abstract class StatusEffectData : ScriptableObject
 
     /// <summary>Crée une instance runtime de cet effet.</summary>
     public abstract StatusEffectInstance CreateInstance(Entity source);
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(effectID))
+            effectID = name;
+    }
+#endif
 }
 
 // =============================================================

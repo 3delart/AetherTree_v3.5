@@ -99,7 +99,7 @@ public class QuestRewardItem
 // =============================================================
 // QUESTDATA
 // =============================================================
-[CreateAssetMenu(fileName = "Quest_", menuName = "AetherTree/Quests/QuestData")]
+[CreateAssetMenu(fileName = "quest_", menuName = "AetherTree/Quetes/QuestData")]
 public class QuestData : ScriptableObject
 {
     [Header("Identité")]
@@ -171,6 +171,14 @@ public class QuestData : ScriptableObject
         if (objectives == null) return;
         foreach (var o in objectives) o.currentCount = 0;
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(questID))
+            questID = name;
+    }
+#endif
 }
 
 // =============================================================

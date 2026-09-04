@@ -199,6 +199,20 @@ public class StatPointSystem : MonoBehaviour
         totalPointsEarned = Mathf.Max(0, totalEarned);
         availablePoints   = Mathf.Max(0, available);
 
+        // Filet de sécurité — si le total sauvegardé est incohérent avec le niveau chargé
+        // (save éditée à la main, ou tout désync futur), on complète au lieu d'écraser
+        // silencieusement le pool attendu. GDD §3.2.1 — 3 pts/niveau.
+        if (_player != null)
+        {
+            int expectedTotal = _player.level * 3;
+            if (expectedTotal > totalPointsEarned)
+            {
+                int missing = expectedTotal - totalPointsEarned;
+                totalPointsEarned += missing;
+                availablePoints   += missing;
+            }
+        }
+
         RecalculateAllBonuses();
         if (_player != null) _player.stats.RecalculateStats(_player);
     }

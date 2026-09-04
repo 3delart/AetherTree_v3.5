@@ -234,6 +234,55 @@ public class InventorySystem : MonoBehaviour
         return true;
     }
 
+    // ── Consommables — comptage/consommation par référence SO ────
+    // Même logique que GetResourceCount/ConsumeResource ci-dessus, sur ConsumableInstance.
+
+    public int GetConsumableCount(ConsumableData data)
+    {
+        if (data == null) return 0;
+        int total = 0;
+        foreach (var item in _items)
+            if (item.ConsumableInstance?.data == data) total += item.ConsumableInstance.quantity;
+        return total;
+    }
+
+    public bool ConsumeConsumable(ConsumableData data, int amount)
+    {
+        if (data == null || amount <= 0) return false;
+        if (GetConsumableCount(data) < amount) return false;
+
+        int remaining = amount;
+        foreach (var item in new List<InventoryItem>(_items))
+        {
+            if (remaining <= 0) break;
+            if (item.ConsumableInstance?.data != data) continue;
+
+            int take = Mathf.Min(remaining, item.ConsumableInstance.quantity);
+            item.ConsumableInstance.Remove(take);
+            remaining -= take;
+            if (item.ConsumableInstance.IsEmpty) RemoveItem(item);
+        }
+
+        OnInventoryChanged?.Invoke();
+        return true;
+    }
+
+    // ── Dispatch générique — ingrédients de recette (ResourceData ou ConsumableData) ──
+
+    public int GetItemCount(ItemData data) => data switch
+    {
+        ResourceData rd   => GetResourceCount(rd),
+        ConsumableData cd => GetConsumableCount(cd),
+        _                 => 0,
+    };
+
+    public bool ConsumeItem(ItemData data, int amount) => data switch
+    {
+        ResourceData rd   => ConsumeResource(rd, amount),
+        ConsumableData cd => ConsumeConsumable(cd, amount),
+        _                 => false,
+    };
+
     // ── Équipement depuis l'inventaire ────────────────────────
 
     /// <summary>

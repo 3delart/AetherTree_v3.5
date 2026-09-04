@@ -25,7 +25,7 @@ using System.Collections.Generic;
 //   Rune     1 slot Rune Weapon — rune.runeLevel ≤ weaponLevel
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewWeapon", menuName = "AetherTree/Equipment/WeaponData")]
+[CreateAssetMenu(fileName = "wpn_", menuName = "AetherTree/Inventaire/Equipement/WeaponData")]
 public class WeaponData : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────

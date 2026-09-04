@@ -210,6 +210,39 @@ Principe général : *le client ne dit jamais "j'ai réussi, donne-moi la récom
   ```
 - **Réclamation de récompense** (ouvrir le mail, cliquer "Récupérer") → bon candidat naturel pour un `[Command]` explicite côté client, avec vérification serveur stricte que le mail existe pour ce joueur et n'est pas déjà réclamé.
 
+### Anti-dataminage — distinct de l'anti-triche ci-dessus
+
+Point absent des sections précédentes : le serveur-autoritaire empêche un client de **tricher**
+("j'ai rempli la condition" sans preuve), mais n'empêche pas un dataminer de **lire** le
+contenu si l'asset est quand même embarqué dans le build client. Ce sont deux problèmes
+différents, deux solutions différentes.
+
+`ConditionData`/`ConditionEntry`/`ConditionCheckerBase` est le seul et unique pipeline de
+déblocage passif du jeu (skills cachés, recettes, items secrets) — c'est LE contenu à protéger
+en priorité, pas parce qu'il est précieux en soi, mais parce qu'il révèle le *déclencheur*
+("reste 10 min sous cet arbre la nuit") qui casse la découverte organique (GDD §1.9). Le
+résultat obtenu (le skill/item lui-même), une fois débloqué par n'importe quel joueur, finira
+de toute façon par se savoir socialement — pas la peine de le cacher, seul le *comment* compte.
+
+Nuance sur `QuestData` : `triggerCondition` et chaque `QuestObjective.checker` utilisent le
+même `ConditionCheckerBase` que `ConditionData` — mais uniquement problématique pour une quête
+`QuestType.Hidden` (déclencheur voulu secret comme un skill caché). Une quête normale, visible
+dans le journal dès acceptée, n'a rien à cacher.
+
+**Solution retenue** : une fois le split client/serveur en place, `ConditionData` (+ le
+`triggerCondition` des quêtes `Hidden` uniquement) va dans un groupe Addressables — ou un
+dossier — serveur-only, jamais inclus dans le build client. Le serveur évalue, le client ne
+reçoit jamais que le résultat (mail de récompense — voir "bon réflexe déjà en place" ci-dessous,
+`MailReward` est déjà une copie de `ConditionReward`, jamais une référence au `ConditionData`
+déclencheur, donc le flux de données est déjà correct côté code — reste seulement la séparation
+au niveau du build à faire quand Mirror arrivera).
+
+Tout le reste (items, recettes une fois débloquées, mobs, zones) **reste embarqué client
+normalement** — nécessaire au rendu (catalogue boutique, équipement des autres joueurs, VFX de
+leurs skills) et le "streaming à la demande" coûterait un vrai système de livraison de contenu
+(versioning, cache par joueur) pour un bénéfice limité — même les gros MMO (WoW, FFXIV)
+n'empêchent pas le dataminage des items/quêtes, ils l'acceptent comme un coût connu.
+
 ### MailboxSystem.cs — notes
 
 - Même pattern singleton global (`Instance`, `DontDestroyOnLoad`) que les autres systèmes → à faire passer en état par-joueur côté serveur, comme `UnlockManager`.
@@ -217,6 +250,40 @@ Principe général : *le client ne dit jamais "j'ai réussi, donne-moi la récom
 - `mail.CanClaim` / `rewardClaimed` → la structure protège déjà contre une double réclamation **au niveau des données** ; il faut s'assurer que `ClaimReward()` (méthode tronquée dans l'extrait vu, entre `SendRewardMail` et la grosse fonction de distribution) fait bien cette vérification **côté serveur** avant de marquer `rewardClaimed = true`, et que c'est cette méthode précise qui doit devenir le point d'entrée du `[Command]` de réclamation.
 - `InventorySystem.Instance?.AddItem(...)` appelé directement dans la distribution de récompense → à sécuriser comme le reste de l'inventaire (autorité serveur uniquement, voir section Entity/Player plus haut).
 - Les nombreux `TODO` (TitleSystem, CraftSystem.UnlockRecipe, PetSystem.UnlockPet) → pas un point réseau en soi, mais à garder en tête : ces systèmes non encore implémentés devront suivre le même principe serveur-autoritaire quand ils arriveront.
+
+---
+
+## 🟤 Ménage de printemps (2026) — logique déjà écrite, jamais branchée
+
+Trouvé pendant un grand nettoyage de code mort (3 agents Explore, tout `Assets/Scripts`). Pas
+du code mort à proprement parler — de la logique complète mais dont le point d'entrée manque
+encore. Gardé volontairement (pas supprimé) car ce sont des features MMO clairement prévues.
+**À revoir de zéro** le jour où ces systèmes seront construits, pas juste "rebrancher tel quel"
+(le contexte aura changé d'ici là, surtout après le passage réseau).
+
+- **Pet / Capture** — `Entities/Mob.cs` : `AggroFrom(Entity)`, `IsCaptureable()`,
+  `GetDamageContribution(Player)`. Système de capture/familier pas encore construit.
+- **Résurrection par un autre joueur** — `Systems/RespawnSystem.cs` : `Revive(float hpPercent,
+  float manaPercent)`. Nécessite du multijoueur pour avoir un sens.
+- **Cooldown UI des passifs** — `Systems/PassiveSkillSystem.cs` : `GetCooldownRemaining(...)`,
+  `IsUsedThisCombat(...)`. Logique de tracking déjà là, juste aucune UI ne l'affiche encore.
+- **PvP / Duel / Arène / Champ de bataille / Groupe / Social / Pet / Hôtel des Ventes** —
+  `Entities/Player.cs` : tout un cluster de méthodes (`OnOpenWorldDeath`, `OnPvPDeath`,
+  `OnPvPKill`, `OnDuelWon`, `OnDuelLost`, `OnFreeArenaTop3`, `OnPvPReportValidated`,
+  `OnWorldReportValidated`, `OnArenaResult`, `OnBattlefieldResult`, `RegisterGroupMemberLed`,
+  `OnPlayerMet`, `OnPetCaptured`, `OnAnimalCaressed`, `OnServerConnect`,
+  `GetHdVListingFeeRate`, `GetHdVSlotCount`, `OnHdVTransactionCompleted`,
+  `OnHdVListingCancelled`) — publient déjà les bons events (`SocialEvent`, `PetEvent`,
+  `ServerEvent`, `ItemEvent`...) mais rien ne les appelle encore (aucun système PvP/Groupe/HDV/
+  Pet construit côté gameplay). `XPSystem.cs` confirme déjà "TODO Phase 8 bonus groupe §15.2".
+- **4 events GameEventBus jamais publiés** — `PlayerLevelUpEvent`, `DebuffReceivedEvent`,
+  `NpcInteractEvent`, `TimeEvent`. Le câblage complet existe (struct dans `GameEvents.cs` +
+  event/`Publish`/`Reset` dans `GameEventBus.cs` + un `Checker` dédié dans
+  `Progression/Conditions/Checkers/` + un abonnement dans `UnlockManager.cs`) mais **aucun
+  code n'appelle jamais `GameEventBus.Publish(new XxxEvent{...})`** pour ces 4 — toute
+  `ConditionData` qui en dépendrait est aujourd'hui impossible à déclencher. Il manque
+  uniquement le point de déclenchement (ex: `Player.OnLevelUp()` devrait publier
+  `PlayerLevelUpEvent`, `StatusEffectSystem` devrait publier `DebuffReceivedEvent`, etc.).
 
 ---
 

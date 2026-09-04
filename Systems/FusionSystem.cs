@@ -64,7 +64,7 @@ public class FusionSystem : MonoBehaviour
         bool success = Random.value < tier.successRate;
         if (success) result = GlovesInstance.Fuse(slot1, slot2);
 
-        Debug.Log($"[FUSION] Gants {(success ? "RÉUSSIE" : "ÉCHOUÉE")} → cible S{target} (taux {tier.successRate:P0}).");
+        Debug.Log($"[FUSION] Gants {(success ? "RÉUSSIE" : "ÉCHOUÉE")} → cible S{target} (taux {Mathf.RoundToInt(tier.successRate * 100f)}%).");
         return success ? FusionResult.Success : FusionResult.Failure;
     }
 
@@ -82,7 +82,7 @@ public class FusionSystem : MonoBehaviour
         bool success = Random.value < tier.successRate;
         if (success) result = BootsInstance.Fuse(slot1, slot2);
 
-        Debug.Log($"[FUSION] Bottes {(success ? "RÉUSSIE" : "ÉCHOUÉE")} → cible S{target} (taux {tier.successRate:P0}).");
+        Debug.Log($"[FUSION] Bottes {(success ? "RÉUSSIE" : "ÉCHOUÉE")} → cible S{target} (taux {Mathf.RoundToInt(tier.successRate * 100f)}%).");
         return success ? FusionResult.Success : FusionResult.Failure;
     }
 

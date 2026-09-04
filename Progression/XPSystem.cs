@@ -19,17 +19,10 @@ public class XPSystem : MonoBehaviour
 {
     public static XPSystem Instance { get; private set; }
 
-    private Player player;
-
     private void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
-    }
-
-    private void Start()
-    {
-        player = FindObjectOfType<Player>();
     }
 
     private void OnEnable()

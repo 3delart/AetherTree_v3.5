@@ -16,10 +16,13 @@ using System.Collections.Generic;
 // Créer via : Assets > Create > AetherTree > PNJ > DialogueData
 // =============================================================
 
-[CreateAssetMenu(fileName = "Dialogue_New", menuName = "AetherTree/PNJ/DialogueData")]
+[CreateAssetMenu(fileName = "dlg_", menuName = "AetherTree/PNJ/DialogueData")]
 public class DialogueData : ScriptableObject
 {
     [Header("Dialogue")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"dlg_\"\n" +
+             "(ex: \"dlg_forgeron_braven\"). Ne JAMAIS afficher au joueur — voir dialogueName pour l'affichage.")]
+    public string             dialogueID;
     public string             dialogueName = "Dialogue";
     public List<DialogueStage> stages      = new List<DialogueStage>();
 
@@ -40,6 +43,14 @@ public class DialogueData : ScriptableObject
             if (s.stageID < first.stageID) first = s;
         return first;
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(dialogueID))
+            dialogueID = name;
+    }
+#endif
 }
 
 // ── Stage de dialogue ─────────────────────────────────────────
@@ -113,15 +124,24 @@ public enum DialogueAction
 {
     None,               // Aucune action — juste navigation de stage
     OpenShop,           // Ouvre ShopUI (Merchant)
-    OpenForge,          // Ouvre ForgeUI (Blacksmith) — TODO Phase 6
+    OpenForge,          // Ouvre ForgeUI — onglet Upgrade actuel (PNJType.Forge) — TODO Phase 6
     OpenRarity,         // Ouvre RarityUI (Rarity) — pari de rareté GDD §3.4.8
     OpenRuneUI,         // Ouvre RuneUI identification/insertion (Antiquarian) — TODO Phase 6
     OpenFusionUI,       // Ouvre FusionUI Gants/Bottes (FusionNPC) — TODO Phase 6
-    OpenMetierUI,       // Ouvre MetierUI déblocage activités (CraftMaster) — TODO Phase 7
+    [System.Obsolete("Retiré du design (2026) — métier jamais implémenté, ordinal gardé.")]
+    OpenMetierUI,
     OpenQuestLog,       // Ouvre QuestUI (Quest) — TODO Phase 7
     OpenHarborUI,       // Ouvre navigation bateau (HarborMaster) — TODO Phase 8
     TriggerGuildCreation, // Lance la création de guilde (Mayor)
     AcceptQuest,        // Accepte une quête (QuestNPC) — questData assignée sur le stage
     TurnInQuest,        // Rend une quête complétée au PNJ donneur
     CloseDialogue,      // Ferme le dialogue
+
+    // ── Ajouté §13.2 — fenêtre PNJ partagée à onglets ──────────
+    // Remplace OpenShop/OpenForge/OpenRarity pour tout PNJ composable (voir
+    // PNJTypeExtensions.GetTabs()) — ouvre toujours sur l'onglet Boutique,
+    // les autres onglets se changent depuis l'intérieur de la fenêtre, pas
+    // via une nouvelle DialogueAction. Ajouté en fin d'enum — ne jamais
+    // réordonner (int sérialisé sur les DialogueOption existantes).
+    OpenPNJWindow,
 }

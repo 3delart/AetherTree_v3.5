@@ -8,7 +8,9 @@ using TMPro;
 // AetherTree GDD v18
 //
 // Glisser les 3 GameObjects ConsoSlot1…3 dans slots[].
-// Les enfants (ItemIcon, CD, Key) trouvés par nom.
+// Les enfants (ItemIcon, CDOverlay, Qty, Key) trouvés par nom — CDOverlay =
+// Image radial fill (comme SkillBar/PassifBar), pas de texte countdown ici.
+// Key = raccourci affiché (F1/F2/F3, câblage clavier réel pas encore fait).
 // Utilisation : clic OU F1 / F2 / F3
 // =============================================================
 
@@ -20,6 +22,7 @@ public class ConsoBarUI : MonoBehaviour
     public GameObject[] slots = new GameObject[3];
 
     private ConsoSlotBarUI[] _slotUIs = new ConsoSlotBarUI[3];
+    private Player           _player;
 
     private void Awake()
     {
@@ -34,9 +37,10 @@ public class ConsoBarUI : MonoBehaviour
             ConsoSlotBarUI slot = slots[i].GetComponent<ConsoSlotBarUI>();
             if (slot == null) slot = slots[i].AddComponent<ConsoSlotBarUI>();
 
-            slot.itemIcon     = t.Find("ItemIcon")?.GetComponent<Image>();
-            slot.cdOverlay    = t.Find("CD")      ?.GetComponent<Image>();
-            slot.keyText      = t.Find("Key")     ?.GetComponent<TextMeshProUGUI>();
+            slot.itemIcon     = t.Find("ItemIcon")  ?.GetComponent<Image>();
+            slot.cdOverlay    = t.Find("CDOverlay") ?.GetComponent<Image>();
+            slot.keyText      = t.Find("Key")       ?.GetComponent<TextMeshProUGUI>();
+            slot.quantityText = t.Find("Qty")       ?.GetComponent<TextMeshProUGUI>();
             slot.Init();
 
             _slotUIs[i] = slot;
@@ -45,6 +49,10 @@ public class ConsoBarUI : MonoBehaviour
             var drop = slots[i].GetComponent<ConsoDropSlot>();
             if (drop == null) drop = slots[i].AddComponent<ConsoDropSlot>();
             drop.slotIndex = i;
+
+            // Ajoute TooltipTrigger si absent — même pattern que SkillBarUI
+            if (slots[i].GetComponent<TooltipTrigger>() == null)
+                slots[i].AddComponent<TooltipTrigger>();
 
             // Clic → utilise le slot
             var btn = slots[i].GetComponent<Button>();
@@ -56,7 +64,11 @@ public class ConsoBarUI : MonoBehaviour
         }
     }
 
-    private void Start() => RefreshAll();
+    private void Start()
+    {
+        _player = FindObjectOfType<Player>();
+        RefreshAll();
+    }
 
     private void Update()
     {
@@ -65,11 +77,47 @@ public class ConsoBarUI : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.F3)) TryUseSlot(2);
     }
 
+    /// <summary>Utilise le consommable du slot — Potion (heal HP/Mana + buff) seule
+    /// implémentée pour l'instant ; DungeonStone/TeleportItem/Other pas encore câblés.</summary>
     public void TryUseSlot(int index)
     {
         if (index < 0 || index >= _slotUIs.Length || _slotUIs[index] == null) return;
-        // TODO : brancher sur InventorySystem
-        Debug.Log($"[ConsoBarUI] Slot {index} utilisé (InventorySystem non implémenté).");
+
+        var slot     = _slotUIs[index];
+        var instance = slot.CurrentInstance;
+        if (instance == null || instance.data == null || instance.IsEmpty) return;
+        if (slot.IsOnCooldown) return;
+
+        if (_player == null) _player = FindObjectOfType<Player>();
+        if (_player == null || _player.isDead) return;
+
+        var data = instance.data;
+        if (data.consumableType != ConsumableType.Potion && data.consumableType != ConsumableType.Food)
+        {
+            Debug.Log($"[ConsoBarUI] {data.consumableType} pas encore implémenté à l'usage.");
+            return;
+        }
+
+        if (data.healHP   > 0f) _player.Heal(data.healHP);
+        if (data.healMana > 0f) _player.RecoverMana(data.healMana);
+        if (data.buffEffect != null) _player.statusEffects?.ApplyBuff(data.buffEffect, _player);
+
+        instance.Remove(1);
+        if (instance.IsEmpty)
+        {
+            var wrapper = InventorySystem.Instance?.GetAllItems().Find(i => i.ConsumableInstance == instance);
+            if (wrapper != null) InventorySystem.Instance.RemoveItem(wrapper);
+            slot.SetConsoInstance(null);
+        }
+        else
+        {
+            slot.UpdateQuantity(instance.quantity);
+        }
+
+        if (data.cooldown > 0f) slot.StartCooldown(data.cooldown);
+
+        InventorySystem.Instance?.OnInventoryChanged?.Invoke();
+        InventoryUI.Instance?.RefreshGrid();
     }
 
     public void RefreshAll()
@@ -96,6 +144,11 @@ public class ConsoBarUI : MonoBehaviour
         if (index < 0 || index >= _slotUIs.Length) return;
         _slotUIs[index]?.SetConsoInstance(conso);
     }
+
+    /// <summary>SO actuellement assigné au slot — utilisé par SaveSystem pour persister
+    /// l'assignation (par référence SO, pas par instance — voir CharacterProgress.consoBarSlots).</summary>
+    public ConsumableData GetSlotData(int index)
+        => (index >= 0 && index < _slotUIs.Length) ? _slotUIs[index]?.CurrentConso : null;
 }
 
 // =============================================================
@@ -105,11 +158,16 @@ public class ConsoSlotBarUI : MonoBehaviour
 {
     [HideInInspector] public Image           itemIcon;
     [HideInInspector] public Image           cdOverlay;
+    [HideInInspector] public TextMeshProUGUI cdText;
     [HideInInspector] public TextMeshProUGUI keyText;
     [HideInInspector] public TextMeshProUGUI quantityText;
 
     private ConsumableData _currentConso;
     public  ConsumableData CurrentConso => _currentConso;
+
+    private float _cooldownRemaining = 0f;
+    private float _cooldownTotal     = 0f;
+    public  bool  IsOnCooldown => _cooldownRemaining > 0f;
 
     private static readonly Color EmptyColor  = new Color(0f, 0f, 0f, 0.4f);
     private static readonly Color OnCooldown  = new Color(0f, 0f, 0f, 0.6f);
@@ -149,6 +207,7 @@ public class ConsoSlotBarUI : MonoBehaviour
             }
         }
         UpdateQuantity(instance?.quantity ?? 0);
+        GetComponent<TooltipTrigger>()?.SetItem(instance != null ? new InventoryItem(instance) : null);
     }
 
     public void SetConso(ConsumableData conso, int quantity)
@@ -172,6 +231,7 @@ public class ConsoSlotBarUI : MonoBehaviour
             }
         }
         UpdateQuantity(quantity);
+        GetComponent<TooltipTrigger>()?.SetItem(_currentInstance != null ? new InventoryItem(_currentInstance) : null);
     }
 
     public void UpdateQuantity(int quantity)
@@ -185,7 +245,24 @@ public class ConsoSlotBarUI : MonoBehaviour
     {
         bool onCD = remaining > 0f && total > 0f;
         if (cdOverlay != null) { cdOverlay.gameObject.SetActive(onCD); cdOverlay.fillAmount = onCD ? remaining / total : 0f; cdOverlay.color = onCD ? OnCooldown : Color.clear; }
+        if (cdText    != null) { cdText.gameObject.SetActive(onCD);    cdText.text = onCD ? Mathf.CeilToInt(remaining).ToString() : ""; }
         if (itemIcon  != null && _currentConso != null) itemIcon.color = onCD ? DimmedColor : Color.white;
+    }
+
+    /// <summary>Démarre le décompte — TryUseSlot() vérifie IsOnCooldown avant de réutiliser.</summary>
+    public void StartCooldown(float duration)
+    {
+        _cooldownTotal     = duration;
+        _cooldownRemaining = duration;
+        SetCooldown(_cooldownRemaining, _cooldownTotal);
+    }
+
+    private void Update()
+    {
+        if (_cooldownRemaining <= 0f) return;
+        _cooldownRemaining -= Time.deltaTime;
+        if (_cooldownRemaining < 0f) _cooldownRemaining = 0f;
+        SetCooldown(_cooldownRemaining, _cooldownTotal);
     }
 }
 

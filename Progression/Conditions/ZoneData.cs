@@ -11,21 +11,24 @@ using UnityEngine;
 // Création : clic droit → AetherTree/Zone/ZoneData
 // =============================================================
 
-[CreateAssetMenu(fileName = "Zone_", menuName = "AetherTree/Zone/ZoneData")]
+[CreateAssetMenu(fileName = "zone_", menuName = "AetherTree/Progression/ZoneData")]
 public class ZoneData : ScriptableObject
 {
     [Header("Identifiant")]
     [Tooltip("ID unique utilisé par ZoneChecker. Ex : 'sous_arbre', 'fontaine_nord'")]
     public string zoneID;
 
-    [Header("Affichage")]
-    public string displayName;
-    [TextArea] public string description;
-    public Sprite icon;
-
     [Header("Propriétés")]
     public bool isOutdoor   = true;
     public bool isDungeon   = false;
     [Tooltip("True = zone PvP activé")]
     public bool isPvP       = false;
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(zoneID))
+            zoneID = name;
+    }
+#endif
 }

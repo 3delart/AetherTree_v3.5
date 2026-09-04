@@ -23,7 +23,7 @@ using System.Collections.Generic;
 //   Insertion irréversible — aucun moyen d'extraire une gemme.
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewJewelry", menuName = "AetherTree/Equipment/JewelryData")]
+[CreateAssetMenu(fileName = "jwl_", menuName = "AetherTree/Inventaire/Equipement/JewelryData")]
 public class JewelryData : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────

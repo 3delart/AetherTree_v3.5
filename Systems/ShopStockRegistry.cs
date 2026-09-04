@@ -67,22 +67,6 @@ public class ShopStockRegistry : MonoBehaviour
         return GetRemainingStock(pnjName, entry) <= 0;
     }
 
-    /// <summary>
-    /// Remet le stock à zéro (debug / reset sauvegarde).
-    /// </summary>
-    public void ResetStock(string pnjName, ShopEntry entry)
-    {
-        if (entry == null) return;
-        PlayerPrefs.DeleteKey(Key(pnjName, entry));
-        PlayerPrefs.Save();
-    }
-
-    public void ResetAllStock()
-    {
-        // PlayerPrefs ne permet pas de filtrer par préfixe — log seulement
-        Debug.Log("[SHOPSTOCK] ResetAllStock : supprime manuellement les clés 'ShopStock_*' via PlayerPrefs.DeleteAll() si besoin.");
-    }
-
     // =========================================================
     // CLÉ
     // =========================================================

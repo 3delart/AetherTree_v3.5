@@ -47,6 +47,12 @@ public class PassiveSkillSystem : MonoBehaviour
     // Passives déjà utilisées ce combat (oncePerCombat)
     private readonly HashSet<PassiveSkillData> _usedThisCombat = new HashSet<PassiveSkillData>();
 
+    // True pendant qu'un effet PassiveEffectType.Skill délègue à SkillSystem.Execute() —
+    // évite qu'un skill lancé par une passive republie un SkillUsedEvent qui re-déclenche
+    // cette même passive (ou une autre OnCast/OnCombo) en boucle (risque de stack overflow
+    // avec cooldown=0, voir ApplyEffect()).
+    private bool _isApplyingSkillEffect = false;
+
     // =========================================================
     // INIT
     // =========================================================
@@ -100,6 +106,7 @@ public class PassiveSkillSystem : MonoBehaviour
         {
             if (passive == null) continue;
             if (passive.triggerType != PassiveTriggerType.OnInterval) continue;
+            if (passive.cooldown <= 0f) continue; // évite un proc chaque frame si mal configuré
             TryTrigger(passive);
         }
     }
@@ -198,6 +205,7 @@ public class PassiveSkillSystem : MonoBehaviour
 
     private void OnSkillUsed(SkillUsedEvent e)
     {
+        if (_isApplyingSkillEffect) return; // skill lancé par une passive — pas un vrai cast joueur
         if (_player == null || _player.isDead) return;
         if (e.caster != _player) return;
         if (_player.equippedPassives == null) return;
@@ -282,7 +290,7 @@ public class PassiveSkillSystem : MonoBehaviour
                 if (effect.buffToApply != null && _player.statusEffects != null)
                 {
                     _player.statusEffects.ApplyBuff(effect.buffToApply, _player);
-                    Debug.Log($"[PASSIVE EFFECT] Buff → {effect.buffToApply.effectName}");
+                    Debug.Log($"[PASSIVE EFFECT] Buff → {effect.buffToApply.effectName.Get(LocalizationManager.CurrentLanguage)}");
                 }
                 break;
 
@@ -306,9 +314,10 @@ public class PassiveSkillSystem : MonoBehaviour
                         count++;
                 }
 
-                FloatingText.Spawn($"{effect.debuffToApply.effectName} ×{count}",
+                string debuffName = effect.debuffToApply.effectName.Get(LocalizationManager.CurrentLanguage);
+                FloatingText.Spawn($"{debuffName} ×{count}",
                     _player.transform.position + Vector3.up * 2f, Color.magenta, 1.5f);
-                Debug.Log($"[PASSIVE EFFECT] Debuff → {effect.debuffToApply.effectName} ×{count}");
+                Debug.Log($"[PASSIVE EFFECT] Debuff → {debuffName} ×{count}");
                 break;
             }
 
@@ -318,7 +327,9 @@ public class PassiveSkillSystem : MonoBehaviour
             case PassiveEffectType.Skill:
                 if (effect.skillToCast != null)
                 {
+                    _isApplyingSkillEffect = true;
                     SkillSystem.Instance?.Execute(effect.skillToCast, _player, null);
+                    _isApplyingSkillEffect = false;
                     Debug.Log($"[PASSIVE EFFECT] Skill → {effect.skillToCast.name}");
                 }
                 break;

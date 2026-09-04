@@ -35,7 +35,7 @@ public enum ResourceType
     Other,          // Ressource générique
 }
 
-[CreateAssetMenu(fileName = "Resource_", menuName = "AetherTree/Inventory/ResourceData")]
+[CreateAssetMenu(fileName = "res_", menuName = "AetherTree/Inventaire/ResourceData")]
 public class ResourceData : ItemData
 {
     // ── Identité ──────────────────────────────────────────────

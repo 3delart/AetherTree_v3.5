@@ -38,11 +38,14 @@ using System.Collections.Generic;
 //   un SO séparé — pas SkillData. SkillType.Permanent a été supprimé.
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewSkill", menuName = "AetherTree/Skills/SkillData")]
+[CreateAssetMenu(fileName = "skl_", menuName = "AetherTree/Skills/SkillData")]
 public class SkillData : ScriptableObject
 {
     // ── ① Identité ────────────────────────────────────────────
     [Header("① Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"skl_\"\n" +
+             "(ex: \"skl_shortsword_combo3\"). Ne JAMAIS afficher au joueur — voir skillName pour l'affichage.")]
+    public string           skillID;
     [Tooltip("Nom affiché au joueur (fr/en). Ne jamais utiliser dans un log/comparaison —\n" +
              "utiliser le nom d'asset Unity (this.name, déjà la clé stable utilisée par\n" +
              "SaveSystem.FindSOByName) pour ça.")]
@@ -234,6 +237,9 @@ public class SkillData : ScriptableObject
 #if UNITY_EDITOR
     private void OnValidate()
     {
+        if (string.IsNullOrEmpty(skillID))
+            skillID = name;
+
         // MultiHit : SkillBar.LockForMultiHit() bloque l'auto-attaque pendant
         // somme(hitSteps.delay) + 0.3s — si attackAnimation dure sensiblement plus
         // longtemps, l'auto-attaque reprend la main avant la fin de l'anim et écrase
@@ -288,7 +294,6 @@ public enum SkillEffectType
 }
 
 public enum ModifierType  { Flat, Percent }
-public enum AnimationType { Melee, Ranged, Magic, Special }
 
 public enum TargetType
 {

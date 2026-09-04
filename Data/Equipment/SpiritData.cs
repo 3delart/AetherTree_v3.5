@@ -34,7 +34,7 @@ using System.Collections.Generic;
 //   Lv10, 20, 30, 40, 50 — valeurs à calibrer en test (§14.2)
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewSpirit", menuName = "AetherTree/Equipment/SpiritData")]
+[CreateAssetMenu(fileName = "spr_", menuName = "AetherTree/Inventaire/Equipement/SpiritData")]
 public class SpiritData : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────
@@ -70,7 +70,7 @@ public class SpiritData : EquipmentDataBase
     [Header("Paliers de bonus (Lv10, 20, 30, 40, 50 — GDD §5.8)")]
     [Tooltip("Bonus débloqués à certains niveaux.\n" +
              "⚠ Valeurs à calibrer en test — §14.2.\n" +
-             "Esprits élémentaires : recommandé PointsFire/etc. ou ElementBonusFire/etc.\n" +
+             "Esprits élémentaires : recommandé PointsFire/etc.\n" +
              "Esprit Neutre : recommandé BonusAttack, CritChance, BonusHP.")]
     public List<SpiritMilestone> milestones = new List<SpiritMilestone>();
 
@@ -124,7 +124,7 @@ public class SpiritMilestone
 
     [Tooltip("Bonus débloqués à ce palier.\n" +
              "⚠ Valeurs à calibrer — §14.2.\n" +
-             "Esprits élémentaires : PointsFire/etc. ou ElementBonusFire/etc.\n" +
+             "Esprits élémentaires : PointsFire/etc.\n" +
              "Esprit Neutre : BonusAttack, CritChance, BonusHP.")]
     public List<StatBonus> bonuses = new List<StatBonus>();
 }

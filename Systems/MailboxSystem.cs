@@ -64,9 +64,10 @@ public class MailReward
     public ConsumableData    rewardConsumable;
     public int               rewardConsumableQuantity = 1;
 
-    // ── Pet / Recipe (string ID — SO à venir) ─────────────────
+    // ── Pet (string ID — SO à venir) ──────────────────────────
     public string            rewardPetID;
-    public string            rewardRecipeID;
+    // ── Recette ────────────────────────────────────────────────
+    public RecipeData        rewardRecipe;
 
     // ── Description ───────────────────────────────────────────
     public string            rewardDescription;
@@ -96,7 +97,7 @@ public class MailReward
             RewardType.Card              => equipName("Carte"),
             RewardType.Resource          => rewardResource   != null ? $"{rewardResource.displayName.Get(lang)} ×{rewardResourceQuantity}"     : "Ressource",
             RewardType.Consumable        => rewardConsumable != null ? $"{rewardConsumable.displayName.Get(lang)} ×{rewardConsumableQuantity}" : "Consommable",
-            RewardType.Recipe            => !string.IsNullOrEmpty(rewardRecipeID) ? $"Recette : {rewardRecipeID}" : "Recette",
+            RewardType.Recipe            => rewardRecipe?.result != null ? $"Recette : {rewardRecipe.result.displayName.Get(lang)}" : "Recette",
             RewardType.Pet               => !string.IsNullOrEmpty(rewardPetID)    ? $"Pet : {rewardPetID}"        : "Pet",
             _                            => rewardDescription ?? "Récompense",
         };
@@ -121,6 +122,7 @@ public class MailReward
             RewardType.Card              => (rewardEquipment as CardData)?.icon,
             RewardType.Resource          => rewardResource?.icon,
             RewardType.Consumable        => rewardConsumable?.icon,
+            RewardType.Recipe            => rewardRecipe?.result?.icon,
             _                            => null,
         };
     }
@@ -152,13 +154,8 @@ public class MailboxSystem : MonoBehaviour
     /// </summary>
     public void SendRewardMail(ConditionData condition, ConditionReward condReward)
     {
-        string subject = condition.isHidden
-            ? "Vous avez accompli quelque chose d'exceptionnel !"
-            : $"Récompense débloquée : {condition.displayName}";
-
-        string body = string.IsNullOrEmpty(condition.description)
-            ? condReward.rewardDescription
-            : $"{condition.description}\n\n{condReward.rewardDescription}";
+        string subject = $"Récompense débloquée : {condition.displayName}";
+        string body    = condition.description;
 
         var mailReward = new MailReward
         {
@@ -171,8 +168,7 @@ public class MailboxSystem : MonoBehaviour
             rewardConsumable         = condReward.rewardConsumable,
             rewardConsumableQuantity = condReward.rewardConsumableQuantity,
             rewardPetID              = condReward.rewardPetID,
-            rewardRecipeID           = condReward.rewardRecipeID,
-            rewardDescription        = condReward.rewardDescription,
+            rewardRecipe             = condReward.rewardRecipe,
         };
 
         var mail = new MailMessage
@@ -374,10 +370,10 @@ public class MailboxSystem : MonoBehaviour
 
             // ── Recette ───────────────────────────────────────
             case RewardType.Recipe:
-                if (!string.IsNullOrEmpty(reward.rewardRecipeID))
+                if (reward.rewardRecipe != null)
                 {
-                    Debug.Log($"[MAILBOX] Recette débloquée : {reward.rewardRecipeID}");
-                    // TODO: CraftSystem.Instance?.UnlockRecipe(reward.rewardRecipeID, player)
+                    player.UnlockRecipe(reward.rewardRecipe);
+                    Debug.Log($"[MAILBOX] Recette débloquée : {reward.rewardRecipe.name}");
                 }
                 break;
 

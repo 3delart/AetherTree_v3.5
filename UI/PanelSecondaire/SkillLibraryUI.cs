@@ -231,7 +231,7 @@ public class SkillLibraryUI : MonoBehaviour
         foreach (var element in presentElements)
         {
             if (elementButtons.ContainsKey(element)) continue;
-            var btn = CreateFilterButton(elementFilterBar, element.ToString(), ElementData.GetColor(element));
+            var btn = CreateFilterButton(elementFilterBar, element.ToString(), element.GetColor());
             var captured = element;
             btn.onClick.AddListener(() => ToggleElementFilter(captured, btn));
             elementButtons[element] = btn;

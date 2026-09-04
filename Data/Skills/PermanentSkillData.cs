@@ -20,11 +20,14 @@ using System.Collections.Generic;
 // Assets > Create > AetherTree > Skills > PermanentSkillData
 // =============================================================
 
-[CreateAssetMenu(fileName = "Permanent_", menuName = "AetherTree/Skills/PermanentSkillData")]
+[CreateAssetMenu(fileName = "perm_", menuName = "AetherTree/Skills/PermanentSkillData")]
 public class PermanentSkillData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"perm_\"\n" +
+             "(ex: \"perm_vitalite_1\"). Ne JAMAIS afficher au joueur — voir skillName pour l'affichage.")]
+    public string permanentID;
     [Tooltip("Nom affiché au joueur (fr/en). Ne jamais utiliser dans un log/comparaison —\n" +
              "utiliser this.name (nom d'asset Unity, déjà la clé stable) pour ça.")]
     public LocalizedText skillName  = new LocalizedText();
@@ -116,4 +119,12 @@ public class PermanentSkillData : ScriptableObject
         StatType.PointsAll       => "Pts Élém.",
         _                        => t.ToString()
     };
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(permanentID))
+            permanentID = name;
+    }
+#endif
 }

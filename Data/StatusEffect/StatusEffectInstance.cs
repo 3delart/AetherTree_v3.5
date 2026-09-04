@@ -50,18 +50,17 @@ public class DebuffInstance : StatusEffectInstance
 
         switch (DebuffType)
         {
+#pragma warning disable CS0618 // Burn/Poison/Bleed obsolètes — gardés pour compat assets existants
             case DebuffType.Burn:
             case DebuffType.Bleed:
-                float dmg = DebuffData.damagePerSecond * deltaTime;
+            case DebuffType.Poison:
+#pragma warning restore CS0618
+            case DebuffType.Dot:
+                // Poison — le flag healReduction est géré à part via OnApply/OnExpire
+                // dans StatusEffectSystem, indépendant du calcul de dégâts ici.
+                float dmg = ComputeDotDps(target) * deltaTime;
                 if (dmg > 0f)
                     target.TakeDamage(dmg, DebuffData.damageElement, source);
-                break;
-
-            case DebuffType.Poison:
-                // DoT — le flag healReduction est géré via OnApply/OnExpire dans StatusEffectSystem
-                float poisonDmg = DebuffData.damagePerSecond * deltaTime;
-                if (poisonDmg > 0f)
-                    target.TakeDamage(poisonDmg, DebuffData.damageElement, source);
                 break;
 
             case DebuffType.ManaDrain:
@@ -75,6 +74,34 @@ public class DebuffInstance : StatusEffectInstance
             // gérés via flags sur StatusEffectSystem (OnApply / OnExpire)
             // Knockback : effet ponctuel — géré via Entity.ApplyKnockBack()
         }
+    }
+
+    /// <summary>Dégâts/s d'un DoT (Dot, + Burn/Poison/Bleed obsolètes gardés pour compat) —
+    /// 2 termes, pas de socle séparé : rang élémentaire de la SOURCE × rankDamagePercent (%
+    /// du MaxHP cible, plafonné naturellement par le rang max 5) + points élémentaires BRUTS
+    /// de la source × elementalPointsMultiplier (flat, volontairement sans plafond —
+    /// l'investissement doit toujours payer), réduit par la résistance élémentaire de la
+    /// CIBLE. Points bruts (pas "effectifs" avec bonus de rang inclus) pour ne pas compter
+    /// le rang deux fois — même séparation source/cible que CombatSystem. Toujours en % du
+    /// MaxHP cible (pas de mode Flat — un DoT flat ne scale pas avec le contenu). Rang 0 ET
+    /// points 0 → 0 dégât (Dot = mécanisme élémentaire, pas universel).</summary>
+    private float ComputeDotDps(Entity target)
+    {
+        var element = DebuffData.damageElement;
+
+        int   rank   = source?.GetComponent<ElementalSystem>()?.GetElementRank(element) ?? 0;
+        float points = source != null ? source.GetElementalPoints(element) : 0f;
+
+        float rankTerm   = target.MaxHP * (rank * DebuffData.rankDamagePercent / 100f);
+        float pointsTerm = points * DebuffData.elementalPointsMultiplier;
+        float dps        = rankTerm + pointsTerm;
+
+        Mob   targetMob = target.GetComponent<Mob>();
+        float resist    = targetMob?.data != null
+            ? targetMob.data.GetElementalResistance(element)
+            : target.GetElementalResistance(element);
+
+        return dps * (1f - resist);
     }
 }
 

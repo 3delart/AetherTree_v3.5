@@ -42,11 +42,15 @@ public class GemStatEntry
 
 // =============================================================
 // GemData SO
+// Hors scope actuel — refonte prévue, CreateAssetMenu retiré volontairement
+// pour ne pas en créer par accident en attendant (voir note-rune-gem-hors-scope.md).
 // =============================================================
-[CreateAssetMenu(fileName = "NewGem", menuName = "AetherTree/Consumable/GemData")]
 public class GemData : ScriptableObject
 {
     [Header("Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"gem_\"\n" +
+             "(ex: \"gem_ruby_t1\"). Ne JAMAIS afficher au joueur — voir gemName pour l'affichage.")]
+    public string gemID;
     public string gemName = "Gem";
     public Sprite icon;
 
@@ -82,6 +86,14 @@ public class GemData : ScriptableObject
 
         return new GemInstance(this, entry.statType, rolledValue);
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(gemID))
+            gemID = name;
+    }
+#endif
 }
 
 // =============================================================

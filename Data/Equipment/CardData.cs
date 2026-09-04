@@ -17,7 +17,7 @@ using UnityEngine;
 // En attendant, CardData et CardInstance sont des stubs compilables.
 // =============================================================
 
-[CreateAssetMenu(fileName = "NewCard", menuName = "AetherTree/Items/CardData")]
+[CreateAssetMenu(fileName = "card_", menuName = "AetherTree/Inventaire/Equipement/CardData")]
 public class CardData : ItemData
 {
     // ── Bonus — TODO ──────────────────────────────────────────

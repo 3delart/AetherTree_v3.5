@@ -59,13 +59,6 @@ public class CharacterStats
     public Dictionary<ElementType, float> elementalPoints { get; private set; }
         = new Dictionary<ElementType, float>();
 
-    /// <summary>
-    /// Multiplicateurs sur les points élémentaires.
-    /// Source : paliers d'esprits, runes, bijoux spéciaux, permanents.
-    /// </summary>
-    public Dictionary<ElementType, float> elementalPointsMultipliers { get; private set; }
-        = new Dictionary<ElementType, float>();
-
     // =========================================================
     // RÉDUCTION CD — pas sur Entity, géré par SkillSystem
     // =========================================================
@@ -92,7 +85,6 @@ public class CharacterStats
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
         {
             elementalPoints[e]            = 0f;
-            elementalPointsMultipliers[e] = 0f;
             elementalResistances[e]       = 0f;
         }
     }
@@ -136,10 +128,7 @@ public class CharacterStats
 
         // Reset points élémentaires
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
-        {
-            elementalPoints[e]            = 0f;
-            elementalPointsMultipliers[e] = 0f;
-        }
+            elementalPoints[e] = 0f;
         cooldownReduction = 0f;
 
         // =========================================================
@@ -613,19 +602,6 @@ public class CharacterStats
             case StatType.PointsAll:
                 foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                     elementalPoints[e] += b.value;
-                break;
-
-            // Multiplicateurs élémentaires
-            case StatType.ElementBonusFire:      elementalPointsMultipliers[ElementType.Fire]      += b.value; break;
-            case StatType.ElementBonusWater:     elementalPointsMultipliers[ElementType.Water]     += b.value; break;
-            case StatType.ElementBonusEarth:     elementalPointsMultipliers[ElementType.Earth]     += b.value; break;
-            case StatType.ElementBonusNature:    elementalPointsMultipliers[ElementType.Nature]    += b.value; break;
-            case StatType.ElementBonusLightning: elementalPointsMultipliers[ElementType.Lightning] += b.value; break;
-            case StatType.ElementBonusDarkness:  elementalPointsMultipliers[ElementType.Darkness]  += b.value; break;
-            case StatType.ElementBonusLight:     elementalPointsMultipliers[ElementType.Light]     += b.value; break;
-            case StatType.ElementBonusAll:
-                foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
-                    elementalPointsMultipliers[e] += b.value;
                 break;
         }
     }

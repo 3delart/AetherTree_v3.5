@@ -27,7 +27,6 @@ using UnityEngine;
 // │ CritMultiplier          │ RATIO    │ 0.15 → +15% mult crit  │
 // │ ResistFire/All/...      │ RATIO    │ 0.10 → +10% résistance │
 // │ PointsFire/All/...      │ flat     │ 10   → +10 pts élém    │
-// │ ElementBonusFire/...    │ RATIO    │ 0.05 → +5% pts feu     │
 // │ BonusHP                 │ flat     │ 200  → +200 HP max     │
 // │ BonusMana               │ flat     │ 50   → +50 Mana max    │
 // │ BonusRegenHP            │ flat     │ 2    → +2 HP/s         │
@@ -76,17 +75,18 @@ public enum StatType
     [InspectorName("Points Light (flat)")]     PointsLight,
     [InspectorName("Points ALL (flat)")]       PointsAll,
 
-    // ── Multiplicateurs de points élémentaires ────────────────
-    // Multiplie les points élémentaires existants du joueur.
-    // Ex: ElementBonusFire 0.05 + 100 pts feu → 105 pts feu effectifs.
-    [InspectorName("Element Bonus Fire (ratio 0.05 = +5% pts feu)")]       ElementBonusFire,
-    [InspectorName("Element Bonus Water (ratio 0.05 = +5% pts eau)")]      ElementBonusWater,
-    [InspectorName("Element Bonus Lightning (ratio 0.05 = +5% pts foudre)")] ElementBonusLightning,
-    [InspectorName("Element Bonus Earth (ratio 0.05 = +5% pts terre)")]    ElementBonusEarth,
-    [InspectorName("Element Bonus Nature (ratio 0.05 = +5% pts nature)")]  ElementBonusNature,
-    [InspectorName("Element Bonus Darkness (ratio 0.05 = +5% pts ténèbres)")] ElementBonusDarkness,
-    [InspectorName("Element Bonus Light (ratio 0.05 = +5% pts lumière)")]  ElementBonusLight,
-    [InspectorName("Element Bonus ALL (ratio 0.05 = +5% tous pts élém)")]  ElementBonusAll,
+    // ── Multiplicateurs de points élémentaires — RETIRÉS (2026) ────────
+    // Jamais appliqués (accumulés dans CharacterStats mais jamais lus avant le
+    // push sur Entity — bug silencieux, pas une vraie feature). Ordinal gardé
+    // (au milieu de l'enum, BonusHP/BonusMana suivent) — jamais delete/réordonner.
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusFire,
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusWater,
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusLightning,
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusEarth,
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusNature,
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusDarkness,
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusLight,
+    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusAll,
 
     // ── Vie & Mana ────────────────────────────────────────────
     [InspectorName("Bonus HP (flat)")]         BonusHP,
@@ -110,7 +110,7 @@ public class StatBonus
         "        PointsFire/All/..., BonusHP, BonusMana, BonusRegen\n" +
         "        → entrer la valeur directe  ex: 200, 10, 0.5\n" +
         "\n" +
-        "RATIO : CritChance, CritDamage, ResistFire/All/..., ElementBonus...\n" +
+        "RATIO : CritChance, CritDamage, ResistFire/All/...\n" +
         "        → entrer en décimal  ex: 0.05 = 5% | 0.10 = 10%"
     )]
     public float value;

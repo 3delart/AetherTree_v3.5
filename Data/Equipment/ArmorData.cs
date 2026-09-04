@@ -51,7 +51,7 @@ public class DebuffResistanceEntry
     public float resistChance = 0.05f;
 }
 
-[CreateAssetMenu(fileName = "NewArmor", menuName = "AetherTree/Equipment/ArmorData")]
+[CreateAssetMenu(fileName = "arm_", menuName = "AetherTree/Inventaire/Equipement/ArmorData")]
 public class ArmorData : EquipmentDataBase
 {
     // ── Identité ──────────────────────────────────────────────

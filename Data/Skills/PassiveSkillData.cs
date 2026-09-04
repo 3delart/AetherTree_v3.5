@@ -67,7 +67,29 @@ public enum PassiveTriggerType
 public enum PassiveEffectType
 {
     [InspectorName("Buff — Applique un BuffData sur soi (Heal, Shield, Revive, Invincible...)")]
-    Buff,
+    Buff, // BuffSelf(0) → Buff(0), ordinal stable, aucun placeholder nécessaire.
+
+    // HealSelf/ShieldSelf/InvincibleSelf/ReviveSelf/PushEnemiesAround/DebuffEnemiesAround/
+    // DamageEnemiesAround retirés (2026) — couverts par Buff (BuffData choisit son propre
+    // comportement) et Skill (délègue à SkillSystem.Execute()). Gardés ici comme placeholders
+    // [Obsolete] pour ne pas laisser Debuff/Skill hériter des anciens ordinaux 1/2
+    // (HealSelf/ShieldSelf) — un vieil asset sérialisé sur ces valeurs tomberait sinon
+    // silencieusement sur un comportement différent au lieu de ne rien faire. Ne jamais
+    // réutiliser ces slots pour une nouvelle valeur ; ajouter en fin d'enum à la place.
+    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Heal).")]
+    Removed_HealSelf,
+    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Shield).")]
+    Removed_ShieldSelf,
+    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Invincible).")]
+    Removed_InvincibleSelf,
+    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Revive).")]
+    Removed_ReviveSelf,
+    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Skill (SkillData ciblant AoE_Self avec push).")]
+    Removed_PushEnemiesAround,
+    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Debuff.")]
+    Removed_DebuffEnemiesAround,
+    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Skill (SkillData avec dégâts AoE_Self).")]
+    Removed_DamageEnemiesAround,
 
     [InspectorName("Debuff — Applique un DebuffData aux ennemis proches")]
     Debuff,
@@ -117,11 +139,14 @@ public class PassiveEffect
 // =============================================================
 // PASSIVE SKILL DATA — le ScriptableObject complet
 // =============================================================
-[CreateAssetMenu(fileName = "Passive_", menuName = "AetherTree/Skills/PassiveSkillData")]
+[CreateAssetMenu(fileName = "pas_", menuName = "AetherTree/Skills/PassiveSkillData")]
 public class PassiveSkillData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"pas_\"\n" +
+             "(ex: \"pas_dernier_rempart\"). Ne JAMAIS afficher au joueur — voir skillName pour l'affichage.")]
+    public string passiveID;
     [Tooltip("Nom affiché au joueur (fr/en). Ne jamais utiliser dans un log/comparaison —\n" +
              "utiliser this.name (nom d'asset Unity, déjà la clé stable) pour ça.")]
     public LocalizedText skillName  = new LocalizedText();
@@ -172,4 +197,19 @@ public class PassiveSkillData : ScriptableObject
     // ── Helper ────────────────────────────────────────────────
     /// <summary>True si le roll de chance réussit.</summary>
     public bool RollProc() => Random.value <= procChance;
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(passiveID))
+            passiveID = name;
+
+        // OnInterval réutilise cooldown comme intervalle — 0 le ferait proc chaque frame.
+        if (triggerType == PassiveTriggerType.OnInterval && cooldown <= 0f)
+        {
+            Debug.LogWarning($"[{name}] OnInterval avec cooldown=0 redéclencherait chaque frame — " +
+                              "garder cooldown > 0 (sert d'intervalle pour ce trigger).", this);
+        }
+    }
+#endif
 }
