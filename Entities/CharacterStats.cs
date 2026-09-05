@@ -126,6 +126,8 @@ public class CharacterStats
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
             accResist[e] = 0f;
 
+        var flatAcc = new Dictionary<StatType, float>();
+
         // Reset points élémentaires
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
             elementalPoints[e] = 0f;
@@ -159,12 +161,7 @@ public class CharacterStats
             accPrecision      = weapon.FinalPrecision;
             accCritChance     = weapon.CritChance;
             accCritMultiplier += weapon.CritMultiplier;
-            AccumulateStatBonuses(weapon.Bonuses, ref accAttackMin, ref accAttackMax,
-                ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                ref accDodge, ref accBonusHP, ref accBonusMana,
-                ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                ref accCritDmgReduct, accResist);
+            AccumulateStatBonuses(weapon.Bonuses, flatAcc, accResist);
         }
 
         // =========================================================
@@ -177,12 +174,7 @@ public class CharacterStats
             accRangedDefense += armor.FinalRangedDefense;
             accMagicDefense  += armor.FinalMagicDefense;
             accDodge         += armor.FinalDodge;
-            AccumulateStatBonuses(armor.Bonuses, ref accAttackMin, ref accAttackMax,
-                ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                ref accDodge, ref accBonusHP, ref accBonusMana,
-                ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                ref accCritDmgReduct, accResist);
+            AccumulateStatBonuses(armor.Bonuses, flatAcc, accResist);
         }
 
         // =========================================================
@@ -195,13 +187,7 @@ public class CharacterStats
             accMeleeDefense  += helmet.MeleeDefense;
             accRangedDefense += helmet.RangedDefense;
             accMagicDefense  += helmet.MagicDefense;
-            AccumulateStatBonuses(helmet.Bonuses,
-                ref accAttackMin, ref accAttackMax, ref accPrecision,
-                ref accCritChance, ref accCritMultiplier,
-                ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                ref accDodge, ref accBonusHP, ref accBonusMana,
-                ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                ref accCritDmgReduct, accResist);
+            AccumulateStatBonuses(helmet.Bonuses, flatAcc, accResist);
         }
 
         // =========================================================
@@ -215,12 +201,7 @@ public class CharacterStats
             accMagicDefense  += gloves.MagicDefense;
             foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                 accResist[e] += gloves.GetResistance(e);
-            AccumulateStatBonuses(gloves.Bonuses, ref accAttackMin, ref accAttackMax,
-                ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                ref accDodge, ref accBonusHP, ref accBonusMana,
-                ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                ref accCritDmgReduct, accResist);
+            AccumulateStatBonuses(gloves.Bonuses, flatAcc, accResist);
         }
 
         // =========================================================
@@ -234,12 +215,7 @@ public class CharacterStats
             accMagicDefense  += boots.MagicDefense;
             foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                 accResist[e] += boots.GetResistance(e);
-            AccumulateStatBonuses(boots.Bonuses, ref accAttackMin, ref accAttackMax,
-                ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                ref accDodge, ref accBonusHP, ref accBonusMana,
-                ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                ref accCritDmgReduct, accResist);
+            AccumulateStatBonuses(boots.Bonuses, flatAcc, accResist);
         }
 
         // =========================================================
@@ -253,12 +229,7 @@ public class CharacterStats
                 accMeleeDefense  += jewelry.MeleeDefense;
                 accRangedDefense += jewelry.RangedDefense;
                 accMagicDefense  += jewelry.MagicDefense;
-                AccumulateStatBonuses(jewelry.Bonuses, ref accAttackMin, ref accAttackMax,
-                    ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                    ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                    ref accDodge, ref accBonusHP, ref accBonusMana,
-                    ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                    ref accCritDmgReduct, accResist);
+                AccumulateStatBonuses(jewelry.Bonuses, flatAcc, accResist);
             }
         }
 
@@ -266,19 +237,9 @@ public class CharacterStats
         // ⑦ RUNES — config.bonuses via RuneInstance (GDD §5.7)
         // =========================================================
         if (weapon?.equippedRune != null)
-            AccumulateStatBonuses(weapon.equippedRune.bonuses, ref accAttackMin, ref accAttackMax,
-                ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                ref accDodge, ref accBonusHP, ref accBonusMana,
-                ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                ref accCritDmgReduct, accResist);
+            AccumulateStatBonuses(weapon.equippedRune.bonuses, flatAcc, accResist);
         if (armor?.equippedRune != null)
-            AccumulateStatBonuses(armor.equippedRune.bonuses, ref accAttackMin, ref accAttackMax,
-                ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                ref accDodge, ref accBonusHP, ref accBonusMana,
-                ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                ref accCritDmgReduct, accResist);
+            AccumulateStatBonuses(armor.equippedRune.bonuses, flatAcc, accResist);
 
         // =========================================================
         // ⑧ ESPRITS — points élémentaires + milestones.bonuses + config.bonuses (GDD §5.6)
@@ -293,24 +254,14 @@ public class CharacterStats
                 elementalPoints[spirit.Element] += spirit.TotalElementalPoints;
 
                 // Bonus passifs de base de l esprit (actifs dès l équipement)
-                AccumulateStatBonuses(spirit.Bonuses, ref accAttackMin, ref accAttackMax,
-                    ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                    ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                    ref accDodge, ref accBonusHP, ref accBonusMana,
-                    ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                    ref accCritDmgReduct, accResist);
+                AccumulateStatBonuses(spirit.Bonuses, flatAcc, accResist);
 
                 // Bonus de paliers débloqués jusqu au niveau actuel
                 for (int mileLvl = 1; mileLvl <= spirit.level; mileLvl++)
                 {
                     var milestone = spirit.data.GetMilestone(mileLvl);
                     if (milestone != null)
-                        AccumulateStatBonuses(milestone.bonuses, ref accAttackMin, ref accAttackMax,
-                            ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                            ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                            ref accDodge, ref accBonusHP, ref accBonusMana,
-                            ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                            ref accCritDmgReduct, accResist);
+                        AccumulateStatBonuses(milestone.bonuses, flatAcc, accResist);
                 }
             }
         }
@@ -323,12 +274,7 @@ public class CharacterStats
             foreach (var p in player.unlockedPermanents)
             {
                 if (p == null) continue;
-                AccumulateStatBonuses(p.bonuses, ref accAttackMin, ref accAttackMax,
-                    ref accPrecision, ref accCritChance, ref accCritMultiplier,
-                    ref accMeleeDefense, ref accRangedDefense, ref accMagicDefense,
-                    ref accDodge, ref accBonusHP, ref accBonusMana,
-                    ref accBonusRegenHP, ref accBonusRegenMana, ref accBonusMoveSpeed,
-                    ref accCritDmgReduct, accResist);
+                AccumulateStatBonuses(p.bonuses, flatAcc, accResist);
             }
         }
 
@@ -445,23 +391,25 @@ public class CharacterStats
         // =========================================================
         // PUSH SUR ENTITY
         // =========================================================
-        player.SetMaxHP       (baseHP        + accBonusHP);
-        player.SetMaxMana     (baseMana      + accBonusMana);
-        player.SetRegenHP     (baseRegenHP   + accBonusRegenHP);
-        player.SetRegenMana   (baseRegenMana + accBonusRegenMana);
-        player.SetMoveSpeed   (baseMoveSpeed + accBonusMoveSpeed);
+        float FlatOf(StatType stat) => flatAcc.TryGetValue(stat, out var f) ? f : 0f;
 
-        player.SetAttackDamageMin(accAttackMin);
-        player.SetAttackDamageMax(accAttackMax);
-        player.SetPrecision      (accPrecision);
-        player.SetCritChance     (accCritChance);
-        player.SetCritMultiplier (accCritMultiplier);
+        player.SetMaxHP       (baseHP        + accBonusHP        + FlatOf(StatType.BonusHP));
+        player.SetMaxMana     (baseMana      + accBonusMana      + FlatOf(StatType.BonusMana));
+        player.SetRegenHP     (baseRegenHP   + accBonusRegenHP   + FlatOf(StatType.BonusRegenHP));
+        player.SetRegenMana   (baseRegenMana + accBonusRegenMana + FlatOf(StatType.BonusRegenMana));
+        player.SetMoveSpeed   (baseMoveSpeed + accBonusMoveSpeed + FlatOf(StatType.MoveSpeed));
 
-        player.SetMeleeDefense (accMeleeDefense);
-        player.SetRangedDefense(accRangedDefense);
-        player.SetMagicDefense (accMagicDefense);
-        player.SetDodge        (accDodge);
-        player.SetCritDamageReduction(accCritDmgReduct);
+        player.SetAttackDamageMin(accAttackMin + FlatOf(StatType.BonusAttack));
+        player.SetAttackDamageMax(accAttackMax + FlatOf(StatType.BonusAttack));
+        player.SetPrecision      (accPrecision + FlatOf(StatType.Precision));
+        player.SetCritChance     (accCritChance + FlatOf(StatType.CritChance));
+        player.SetCritMultiplier (accCritMultiplier + FlatOf(StatType.CritMultiplier));
+
+        player.SetMeleeDefense (accMeleeDefense + FlatOf(StatType.MeleeDefense) + FlatOf(StatType.AllDefense));
+        player.SetRangedDefense(accRangedDefense + FlatOf(StatType.RangedDefense) + FlatOf(StatType.AllDefense));
+        player.SetMagicDefense (accMagicDefense + FlatOf(StatType.MagicDefense) + FlatOf(StatType.AllDefense));
+        player.SetDodge        (accDodge + FlatOf(StatType.Dodge));
+        player.SetCritDamageReduction(accCritDmgReduct + FlatOf(StatType.CritDmgReduction));
 
         // Résistances sans plafond — fusion gants/bottes peut dépasser 100%.
         // Valeurs négatives possibles uniquement via debuffs (vulnérabilité).
@@ -539,79 +487,52 @@ public class CharacterStats
 
     private void AccumulateStatBonuses(
         System.Collections.Generic.List<StatBonus> bonuses,
-        ref float atkMin, ref float atkMax, ref float precision,
-        ref float critChance, ref float critMult,
-        ref float meleeDef, ref float rangedDef, ref float magicDef,
-        ref float dodge, ref float bonusHP, ref float bonusMana,
-        ref float bonusRegenHP, ref float bonusRegenMana, ref float bonusMoveSpeed,
-        ref float critDmgReduct,
-        System.Collections.Generic.Dictionary<ElementType, float> resist)
+        Dictionary<StatType, float> flatAcc,
+        Dictionary<ElementType, float> resist)
     {
         if (bonuses == null) return;
         foreach (var b in bonuses)
-            AccumulateBonus(b, ref atkMin, ref atkMax, ref precision,
-                ref critChance, ref critMult,
-                ref meleeDef, ref rangedDef, ref magicDef,
-                ref dodge, ref bonusHP, ref bonusMana,
-                ref bonusRegenHP, ref bonusRegenMana, ref bonusMoveSpeed,
-                ref critDmgReduct, resist);
+            AccumulateBonus(b, flatAcc, resist);
     }
 
     private void AccumulateBonus(
         StatBonus b,
-        ref float atkMin, ref float atkMax, ref float precision,
-        ref float critChance, ref float critMult,
-        ref float meleeDef, ref float rangedDef, ref float magicDef,
-        ref float dodge, ref float bonusHP, ref float bonusMana,
-        ref float bonusRegenHP, ref float bonusRegenMana, ref float bonusMoveSpeed,
-        ref float critDmgReduct,
-        System.Collections.Generic.Dictionary<ElementType, float> resist)
+        Dictionary<StatType, float> flatAcc,
+        Dictionary<ElementType, float> resist)
     {
         switch (b.statType)
         {
-            case StatType.BonusAttack:    atkMin += b.value; atkMax += b.value;      break;
-            case StatType.CritChance:     critChance    += b.value;                  break;
-            case StatType.CritMultiplier: critMult      += b.value;                  break;
-            case StatType.CritDmgReduction:   critDmgReduct += b.value;              break;
-            case StatType.Precision:      precision     += b.value;                  break;
-            case StatType.MeleeDefense:   meleeDef      += b.value;                  break;
-            case StatType.RangedDefense:  rangedDef     += b.value;                  break;
-            case StatType.MagicDefense:   magicDef      += b.value;                  break;
-            case StatType.Dodge:          dodge         += b.value;                  break;
-            
-
-            case StatType.BonusHP:        bonusHP       += b.value;                  break;
-            case StatType.BonusMana:      bonusMana     += b.value;                  break;
-            case StatType.BonusRegenHP:   bonusRegenHP  += b.value;                  break;
-            case StatType.BonusRegenMana: bonusRegenMana+= b.value;                  break;
-            case StatType.MoveSpeed:      bonusMoveSpeed+= b.value;                  break;
-
             // Résistances élémentaires — sans plafond (GDD v3.5 §3.1)
-            case StatType.ResistFire:      resist[ElementType.Fire]      += b.value; break;
-            case StatType.ResistWater:     resist[ElementType.Water]     += b.value; break;
-            case StatType.ResistEarth:     resist[ElementType.Earth]     += b.value; break;
-            case StatType.ResistNature:    resist[ElementType.Nature]    += b.value; break;
-            case StatType.ResistLightning: resist[ElementType.Lightning] += b.value; break;
-            case StatType.ResistDarkness:  resist[ElementType.Darkness]  += b.value; break;
-            case StatType.ResistLight:     resist[ElementType.Light]     += b.value; break;
+            case StatType.ResistFire:      resist[ElementType.Fire]      += b.value; return;
+            case StatType.ResistWater:     resist[ElementType.Water]     += b.value; return;
+            case StatType.ResistEarth:     resist[ElementType.Earth]     += b.value; return;
+            case StatType.ResistNature:    resist[ElementType.Nature]    += b.value; return;
+            case StatType.ResistLightning: resist[ElementType.Lightning] += b.value; return;
+            case StatType.ResistDarkness:  resist[ElementType.Darkness]  += b.value; return;
+            case StatType.ResistLight:     resist[ElementType.Light]     += b.value; return;
             case StatType.ResistAll:
                 foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                     resist[e] += b.value;
-                break;
+                return;
 
             // Points élémentaires
-            case StatType.PointsFire:      elementalPoints[ElementType.Fire]      += b.value; break;
-            case StatType.PointsWater:     elementalPoints[ElementType.Water]     += b.value; break;
-            case StatType.PointsEarth:     elementalPoints[ElementType.Earth]     += b.value; break;
-            case StatType.PointsNature:    elementalPoints[ElementType.Nature]    += b.value; break;
-            case StatType.PointsLightning: elementalPoints[ElementType.Lightning] += b.value; break;
-            case StatType.PointsDarkness:  elementalPoints[ElementType.Darkness]  += b.value; break;
-            case StatType.PointsLight:     elementalPoints[ElementType.Light]     += b.value; break;
+            case StatType.PointsFire:      elementalPoints[ElementType.Fire]      += b.value; return;
+            case StatType.PointsWater:     elementalPoints[ElementType.Water]     += b.value; return;
+            case StatType.PointsEarth:     elementalPoints[ElementType.Earth]     += b.value; return;
+            case StatType.PointsNature:    elementalPoints[ElementType.Nature]    += b.value; return;
+            case StatType.PointsLightning: elementalPoints[ElementType.Lightning] += b.value; return;
+            case StatType.PointsDarkness:  elementalPoints[ElementType.Darkness]  += b.value; return;
+            case StatType.PointsLight:     elementalPoints[ElementType.Light]     += b.value; return;
             case StatType.PointsAll:
                 foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                     elementalPoints[e] += b.value;
-                break;
+                return;
         }
+
+        // Reste des stats (Défenses, BonusAttack, Dodge, Precision, MoveSpeed, Crit*, BonusHP/
+        // Mana/Regen, AllDefense) — stockées en Flat pur pour l'instant (Task 4 ajoute le
+        // vrai routage Flat/Percent via b.mode).
+        flatAcc[b.statType] = flatAcc.TryGetValue(b.statType, out var f) ? f + b.value : b.value;
     }
 
     // =========================================================
