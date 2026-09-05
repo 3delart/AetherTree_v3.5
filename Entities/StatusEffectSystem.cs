@@ -473,6 +473,22 @@ public class StatusEffectSystem : MonoBehaviour
             float pct  = percentSum.TryGetValue(stat, out var p) ? p : 0f;
             if (flat == 0f && pct == 0f) continue;
 
+            // FinalDamageBonus/Reduction — accumulateurs BRUTS, pas la formule (Base+Flat)×
+            // (1+%) : le mode choisi route déjà flat/pct vers le bon accumulateur Entity, rien
+            // à multiplier, rien à passer par ModifyEntityStat (qui n'a pas de case pour eux).
+            if (stat == StatModifierType.FinalDamageBonus)
+            {
+                target.SetFinalDamageBonusFlat(flat);
+                target.SetFinalDamageBonusPercent(pct);
+                continue;
+            }
+            if (stat == StatModifierType.FinalDamageReduction)
+            {
+                target.SetFinalDamageReductionFlat(flat);
+                target.SetFinalDamageReductionPercent(pct);
+                continue;
+            }
+
             float baseVal = pureBase[stat];
             float final   = (baseVal + flat) * (1f + pct);
             ModifyEntityStat(target, stat, final - baseVal);

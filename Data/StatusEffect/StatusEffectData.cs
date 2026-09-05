@@ -153,6 +153,15 @@ public enum StatModifierType
     AllDefense, // Écrit simultanément sur MeleeDefense + RangedDefense + MagicDefense — jamais
                 // stockée comme cible finale elle-même, toujours répartie au moment de
                 // l'accumulation. Voir StatusEffectSystem.AccumulateStatLine.
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Accumulateurs BRUTS —
+    // PAS la formule (Base+Flat)×(1+%) du reste de cet enum. Le mode (Flat/Percent) choisi
+    // route la valeur vers Entity.FinalDamageBonusFlat OU FinalDamageBonusPercent (jamais les
+    // deux combinés) — voir StatusEffectSystem.ReapplyActiveModifiers, cas spécial dédié, PAS
+    // dans ExceptionStats (ni "stat normale" ni "stat exception", 3e catégorie). Appliqués sur
+    // le NOMBRE de dégâts par CombatSystem.CalculateDamage/CalculateMobDamage, en tout dernier.
+    FinalDamageBonus,     // Attaquant — bonus de dégâts infligés.
+    FinalDamageReduction, // Défenseur — réduction des dégâts reçus.
 }
 
 // ── Ligne de stat additionnelle (BuffData.bonusStats / DebuffData.bonusStats) ─────
@@ -185,7 +194,8 @@ public class StatLine
         StatModifierType.RegenHP, StatModifierType.RegenMana,
         StatModifierType.AttackDamage, StatModifierType.AttackSpeed,
         StatModifierType.MeleeDefense, StatModifierType.RangedDefense, StatModifierType.MagicDefense,
-        StatModifierType.AllDefense, StatModifierType.Dodge, StatModifierType.Precision)]
+        StatModifierType.AllDefense, StatModifierType.Dodge, StatModifierType.Precision,
+        StatModifierType.FinalDamageBonus, StatModifierType.FinalDamageReduction)]
     public StatLineMode mode = StatLineMode.Flat;
 
     [Tooltip("Flat : valeur directe\nPercent : % sommé globalement avec tous les autres % actifs ciblant la même stat, appliqué une fois : (Base+ΣFlat)×(1+Σ%). Masqué pour les stats toujours additives (Crit, Résistances, Points élémentaires, MoveSpeed, XPBonus, GoldBonus).")]
