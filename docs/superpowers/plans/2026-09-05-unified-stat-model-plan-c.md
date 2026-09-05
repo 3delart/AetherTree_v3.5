@@ -320,8 +320,10 @@ Survoler une armure en jeu (tooltip) → vérifier que le nom du type affiché e
 - [ ] **Step 3 : Bonus Lourde**
 
 Équiper une armure `Lourde` → vérifier sur la fiche perso : Défense Mêlée/Distance/Magique
-chacune +10% de LEUR PROPRE valeur (pas une valeur combinée partagée), Esquive +5%. Comparer
-avec/sans l'armure équipée pour confirmer le delta exact.
+chacune +10% de LEUR PROPRE valeur (pas une valeur combinée partagée), Esquive +5%. Pour isoler
+le delta proprement, comparer DEUX armures aux mêmes stats rollées mais `armorType` différent
+(ex: Lourde vs Robe) plutôt que équipée/déséquipée — déséquiper retire AUSSI les stats propres
+de l'armure (`FinalMeleeDefense`/`FinalDodge`), ce qui fausserait la mesure du bonus seul.
 
 - [ ] **Step 4 : Bonus Légère**
 
@@ -344,8 +346,19 @@ qu'aucun bonus ne "reste collé" après un changement d'équipement.
 - [ ] **Step 7 : Cumul avec un buff sur la même stat**
 
 Appliquer un buff `+10% MeleeDefense` (Percent) en portant une armure Lourde (+10% AllDefense
-déjà actif dessus) → vérifier `(base × 1.20)` [10% armure + 10% buff, MÊME pipeline équipement
-vs... attention : le bonus Lourde est équipement, le buff est buff — donc ils NE s'additionnent
-PAS, ils COMPOSENT (`base × 1.10 × 1.10 = base × 1.21`), comme documenté dans la clarification
-inter-pipelines de la spec. Vérifier que le résultat observé est bien `×1.21`, pas `×1.20` ni
-`×1.10` seul — confirme que Plan C compose correctement avec les Plans A/B déjà en place.
+déjà actif dessus). Le bonus Lourde est équipement, le buff est buff — deux pipelines
+DIFFÉRENTS, donc ils NE s'additionnent PAS (`×1.20`), ils COMPOSENT
+(`base × 1.10 × 1.10 = base × 1.21`), comme documenté dans la clarification inter-pipelines de
+la spec (équipement tourne en premier, son résultat déjà composé devient le "Base" du buff).
+Vérifier que le résultat observé est bien `×1.21`, pas `×1.20` ni `×1.10` seul — confirme que
+Plan C compose correctement avec les Plans A/B déjà en place.
+
+- [ ] **Step 8 : Idempotence — recalculs répétés en portant une Robe**
+
+Le bonus Robe (`elementalPoints[e] *= 1.10f`) est la seule mutation MULTIPLICATIVE d'un champ
+persistant de tout ce plan — la seule à vérifier qu'elle ne s'accumule pas d'un recalcul à
+l'autre. En portant une armure `Robe`, déclencher plusieurs `RecalculateStats` de suite (monter
+de niveau, investir un point de stat, équiper/déséquiper un bijou) → vérifier que les points
+élémentaires affichés restent stables (`base × 1.10`, jamais `× 1.10 × 1.10` puis `× 1.10³`...).
+`elementalPoints`/`cooldownReduction` sont remis à zéro en tête de chaque `RecalculateStats`
+avant que Robe ne s'applique — ce test confirme que ce reset fonctionne bien en pratique.
