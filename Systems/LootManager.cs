@@ -104,12 +104,16 @@ public class LootManager : MonoBehaviour
     }
 
     /// <summary>Livre l'Aeris au gagnant. Même remarque que DeliverItem pour le singleton
-    /// global — pas de plafond côté AerisSystem, donc jamais de mail de secours nécessaire.</summary>
+    /// global — pas de plafond côté AerisSystem, donc jamais de mail de secours nécessaire.
+    /// Bonus talisman (GoldBonus, ex: +15%) appliqué ici — repris de l'ancien
+    /// WorldPickupItem.PickUpAeris() (supprimé), qui l'appliquait via FindObjectOfType&lt;Player&gt;() ;
+    /// ici `winner` est déjà la bonne référence, plus besoin de la relookup.</summary>
     private void DeliverAeris(Player winner, int amount, string mobName)
     {
         if (winner == null || amount <= 0) return;
 
-        AerisSystem.Instance?.Add(amount);
-        Debug.Log($"[LOOT] {winner.entityName} a reçu {amount} Aeris ({mobName}).");
+        int boosted = Mathf.RoundToInt(amount * (1f + winner.GoldBonusPercent));
+        AerisSystem.Instance?.Add(boosted);
+        Debug.Log($"[LOOT] {winner.entityName} a reçu {boosted} Aeris ({mobName}).");
     }
 }
