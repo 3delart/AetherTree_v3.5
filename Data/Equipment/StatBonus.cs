@@ -97,6 +97,9 @@ public enum StatType
     [InspectorName("Bonus Mana (flat)")]       BonusMana,
     [InspectorName("Regen HP naturel (flat)")]   BonusRegenHP,
     [InspectorName("Regen Mana naturel (flat)")] BonusRegenMana,
+
+    // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
+    [InspectorName("All Defense (flat ou %, voir mode)")] AllDefense,
 }
 
 // =============================================================
@@ -110,12 +113,23 @@ public class StatBonus
     public StatType statType;
 
     [Tooltip(
-        "FLAT  : Défenses, BonusAttack, Dodge, Précision, MoveSpeed,\n" +
-        "        PointsFire/All/..., BonusHP, BonusMana, BonusRegen\n" +
-        "        → entrer la valeur directe  ex: 200, 10, 0.5\n" +
-        "\n" +
-        "RATIO : CritChance, CritDamage, ResistFire/All/...\n" +
-        "        → entrer en décimal  ex: 0.05 = 5% | 0.10 = 10%"
+        "Flat : valeur directe ajoutée à la stat.\n" +
+        "Percent : % appliqué sur (Base + tous les Flat actifs, équipement + buffs), sommé\n" +
+        "avec tous les autres % actifs ciblant la même stat avant d'être appliqué UNE fois.\n" +
+        "Masqué pour les stats toujours additives (Crit, Résistances, Points élémentaires,\n" +
+        "MoveSpeed) — pas de multiplication pour elles, juste addition directe de `value`."
+    )]
+    [ShowIf(nameof(statType),
+        StatType.MeleeDefense, StatType.RangedDefense, StatType.MagicDefense, StatType.AllDefense,
+        StatType.BonusAttack, StatType.Dodge, StatType.Precision,
+        StatType.BonusHP, StatType.BonusMana, StatType.BonusRegenHP, StatType.BonusRegenMana)]
+    public ModifierType mode = ModifierType.Flat;
+
+    [Tooltip(
+        "Mode Flat : valeur directe, ex: 200, 10, 0.5\n" +
+        "Mode Percent : décimal, ex: 0.05 = 5% | 0.10 = 10%\n" +
+        "Stats sans sélecteur mode (Crit, Résistances, Points, MoveSpeed) : toujours en\n" +
+        "décimal pour Crit/Résistances (0.10 = 10%), valeur directe pour Points/MoveSpeed."
     )]
     public float value;
 }
