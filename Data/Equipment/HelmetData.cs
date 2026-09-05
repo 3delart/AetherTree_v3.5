@@ -25,10 +25,6 @@ using System.Collections.Generic;
 [CreateAssetMenu(fileName = "hlm_", menuName = "AetherTree/Inventaire/Equipement/HelmetData")]
 public class HelmetData : EquipmentDataBase
 {
-    // ── Identité ──────────────────────────────────────────────
-    [Header("Identité")]
-    public GameObject helmetPrefab;
-
     // ── Condition ─────────────────────────────────────────────
     [Header("Condition")]
     [Tooltip("Condition de déblocage optionnelle — certains casques ne s'obtiennent\n" +

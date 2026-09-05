@@ -40,7 +40,6 @@ public class ConsumableData : ItemData
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
     public ConsumableType  consumableType = ConsumableType.Potion;
-    public GameObject      prefab;
 
     // ── Potion / Food — mêmes champs, à plat, pas de sous-section ──
     [Tooltip("Cooldown avant de pouvoir réutiliser cet objet (secondes).")]

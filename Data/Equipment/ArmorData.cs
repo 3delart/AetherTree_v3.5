@@ -63,8 +63,6 @@ public class ArmorData : EquipmentDataBase
              "GDD §5.4 — aucune restriction par WeaponCategory du joueur.")]
     public ArmorType  armorType = ArmorType.Melee;
 
-    public GameObject armorPrefab;
-
     // ── Niveau ────────────────────────────────────────────────
     [Header("Niveau")]
     [Tooltip("Niveau de l'armure — détermine le niveau maximum de rune pouvant être insérée.\n" +

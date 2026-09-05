@@ -41,7 +41,6 @@ public class ResourceData : ItemData
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
     public ResourceType resourceType = ResourceType.CraftMaterial;
-    public GameObject   prefab;       // prefab objet au sol (WorldLootItem)
 
     // ── Node World (Collectible uniquement) ───────────────────
     [Tooltip("Prefab 3D placé dans le monde (plante, rocher, arbre...).")]

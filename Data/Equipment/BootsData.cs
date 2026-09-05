@@ -33,10 +33,6 @@ using System.Collections.Generic;
 [CreateAssetMenu(fileName = "bts_", menuName = "AetherTree/Inventaire/Equipement/BootsData")]
 public class BootsData : EquipmentDataBase
 {
-    // ── Identité ──────────────────────────────────────────────
-    [Header("Identité")]
-    public GameObject bootsPrefab;
-
     // ── Défense mêlée — rollée, PAS de rareté/upgrade sur ce slot ──
     [Header("Défense mêlée (rollée — pas de rareté/upgrade sur ce slot)")]
     public float baseMeleeDefense = 0f;

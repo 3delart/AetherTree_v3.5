@@ -30,10 +30,6 @@ using System.Collections.Generic;
 [CreateAssetMenu(fileName = "glv_", menuName = "AetherTree/Inventaire/Equipement/GlovesData")]
 public class GlovesData : EquipmentDataBase
 {
-    // ── Identité ──────────────────────────────────────────────
-    [Header("Identité")]
-    public GameObject glovesPrefab;
-
     // ── Défense mêlée — rollée, PAS de rareté/upgrade sur ce slot ──
     [Header("Défense mêlée (rollée — pas de rareté/upgrade sur ce slot)")]
     public float baseMeleeDefense = 0f;
