@@ -46,9 +46,21 @@ utilisés par les deux pipelines (buffs ET équipement).
 FinalStat = (Base + Σ tous les Flat actifs, toutes sources) × (1 + Σ tous les % actifs, toutes sources)
 ```
 
-Une seule somme de Flat, une seule somme de %, peu importe la source (équipement, buff,
-statpoints, passif permanent). Exemple validé : Défense Mêlée base 140, buffs actifs
-`+20 flat` et `+50 flat` et `+10% final` → `(140 + 20 + 50) × 1.10 = 231`.
+Une seule somme de Flat, une seule somme de %, peu importe la source — MAIS seulement DANS UN
+MÊME pipeline (équipement OU buff, jamais les deux mélangés dans une seule somme). Voir
+"Ordre d'application entre les deux pipelines" plus bas : équipement (statpoints, passifs
+permanents inclus) tourne en premier et pousse SON résultat déjà composé, qui devient le "Base"
+que le pipeline buff utilise pour SA propre somme. Deux passes séquentielles, pas une somme
+globale unique tous pipelines confondus — implication concrète : un `+10%` équipement et un
+`+10%` buff sur la MÊME stat composent (`×1.10×1.10 = ×1.21`), ils ne s'additionnent PAS
+(`×1.20`) comme le feraient deux `+10%` provenant tous les deux du même pipeline. Exemple
+équipement+buff mélangés : Défense Mêlée base 140, ARMURE `+50 flat` (équipement, pipeline 1,
+résultat poussé = 190) puis buffs actifs `+20 flat` et `+10% final` (pipeline 2, utilise 190
+comme Base) → `(190 + 20) × 1.10 = 231`. Exemple deux `+10%` DU MÊME pipeline (buff) :
+`base × 1.10 × 1.10`? NON — `base × (1+0.10+0.10) = base × 1.20` (addition, pas composition,
+c'est tout l'intérêt de la somme globale PAR pipeline). À garder en tête pour l'équilibrage de
+contenu (Plan B/C) : un bonus équipement et un bonus buff visant la même valeur nominale de %
+n'ont pas le même poids relatif selon lequel des deux pipelines le porte.
 
 ### Exceptions — stats toujours 100% additives, jamais de mode Flat
 
