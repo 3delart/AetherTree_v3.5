@@ -150,6 +150,16 @@ public class CharacterPanelUI : MonoBehaviour
     public TextMeshProUGUI regenMPText;
 
     // =========================================================
+    // CARD FINAL DAMAGE — bonus/réduction dégâts finaux
+    // Totaux Entity déjà composés (équipement + buffs, voir Fix 1 de la review
+    // finale unified-stat-model 2026-09-05) — pas de breakdown par catégorie
+    // comme les autres cards (Base/Équipement/StatPoints/Passifs n'ont pas de
+    // sens ici, ce sont des accumulateurs bruts lus directement sur Entity).
+    // =========================================================
+    [Header("Card Final Damage")]
+    public TextMeshProUGUI finalDamageText;
+
+    // =========================================================
     // CARD RESISTANCES (8 éléments)
     // =========================================================
     [Header("Card Resistances")]
@@ -289,6 +299,7 @@ public class CharacterPanelUI : MonoBehaviour
         RefreshCardDefense();
         RefreshCardElemental();
         RefreshCardVitality();
+        RefreshCardFinalDamage();
         RefreshCardResistances();
 
         RefreshDetailAttack();
@@ -423,6 +434,20 @@ public class CharacterPanelUI : MonoBehaviour
         SetText(maxMPText,   $"{Mathf.CeilToInt(_player.MaxMana)}");
         SetText(regenHPText, $"{_player.RegenHP:F1} /s");
         SetText(regenMPText, $"{_player.RegenMana:F1} /s");
+    }
+
+    // =========================================================
+    // CARD FINAL DAMAGE
+    // Lues directement sur Entity — accumulateurs bruts déjà composés par
+    // CharacterStats.RecalculateStats (équipement) + StatusEffectSystem.
+    // ReapplyActiveModifiers (buffs), voir Fix 1 de la review finale.
+    // =========================================================
+
+    private void RefreshCardFinalDamage()
+    {
+        SetText(finalDamageText,
+            $"Dégâts finaux : +{Mathf.RoundToInt(_player.FinalDamageBonusFlat)} / +{_player.FinalDamageBonusPercent * 100f:F1}%" +
+            $"   Réduction : -{Mathf.RoundToInt(_player.FinalDamageReductionFlat)} / -{_player.FinalDamageReductionPercent * 100f:F1}%");
     }
 
     // =========================================================

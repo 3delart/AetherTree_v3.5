@@ -478,14 +478,14 @@ public class StatusEffectSystem : MonoBehaviour
             // à multiplier, rien à passer par ModifyEntityStat (qui n'a pas de case pour eux).
             if (stat == StatModifierType.FinalDamageBonus)
             {
-                target.SetFinalDamageBonusFlat(flat);
-                target.SetFinalDamageBonusPercent(pct);
+                target.SetFinalDamageBonusFlat   (target.FinalDamageBonusFlat    + flat);
+                target.SetFinalDamageBonusPercent(target.FinalDamageBonusPercent + pct);
                 continue;
             }
             if (stat == StatModifierType.FinalDamageReduction)
             {
-                target.SetFinalDamageReductionFlat(flat);
-                target.SetFinalDamageReductionPercent(pct);
+                target.SetFinalDamageReductionFlat   (target.FinalDamageReductionFlat    + flat);
+                target.SetFinalDamageReductionPercent(target.FinalDamageReductionPercent + pct);
                 continue;
             }
 

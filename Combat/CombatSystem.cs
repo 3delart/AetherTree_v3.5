@@ -200,7 +200,8 @@ public class CombatSystem : MonoBehaviour
         if (attacker != null)
             totalDamage = (totalDamage + attacker.FinalDamageBonusFlat) * (1f + attacker.FinalDamageBonusPercent);
         if (target != null)
-            totalDamage = (totalDamage - target.FinalDamageReductionFlat) * (1f - target.FinalDamageReductionPercent);
+            totalDamage = Mathf.Max(0f, totalDamage - target.FinalDamageReductionFlat)
+                        * Mathf.Max(0f, 1f - target.FinalDamageReductionPercent);
 
         // ── Résistance pour le log ────────────────────────────
         float elemResistLog = 0f;
@@ -301,7 +302,8 @@ public class CombatSystem : MonoBehaviour
         if (caster != null)
             total = (total + caster.FinalDamageBonusFlat) * (1f + caster.FinalDamageBonusPercent);
         if (target != null)
-            total = (total - target.FinalDamageReductionFlat) * (1f - target.FinalDamageReductionPercent);
+            total = Mathf.Max(0f, total - target.FinalDamageReductionFlat)
+                   * Mathf.Max(0f, 1f - target.FinalDamageReductionPercent);
 
         //LogDamageReport("MOB/PNJ", caster, target, null, skill, baseDamage, physDamage, elemRaw, elemDamage, 0f,total, false);
 
