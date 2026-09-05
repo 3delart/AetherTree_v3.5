@@ -132,6 +132,17 @@ public abstract class Entity : MonoBehaviour
     protected float xpBonusPercent   = 0f;
     protected float goldBonusPercent = 0f;
 
+    /// <summary>Dégâts finaux — accumulateurs bruts (pas de "stat de base" à multiplier),
+    /// alimentés par StatModifierType.FinalDamageBonus/FinalDamageReduction (buffs) et
+    /// StatType.FinalDamageBonus/FinalDamageReduction (équipement). Appliqués par
+    /// CombatSystem.CalculateDamage/CalculateMobDamage, tout à la fin du pipeline de dégâts,
+    /// PAS via la formule (Base+Flat)×(1+%) du Plan A. Toujours 0f par défaut — pas de source
+    /// permanente aujourd'hui, uniquement buffs/équipement additifs.</summary>
+    protected float finalDamageBonusFlat        = 0f;
+    protected float finalDamageBonusPercent     = 0f;
+    protected float finalDamageReductionFlat    = 0f;
+    protected float finalDamageReductionPercent = 0f;
+
     // =========================================================
     // STATS DE DÉFENSE
     // =========================================================
@@ -240,6 +251,11 @@ public abstract class Entity : MonoBehaviour
     /// base toujours 0f.</summary>
     public float XPBonusPercent   => xpBonusPercent;
     public float GoldBonusPercent => goldBonusPercent;
+
+    public float FinalDamageBonusFlat        => finalDamageBonusFlat;
+    public float FinalDamageBonusPercent     => finalDamageBonusPercent;
+    public float FinalDamageReductionFlat    => finalDamageReductionFlat;
+    public float FinalDamageReductionPercent => finalDamageReductionPercent;
 
     /// <summary>HP courant exprimé en [0..1]. Utile pour les barres et conditions.</summary>
     public float HPPercent   => maxHP   > 0f ? currentHP   / maxHP   : 0f;
@@ -554,6 +570,8 @@ public abstract class Entity : MonoBehaviour
         public float regenHP, regenMana;
         public float moveSpeed;
         public float xpBonusPercent, goldBonusPercent;
+        public float finalDamageBonusFlat, finalDamageBonusPercent;
+        public float finalDamageReductionFlat, finalDamageReductionPercent;
     }
     private BaseStats _base;
 
@@ -582,6 +600,10 @@ public abstract class Entity : MonoBehaviour
             moveSpeed       = moveSpeed,
             xpBonusPercent  = 0f, // pas de base — uniquement additif via talismans
             goldBonusPercent = 0f,
+            finalDamageBonusFlat        = 0f, // pas de base — uniquement additif via buffs/équipement
+            finalDamageBonusPercent     = 0f,
+            finalDamageReductionFlat    = 0f,
+            finalDamageReductionPercent = 0f,
         };
     }
 
@@ -614,6 +636,10 @@ public abstract class Entity : MonoBehaviour
         SetMoveSpeed      (_base.moveSpeed);
         SetXPBonusPercent  (_base.xpBonusPercent);
         SetGoldBonusPercent(_base.goldBonusPercent);
+        SetFinalDamageBonusFlat       (_base.finalDamageBonusFlat);
+        SetFinalDamageBonusPercent    (_base.finalDamageBonusPercent);
+        SetFinalDamageReductionFlat   (_base.finalDamageReductionFlat);
+        SetFinalDamageReductionPercent(_base.finalDamageReductionPercent);
 
         // Résistances élémentaires — remet à zéro puis laisse ReapplyActiveModifiers gérer
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
@@ -655,6 +681,11 @@ public abstract class Entity : MonoBehaviour
     public void SetCritDamageReduction(float v) => critDamageReduction = Mathf.Clamp01(v);
     public void SetXPBonusPercent(float value)   => xpBonusPercent   = Mathf.Max(0f, value);
     public void SetGoldBonusPercent(float value) => goldBonusPercent = Mathf.Max(0f, value);
+
+    public void SetFinalDamageBonusFlat(float value)        => finalDamageBonusFlat        = Mathf.Max(0f, value);
+    public void SetFinalDamageBonusPercent(float value)     => finalDamageBonusPercent     = Mathf.Max(0f, value);
+    public void SetFinalDamageReductionFlat(float value)    => finalDamageReductionFlat    = Mathf.Max(0f, value);
+    public void SetFinalDamageReductionPercent(float value) => finalDamageReductionPercent = Mathf.Max(0f, value);
 
     /// <summary>
     /// Écrit une résistance élémentaire. Accepte les valeurs négatives (vulnérabilité).
