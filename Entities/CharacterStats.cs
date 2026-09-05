@@ -401,22 +401,11 @@ public class CharacterStats
         {
             switch (armor.data.armorType)
             {
+                // Lourde/Legere partagent GetArmorTypePassives (source unique, aussi lue par
+                // CharacterPanelUI) — voir plus bas dans ce fichier, section ACCUMULATEUR StatBonus.
                 case ArmorType.Lourde:
-                    AccumulateBonus(
-                        new StatBonus { statType = StatType.AllDefense, mode = ModifierType.Percent, value = 0.10f },
-                        flatAcc, percentAcc, accResist);
-                    AccumulateBonus(
-                        new StatBonus { statType = StatType.Dodge, mode = ModifierType.Percent, value = 0.05f },
-                        flatAcc, percentAcc, accResist);
-                    break;
-
                 case ArmorType.Legere:
-                    AccumulateBonus(
-                        new StatBonus { statType = StatType.BonusAttack, mode = ModifierType.Percent, value = 0.10f },
-                        flatAcc, percentAcc, accResist);
-                    AccumulateBonus(
-                        new StatBonus { statType = StatType.Precision, mode = ModifierType.Percent, value = 0.05f },
-                        flatAcc, percentAcc, accResist);
+                    AccumulateStatBonuses(GetArmorTypePassives(armor.data.armorType), flatAcc, percentAcc, accResist);
                     break;
 
                 case ArmorType.Robe:
@@ -427,6 +416,14 @@ public class CharacterStats
                         elementalPoints[e] *= 1.10f;
                     // cooldownReduction est déjà un ratio (comme CritChance/XPBonus/GoldBonus) —
                     // addition directe, pas de multiplication (confirmé Florian).
+                    //
+                    // Note asymétrie (Fix 2, revue finale 2026-09-05) : le +5% de Dodge (Lourde) et
+                    // de Precision (Legere) ci-dessus sont RELATIFS (×1.05 appliqué via percentAcc
+                    // sur la valeur courante du stat — faible impact si le total est bas, plus fort
+                    // s'il est déjà élevé), alors que ce +0.05f sur cooldownReduction est ABSOLU
+                    // (+5 points de pourcentage ajoutés directement au ratio, fort dès le niveau 1,
+                    // ne scale avec rien). C'est intentionnel (confirmé Florian) — ne PAS "harmoniser"
+                    // l'un sur l'autre sans revalider avec lui.
                     cooldownReduction += 0.05f;
                     break;
             }
@@ -565,6 +562,31 @@ public class CharacterStats
         if (bonuses == null) return;
         foreach (var b in bonuses)
             AccumulateBonus(b, flatAcc, percentAcc, resist);
+    }
+
+    /// <summary>Bonus passifs automatiques par ArmorType (GDD §5.4) — source unique partagée entre
+    /// le moteur de calcul (RecalculateStats) et l'UI (CharacterPanelUI), pour que les deux
+    /// n'aient jamais à être mises à jour séparément. Robe retourne une liste vide — ses 2 effets
+    /// (Points élémentaires, cooldown) n'ont pas de StatType/chemin Flat-Percent, gérés à part.</summary>
+    public static List<StatBonus> GetArmorTypePassives(ArmorType armorType)
+    {
+        switch (armorType)
+        {
+            case ArmorType.Lourde:
+                return new List<StatBonus>
+                {
+                    new StatBonus { statType = StatType.AllDefense, mode = ModifierType.Percent, value = 0.10f },
+                    new StatBonus { statType = StatType.Dodge,      mode = ModifierType.Percent, value = 0.05f },
+                };
+            case ArmorType.Legere:
+                return new List<StatBonus>
+                {
+                    new StatBonus { statType = StatType.BonusAttack, mode = ModifierType.Percent, value = 0.10f },
+                    new StatBonus { statType = StatType.Precision,   mode = ModifierType.Percent, value = 0.05f },
+                };
+            default:
+                return new List<StatBonus>();
+        }
     }
 
     private void AccumulateBonus(

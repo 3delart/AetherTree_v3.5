@@ -625,12 +625,20 @@ public class CharacterPanelUI : MonoBehaviour
             ("PTS", $"{Mathf.RoundToInt(spiritPts)}"),
             ("CDR", "0%"));
 
-        // Row_Equipment — PointsFire/All depuis config.bonuses de tous les équipements
-        float eqPts = 0f, eqCDR = 0f; // CDR non porté par équipements dans la codebase actuelle
+        // Row_Equipment — PointsFire/All depuis config.bonuses de tous les équipements, PLUS le
+        // bonus automatique Robe (×10% Points élémentaires, +5% CDR — GDD §5.4, voir
+        // CharacterStats.RecalculateStats / case ArmorType.Robe). Une Robe équipée PORTE bien du
+        // CDR — ce n'était pas géré ici avant Fix 1 (revue finale 2026-09-05) car ce bonus est un
+        // ×1.10/+0.05f direct hors du chemin StatBonus (donc absent de
+        // CharacterStats.GetArmorTypePassives, qui ne couvre que Lourde/Legere).
+        float eqPts = 0f, eqCDR = 0f;
         AccumulateElementalBonuses(_player, dom, ref eqPts, ref eqCDR);
+        bool isRobe = _player.equippedArmorInstance?.ArmorType == ArmorType.Robe;
+        string eqPtsText = eqPts != 0f ? $"+{Mathf.RoundToInt(eqPts)}" : "0";
+        if (isRobe) eqPtsText += " (+10%)";
         SetDetailRow(detailElementalEquipment, "Équipement",
-            ("PTS", eqPts != 0f ? $"+{Mathf.RoundToInt(eqPts)}" : "0"),
-            ("CDR", "0%"));
+            ("PTS", eqPtsText),
+            ("CDR", isRobe ? "+5%" : "0%"));
 
         // Row_StatPoints
         var sp = _player.statPoints;
@@ -818,6 +826,12 @@ public class CharacterPanelUI : MonoBehaviour
             }
         ReadAtkList(p.equippedWeaponInstance?.equippedRune?.bonuses, acc);
         ReadAtkList(p.equippedArmorInstance?.equippedRune?.bonuses,  acc);
+
+        // Bonus automatique ArmorType (Legere : +10% Attaque / +5% Précision) — même source que
+        // CharacterStats.RecalculateStats (CharacterStats.GetArmorTypePassives), pour que ce
+        // détail "Équipement" reconcilie avec le Total (voir Fix 1, revue finale 2026-09-05).
+        if (p.equippedArmorInstance?.data != null)
+            ReadAtkList(CharacterStats.GetArmorTypePassives(p.equippedArmorInstance.ArmorType), acc);
     }
 
     private static void ReadAtkList(List<StatBonus> bonuses, AtkAccum acc)
@@ -867,6 +881,12 @@ public class CharacterPanelUI : MonoBehaviour
             }
         ReadDefList(p.equippedWeaponInstance?.equippedRune?.bonuses, acc);
         ReadDefList(p.equippedArmorInstance?.equippedRune?.bonuses,  acc);
+
+        // Bonus automatique ArmorType (Lourde : +10% AllDefense / +5% Esquive) — même source que
+        // CharacterStats.RecalculateStats (CharacterStats.GetArmorTypePassives), pour que ce
+        // détail "Équipement" reconcilie avec le Total (voir Fix 1, revue finale 2026-09-05).
+        if (p.equippedArmorInstance?.data != null)
+            ReadDefList(CharacterStats.GetArmorTypePassives(p.equippedArmorInstance.ArmorType), acc);
     }
 
     private static void ReadDefList(List<StatBonus> bonuses, DefAccum acc)

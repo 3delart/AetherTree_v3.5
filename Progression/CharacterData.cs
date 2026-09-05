@@ -116,7 +116,10 @@ public class CharacterData : ScriptableObject
     public WeaponCategory WeaponCategory =>
         startingWeapon != null ? startingWeapon.Category : WeaponCategory.Melee;
 
-    /// <summary>ArmorType équipable par ce personnage.</summary>
+    /// <summary>ArmorType suggéré par l'arme de départ du personnage — purement informatif, AUCUNE
+    /// restriction d'équipement n'existe dans ce projet (voir ArmorData — équipable par tout
+    /// joueur). Ne pas utiliser ceci pour implémenter une restriction d'équipement : elle
+    /// n'existe pas dans ce design (Fix 3, revue finale 2026-09-05).</summary>
     public ArmorType ArmorType =>
         startingWeapon != null ? startingWeapon.LinkedArmorType : ArmorType.Lourde;
 
