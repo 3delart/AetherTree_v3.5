@@ -118,7 +118,7 @@ public class CharacterData : ScriptableObject
 
     /// <summary>ArmorType équipable par ce personnage.</summary>
     public ArmorType ArmorType =>
-        startingWeapon != null ? startingWeapon.LinkedArmorType : ArmorType.Melee;
+        startingWeapon != null ? startingWeapon.LinkedArmorType : ArmorType.Lourde;
 
     /// <summary>
     /// HP de base à lv1 selon la WeaponCategory du joueur.

@@ -61,7 +61,7 @@ public class ArmorData : EquipmentDataBase
              "Légère = DPS (BonusAttack + Précision)\n" +
              "Robe   = Mage (Points élémentaires + Réduction cooldown)\n" +
              "GDD §5.4 — aucune restriction par WeaponCategory du joueur.")]
-    public ArmorType  armorType = ArmorType.Melee;
+    public ArmorType  armorType = ArmorType.Lourde;
 
     // ── Niveau ────────────────────────────────────────────────
     [Header("Niveau")]
@@ -219,7 +219,7 @@ public class ArmorInstance
         data != null ? Mathf.Lerp(data.DodgeLow, data.DodgeHigh, rolledRatioDodge) : 0f;
 
     // ── Raccourcis SO ─────────────────────────────────────────
-    public ArmorType ArmorType    => data != null ? data.armorType    : global::ArmorType.Melee;
+    public ArmorType ArmorType    => data != null ? data.armorType    : global::ArmorType.Lourde;
 
     /// <summary>Clé technique STABLE — logs, saves, comparaisons. Jamais affichée au joueur.</summary>
     public string    ItemId       => data != null ? data.itemID : "unknown_armor";

@@ -128,7 +128,7 @@ public enum WeaponType
 // ENUMS LIÉS
 // =============================================================
 public enum WeaponCategory { Unarmed, Melee, Ranged, Magic }
-public enum ArmorType      { Melee, Ranged, Magic }
+public enum ArmorType      { Lourde, Legere, Robe }
 
 
 // =============================================================
@@ -158,9 +158,9 @@ public static class WeaponTypeExtensions
     {
         switch (type.GetCategory())
         {
-            case WeaponCategory.Ranged: return ArmorType.Ranged;
-            case WeaponCategory.Magic:  return ArmorType.Magic;
-            default:                    return ArmorType.Melee;
+            case WeaponCategory.Ranged: return ArmorType.Legere;
+            case WeaponCategory.Magic:  return ArmorType.Robe;
+            default:                    return ArmorType.Lourde;
         }
     }
 
