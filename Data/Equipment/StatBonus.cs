@@ -9,9 +9,13 @@ using UnityEngine;
 //   Arme, Armure, Casque, Gants, Bottes, Bijoux, Esprits, Runes
 //
 // Pour ajouter une nouvelle stat :
-//   1. Ajouter la valeur dans StatType
-//   2. Ajouter le case dans CharacterStats.AccumulateBonus()
-//   C'est tout — aucun autre fichier à modifier.
+//   1. Ajouter la valeur dans StatType (fin d'enum — ordinal safety)
+//   2. Si elle doit rester toujours additive (jamais de %), l'ajouter à
+//      CharacterStats.ExceptionStatTypes ET au ShowIf de StatBonus.mode ci-dessous
+//      (sinon elle route par défaut vers AddToAcc — Flat/Percent normal)
+//   3. Ajouter un appel FinalOf(StatType.<NouvelleStat>, <accumulateur_direct_existant>)
+//      dans la section PUSH de CharacterStats.RecalculateStats — SANS cet appel, la
+//      valeur accumulée dans flatAcc/percentAcc n'est jamais lue.
 //
 // ┌─────────────────────────┬──────────┬────────────────────────┐
 // │ StatType                │ Unité    │ Exemple Inspector      │

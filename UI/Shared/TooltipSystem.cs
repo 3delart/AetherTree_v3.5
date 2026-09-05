@@ -701,7 +701,8 @@ public class TooltipSystem : MonoBehaviour
         var sb = new System.Text.StringBuilder();
         foreach (var b in bonuses)
         {
-            bool isRatio = b.statType == StatType.CritChance || b.statType == StatType.CritMultiplier
+            bool isRatio = b.mode == ModifierType.Percent
+                        || b.statType == StatType.CritChance || b.statType == StatType.CritMultiplier
                         || b.statType.ToString().StartsWith("Resist")
                         || b.statType.ToString().StartsWith("Element");
             sb.AppendLine(isRatio

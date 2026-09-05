@@ -158,24 +158,37 @@ public enum StatModifierType
 // ── Ligne de stat additionnelle (BuffData.bonusStats / DebuffData.bonusStats) ─────
 // S'applique EN PLUS de l'effet principal (Heal/Shield/Regeneration/...), quel que soit
 // buffType/debuffType — permet de composer plusieurs stats sur un seul effet (ex: Talisman
-// HP_Boost = +%MaxHP ET +%RegenHP ; Def_Boost = +%melee ET +%ranged ET +%magic ET +10% du
-// TOTAL des 3 par-dessus). Voir StatusEffectSystem.AccumulateStatLine pour l'ordre d'évaluation.
+// HP_Boost = +%MaxHP ET +%RegenHP ; Def_Boost = +%melee ET +%ranged ET +%magic ET AllDefense
+// en Percent pour un bonus global par-dessus). Voir StatusEffectSystem.AccumulateStatLine pour
+// l'ordre d'évaluation.
 public enum StatLineMode
 {
     Flat,     // Valeur directe (ex: +300 MaxHP)
     Percent,  // % — sommé GLOBALEMENT avec tous les autres % actifs ciblant la même stat
               // (tous buffs/debuffs actifs confondus, pas juste les lignes de CET effet), puis
               // appliqué en une seule fois : (Base + ΣFlat) × (1 + Σ%). Remplace
-              // PercentOfBase/PercentOfFinal (retirés v3.5 unification) — plus de distinction
+              // PercentOfBase (fusionné dans Percent, même ordinal 1) — plus de distinction
               // scopée par effet individuel. Voir StatusEffectSystem.AccumulateStatLine.
+    [System.Obsolete("Retiré — PercentOfFinal fusionné dans Percent (voir AllDefense / somme " +
+        "globale). Ordinal gardé (jamais réutilisé) pour qu'une valeur héritée=2 reste visible " +
+        "et distincte dans l'Inspector plutôt que de silencieusement redevenir Flat.")]
+    Obsolete_PercentOfFinal,
 }
 
 [System.Serializable]
 public class StatLine
 {
     public StatModifierType stat;
+
+    [ShowIf(nameof(stat),
+        StatModifierType.MaxHP, StatModifierType.MaxMana,
+        StatModifierType.RegenHP, StatModifierType.RegenMana,
+        StatModifierType.AttackDamage, StatModifierType.AttackSpeed,
+        StatModifierType.MeleeDefense, StatModifierType.RangedDefense, StatModifierType.MagicDefense,
+        StatModifierType.AllDefense, StatModifierType.Dodge, StatModifierType.Precision)]
     public StatLineMode mode = StatLineMode.Flat;
-    [Tooltip("Flat : valeur directe\nPercent : % sommé globalement avec tous les autres % actifs ciblant la même stat, appliqué en une seule fois : (Base+Flat)*(1+Percent)")]
+
+    [Tooltip("Flat : valeur directe\nPercent : % sommé globalement avec tous les autres % actifs ciblant la même stat, appliqué une fois : (Base+ΣFlat)×(1+Σ%). Masqué pour les stats toujours additives (Crit, Résistances, Points élémentaires, MoveSpeed, XPBonus, GoldBonus).")]
     public float value;
 }
 

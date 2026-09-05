@@ -77,8 +77,8 @@ public class BuffData : StatusEffectData
     [Header("Bonus de stats additionnels (optionnel)")]
     [Tooltip("S'applique EN PLUS de l'effet principal ci-dessus (Heal/Shield/...), quel que\n" +
              "soit buffType — permet de composer plusieurs stats sur un seul buff (ex: Talisman\n" +
-             "HP_Boost = MaxHP + RegenHP en même temps, ou Def_Boost = 3 défenses + un bonus\n" +
-             "global PercentOfFinal par-dessus).")]
+             "HP_Boost = MaxHP + RegenHP en même temps, ou Def_Boost = 3 défenses +\n" +
+             "AllDefense en Percent pour un bonus global par-dessus).")]
     public List<StatLine> bonusStats = new List<StatLine>();
 
     // ── Helpers ───────────────────────────────────────────────

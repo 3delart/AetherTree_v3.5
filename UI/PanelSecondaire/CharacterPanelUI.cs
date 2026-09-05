@@ -479,13 +479,13 @@ public class CharacterPanelUI : MonoBehaviour
                 ("MIN","—"),("MAX","—"),("PREC","—"),("CRIT","—"),("×DMG","—"));
 
         // Row_Equipment — BonusAttack + Précision + CritChance + CritMult depuis config.bonuses
-        float eAtk = 0f, ePrec = 0f, eCrit = 0f, eCritM = 0f;
-        AccumulateAttackBonuses(_player, ref eAtk, ref ePrec, ref eCrit, ref eCritM);
+        var eAcc = new AtkAccum();
+        AccumulateAttackBonuses(_player, eAcc);
         SetDetailRow(detailAttackEquipment, "Équipement",
-            ("ATK",  eAtk  != 0f ? $"+{Mathf.RoundToInt(eAtk)}"  : "0"),
-            ("PREC", ePrec != 0f ? $"+{Mathf.RoundToInt(ePrec)}" : "0"),
-            ("CRIT", eCrit != 0f ? $"+{eCrit * 100f:F1}%"        : "0%"),
-            ("×DMG", eCritM!= 0f ? $"+{eCritM:F2}"               : "0"),
+            ("ATK",  FmtFlatPct(eAcc.atk, eAcc.atkPct)),
+            ("PREC", eAcc.prec != 0f ? $"+{Mathf.RoundToInt(eAcc.prec)}" : "0"),
+            ("CRIT", eAcc.crit != 0f ? $"+{eAcc.crit * 100f:F1}%"        : "0%"),
+            ("×DMG", eAcc.critMult != 0f ? $"+{eAcc.critMult:F2}"        : "0"),
             ("",""));  // 5e contrib vide (colonnes alignées)
 
         // Row_StatPoints
@@ -501,13 +501,13 @@ public class CharacterPanelUI : MonoBehaviour
                 ("ATK","0"),("PREC","0"),("CRIT","0%"),("×DMG","0"),("",""));
 
         // Row_Passive — unlockedPermanents
-        float pAtk = 0f, pPrec = 0f, pCrit = 0f, pCritM = 0f;
-        AccumulatePermanentAttack(_player, ref pAtk, ref pPrec, ref pCrit, ref pCritM);
+        var pAcc = new AtkAccum();
+        AccumulatePermanentAttack(_player, pAcc);
         SetDetailRow(detailAttackPassive, "Passifs",
-            ("ATK",  pAtk  != 0f ? $"+{Mathf.RoundToInt(pAtk)}"  : "0"),
-            ("PREC", pPrec != 0f ? $"+{Mathf.RoundToInt(pPrec)}" : "0"),
-            ("CRIT", pCrit != 0f ? $"+{pCrit * 100f:F1}%"        : "0%"),
-            ("×DMG", pCritM!= 0f ? $"+{pCritM:F2}"               : "0"),
+            ("ATK",  FmtFlatPct(pAcc.atk, pAcc.atkPct)),
+            ("PREC", pAcc.prec != 0f ? $"+{Mathf.RoundToInt(pAcc.prec)}" : "0"),
+            ("CRIT", pAcc.crit != 0f ? $"+{pAcc.crit * 100f:F1}%"        : "0%"),
+            ("×DMG", pAcc.critMult != 0f ? $"+{pAcc.critMult:F2}"        : "0"),
             ("",""));
     }
 
@@ -538,14 +538,14 @@ public class CharacterPanelUI : MonoBehaviour
             ("C-R",   "0%"));
 
         // Row_Equipment — défenses fixes casque/gants/bottes/bijoux + config.bonuses
-        float eMel = 0f, eRng = 0f, eMag = 0f, eDod = 0f, eCritR = 0f;
-        AccumulateDefenseBonuses(_player, ref eMel, ref eRng, ref eMag, ref eDod, ref eCritR);
+        var eAcc = new DefAccum();
+        AccumulateDefenseBonuses(_player, eAcc);
         SetDetailRow(detailDefenseEquipment, "Équipement",
-            ("MÊL",  eMel   != 0f ? $"+{Mathf.RoundToInt(eMel)}"  : "0"),
-            ("DIST", eRng   != 0f ? $"+{Mathf.RoundToInt(eRng)}"  : "0"),
-            ("MAG",  eMag   != 0f ? $"+{Mathf.RoundToInt(eMag)}"  : "0"),
-            ("ESQ",  eDod   != 0f ? $"+{Mathf.RoundToInt(eDod)}"  : "0"),
-            ("C-R",  eCritR != 0f ? $"+{eCritR * 100f:F1}%"       : "0%"));
+            ("MÊL",  FmtFlatPct(eAcc.mel, eAcc.melPct)),
+            ("DIST", FmtFlatPct(eAcc.rng, eAcc.rngPct)),
+            ("MAG",  FmtFlatPct(eAcc.mag, eAcc.magPct)),
+            ("ESQ",  FmtFlatPct(eAcc.dod, eAcc.dodPct)),
+            ("C-R",  eAcc.critR != 0f ? $"+{eAcc.critR * 100f:F1}%" : "0%"));
 
         // Row_StatPoints
         if (sp != null)
@@ -562,14 +562,14 @@ public class CharacterPanelUI : MonoBehaviour
             SetDetailRow(detailDefenseStatPoints, "Stat Points",
                 ("MÊL","0"),("DIST","0"),("MAG","0"),("ESQ","0"),("C-R","0%"));
 
-        float pMel = 0f, pRng = 0f, pMag = 0f, pDod = 0f, pCritR = 0f;
-        AccumulatePermanentDefense(_player, ref pMel, ref pRng, ref pMag, ref pDod, ref pCritR);
+        var pAcc = new DefAccum();
+        AccumulatePermanentDefense(_player, pAcc);
         SetDetailRow(detailDefensePassive, "Passifs",
-            ("MÊL",  pMel   != 0f ? $"+{Mathf.RoundToInt(pMel)}"  : "0"),
-            ("DIST", pRng   != 0f ? $"+{Mathf.RoundToInt(pRng)}"  : "0"),
-            ("MAG",  pMag   != 0f ? $"+{Mathf.RoundToInt(pMag)}"  : "0"),
-            ("ESQ",  pDod   != 0f ? $"+{Mathf.RoundToInt(pDod)}"  : "0"),
-            ("C-R",  pCritR != 0f ? $"+{pCritR * 100f:F1}%"       : "0%"));
+            ("MÊL",  FmtFlatPct(pAcc.mel, pAcc.melPct)),
+            ("DIST", FmtFlatPct(pAcc.rng, pAcc.rngPct)),
+            ("MAG",  FmtFlatPct(pAcc.mag, pAcc.magPct)),
+            ("ESQ",  FmtFlatPct(pAcc.dod, pAcc.dodPct)),
+            ("C-R",  pAcc.critR != 0f ? $"+{pAcc.critR * 100f:F1}%" : "0%"));
     }
 
     // ── Section Elemental ─────────────────────────────────────
@@ -747,92 +747,130 @@ public class CharacterPanelUI : MonoBehaviour
     // ACCUMULATEURS — lisent config.bonuses source par source
     // =========================================================
 
-    private static void AccumulateAttackBonuses(Player p,
-        ref float atkBonus, ref float prec, ref float crit, ref float critMult)
+    /// <summary>Accumulateur Row_Equipment/Row_Passive — section Attaque. Sépare Flat et Percent
+    /// par stat (mirroring CharacterStats.AddToAcc/FinalOf, en display-only : ce panel ne
+    /// recompose pas le (Base+Flat)×(1+Percent) final, juste la contribution brute PAR
+    /// CATÉGORIE, voir FmtFlatPct). Precision/CritChance/CritMultiplier restent en addition pure
+    /// — seul BonusAttack a besoin de la distinction Flat/Percent ici (voir Fix 6 finding).</summary>
+    private class AtkAccum
+    {
+        public float atk, atkPct;
+        public float prec, crit, critMult;
+    }
+
+    /// <summary>Idem AtkAccum pour la section Défense. AllDefense (voir ReadDefList) fan-out sur
+    /// les 3 champs mel/rng/mag — jamais un bucket séparé, même contrat que
+    /// CharacterStats.AccumulateBonus. CritDmgReduction reste en addition pure.</summary>
+    private class DefAccum
+    {
+        public float mel, melPct;
+        public float rng, rngPct;
+        public float mag, magPct;
+        public float dod, dodPct;
+        public float critR;
+    }
+
+    private static void AccumulateAttackBonuses(Player p, AtkAccum acc)
     {
         // On lit config.bonuses de tous les équipements (hors stats rollées de l'arme)
-        ReadAtkList(p.equippedWeaponInstance?.Bonuses,  ref atkBonus, ref prec, ref crit, ref critMult);
-        ReadAtkList(p.equippedArmorInstance?.Bonuses,   ref atkBonus, ref prec, ref crit, ref critMult);
-        ReadAtkList(p.equippedHelmetInstance?.Bonuses,  ref atkBonus, ref prec, ref crit, ref critMult);
-        ReadAtkList(p.equippedGlovesInstance?.Bonuses,  ref atkBonus, ref prec, ref crit, ref critMult);
-        ReadAtkList(p.equippedBootsInstance?.Bonuses,   ref atkBonus, ref prec, ref crit, ref critMult);
+        ReadAtkList(p.equippedWeaponInstance?.Bonuses,  acc);
+        ReadAtkList(p.equippedArmorInstance?.Bonuses,   acc);
+        ReadAtkList(p.equippedHelmetInstance?.Bonuses,  acc);
+        ReadAtkList(p.equippedGlovesInstance?.Bonuses,  acc);
+        ReadAtkList(p.equippedBootsInstance?.Bonuses,   acc);
         if (p.equippedJewelryInstances != null)
-            foreach (var j in p.equippedJewelryInstances) ReadAtkList(j?.Bonuses, ref atkBonus, ref prec, ref crit, ref critMult);
+            foreach (var j in p.equippedJewelryInstances) ReadAtkList(j?.Bonuses, acc);
         if (p.equippedSpiritInstances != null)
             foreach (var s in p.equippedSpiritInstances)
             {
-                ReadAtkList(s?.Bonuses, ref atkBonus, ref prec, ref crit, ref critMult);
+                ReadAtkList(s?.Bonuses, acc);
                 if (s?.data != null)
                     for (int lv = 1; lv <= s.level; lv++)
                     {
                         var ms = s.data.GetMilestone(lv);
-                        if (ms != null) ReadAtkList(ms.bonuses, ref atkBonus, ref prec, ref crit, ref critMult);
+                        if (ms != null) ReadAtkList(ms.bonuses, acc);
                     }
             }
-        ReadAtkList(p.equippedWeaponInstance?.equippedRune?.bonuses, ref atkBonus, ref prec, ref crit, ref critMult);
-        ReadAtkList(p.equippedArmorInstance?.equippedRune?.bonuses,  ref atkBonus, ref prec, ref crit, ref critMult);
+        ReadAtkList(p.equippedWeaponInstance?.equippedRune?.bonuses, acc);
+        ReadAtkList(p.equippedArmorInstance?.equippedRune?.bonuses,  acc);
     }
 
-    private static void ReadAtkList(List<StatBonus> bonuses,
-        ref float atk, ref float prec, ref float crit, ref float critMult)
+    private static void ReadAtkList(List<StatBonus> bonuses, AtkAccum acc)
     {
         if (bonuses == null) return;
         foreach (var b in bonuses)
             switch (b.statType)
             {
-                case StatType.BonusAttack:    atk     += b.value; break;
-                case StatType.Precision:      prec    += b.value; break;
-                case StatType.CritChance:     crit    += b.value; break;
-                case StatType.CritMultiplier: critMult+= b.value; break;
+                case StatType.BonusAttack:
+                    if (b.mode == ModifierType.Percent) acc.atkPct += b.value;
+                    else                                acc.atk    += b.value;
+                    break;
+                case StatType.Precision:      acc.prec     += b.value; break;
+                case StatType.CritChance:     acc.crit     += b.value; break;
+                case StatType.CritMultiplier: acc.critMult += b.value; break;
             }
     }
 
-    private static void AccumulateDefenseBonuses(Player p,
-        ref float mel, ref float rng, ref float mag, ref float dod, ref float critR)
+    private static void AccumulateDefenseBonuses(Player p, DefAccum acc)
     {
-        // Défenses fixes sur instances (casque, gants, bottes, bijoux)
-        if (p.equippedHelmetInstance != null) { mel += p.equippedHelmetInstance.MeleeDefense; rng += p.equippedHelmetInstance.RangedDefense; mag += p.equippedHelmetInstance.MagicDefense; }
-        if (p.equippedGlovesInstance != null) { mel += p.equippedGlovesInstance.MeleeDefense; rng += p.equippedGlovesInstance.RangedDefense; mag += p.equippedGlovesInstance.MagicDefense; }
-        if (p.equippedBootsInstance  != null) { mel += p.equippedBootsInstance.MeleeDefense;  rng += p.equippedBootsInstance.RangedDefense;  mag += p.equippedBootsInstance.MagicDefense; }
+        // Défenses fixes sur instances (casque, gants, bottes, bijoux) — toujours flat, pas de mode
+        if (p.equippedHelmetInstance != null) { acc.mel += p.equippedHelmetInstance.MeleeDefense; acc.rng += p.equippedHelmetInstance.RangedDefense; acc.mag += p.equippedHelmetInstance.MagicDefense; }
+        if (p.equippedGlovesInstance != null) { acc.mel += p.equippedGlovesInstance.MeleeDefense; acc.rng += p.equippedGlovesInstance.RangedDefense; acc.mag += p.equippedGlovesInstance.MagicDefense; }
+        if (p.equippedBootsInstance  != null) { acc.mel += p.equippedBootsInstance.MeleeDefense;  acc.rng += p.equippedBootsInstance.RangedDefense;  acc.mag += p.equippedBootsInstance.MagicDefense; }
         if (p.equippedJewelryInstances != null)
             foreach (var j in p.equippedJewelryInstances)
-            { if (j == null) continue; mel += j.MeleeDefense; rng += j.RangedDefense; mag += j.MagicDefense; }
+            { if (j == null) continue; acc.mel += j.MeleeDefense; acc.rng += j.RangedDefense; acc.mag += j.MagicDefense; }
 
         // config.bonuses défense sur tous les équipements
-        ReadDefList(p.equippedWeaponInstance?.Bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
-        ReadDefList(p.equippedArmorInstance?.Bonuses,  ref mel, ref rng, ref mag, ref dod, ref critR);
-        ReadDefList(p.equippedHelmetInstance?.Bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
-        ReadDefList(p.equippedGlovesInstance?.Bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
-        ReadDefList(p.equippedBootsInstance?.Bonuses,  ref mel, ref rng, ref mag, ref dod, ref critR);
+        ReadDefList(p.equippedWeaponInstance?.Bonuses, acc);
+        ReadDefList(p.equippedArmorInstance?.Bonuses,  acc);
+        ReadDefList(p.equippedHelmetInstance?.Bonuses, acc);
+        ReadDefList(p.equippedGlovesInstance?.Bonuses, acc);
+        ReadDefList(p.equippedBootsInstance?.Bonuses,  acc);
         if (p.equippedJewelryInstances != null)
-            foreach (var j in p.equippedJewelryInstances) ReadDefList(j?.Bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
+            foreach (var j in p.equippedJewelryInstances) ReadDefList(j?.Bonuses, acc);
         if (p.equippedSpiritInstances != null)
             foreach (var s in p.equippedSpiritInstances)
             {
-                ReadDefList(s?.Bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
+                ReadDefList(s?.Bonuses, acc);
                 if (s?.data != null)
                     for (int lv = 1; lv <= s.level; lv++)
                     {
                         var ms = s.data.GetMilestone(lv);
-                        if (ms != null) ReadDefList(ms.bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
+                        if (ms != null) ReadDefList(ms.bonuses, acc);
                     }
             }
-        ReadDefList(p.equippedWeaponInstance?.equippedRune?.bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
-        ReadDefList(p.equippedArmorInstance?.equippedRune?.bonuses,  ref mel, ref rng, ref mag, ref dod, ref critR);
+        ReadDefList(p.equippedWeaponInstance?.equippedRune?.bonuses, acc);
+        ReadDefList(p.equippedArmorInstance?.equippedRune?.bonuses,  acc);
     }
 
-    private static void ReadDefList(List<StatBonus> bonuses,
-        ref float mel, ref float rng, ref float mag, ref float dod, ref float critR)
+    private static void ReadDefList(List<StatBonus> bonuses, DefAccum acc)
     {
         if (bonuses == null) return;
         foreach (var b in bonuses)
             switch (b.statType)
             {
-                case StatType.MeleeDefense:     mel   += b.value; break;
-                case StatType.RangedDefense:    rng   += b.value; break;
-                case StatType.MagicDefense:     mag   += b.value; break;
-                case StatType.Dodge:            dod   += b.value; break;
-                case StatType.CritDmgReduction: critR += b.value; break;
+                case StatType.MeleeDefense:
+                    if (b.mode == ModifierType.Percent) acc.melPct += b.value; else acc.mel += b.value;
+                    break;
+                case StatType.RangedDefense:
+                    if (b.mode == ModifierType.Percent) acc.rngPct += b.value; else acc.rng += b.value;
+                    break;
+                case StatType.MagicDefense:
+                    if (b.mode == ModifierType.Percent) acc.magPct += b.value; else acc.mag += b.value;
+                    break;
+                case StatType.AllDefense:
+                    // Jamais stockée comme cible finale elle-même — répartie sur les 3 défenses
+                    // réelles, même contrat que CharacterStats.AccumulateBonus.
+                    if (b.mode == ModifierType.Percent)
+                    { acc.melPct += b.value; acc.rngPct += b.value; acc.magPct += b.value; }
+                    else
+                    { acc.mel += b.value; acc.rng += b.value; acc.mag += b.value; }
+                    break;
+                case StatType.Dodge:
+                    if (b.mode == ModifierType.Percent) acc.dodPct += b.value; else acc.dod += b.value;
+                    break;
+                case StatType.CritDmgReduction: acc.critR += b.value; break;
             }
     }
 
@@ -924,20 +962,18 @@ public class CharacterPanelUI : MonoBehaviour
 
     // ── Permanents ────────────────────────────────────────────
 
-    private static void AccumulatePermanentAttack(Player p,
-        ref float atk, ref float prec, ref float crit, ref float critMult)
+    private static void AccumulatePermanentAttack(Player p, AtkAccum acc)
     {
         if (p.unlockedPermanents == null) return;
         foreach (var perm in p.unlockedPermanents)
-            ReadAtkList(perm?.bonuses, ref atk, ref prec, ref crit, ref critMult);
+            ReadAtkList(perm?.bonuses, acc);
     }
 
-    private static void AccumulatePermanentDefense(Player p,
-        ref float mel, ref float rng, ref float mag, ref float dod, ref float critR)
+    private static void AccumulatePermanentDefense(Player p, DefAccum acc)
     {
         if (p.unlockedPermanents == null) return;
         foreach (var perm in p.unlockedPermanents)
-            ReadDefList(perm?.bonuses, ref mel, ref rng, ref mag, ref dod, ref critR);
+            ReadDefList(perm?.bonuses, acc);
     }
 
     private static void AccumulatePermanentElemental(Player p, ElementType dom,
@@ -1106,6 +1142,22 @@ public class CharacterPanelUI : MonoBehaviour
 
     private static string Fmt(float v)     => $"{v * 100f:F0}%";
     private static string FmtPlus(float v) => v != 0f ? $"+{v * 100f:F0}%" : "0%";
+
+    /// <summary>Formate une contribution Flat+Percent pour une même stat dans une row de
+    /// breakdown (Row_Equipment/Row_Passive) — un bonus Percent ne doit JAMAIS s'afficher comme
+    /// s'il était Flat (voir Fix 5/6 review finale). `flat` : nombre entier direct (ex: +15
+    /// MeleeDefense) ; `pct` : décimal (0.10 = +10%), affiché entre parenthèses à côté du flat
+    /// s'il y en a un, seul sinon. Les deux à 0 → "0".</summary>
+    private static string FmtFlatPct(float flat, float pct)
+    {
+        bool hasFlat = flat != 0f;
+        bool hasPct  = pct  != 0f;
+        if (!hasFlat && !hasPct) return "0";
+        string flatStr = $"+{Mathf.RoundToInt(flat)}";
+        string pctStr  = $"+{pct * 100f:F0}%";
+        if (hasFlat && hasPct) return $"{flatStr} ({pctStr})";
+        return hasFlat ? flatStr : pctStr;
+    }
 }
 
 // StatsChangedEvent défini dans GameEvents.cs

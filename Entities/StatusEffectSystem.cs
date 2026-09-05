@@ -377,6 +377,7 @@ public class StatusEffectSystem : MonoBehaviour
         StatModifierType.LightningResistance, StatModifierType.DarknessResistance,
         StatModifierType.LightResistance, StatModifierType.AllResistances,
         StatModifierType.MoveSpeed, StatModifierType.XPBonus, StatModifierType.GoldBonus,
+        StatModifierType.ElementalPoint,
     };
 
     /// <summary>
@@ -480,8 +481,9 @@ public class StatusEffectSystem : MonoBehaviour
 
     /// <summary>Accumule les lignes bonusStats d'UN effet actif (Buff ou Debuff) dans les
     /// sommes globales — plus de logique 2-passes par-effet (PercentOfBase/PercentOfFinal),
-    /// juste un ajout à la somme Flat ou % de la stat ciblée. isDebuff inverse le signe — un
-    /// debuff RETIRE, jamais besoin de valeurs négatives côté designer.</summary>
+    /// juste un ajout à la somme Flat ou % de la stat ciblée. `sign` (-1 pour un debuff, +1
+    /// pour un buff) inverse le signe — un debuff RETIRE, jamais besoin de valeurs négatives
+    /// côté designer.</summary>
     private void AccumulateBonusStatsLines(Dictionary<StatModifierType, float> flatSum,
         Dictionary<StatModifierType, float> percentSum, List<StatLine> lines, float sign)
     {
