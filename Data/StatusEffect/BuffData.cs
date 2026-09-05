@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 // =============================================================
 // BuffData — ScriptableObject template de buff
@@ -64,6 +65,21 @@ public class BuffData : StatusEffectData
     [Range(0f, 1f)]
     [ShowIf(nameof(buffType), BuffType.Revive)]
     public float reviveManaPercent = 0.30f;
+
+    // ── Purification (Purified) ───────────────────────────────
+    [Tooltip("Chance de retirer CHAQUE debuff actif — jet indépendant par debuff, pas un\n" +
+             "seul jet global (4 debuffs à 0.5 ≠ 50% de tout retirer d'un coup).")]
+    [Range(0f, 1f)]
+    [ShowIf(nameof(buffType), BuffType.Purified, Header = "Purification (Purified)")]
+    public float chancePerEffect = 1f;
+
+    // ── Bonus de stats additionnels ───────────────────────────
+    [Header("Bonus de stats additionnels (optionnel)")]
+    [Tooltip("S'applique EN PLUS de l'effet principal ci-dessus (Heal/Shield/...), quel que\n" +
+             "soit buffType — permet de composer plusieurs stats sur un seul buff (ex: Talisman\n" +
+             "HP_Boost = MaxHP + RegenHP en même temps, ou Def_Boost = 3 défenses + un bonus\n" +
+             "global PercentOfFinal par-dessus).")]
+    public List<StatLine> bonusStats = new List<StatLine>();
 
     // ── Helpers ───────────────────────────────────────────────
 

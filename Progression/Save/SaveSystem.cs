@@ -162,7 +162,7 @@ public class SaveSystem : MonoBehaviour
                             progress.gloves.Count + progress.boots.Count + progress.jewelry.Count +
                             progress.spirits.Count + progress.consumables.Count + progress.resources.Count +
                             progress.gems.Count + progress.runes.Count + progress.cosmeticHeads.Count +
-                            progress.cosmeticBodies.Count + progress.cards.Count;
+                            progress.cosmeticBodies.Count + progress.talismans.Count;
             Debug.Log($"[SAVE] ✅ Personnage → {CharacterSavePath}\n" +
                       $"Niv.{progress.level} | XP:{progress.xpCombat} | " +
                       $"Items:{itemCount} | Quêtes:{progress.quests.Count} | " +
@@ -477,6 +477,14 @@ public class SaveSystem : MonoBehaviour
                     p.spirits.Add(new SavedSpirit {
                         soName = s.data.name, isEquipped = true,
                         spiritLevel = s.level, spiritXP = s.currentXP });
+
+        if (player.equippedTalismanInstance?.data != null)
+        {
+            var t = player.equippedTalismanInstance;
+            p.talismans.Add(new SavedTalisman {
+                soName = t.data.name, isEquipped = true,
+                activatedAt = t.activatedAt?.ToString("o") ?? "" });
+        }
     }
 
     // ── Item inventaire ───────────────────────────────────────
@@ -551,8 +559,9 @@ public class SaveSystem : MonoBehaviour
             p.cosmeticHeads.Add(new SavedCosmeticHead { soName = item.CosmeticInstanceHead.data.name });
         else if (item.CosmeticInstanceBody?.data != null)
             p.cosmeticBodies.Add(new SavedCosmeticBody { soName = item.CosmeticInstanceBody.data.name });
-        else if (item.CardInstance?.data         != null)
-            p.cards.Add(new SavedCard { soName = item.CardInstance.data.name });
+        else if (item.TalismanInstance?.data     != null)
+            p.talismans.Add(new SavedTalisman { soName = item.TalismanInstance.data.name,
+                                    activatedAt = item.TalismanInstance.activatedAt?.ToString("o") ?? "" });
     }
 
     // ── Quêtes ────────────────────────────────────────────────
@@ -912,7 +921,7 @@ public class SaveSystem : MonoBehaviour
 
         int itemCount = p.weapons.Count + p.armors.Count + p.helmets.Count + p.gloves.Count + p.boots.Count +
                         p.jewelry.Count + p.spirits.Count + p.consumables.Count + p.resources.Count +
-                        p.gems.Count + p.runes.Count + p.cosmeticHeads.Count + p.cosmeticBodies.Count + p.cards.Count;
+                        p.gems.Count + p.runes.Count + p.cosmeticHeads.Count + p.cosmeticBodies.Count + p.talismans.Count;
         Debug.Log($"[LOAD] ✅ Items:{itemCount} | Quêtes:{p.quests?.Count ?? 0} | " +
                   $"Mails:{p.mails?.Count ?? 0}");
     }
@@ -1012,6 +1021,21 @@ public class SaveSystem : MonoBehaviour
             AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
         }
 
+        foreach (var s in p.talismans)
+        {
+            var td = FindSOByName<TalismanData>(s.soName);
+            if (td == null) { Debug.LogWarning($"[LOAD] ⚠ Talisman introuvable : '{s.soName}'"); continue; }
+            var inst = new TalismanInstance(td);
+            if (!string.IsNullOrEmpty(s.activatedAt) && DateTime.TryParse(s.activatedAt, out DateTime activated))
+                inst.activatedAt = activated;
+            if (inst.IsExpired)
+            {
+                Debug.Log($"[LOAD] Talisman expiré détruit au chargement : '{s.soName}'");
+                continue; // objet détruit — jamais restauré, même s'il était équipé
+            }
+            AddOrEquip(new InventoryItem(inst), s.isEquipped, player);
+        }
+
         foreach (var s in p.consumables)
         {
             var cd = FindSOByName<ConsumableData>(s.soName);
@@ -1052,13 +1076,6 @@ public class SaveSystem : MonoBehaviour
             var cosB = FindSOByName<CosmeticDataBody>(s.soName);
             if (cosB == null) { Debug.LogWarning($"[LOAD] ⚠ CosmeticBody introuvable : '{s.soName}'"); continue; }
             InventorySystem.Instance?.AddItem(new InventoryItem(new CosmeticInstanceBody(cosB)));
-        }
-
-        foreach (var s in p.cards)
-        {
-            var card = FindSOByName<CardData>(s.soName);
-            if (card == null) { Debug.LogWarning($"[LOAD] ⚠ Card introuvable : '{s.soName}'"); continue; }
-            InventorySystem.Instance?.AddItem(new InventoryItem(new CardInstance(card)));
         }
     }
 

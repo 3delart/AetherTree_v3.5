@@ -78,11 +78,11 @@ public class InventorySystem : MonoBehaviour
         return result;
     }
 
-    public List<InventoryItem> GetCards()
+    public List<InventoryItem> GetTalismans()
     {
         var result = new List<InventoryItem>();
         foreach (var item in _items)
-            if (item.ItemCategory == InventoryCategory.Card) result.Add(item);
+            if (item.ItemCategory == InventoryCategory.Talisman) result.Add(item);
         return result;
     }
 
@@ -110,7 +110,7 @@ public class InventorySystem : MonoBehaviour
             if (item.ResourceInstance     == instance) return item;
             if (item.CosmeticInstanceHead == instance) return item;
             if (item.CosmeticInstanceBody == instance) return item;
-            if (item.CardInstance         == instance) return item;
+            if (item.TalismanInstance     == instance) return item;
         }
         return null;
     }
@@ -365,11 +365,15 @@ public class InventorySystem : MonoBehaviour
                 player.EquipSpirit(item.SpiritInstance);
                 break;
 
-            case EquipmentSlot.Card:
-                if (item.CardInstance == null) return false;
-                if (player.equippedCardInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedCardInstance));
-                player.EquipCard(item.CardInstance);
+            case EquipmentSlot.Talisman:
+                if (item.TalismanInstance == null || item.TalismanInstance.IsExpired) return false;
+                if (player.equippedTalismanInstance?.data != null)
+                {
+                    var oldTalisman = player.equippedTalismanInstance;
+                    player.UnequipTalisman(); // coupe le buff de l'ancien AVANT de le rendre
+                    AddItem(new InventoryItem(oldTalisman));
+                }
+                player.EquipTalisman(item.TalismanInstance);
                 break;
 
             case EquipmentSlot.CosmeticHead:
@@ -419,7 +423,7 @@ public class InventorySystem : MonoBehaviour
             if (item.ResourceInstance     != null && existing.ResourceInstance     == item.ResourceInstance)     { toRemove = existing; break; }
             if (item.CosmeticInstanceHead != null && existing.CosmeticInstanceHead == item.CosmeticInstanceHead) { toRemove = existing; break; }
             if (item.CosmeticInstanceBody != null && existing.CosmeticInstanceBody == item.CosmeticInstanceBody) { toRemove = existing; break; }
-            if (item.CardInstance         != null && existing.CardInstance         == item.CardInstance)         { toRemove = existing; break; }
+            if (item.TalismanInstance     != null && existing.TalismanInstance     == item.TalismanInstance)     { toRemove = existing; break; }
         }
 
         if (toRemove != null) _items.Remove(toRemove);
@@ -452,9 +456,13 @@ public class InventorySystem : MonoBehaviour
                 if (player.equippedBootsInstance != null)
                 { AddItem(new InventoryItem(player.equippedBootsInstance)); player.UnequipBoots(); }
                 break;
-            case EquipmentSlot.Card:
-                if (player.equippedCardInstance != null)
-                { AddItem(new InventoryItem(player.equippedCardInstance)); player.UnequipCard(); }
+            case EquipmentSlot.Talisman:
+                if (player.equippedTalismanInstance != null)
+                {
+                    var talisman = player.equippedTalismanInstance;
+                    player.UnequipTalisman(); // coupe le buff avant de rendre l'objet
+                    AddItem(new InventoryItem(talisman));
+                }
                 break;
             case EquipmentSlot.CosmeticHead:
                 if (player.equippedCosmeticHeadInstance != null)
@@ -483,7 +491,7 @@ public class InventorySystem : MonoBehaviour
         player.UnequipHelmet();
         player.UnequipGloves();
         player.UnequipBoots();
-        player.UnequipCard();
+        player.UnequipTalisman();
         player.UnequipCosmeticHead();
         player.UnequipCosmeticBody();
 
@@ -523,7 +531,7 @@ public enum InventoryCategory
     Ressource,    // Matériaux craft, Ingrédients cuisine, Drops mobs
     CosmeticHead, // Cosmétique tête
     CosmeticBody, // Cosmétique corps
-    Card,         // Cartes
+    Talisman,     // Talismans
 }
 
 // =============================================================
@@ -544,7 +552,7 @@ public class InventoryItem
     public ConsumableInstance ConsumableInstance { get; private set; }
     public RuneInstance       RuneInstance       { get; private set; }
     public GemInstance        GemInstance        { get; private set; }
-    public CardInstance       CardInstance       { get; private set; }
+    public TalismanInstance   TalismanInstance   { get; private set; }
 
     // ── Instances ressources ──────────────────────────────────
     public ResourceInstance   ResourceInstance   { get; private set; }
@@ -575,7 +583,7 @@ public class InventoryItem
             if (ResourceInstance     != null) return ResourceInstance.Name;
             if (CosmeticInstanceHead != null) return CosmeticInstanceHead.CosmeticName;
             if (CosmeticInstanceBody != null) return CosmeticInstanceBody.CosmeticName;
-            if (CardInstance         != null) return CardInstance.CardName;
+            if (TalismanInstance     != null) return TalismanInstance.TalismanName;
             return "???";
         }
     }
@@ -611,7 +619,7 @@ public class InventoryItem
             if (ResourceInstance?.data     != null) return ResourceInstance.Icon;
             if (CosmeticInstanceHead?.data != null) return CosmeticInstanceHead.Icon;
             if (CosmeticInstanceBody?.data != null) return CosmeticInstanceBody.Icon;
-            if (CardInstance?.data         != null) return CardInstance.Icon;
+            if (TalismanInstance?.data     != null) return TalismanInstance.Icon;
             return null;
         }
     }
@@ -627,7 +635,7 @@ public class InventoryItem
             if (GemInstance          != null) return $"Lv{GemInstance.GemLevel}";
             if (CosmeticInstanceHead != null) return "";   // pas de rareté sur les cosmétiques
             if (CosmeticInstanceBody != null) return "";
-            if (CardInstance         != null) return "";   // TODO: rareté carte à définir
+            if (TalismanInstance     != null) return "";   // pas de rareté sur les talismans
             if (ConsumableInstance   != null) return ConsumableInstance.quantity > 1 ? $"x{ConsumableInstance.quantity}" : "";
             if (ResourceInstance     != null) return ResourceInstance.quantity   > 1 ? $"x{ResourceInstance.quantity}"   : "";
             return "";
@@ -699,7 +707,7 @@ public class InventoryItem
     public InventoryItem(CosmeticInstanceBody i)
     { CosmeticInstanceBody = i; Slot = EquipmentSlot.CosmeticBody; ItemCategory = InventoryCategory.CosmeticBody; }
 
-    // ── Constructeur carte ────────────────────────────────────
-    public InventoryItem(CardInstance i)
-    { CardInstance = i; Slot = EquipmentSlot.Card; ItemCategory = InventoryCategory.Card; }
+    // ── Constructeur talisman ──────────────────────────────────
+    public InventoryItem(TalismanInstance i)
+    { TalismanInstance = i; Slot = EquipmentSlot.Talisman; ItemCategory = InventoryCategory.Talisman; }
 }

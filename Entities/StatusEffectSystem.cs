@@ -69,6 +69,37 @@ public class StatusEffectSystem : MonoBehaviour
     /// <summary>Rooted — immobilisé, peut toujours attaquer et caster.</summary>
     public bool isRooted     { get; private set; } = false;
 
+    /// <summary>Knockback = repoussement physique (PAS un étourdissement en soi) + un
+    /// mini-stun ponctuel type Shocked (0.5s, mouvement + skills bloqués) le temps du recul.
+    /// Volontairement SÉPARÉ du pipeline DebuffData normal (_activeDebuffs) — sa propre
+    /// minuterie indépendante, pour ne jamais risquer de couper prématurément un vrai Stun/
+    /// Shocked actif en parallèle (ou l'inverse). Voir Entity.ApplyKnockBack().</summary>
+    public bool isKnockedBack { get; private set; } = false;
+    private Coroutine _knockbackCoroutine;
+
+    /// <summary>Applique le mini-stun ponctuel du Knockback pour `duration` secondes —
+    /// appelé UNIQUEMENT par Entity.ApplyKnockBack() pendant le recul physique. N'écrit
+    /// jamais isStunned — indépendant du pipeline DebuffData.</summary>
+    public void ApplyKnockbackStun(float duration)
+    {
+        if (_knockbackCoroutine != null) StopCoroutine(_knockbackCoroutine);
+        isKnockedBack = true;
+        _knockbackCoroutine = StartCoroutine(ClearKnockbackAfter(duration));
+    }
+
+    private System.Collections.IEnumerator ClearKnockbackAfter(float duration)
+    {
+        yield return new WaitForSeconds(duration);
+        isKnockedBack = false;
+        _knockbackCoroutine = null;
+    }
+
+    /// <summary>Source (caster) du debuff actif de ce type, ou null si absent/inconnu — utilisé
+    /// par Fear pour fuir dans la direction opposée à qui a lancé le debuff (fallback aléatoire
+    /// si null, voir PlayerController.HandleMovement).</summary>
+    public Entity GetDebuffSource(DebuffType type)
+        => _activeDebuffs.TryGetValue(type, out var instance) ? instance.source : null;
+
     /// <summary>Blinded — réduit la précision.</summary>
     public bool isBlinded    { get; private set; } = false;
 
@@ -174,10 +205,14 @@ public class StatusEffectSystem : MonoBehaviour
         if (resistance > 0f && Random.value < resistance)
             return false;
 
-        // Refresh si déjà actif — GDD v3.5 §3.1.1.4 : le plus récent remplace l'ancien
+        // Refresh si déjà actif — GDD v3.5 §3.1.1.4 : le plus récent remplace l'ancien.
+        // Source aussi mise à jour (pas juste la durée) — sinon un 2e caster qui relance le
+        // même debuff (ex: Fear) laisse GetDebuffSource() pointer vers le PREMIER caster,
+        // périmé (ex: fuite dans la mauvaise direction).
         if (_activeDebuffs.TryGetValue(debuff.debuffType, out var existing))
         {
             existing.Refresh();
+            existing.source = source;
             return true;
         }
 
@@ -207,6 +242,27 @@ public class StatusEffectSystem : MonoBehaviour
         }
 
         BuffInstance instance = (BuffInstance)buff.CreateInstance(source);
+        _activeBuffs[buff.buffType] = instance;
+        OnApplyBuff(instance);
+    }
+
+    /// <summary>Applique/rafraîchit un buff avec une durée EXPLICITE, ignorant BuffData.duration
+    /// — utilisé par les talismans : le temps restant affiché (PlayerEffectPanel lit déjà
+    /// remainingTime) doit refléter le vrai temps de vie restant du talisman
+    /// (TalismanInstance.RemainingSeconds), pas un duration fixe sur l'asset. Le buff expire
+    /// alors naturellement en même temps que le talisman, sans réglage manuel à synchroniser.</summary>
+    public void ApplyBuffWithDuration(BuffData buff, Entity source, float remainingSeconds)
+    {
+        if (buff == null || _entity.isDead || remainingSeconds <= 0f) return;
+
+        if (buff.buffType != BuffType.Revive && _activeBuffs.TryGetValue(buff.buffType, out var existing))
+        {
+            existing.remainingTime = remainingSeconds;
+            return;
+        }
+
+        BuffInstance instance = (BuffInstance)buff.CreateInstance(source);
+        instance.remainingTime = remainingSeconds;
         _activeBuffs[buff.buffType] = instance;
         OnApplyBuff(instance);
     }
@@ -272,10 +328,24 @@ public class StatusEffectSystem : MonoBehaviour
                 RecalculateAndReapply();
                 break;
 
+            case DebuffType.Dispel:
+                // Retire les buffs actifs DE CETTE ENTITÉ (celle sur qui ce debuff Dispel a
+                // été appliqué — le ciblage ennemi est géré côté skill/appelant), jet
+                // indépendant par buff actif.
+                RemoveBuffsByChance(instance.DebuffData.chancePerEffect);
+                break;
+
             // ManaDrain : tick dans DebuffInstance.Tick — pas de flag local
             // Knockback  : effet ponctuel — Entity.ApplyKnockBack()
             // Bleed      : DoT pur — tick dans DebuffInstance.Tick, pas de flag
         }
+
+        // bonusStats s'applique quel que soit debuffType — sans recalcul ici, un debuff dont
+        // le type principal ne déclenche pas déjà RecalculateAndReapply (Stun, Slow...) ne
+        // verrait jamais ses bonusStats appliqués. Appel idempotent, sans effet si déjà fait
+        // par le case Stats ci-dessus.
+        if (instance.DebuffData.bonusStats != null && instance.DebuffData.bonusStats.Count > 0)
+            RecalculateAndReapply();
     }
 
     // =========================================================
@@ -302,6 +372,17 @@ public class StatusEffectSystem : MonoBehaviour
     /// </summary>
     public void ReapplyActiveModifiers(Entity target)
     {
+        // Snapshot des stats "pures" — juste restaurées depuis _base par RequestRecalculate,
+        // AVANT que cette méthode n'ajoute le moindre modificateur ce cycle-ci. Sert de
+        // référence stable pour bonusStats/PercentOfBase (voir ApplyBonusStats) : sans ça,
+        // 2 bonus "+10%" indépendants (2 talismans/buffs actifs différents, ou 2 lignes dans
+        // la même liste) composeraient (100→110→121) au lieu de s'additionner (100→120),
+        // et le résultat dépendrait de l'ordre d'itération de _activeBuffs/_activeDebuffs
+        // (non garanti par Dictionary) plutôt que d'être déterministe.
+        var pureBase = new Dictionary<StatModifierType, float>();
+        foreach (StatModifierType s in System.Enum.GetValues(typeof(StatModifierType)))
+            pureBase[s] = GetBaseStatValue(target, s);
+
         // ── Debuffs numériques ────────────────────────────────
         // Reset des valeurs locales avant recalcul
         armorBreakReduction   = 0f;
@@ -343,6 +424,7 @@ public class StatusEffectSystem : MonoBehaviour
                     ApplyStatDebuff(target, d);
                     break;
             }
+            ApplyBonusStats(target, d.bonusStats, isDebuff: true, pureBase);
         }
 
         // ── Buffs numériques ──────────────────────────────────
@@ -367,6 +449,45 @@ public class StatusEffectSystem : MonoBehaviour
         {
             if (kvp.Key == BuffType.Stats)
                 ApplyStatBuff(target, kvp.Value.BuffData);
+            ApplyBonusStats(target, kvp.Value.BuffData.bonusStats, isDebuff: false, pureBase);
+        }
+    }
+
+    /// <summary>Applique la liste bonusStats d'UN effet actif (Buff ou Debuff), en 2 passes :
+    /// Flat/PercentOfBase d'abord (indépendants entre eux), puis PercentOfFinal (calculé sur
+    /// le total déjà boosté par la 1ère passe de CE MÊME effet — jamais mélangé dans l'ordre
+    /// brut de la liste, sinon le résultat dépendrait de l'ordre d'apparition dans
+    /// l'Inspector). isDebuff inverse le signe — un debuff RETIRE, jamais besoin de valeurs
+    /// négatives côté designer.
+    /// PercentOfBase lit TOUJOURS `pureBase` (snapshot pris une fois en tête de
+    /// ReapplyActiveModifiers, avant tout effet actif) — jamais la stat live de la cible —
+    /// pour que 2 sources "+10%" indépendantes s'additionnent (100→120) au lieu de composer
+    /// (100→110→121) selon l'ordre d'itération des buffs/debuffs actifs (non garanti).
+    /// PercentOfFinal se base sur pureBase + la contribution de CE SEUL effet (ownDelta),
+    /// jamais celle des autres effets actifs en parallèle.</summary>
+    private void ApplyBonusStats(Entity target, List<StatLine> lines, bool isDebuff,
+        Dictionary<StatModifierType, float> pureBase)
+    {
+        if (lines == null || lines.Count == 0) return;
+        float sign = isDebuff ? -1f : 1f;
+        var ownDelta = new Dictionary<StatModifierType, float>();
+
+        foreach (var line in lines)
+        {
+            if (line == null || line.mode == StatLineMode.PercentOfFinal) continue;
+            float baseVal = pureBase.TryGetValue(line.stat, out var b) ? b : 0f;
+            float v = line.mode == StatLineMode.PercentOfBase ? baseVal * line.value : line.value;
+            ModifyEntityStat(target, line.stat, sign * v);
+            ownDelta[line.stat] = ownDelta.TryGetValue(line.stat, out var d) ? d + v : v;
+        }
+
+        foreach (var line in lines)
+        {
+            if (line == null || line.mode != StatLineMode.PercentOfFinal) continue;
+            float baseVal = pureBase.TryGetValue(line.stat, out var b) ? b : 0f;
+            float ownSoFar = ownDelta.TryGetValue(line.stat, out var d) ? d : 0f;
+            float v = (baseVal + ownSoFar) * line.value;
+            ModifyEntityStat(target, line.stat, sign * v);
         }
     }
 
@@ -407,6 +528,11 @@ public class StatusEffectSystem : MonoBehaviour
             case StatModifierType.CritChance:      return target.CritChance;
             case StatModifierType.CritDamage:      return target.CritMultiplier;
             case StatModifierType.Dodge:           return target.Dodge;
+            // XPBonus/GoldBonus : pas de "stat" existante à multiplier, la valeur EST déjà le
+            // bonus (0.20 = +20%) — base neutre 1f pour que Flat ET Percent donnent le même
+            // résultat correct (value × 1 = value), aucun piège de dropdown pour le designer.
+            case StatModifierType.XPBonus:
+            case StatModifierType.GoldBonus:       return 1f;
             // ElementalPoint : pas de valeur globale — retourne 0f (base neutre pour Percent).
             // La valeur réelle dépend de l'élément ciblé ; voir ModifyEntityStat.
             default:                               return 0f;
@@ -458,6 +584,12 @@ public class StatusEffectSystem : MonoBehaviour
             case StatModifierType.Dodge:
                 target.SetDodge(target.Dodge + delta);
                 break;
+            case StatModifierType.XPBonus:
+                target.SetXPBonusPercent(target.XPBonusPercent + delta);
+                break;
+            case StatModifierType.GoldBonus:
+                target.SetGoldBonusPercent(target.GoldBonusPercent + delta);
+                break;
             case StatModifierType.FireResistance:
                 target.AddElementalResistance(ElementType.Fire, delta);
                 break;
@@ -504,7 +636,7 @@ public class StatusEffectSystem : MonoBehaviour
                 break;
 
             case BuffType.Purified:
-                CleanseAllDebuffs();
+                RemoveDebuffsByChance(instance.BuffData.chancePerEffect);
                 break;
 
             // ── Résurrection (Player uniquement) ─────────────────
@@ -557,14 +689,42 @@ public class StatusEffectSystem : MonoBehaviour
 
             // Regeneration : tick dans BuffInstance.Tick — pas d'action à l'apply
         }
+
+        // bonusStats s'applique quel que soit buffType — sans recalcul ici, un buff dont le
+        // type principal ne déclenche pas déjà RecalculateAndReapply (Heal, Shield...) ne
+        // verrait jamais ses bonusStats appliqués. Même discipline avant/après que le case
+        // Stats ci-dessus pour MaxHP/MaxMana (combler le nouveau plafond, pas juste l'augmenter
+        // à vide) — idempotent, sans effet si déjà fait par le case Stats.
+        if (instance.BuffData.bonusStats != null && instance.BuffData.bonusStats.Count > 0)
+        {
+            float beforeHP   = _entity.MaxHP;
+            float beforeMana = _entity.MaxMana;
+            RecalculateAndReapply();
+            float gainedHP   = _entity.MaxHP   - beforeHP;
+            float gainedMana = _entity.MaxMana - beforeMana;
+            if (gainedHP   > 0f) _entity.Heal(gainedHP);
+            if (gainedMana > 0f) _entity.RecoverMana(gainedMana);
+        }
     }
 
-    /// <summary>Supprime tous les debuffs actifs (Purified — §3.1.1.2).</summary>
-    private void CleanseAllDebuffs()
+    /// <summary>Purify — retire chaque debuff actif avec un jet INDÉPENDANT par effet (pas un
+    /// seul jet global) — 4 debuffs à 50% ≠ "50% de tout enlever d'un coup" (§3.1.1.2).</summary>
+    private void RemoveDebuffsByChance(float chance)
     {
         var types = new List<DebuffType>(_activeDebuffs.Keys);
         foreach (DebuffType t in types)
-            ExpireDebuff(t);
+            if (Random.value < chance)
+                ExpireDebuff(t);
+    }
+
+    /// <summary>Dispel — même principe que RemoveDebuffsByChance, mais sur les buffs actifs de
+    /// LA CIBLE sur qui ce debuff Dispel a été appliqué (§3.1.1.3).</summary>
+    private void RemoveBuffsByChance(float chance)
+    {
+        var types = new List<BuffType>(_activeBuffs.Keys);
+        foreach (BuffType t in types)
+            if (Random.value < chance)
+                ExpireBuff(t);
     }
 
     // =========================================================
@@ -573,7 +733,8 @@ public class StatusEffectSystem : MonoBehaviour
 
     private void ExpireDebuff(DebuffType type)
     {
-        if (!_activeDebuffs.TryGetValue(type, out _) ) return;
+        if (!_activeDebuffs.TryGetValue(type, out var expiring)) return;
+        var expiringBonusStats = expiring.DebuffData.bonusStats;
 
         // ── Flags booléens — retirés manuellement ────────────
         switch (type)
@@ -615,17 +776,36 @@ public class StatusEffectSystem : MonoBehaviour
             case DebuffType.Mark:
             case DebuffType.Stats:
                 RecalculateAndReapply();
-                break;
+                return; // déjà fait — évite le 2e appel juste en dessous (idempotent de toute
+                        // façon, mais inutile de le refaire tout de suite après)
         }
+
+        // bonusStats peut être posé sur N'IMPORTE QUEL debuffType (Fear, Stun, Root...), pas
+        // seulement les types déjà listés ci-dessus — sans ce filet, un debuff Fear avec un
+        // bonusStats -MoveSpeed resterait appliqué POUR TOUJOURS après expiration (aucun des
+        // cases ci-dessus ne le recalcule), jusqu'à ce qu'un événement sans rapport
+        // (équipement, level up...) déclenche un recalcul complet par ailleurs.
+        if (expiringBonusStats != null && expiringBonusStats.Count > 0)
+            RecalculateAndReapply();
     }
 
     // =========================================================
     // EXPIRATION BUFF
     // =========================================================
 
+    /// <summary>Retire un buff actif spécifique immédiatement, sans jet — ex: talisman retiré
+    /// avant sa propre expiration naturelle (voir Player.UnequipTalisman). Contrairement à
+    /// RemoveBuffsByChance/RemoveDebuffsByChance (Purify/Dispel), cible un seul type, toujours.</summary>
+    public void RemoveBuff(BuffType type)
+    {
+        if (_activeBuffs.ContainsKey(type))
+            ExpireBuff(type);
+    }
+
     private void ExpireBuff(BuffType type)
     {
-        if (!_activeBuffs.TryGetValue(type, out _)) return;
+        if (!_activeBuffs.TryGetValue(type, out var expiring)) return;
+        var expiringBonusStats = expiring.BuffData.bonusStats;
 
         // ── Flags booléens — retirés manuellement ────────────
         switch (type)
@@ -642,10 +822,16 @@ public class StatusEffectSystem : MonoBehaviour
         {
             case BuffType.Stats:
                 RecalculateAndReapply();
-                break;
+                return; // déjà fait — voir même remarque que ExpireDebuff
             // Purified, Heal : instantanés — pas d'expiration
             // Regeneration, Shield, Invincible, Stealth : pas de stat numérique à recalculer
         }
+
+        // bonusStats peut être posé sur N'IMPORTE QUEL buffType (Heal, Shield, Talisman...),
+        // pas seulement Stats — sans ce filet, ses bonus resteraient appliqués POUR TOUJOURS
+        // après expiration (voir même remarque que ExpireDebuff ci-dessus).
+        if (expiringBonusStats != null && expiringBonusStats.Count > 0)
+            RecalculateAndReapply();
     }
 
     // =========================================================

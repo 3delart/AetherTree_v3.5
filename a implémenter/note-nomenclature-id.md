@@ -40,7 +40,7 @@ Format : `<prefixe>_<descriptif>[_<variante>]`, tout en snake_case, minuscules, 
 | Bijou | `jwl` | `JewelryData` | `itemID` |
 | Esprit | `spr` | `SpiritData` | `itemID` |
 | Cosmétique | `cos` | `CosmeticDataHead/Body` | `itemID` |
-| Carte | `card` | `CardData` | `itemID` |
+| Talisman | `talisman` | `TalismanData` | `itemID` |
 | Ressource | `res` | `ResourceData` | `itemID` |
 | Consommable | `cons` | `ConsumableData` | `itemID` |
 | Rune | `rune` | `RuneData` | `runeID` *(nouveau champ)* |

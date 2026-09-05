@@ -505,7 +505,10 @@ public class ShopUI : MonoBehaviour
         else if (item.SpiritInstance         != null) basePrice = item.SpiritInstance.data?.vendorPrice ?? 0;
         else if (item.CosmeticInstanceHead   != null) basePrice = item.CosmeticInstanceHead.data?.vendorPrice ?? 0;
         else if (item.CosmeticInstanceBody   != null) basePrice = item.CosmeticInstanceBody.data?.vendorPrice ?? 0;
-        else if (item.CardInstance           != null) basePrice = item.CardInstance.data?.vendorPrice ?? 0;
+        // Invendable une fois activé (chrono démarré) — même mécanisme que vendorPrice=0
+        // ailleurs (GDD §5.1), calculé dynamiquement ici plutôt que fixé sur le SO.
+        else if (item.TalismanInstance       != null) basePrice = item.TalismanInstance.IsActivated
+                                                        ? 0 : (item.TalismanInstance.data?.vendorPrice ?? 0);
         else if (item.RuneInstance       != null) basePrice = item.RuneInstance.runeLevel * 2;
         else if (item.GemInstance        != null) basePrice = item.GemInstance.GemLevel * 5;
 

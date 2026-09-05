@@ -309,22 +309,19 @@ public class SkillSystem : MonoBehaviour
 
     // =========================================================
     // AoE SELF — zone autour du caster
-    // Player exclut le layer "Player", Mob exclut "Mob"
+    // Filtre allié/ennemi via SkillAoeFaction — voir IsAlly/PassesAoeFilter.
     // =========================================================
 
     private void ExecuteAoESelf(SkillData skill, Entity caster)
     {
-        string excludeLayer = caster.entityType == EntityType.Mob ? "Mob" : "Player";
-        Collider[] hits = Physics.OverlapSphere(
-            caster.transform.position,
-            skill.aoeRadius,
-            ~LayerMask.GetMask(excludeLayer));
+        Collider[] hits = Physics.OverlapSphere(caster.transform.position, skill.aoeRadius);
 
         int count = 0;
         foreach (Collider col in hits)
         {
             Entity entity = col.GetComponentInParent<Entity>();
-            if (entity == null || entity == caster || entity.isDead) continue;
+            if (entity == null || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
@@ -346,7 +343,8 @@ public class SkillSystem : MonoBehaviour
         foreach (Collider col in hits)
         {
             Entity entity = col.GetComponentInParent<Entity>();
-            if (entity == null || entity == caster || entity.isDead) continue;
+            if (entity == null || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
@@ -369,7 +367,8 @@ public class SkillSystem : MonoBehaviour
         foreach (Collider col in hits)
         {
             Entity entity = col.GetComponentInParent<Entity>();
-            if (entity == null || entity == caster || entity.isDead) continue;
+            if (entity == null || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
@@ -402,7 +401,8 @@ public class SkillSystem : MonoBehaviour
         foreach (RaycastHit h in hits)
         {
             Entity entity = h.collider.GetComponentInParent<Entity>();
-            if (entity == null || entity == caster || entity.isDead) continue;
+            if (entity == null || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
@@ -438,7 +438,8 @@ public class SkillSystem : MonoBehaviour
         foreach (RaycastHit h in hits)
         {
             Entity entity = h.collider.GetComponentInParent<Entity>();
-            if (entity == null || entity == caster || entity.isDead) continue;
+            if (entity == null || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
             if (h.distance < minDist) { minDist = h.distance; closest = entity; }
         }
 
@@ -470,7 +471,8 @@ public class SkillSystem : MonoBehaviour
         foreach (RaycastHit h in hits)
         {
             Entity entity = h.collider.GetComponentInParent<Entity>();
-            if (entity == null || entity == caster || entity.isDead) continue;
+            if (entity == null || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
@@ -500,7 +502,8 @@ public class SkillSystem : MonoBehaviour
         foreach (Collider col in cols)
         {
             Entity entity = col.GetComponentInParent<Entity>();
-            if (entity == null || entity == caster || entity.isDead) continue;
+            if (entity == null || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
 
             Vector3 toEntity = (entity.transform.position - caster.transform.position).normalized;
             float   angle    = Vector3.Angle(dir, toEntity);
@@ -622,6 +625,30 @@ public class SkillSystem : MonoBehaviour
             if (caster is Mob endMob) endMob.IsDashing = false;
             if (agent != null) agent.enabled = true;
         }
+    }
+
+    // =========================================================
+    // FILTRE ALLIÉ/ENNEMI — effets de zone (SkillAoeFaction)
+    // =========================================================
+
+    /// <summary>Alliés = même "camp" que le caster. Aujourd'hui : Mob ↔ Mob d'un côté,
+    /// Player/Pet/PNJ ensemble de l'autre (PvE only — un PNJ hostile s'incarne en MobData, pas
+    /// ici). Point d'extension UNIQUE et volontaire pour tout ce qui rendra un jour deux
+    /// joueurs hostiles entre eux (Duel, Arène, Faction PvP en zone — aucun des trois construit
+    /// à ce jour, et un Duel/Arène peut rendre deux joueurs ennemis même hors zone PvP dédiée) :
+    /// quand l'un de ces systèmes existera, seul le corps de CETTE fonction changera — les
+    /// appelants et SkillAoeFaction n'ont pas à être retouchés.</summary>
+    private static bool IsAlly(Entity caster, Entity other)
+        => (caster.entityType == EntityType.Mob) == (other.entityType == EntityType.Mob);
+
+    /// <summary>Le caster passe naturellement ce filtre : IsAlly(caster, caster) vaut toujours
+    /// true, donc Enemies l'exclut et Allies/Everyone l'incluent — pas besoin de check séparé
+    /// "entity == caster" dans les boucles appelantes.</summary>
+    private static bool PassesAoeFilter(SkillAoeFaction filter, Entity caster, Entity other)
+    {
+        if (filter == SkillAoeFaction.Everyone) return true;
+        bool ally = IsAlly(caster, other);
+        return filter == SkillAoeFaction.Allies ? ally : !ally;
     }
 
     // =========================================================

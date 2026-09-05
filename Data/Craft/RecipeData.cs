@@ -57,7 +57,7 @@ public enum CraftStationType
 public enum RecipeCategory
 {
     Equipment,   // WeaponData, ArmorData, HelmetData, GlovesData, BootsData, JewelryData,
-                 // SpiritData, CosmeticDataHead/Body, CardData
+                 // SpiritData, CosmeticDataHead/Body, TalismanData
     Consumable,  // ConsumableData
     Resource,    // ResourceData
 }
@@ -110,7 +110,7 @@ public class RecipeData : ScriptableObject
     public RecipeCategory GetCategory() => result switch
     {
         WeaponData or ArmorData or HelmetData or GlovesData or BootsData or JewelryData
-            or SpiritData or CosmeticDataHead or CosmeticDataBody or CardData => RecipeCategory.Equipment,
+            or SpiritData or CosmeticDataHead or CosmeticDataBody or TalismanData => RecipeCategory.Equipment,
         ConsumableData => RecipeCategory.Consumable,
         ResourceData   => RecipeCategory.Resource,
         _              => RecipeCategory.Resource,

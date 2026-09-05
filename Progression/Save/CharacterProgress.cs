@@ -165,9 +165,14 @@ public class SavedCosmeticBody
 }
 
 [System.Serializable]
-public class SavedCard
+public class SavedTalisman
 {
     public string soName;
+    public bool   isEquipped;
+
+    /// <summary>DateTime.ToString("o") — ISO round-trip, même pattern que MailMessage.sentAt.
+    /// Vide = jamais activé (jamais équipé la première fois).</summary>
+    public string activatedAt = "";
 }
 
 // ── Slot SkillBar ─────────────────────────────────────────────
@@ -283,7 +288,7 @@ public class CharacterProgress
     public List<SavedRune>         runes          = new List<SavedRune>();
     public List<SavedCosmeticHead> cosmeticHeads  = new List<SavedCosmeticHead>();
     public List<SavedCosmeticBody> cosmeticBodies = new List<SavedCosmeticBody>();
-    public List<SavedCard>         cards          = new List<SavedCard>();
+    public List<SavedTalisman>     talismans      = new List<SavedTalisman>();
 
     // ⑥ Skills débloqués
     public List<string> unlockedSkillNames      = new List<string>();

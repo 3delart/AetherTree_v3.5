@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 // =============================================================
 // DebuffData — ScriptableObject template de debuff
@@ -84,6 +85,20 @@ public class DebuffData : StatusEffectData
     [Tooltip("Valeur de réduction.\nFlat : valeur directe | Percent : ratio (0.10 = -10%)")]
     [ShowIf(nameof(debuffType), DebuffType.Stats)]
     public float debuffValue = 0f;
+
+    // ── Dispel ─────────────────────────────────────────────────
+    [Tooltip("Chance de retirer CHAQUE buff actif de la cible — jet indépendant par buff, pas\n" +
+             "un seul jet global (4 buffs à 0.5 ≠ 50% de tout retirer d'un coup).")]
+    [Range(0f, 1f)]
+    [ShowIf(nameof(debuffType), DebuffType.Dispel, Header = "Dispel")]
+    public float chancePerEffect = 1f;
+
+    // ── Bonus de stats additionnels ───────────────────────────
+    [Header("Malus de stats additionnels (optionnel)")]
+    [Tooltip("S'applique EN PLUS de l'effet principal ci-dessus, quel que soit debuffType —\n" +
+             "permet de composer plusieurs stats sur un seul debuff. Négatif automatiquement\n" +
+             "(un debuff RETIRE, jamais besoin d'entrer une valeur négative).")]
+    public List<StatLine> bonusStats = new List<StatLine>();
 
     public override StatusEffectInstance CreateInstance(Entity source)
         => new DebuffInstance(this, source);

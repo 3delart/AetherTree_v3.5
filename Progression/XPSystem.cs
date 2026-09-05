@@ -70,10 +70,13 @@ public class XPSystem : MonoBehaviour
     {
         if (target == null || amount <= 0) return;
 
-        target.AddCombatXP(amount);
+        // Bonus talisman (XPBonus, ex: +20%) — appliqué ici pour que le texte flottant
+        // affiche déjà le montant boosté, pas le montant brut de la LootTable.
+        int boosted = Mathf.RoundToInt(amount * (1f + target.XPBonusPercent));
+        target.AddCombatXP(boosted);
 
         FloatingText.Spawn(
-            $"+{amount} XP",
+            $"+{boosted} XP",
             target.transform.position + UnityEngine.Vector3.up * 2f,
             UnityEngine.Color.cyan);
     }

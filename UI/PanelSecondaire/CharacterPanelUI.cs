@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Serialization;
 using TMPro;
 using System.Collections.Generic;
 
@@ -75,7 +76,8 @@ public class CharacterPanelUI : MonoBehaviour
     public Image slotNecklace;
     public Image slotBracelet;
     public Image slotSpirit;
-    public Image slotCard;
+    [FormerlySerializedAs("slotCard")]
+    public Image slotTalisman;
 
     [Header("Equipment slots — Cosmétiques (2)")]
     public Image slotCosmeticHead;
@@ -1038,7 +1040,7 @@ public class CharacterPanelUI : MonoBehaviour
         SetSlotIcon(slotNecklace, necklace, false);
         SetSlotIcon(slotBracelet, bracelet, false);
 
-        SetSlotIcon(slotCard, _player.equippedCardInstance?.data != null ? _player.equippedCardInstance.Icon : null, false);
+        SetSlotIcon(slotTalisman, _player.equippedTalismanInstance?.data != null ? _player.equippedTalismanInstance.Icon : null, false);
 
         // Cosmétiques — brancher equippedCosmeticHead / Body quand disponible sur Player
         SetSlotIcon(slotCosmeticHead, _player.equippedCosmeticHeadInstance?.data != null ? _player.equippedCosmeticHeadInstance.Icon : null, true);

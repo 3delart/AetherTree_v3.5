@@ -89,10 +89,14 @@ public enum StatType
     [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusAll,
 
     // ── Vie & Mana ────────────────────────────────────────────
+    // Regen ici = PERMANENT (équipement / PermanentSkillData.bonuses, jamais expire).
+    // Pour une regen TEMPORAIRE (buff/debuff avec durée), voir StatModifierType.RegenHP/
+    // RegenMana dans StatusEffectData.cs — les deux s'additionnent sur le même champ final
+    // Entity.RegenHP, pas de conflit, juste deux durées de vie différentes.
     [InspectorName("Bonus HP (flat)")]         BonusHP,
     [InspectorName("Bonus Mana (flat)")]       BonusMana,
-    [InspectorName("Bonus Regen HP (flat)")]   BonusRegenHP,
-    [InspectorName("Bonus Regen Mana (flat)")] BonusRegenMana,
+    [InspectorName("Regen HP naturel (flat)")]   BonusRegenHP,
+    [InspectorName("Regen Mana naturel (flat)")] BonusRegenMana,
 }
 
 // =============================================================

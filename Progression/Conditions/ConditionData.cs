@@ -54,7 +54,7 @@ public enum RewardType
     Spirit,
     CosmeticHead,
     CosmeticBody,
-    Card,
+    Talisman,
 
     // ── Items ─────────────────────────────────────────────────
     Resource,
@@ -65,6 +65,8 @@ public enum RewardType
     Pet,
 
     Other,
+
+    Quest,      // Ajouté après coup, TOUJOURS en fin d'enum (ordinal safety).
 }
 
 [System.Serializable]
@@ -88,7 +90,7 @@ public class ConditionReward
     // ── Équipement (générique) ────────────────────────────────
     [ShowIf(nameof(rewardType), RewardType.Weapon, RewardType.Armor, RewardType.Helmet, RewardType.Gloves,
         RewardType.Boots, RewardType.Jewelry, RewardType.Spirit, RewardType.CosmeticHead, RewardType.CosmeticBody,
-        RewardType.Card, Header = "Équipement")]
+        RewardType.Talisman, Header = "Équipement")]
     [Tooltip(
         "Glisser ici le SO d'équipement correspondant au rewardType :\n" +
         "  Weapon      → WeaponData\n" +
@@ -100,7 +102,7 @@ public class ConditionReward
         "  Spirit      → SpiritData\n" +
         "  CosmeticHead→ CosmeticDataHead\n" +
         "  CosmeticBody→ CosmeticDataBody\n" +
-        "  Card        → CardData")]
+        "  Talisman    → TalismanData")]
     public ScriptableObject rewardEquipment;
 
     // ── Ressource ─────────────────────────────────────────────
@@ -123,6 +125,10 @@ public class ConditionReward
     [ShowIf(nameof(rewardType), RewardType.Recipe, Header = "Recette")]
     public RecipeData rewardRecipe;
 
+    // ── Quête ─────────────────────────────────────────────────
+    [ShowIf(nameof(rewardType), RewardType.Quest, Header = "Quête")]
+    public QuestData rewardQuest;
+
     // ── Utilitaires ───────────────────────────────────────────
 
     /// <summary>Vérifie que le reward est cohérent (SO assigné pour son type).</summary>
@@ -143,11 +149,12 @@ public class ConditionReward
             case RewardType.Spirit:
             case RewardType.CosmeticHead:
             case RewardType.CosmeticBody:
-            case RewardType.Card:          return rewardEquipment != null;
+            case RewardType.Talisman:      return rewardEquipment != null;
             case RewardType.Resource:      return rewardResource   != null;
             case RewardType.Consumable:    return rewardConsumable != null;
             case RewardType.Pet:           return !string.IsNullOrEmpty(rewardPetID);
             case RewardType.Recipe:        return rewardRecipe != null;
+            case RewardType.Quest:         return rewardQuest != null;
             default:                       return true;
         }
     }

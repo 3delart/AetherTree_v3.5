@@ -131,6 +131,14 @@ public class CharacterStats
             elementalPoints[e] = 0f;
         cooldownReduction = 0f;
 
+        // XPBonus/GoldBonus — aucune source d'équipement, uniquement des talismans via
+        // ReapplyActiveModifiers (appelé juste après par Player.RequestRecalculate). Sans ce
+        // reset, la valeur laissée par le buff actif serait capturée comme "base" par
+        // SnapshotBaseStats() plus bas, puis le buff se réappliquerait PAR-DESSUS à chaque
+        // recalcul (équipement, level up...) — empilement infini.
+        player.SetXPBonusPercent(0f);
+        player.SetGoldBonusPercent(0f);
+
         // =========================================================
         // ① ARME — stats rollées + config.bonuses (GDD §5.1)
         // =========================================================

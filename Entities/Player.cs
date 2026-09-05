@@ -89,7 +89,7 @@ public class Player : Entity
     [HideInInspector] public BootsInstance         equippedBootsInstance;
     [HideInInspector] public List<JewelryInstance> equippedJewelryInstances = new List<JewelryInstance>();
     [HideInInspector] public List<SpiritInstance>  equippedSpiritInstances  = new List<SpiritInstance>();
-    [HideInInspector] public CardInstance          equippedCardInstance;
+    [HideInInspector] public TalismanInstance      equippedTalismanInstance;
     [HideInInspector] public CosmeticInstanceHead     equippedCosmeticHeadInstance;
     [HideInInspector] public CosmeticInstanceBody     equippedCosmeticBodyInstance;
 
@@ -230,6 +230,7 @@ public class Player : Entity
         base.Update();   // tick de régénération passive (Entity.Update) — sans lui, regen joueur morte
         UpdateAFK();
         UpdateCombat();
+        CheckTalismanExpiry();
     }
 
     // =========================================================
@@ -482,19 +483,42 @@ public class Player : Entity
             stats.RecalculateStats(this);
     }
 
-    public void EquipCard(CardInstance instance)
+    /// <summary>Équipe le talisman — démarre son chrono s'il n'a jamais été activé (sans
+    /// effet si déjà activé) et réapplique son buff, même après un ré-équipement.</summary>
+    public void EquipTalisman(TalismanInstance instance)
     {
-        if (instance == null) return;
-        equippedCardInstance = instance;
+        if (instance == null || instance.IsExpired) return;
+        instance.Activate();
+        equippedTalismanInstance = instance;
+        if (instance.data?.buffToApply != null)
+            statusEffects?.ApplyBuffWithDuration(instance.data.buffToApply, this, instance.RemainingSeconds);
         stats.RecalculateStats(this);
     }
 
-    public void UnequipCard()
+    /// <summary>Retire le talisman du CharacterPanel — coupe son buff immédiatement. Le
+    /// chrono continue de tourner indépendamment (voir TalismanInstance.activatedAt) : ceci
+    /// ne détruit PAS l'objet, juste retiré du slot (voir CheckTalismanExpiry pour la
+    /// destruction à expiration).</summary>
+    public void UnequipTalisman()
     {
-        equippedCardInstance = null;
+        if (equippedTalismanInstance?.data?.buffToApply != null)
+            statusEffects?.RemoveBuff(equippedTalismanInstance.data.buffToApply.buffType);
+        equippedTalismanInstance = null;
         stats.RecalculateStats(this);
-    }  
-    
+    }
+
+    /// <summary>Détruit le talisman équipé s'il a expiré — appelé depuis Update(). Ne renvoie
+    /// PAS l'objet en inventaire (contrairement à un retrait manuel via InventorySystem),
+    /// c'est la destruction elle-même.</summary>
+    private void CheckTalismanExpiry()
+    {
+        if (equippedTalismanInstance != null && equippedTalismanInstance.IsExpired)
+        {
+            Debug.Log($"[TALISMAN] Expiré et détruit : {equippedTalismanInstance.TalismanName}");
+            UnequipTalisman();
+        }
+    }
+
     public void EquipCosmeticHead(CosmeticInstanceHead instance)
     {
         if (instance == null) return;
@@ -705,14 +729,14 @@ public class Player : Entity
     // =========================================================
 
     /// <summary>
-    /// Override de Entity.ApplyKnockBack() — délègue le déplacement à PlayerController.
-    /// Interrompt le déplacement et l'éventuel cast en cours.
+    /// Override de Entity.ApplyKnockBack() — la mécanique (repoussement + mini-stun) vit dans
+    /// Entity (générique Player/Mob/PNJ), ce override n'ajoute que le garde-fou spécifique au
+    /// joueur : pas de knockback si déjà mort/stun/root.
     /// </summary>
     public override void ApplyKnockBack(Vector3 direction, float force)
     {
         if (isDead || statusEffects.isStunned || statusEffects.isRooted) return;
-        // TODO: PlayerController.Instance?.ApplyKnockBack(direction, force);
-        Debug.Log($"[PLAYER] KnockBack — direction:{direction} force:{force}");
+        base.ApplyKnockBack(direction, force);
     }
 
     /// <summary>

@@ -127,6 +127,11 @@ public abstract class Entity : MonoBehaviour
     /// <summary>Multiplicateur dégâts critique. Base 1f.</summary>
     protected float critDamage = 1f;
 
+    /// <summary>Bonus de gain XP/Aeris [0f..], additif — voir XPBonusPercent/GoldBonusPercent.
+    /// Base toujours 0f (pas de source d'équipement, uniquement talismans à ce jour).</summary>
+    protected float xpBonusPercent   = 0f;
+    protected float goldBonusPercent = 0f;
+
     // =========================================================
     // STATS DE DÉFENSE
     // =========================================================
@@ -229,6 +234,12 @@ public abstract class Entity : MonoBehaviour
     public float MagicDefense    => magicDefense;
     public float Dodge               => dodge;
     public float CritDamageReduction => critDamageReduction;
+
+    /// <summary>Bonus de gain XP/Aeris [0f = aucun, 0.20 = +20%] — alimenté uniquement par
+    /// StatModifierType.XPBonus/GoldBonus (talismans). Aucune source d'équipement aujourd'hui,
+    /// base toujours 0f.</summary>
+    public float XPBonusPercent   => xpBonusPercent;
+    public float GoldBonusPercent => goldBonusPercent;
 
     /// <summary>HP courant exprimé en [0..1]. Utile pour les barres et conditions.</summary>
     public float HPPercent   => maxHP   > 0f ? currentHP   / maxHP   : 0f;
@@ -445,9 +456,11 @@ public abstract class Entity : MonoBehaviour
 
     // =========================================================
     // KNOCKBACK (GDD v3.5 §3.1.1.1)
-    // Effet ponctuel — pas de flag runtime.
-    // Appelé directement par CombatSystem / SkillSystem sur la cible.
-    // La logique de déplacement physique est déléguée à chaque sous-classe.
+    // Repoussement (pas un étourdissement en soi) + mini-stun ponctuel type Shocked 0.5s
+    // le temps du recul (StatusEffectSystem.isKnockedBack) — pas le pipeline DebuffData.
+    // Appelé directement par CombatSystem / SkillSystem sur la cible. Implémentation
+    // générique ici (Player/Mob/PNJ) via DisplacementUtils — les sous-classes n'ont besoin
+    // d'override que pour un garde-fou (ex: Player refuse si déjà mort/stun/root).
     // =========================================================
 
     /// <summary>
@@ -458,8 +471,22 @@ public abstract class Entity : MonoBehaviour
     /// </summary>
     public virtual void ApplyKnockBack(Vector3 direction, float force)
     {
-        // Implémentation de base — override dans Player et Mob
-        // pour interagir avec NavMeshAgent / Rigidbody / PlayerController.
+        // Repoussement — réutilise DisplacementUtils (même helper que Push/Pull des skills,
+        // WarpToNavMesh gère déjà NavMeshAgent.Warp si présent). Générique Player/Mob/PNJ,
+        // pas besoin d'override par sous-classe pour le déplacement lui-même.
+        // Player.ApplyKnockBack() a son propre garde isDead (+ stun/root) ; ce garde ici
+        // couvre Mob/PNJ/Pet qui n'overrident jamais cette méthode.
+        if (isDead || force <= 0f) return;
+        Vector3 flatDir = direction;
+        flatDir.y = 0f;
+        if (flatDir.sqrMagnitude < 0.0001f) return;
+
+        Vector3 dest = transform.position + flatDir.normalized * force;
+        DisplacementUtils.WarpToNavMesh(this, dest);
+
+        // Knockback = mini-stun type Shocked (0.5s) le temps du recul, pas un étourdissement
+        // prolongé — voir StatusEffectSystem.isKnockedBack.
+        statusEffects?.ApplyKnockbackStun(0.5f);
     }
 
     // =========================================================
@@ -526,6 +553,7 @@ public abstract class Entity : MonoBehaviour
         public float maxHP, maxMana;
         public float regenHP, regenMana;
         public float moveSpeed;
+        public float xpBonusPercent, goldBonusPercent;
     }
     private BaseStats _base;
 
@@ -552,6 +580,8 @@ public abstract class Entity : MonoBehaviour
             regenHP         = regenHP,
             regenMana       = regenMana,
             moveSpeed       = moveSpeed,
+            xpBonusPercent  = 0f, // pas de base — uniquement additif via talismans
+            goldBonusPercent = 0f,
         };
     }
 
@@ -582,6 +612,8 @@ public abstract class Entity : MonoBehaviour
         SetRegenHP        (_base.regenHP);
         SetRegenMana      (_base.regenMana);
         SetMoveSpeed      (_base.moveSpeed);
+        SetXPBonusPercent  (_base.xpBonusPercent);
+        SetGoldBonusPercent(_base.goldBonusPercent);
 
         // Résistances élémentaires — remet à zéro puis laisse ReapplyActiveModifiers gérer
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
@@ -621,6 +653,8 @@ public abstract class Entity : MonoBehaviour
     public void SetMagicDefense(float value)    => magicDefense    = Mathf.Max(0f, value);
     public void SetDodge(float value)           => dodge           = Mathf.Max(0f, value);
     public void SetCritDamageReduction(float v) => critDamageReduction = Mathf.Clamp01(v);
+    public void SetXPBonusPercent(float value)   => xpBonusPercent   = Mathf.Max(0f, value);
+    public void SetGoldBonusPercent(float value) => goldBonusPercent = Mathf.Max(0f, value);
 
     /// <summary>
     /// Écrit une résistance élémentaire. Accepte les valeurs négatives (vulnérabilité).

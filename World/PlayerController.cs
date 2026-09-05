@@ -55,8 +55,8 @@ public class PlayerController : MonoBehaviour
     {
         var fx = _player?.statusEffects;
 
-        // Stun ou Root — bloque le mouvement
-        if (fx != null && (fx.isStunned || fx.isRooted)) return;
+        // Stun, Root ou Knockback (mini-stun) — bloque le mouvement
+        if (fx != null && (fx.isStunned || fx.isRooted || fx.isKnockedBack)) return;
 
         // MultiHit en cours — immobile le temps du combo (ComboSequence exclu,
         // on peut se déplacer entre deux sorts d'un ComboSequence).
@@ -66,16 +66,23 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // Fear — fuite vers direction opposée à la menace
+        // Fear — fuite vers direction opposée à la source RÉELLE du debuff (pas la cible
+        // engagée/sélectionnée — celui qui a lancé le Fear n'est pas forcément qui on combat).
+        // Fallback aléatoire si la source est morte/introuvable.
         if (fx != null && fx.isFeared)
         {
-            Entity threat = TargetingSystem.Instance?.GetEngagedTarget()
-                         ?? TargetingSystem.Instance?.GetSelectedTarget();
-            if (threat != null)
+            Entity fearSource = fx.GetDebuffSource(DebuffType.Fear);
+            Vector3 fleeDir;
+            if (fearSource != null && !fearSource.isDead)
             {
-                Vector3 fleeDir = (_player.transform.position - threat.transform.position).normalized;
-                _agent.SetDestination(_player.transform.position + fleeDir * 5f);
+                fleeDir = (_player.transform.position - fearSource.transform.position).normalized;
             }
+            else
+            {
+                fleeDir = new Vector3(Random.value * 2f - 1f, 0f, Random.value * 2f - 1f);
+                fleeDir = fleeDir.sqrMagnitude > 0.001f ? fleeDir.normalized : Vector3.forward;
+            }
+            _agent.SetDestination(_player.transform.position + fleeDir * 5f);
             return;
         }
 

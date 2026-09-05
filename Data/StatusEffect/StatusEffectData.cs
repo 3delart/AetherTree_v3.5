@@ -70,6 +70,9 @@ public enum DebuffType
                 // Futurs debuffs par élément (noyade=Eau, etc.) : soit ce type générique
                 // avec damageElement + effectName/icon dédiés, soit un DebuffType propre —
                 // au choix du designer au moment de les créer.
+    Dispel,     // Retire les buffs actifs de la cible, jet indépendant par buff actif
+                // (chancePerEffect sur DebuffData) — voir BuffType.Dispel, obsolète,
+                // mal placé (Dispel est un effet négatif sur cible ennemie, pas un buff).
 }
 
 // ── Enums buff ────────────────────────────────────────────────
@@ -107,10 +110,12 @@ public enum BuffType
     Removed_CritDamageUp,
 
     // Spéciaux
-    Purified,       // Suppression de tous les debuffs actifs — Lumière (§3.1.1.2)
+    Purified,       // Suppression des debuffs actifs, jet indépendant par debuff actif
+                    // (chancePerEffect sur BuffData) — Lumière (§3.1.1.2)
     Invincible,     // Invincibilité temporaire — post-respawn 3s (§3.1.1.3)
     Stealth,        // Furtivité — interrompue par attaque/dégât reçu (§3.1.1.3)
-    Dispel,         // Supprime un buff spécifique sur la cible ennemie (§3.1.1.3)
+    [System.Obsolete("Retiré — Dispel cible un ennemi comme effet négatif, voir DebuffType.Dispel.")]
+    Dispel,         // Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.
     Stats,          // Augmentation de stat spécifique (utilise StatModifierType)
     Other,          // Effet spécial custom
     Revive,         // Résurrection instantanée (Player uniquement) — ajouté en fin d'enum
@@ -122,7 +127,13 @@ public enum BuffType
 // Utilisé par BuffData (buffType = Stats) et DebuffData (debuffType = Stats).
 public enum StatModifierType
 {
-    MaxHP, MaxMana, RegenHP, RegenMana,
+    MaxHP, MaxMana,
+    // RegenHP/RegenMana ici = TEMPORAIRE (buff/debuff avec durée, expire). Pour un bonus
+    // PERMANENT (équipement / PermanentSkillData.bonuses, jamais expire), voir
+    // StatType.BonusRegenHP/BonusRegenMana dans StatBonus.cs — les deux s'additionnent sur
+    // le même champ final Entity.RegenHP, pas de conflit, juste deux durées de vie différentes.
+    [InspectorName("Regen HP (temporaire, buff/debuff)")]   RegenHP,
+    [InspectorName("Regen Mana (temporaire, buff/debuff)")] RegenMana,
     AttackDamage, AttackSpeed, MoveSpeed,
     MeleeDefense, RangedDefense, MagicDefense,
     CritChance, CritDamage,
@@ -131,6 +142,37 @@ public enum StatModifierType
     NatureResistance, LightningResistance,
     DarknessResistance, LightResistance,
     AllResistances,
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Bonus de gain purs — Flat
+    // ET Percent donnent le même résultat (base neutre 1f, voir GetBaseStatValue), 0.20 =
+    // +20% dans les deux cas, choisis celui qui te semble le plus clair.
+    XPBonus,    // +% XP gagnée sur kill de mob (joueur) — GDD Talisman XP_Bonus
+    GoldBonus,  // +% Aeris gagné au ramassage — GDD Talisman Gold_Find
+}
+
+// ── Ligne de stat additionnelle (BuffData.bonusStats / DebuffData.bonusStats) ─────
+// S'applique EN PLUS de l'effet principal (Heal/Shield/Regeneration/...), quel que soit
+// buffType/debuffType — permet de composer plusieurs stats sur un seul effet (ex: Talisman
+// HP_Boost = +%MaxHP ET +%RegenHP ; Def_Boost = +%melee ET +%ranged ET +%magic ET +10% du
+// TOTAL des 3 par-dessus). Voir StatusEffectSystem.ApplyBonusStats pour l'ordre d'évaluation.
+public enum StatLineMode
+{
+    Flat,           // Valeur directe (ex: +300 MaxHP)
+    PercentOfBase,  // % de la valeur AVANT les bonusStats de ce même effet (ex: +10% MaxHP)
+    PercentOfFinal, // % du total APRÈS les lignes Flat/PercentOfBase de ce MÊME effet — pour
+                    // un bonus "global" calculé sur le résultat déjà composé (ex: 3 lignes
+                    // +10% melee/ranged/magic, puis 1 ligne PercentOfFinal +10% par-dessus
+                    // les 3 déjà appliquées). Toujours évalué en 2e passe, jamais mélangé
+                    // avec les 2 autres modes dans l'ordre d'apparition de la liste.
+}
+
+[System.Serializable]
+public class StatLine
+{
+    public StatModifierType stat;
+    public StatLineMode mode = StatLineMode.Flat;
+    [Tooltip("Flat : valeur directe\nPercentOfBase : % de la valeur avant les bonusStats de cet effet\nPercentOfFinal : % du total après les lignes Flat/PercentOfBase de CE MÊME effet")]
+    public float value;
 }
 
 // =============================================================

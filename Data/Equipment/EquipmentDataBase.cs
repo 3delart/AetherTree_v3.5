@@ -9,7 +9,7 @@ using UnityEngine;
 // statut, résistances, on-hit) : Weapon, Armor, Helmet, Gloves,
 // Boots, Jewelry, Spirit, CosmeticHead, CosmeticBody.
 //
-// Card, Resource, Consumable et CosmeticData (legacy) héritent
+// Talisman, Resource, Consumable et CosmeticData (legacy) héritent
 // directement de ItemData — pas de config sur ces types.
 // =============================================================
 

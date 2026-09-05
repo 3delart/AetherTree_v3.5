@@ -131,6 +131,15 @@ public class SkillData : ScriptableObject
     public float      projectileSpeed = 15f;
     public GameObject projectilePrefab;
 
+    [Tooltip("Qui est touché par les effets de zone (AoE/multi-cibles).\n" +
+             "Enemies  → seulement les ennemis du caster (dégâts classiques)\n" +
+             "Allies   → seulement les alliés du caster (soin/buff de groupe, inclut le caster\n" +
+             "           lui-même s'il est dans la zone — ex: Purify de zone)\n" +
+             "Everyone → tout le monde dans la zone, sans distinction")]
+    [ShowIf(nameof(targetType), TargetType.AoE_Self, TargetType.AoE_Target, TargetType.GroundTarget,
+        TargetType.Cone, TargetType.Direction, TargetType.Skillshot, TargetType.LineTarget)]
+    public SkillAoeFaction aoeFaction = SkillAoeFaction.Enemies;
+
     // ── ⑥ Éléments ────────────────────────────────────────────
     [Header("⑥ Éléments")]
     [Tooltip("Vide = Neutre pur (pas de dégâts élémentaires)\n" +
@@ -299,6 +308,14 @@ public enum TargetType
 {
     Target, Self, AoE_Self, AoE_Target, Skillshot,
     LineTarget, GroundTarget, Cone, Direction, Dash_Target, Dash_Direction
+}
+
+/// <summary>Qui est touché par un effet de zone/multi-cibles — voir SkillSystem.IsAlly.</summary>
+public enum SkillAoeFaction
+{
+    Enemies,    // Ne touche que les ennemis du caster (comportement historique implicite)
+    Allies,     // Ne touche que les alliés du caster (inclut le caster s'il est dans la zone)
+    Everyone,   // Touche tout le monde dans la zone, sans distinction
 }
 
 // =============================================================

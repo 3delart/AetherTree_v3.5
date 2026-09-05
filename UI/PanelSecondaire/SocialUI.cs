@@ -434,7 +434,7 @@ public class SocialUI : MonoBehaviour
         SpiritData sd        => new InventoryItem(new SpiritInstance(sd)),
         CosmeticDataHead chd => new InventoryItem(chd.CreateInstance()),
         CosmeticDataBody cbd => new InventoryItem(cbd.CreateInstance()),
-        CardData cad         => new InventoryItem(cad.CreateInstance()),
+        TalismanData tad     => new InventoryItem(tad.CreateInstance()),
         ResourceData rd      => new InventoryItem(rd.CreateInstance(quantity)),
         ConsumableData cd    => new InventoryItem(cd.CreateInstance(quantity)),
         _                    => null,
