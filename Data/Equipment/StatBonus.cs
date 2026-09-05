@@ -104,6 +104,13 @@ public enum StatType
 
     // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
     [InspectorName("All Defense (flat ou %, voir mode)")] AllDefense,
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Accumulateurs BRUTS — PAS
+    // la formule (Base+Flat)×(1+%) du reste de cet enum. Voir CharacterStats.RecalculateStats,
+    // section PUSH — poussés directement depuis flatAcc/percentAcc, pas via FinalOf(). Appliqués
+    // sur le NOMBRE de dégâts par CombatSystem, pas une stat persistante.
+    [InspectorName("Final Damage Bonus (attaquant, flat ou %, voir mode)")]     FinalDamageBonus,
+    [InspectorName("Final Damage Reduction (défenseur, flat ou %, voir mode)")] FinalDamageReduction,
 }
 
 // =============================================================
@@ -126,7 +133,8 @@ public class StatBonus
     [ShowIf(nameof(statType),
         StatType.MeleeDefense, StatType.RangedDefense, StatType.MagicDefense, StatType.AllDefense,
         StatType.BonusAttack, StatType.Dodge, StatType.Precision,
-        StatType.BonusHP, StatType.BonusMana, StatType.BonusRegenHP, StatType.BonusRegenMana)]
+        StatType.BonusHP, StatType.BonusMana, StatType.BonusRegenHP, StatType.BonusRegenMana,
+        StatType.FinalDamageBonus, StatType.FinalDamageReduction)]
     public ModifierType mode = ModifierType.Flat;
 
     [Tooltip(

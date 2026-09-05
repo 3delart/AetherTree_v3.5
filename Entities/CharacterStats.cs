@@ -417,6 +417,15 @@ public class CharacterStats
         player.SetDodge        (FinalOf(StatType.Dodge, accDodge));
         player.SetCritDamageReduction(FinalOf(StatType.CritDmgReduction, accCritDmgReduct));
 
+        player.SetFinalDamageBonusFlat(
+            flatAcc.TryGetValue(StatType.FinalDamageBonus, out var fdbF) ? fdbF : 0f);
+        player.SetFinalDamageBonusPercent(
+            percentAcc.TryGetValue(StatType.FinalDamageBonus, out var fdbP) ? fdbP : 0f);
+        player.SetFinalDamageReductionFlat(
+            flatAcc.TryGetValue(StatType.FinalDamageReduction, out var fdrF) ? fdrF : 0f);
+        player.SetFinalDamageReductionPercent(
+            percentAcc.TryGetValue(StatType.FinalDamageReduction, out var fdrP) ? fdrP : 0f);
+
         // Résistances sans plafond — fusion gants/bottes peut dépasser 100%.
         // Valeurs négatives possibles uniquement via debuffs (vulnérabilité).
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
