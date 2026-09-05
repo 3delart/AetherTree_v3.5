@@ -10,15 +10,17 @@ using System.Collections;
 // ─── Cibles gérées ───────────────────────────────────────────
 //   Entity  (Mob / PNJ / Pet) → Select → Engage (mobs/pets)
 //   ResourceNode              → collecte
-//   WorldPickupItem           → pickup (item ou Aeris)
 //   IInteractableBuilding     → interaction bâtiment
 //   Ground / vide             → Deselect
+//
+// Le loot de kill de mob part directement dans l'inventaire (LootManager) —
+// plus de pickup au sol à cliquer, voir docs/superpowers/specs/
+// 2026-09-05-loot-direct-to-inventory-design.md.
 //
 // ─── Auto-approche unifiée ───────────────────────────────────
 //   TOUTES les approches passent par une coroutine unique.
 //   StopApproach() est PUBLIC — appelé par PlayerController
 //   dès que le joueur prend le contrôle manuel.
-//   WorldLootItem et WorldAerisItem supprimés → WorldPickupItem.
 //
 // ─── Bâtiments ───────────────────────────────────────────────
 //   Implémenter IInteractableBuilding sur forge, puits, etc.
@@ -52,7 +54,6 @@ public class TargetingSystem : MonoBehaviour
     private Entity                selectedTarget;
     private Entity                engagedTarget;
     private ResourceNode          selectedNode;
-    private WorldPickupItem       selectedPickup;
     private IInteractableBuilding selectedBuilding;
     private GameObject            selectedBuildingGO;
 
@@ -209,19 +210,15 @@ public class TargetingSystem : MonoBehaviour
 
         if (hit.collider.CompareTag("Ground")) { Deselect(); return; }
 
-        // ── Priorité 1 : WorldPickupItem (loot ou aeris) ──────
-        WorldPickupItem pickup = hit.collider.GetComponentInParent<WorldPickupItem>();
-        if (pickup != null) { HandlePickupClick(pickup); return; }
-
-        // ── Priorité 2 : ResourceNode ─────────────────────────
+        // ── Priorité 1 : ResourceNode ──────────────────────────
         ResourceNode node = hit.collider.GetComponentInParent<ResourceNode>();
         if (node != null) { HandleNodeClick(node); return; }
 
-        // ── Priorité 3 : Bâtiment interactif ──────────────────
+        // ── Priorité 2 : Bâtiment interactif ───────────────────
         IInteractableBuilding building = hit.collider.GetComponentInParent<IInteractableBuilding>();
         if (building != null) { HandleBuildingClick(building, hit.collider.gameObject); return; }
 
-        // ── Priorité 4 : Entity ───────────────────────────────
+        // ── Priorité 3 : Entity ────────────────────────────────
         Entity entity = hit.collider.GetComponentInParent<Entity>();
         if (entity == null || entity == player) { Deselect(); return; }
 
@@ -235,25 +232,6 @@ public class TargetingSystem : MonoBehaviour
     // =========================================================
     // HANDLERS PAR TYPE DE CIBLE
     // =========================================================
-
-    // ── WorldPickupItem (item ou aeris) ───────────────────────
-
-    private void HandlePickupClick(WorldPickupItem pickup)
-    {
-        if (selectedPickup == pickup)
-        {
-            float dist = Vector3.Distance(player.transform.position, pickup.transform.position);
-            if (dist <= pickup.pickupRange)
-                pickup.TryPickUp();
-            else
-                StartApproach(ApproachPickupRoutine(pickup));
-        }
-        else
-        {
-            ClearAllSelection();
-            selectedPickup = pickup;
-        }
-    }
 
     // ── ResourceNode ──────────────────────────────────────────
 
@@ -521,34 +499,6 @@ public class TargetingSystem : MonoBehaviour
         }
     }
 
-    // ── Routine WorldPickupItem (item ou aeris) ───────────────
-
-    private IEnumerator ApproachPickupRoutine(WorldPickupItem pickup)
-    {
-        if (_agent == null) yield break;
-
-        float elapsed = 0f;
-        _agent.SetDestination(pickup.transform.position);
-
-        while (elapsed < ApproachTimeout)
-        {
-            if (pickup == null || !pickup.gameObject.activeSelf) yield break;
-
-            if (Vector3.Distance(player.transform.position, pickup.transform.position) <= pickup.pickupRange)
-            {
-                _agent.ResetPath();
-                pickup.TryPickUp();
-                yield break;
-            }
-
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        _agent.ResetPath();
-        _approachCoroutine = null;
-    }
-
     // ── Routine ResourceNode ──────────────────────────────────
 
     private IEnumerator ApproachNodeRoutine(ResourceNode node)
@@ -691,7 +641,6 @@ public class TargetingSystem : MonoBehaviour
         if (_buildingOutline != null) { _buildingOutline.enabled = false; _buildingOutline = null; }
         selectedTarget     = null;
         selectedNode       = null;
-        selectedPickup     = null;
         selectedBuilding   = null;
         selectedBuildingGO = null;
     }
@@ -710,7 +659,6 @@ public class TargetingSystem : MonoBehaviour
     public Entity                GetEngagedTarget()   => engagedTarget;
     public Entity                GetSelectedTarget()  => selectedTarget;
     public ResourceNode          GetSelectedNode()    => selectedNode;
-    public WorldPickupItem       GetSelectedPickup()  => selectedPickup;
     public IInteractableBuilding GetSelectedBuilding() => selectedBuilding;
     public bool                  IsAutoAttacking      => autoAttacking;
 }
