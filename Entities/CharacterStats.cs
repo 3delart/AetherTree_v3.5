@@ -390,6 +390,49 @@ public class CharacterStats
             accCritChance = 0f;
 
         // =========================================================
+        // BONUS AUTOMATIQUE ARMORTYPE — GDD §5.4
+        // Codé en dur, PAS via config.bonuses (décision explicite Florian) — lu directement
+        // sur l'ArmorType de l'armure équipée, indépendant de tout StatBonus configuré sur
+        // l'ArmorData elle-même. Placé ici (après TOUTES les autres sources — esprits,
+        // StatPoints, rang Neutre) pour que le bonus Robe sur elementalPoints capture bien
+        // la totalité déjà accumulée, pas seulement une partie.
+        // =========================================================
+        if (armor?.data != null)
+        {
+            switch (armor.data.armorType)
+            {
+                case ArmorType.Lourde:
+                    AccumulateBonus(
+                        new StatBonus { statType = StatType.AllDefense, mode = ModifierType.Percent, value = 0.10f },
+                        flatAcc, percentAcc, accResist);
+                    AccumulateBonus(
+                        new StatBonus { statType = StatType.Dodge, mode = ModifierType.Percent, value = 0.05f },
+                        flatAcc, percentAcc, accResist);
+                    break;
+
+                case ArmorType.Legere:
+                    AccumulateBonus(
+                        new StatBonus { statType = StatType.BonusAttack, mode = ModifierType.Percent, value = 0.10f },
+                        flatAcc, percentAcc, accResist);
+                    AccumulateBonus(
+                        new StatBonus { statType = StatType.Precision, mode = ModifierType.Percent, value = 0.05f },
+                        flatAcc, percentAcc, accResist);
+                    break;
+
+                case ArmorType.Robe:
+                    // Points élémentaires — pas de mode Percent dans ce système (voir spec §C),
+                    // multiplication directe après que toutes les sources (esprits, StatPoints)
+                    // aient déjà rempli elementalPoints[e] ci-dessus.
+                    foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+                        elementalPoints[e] *= 1.10f;
+                    // cooldownReduction est déjà un ratio (comme CritChance/XPBonus/GoldBonus) —
+                    // addition directe, pas de multiplication (confirmé Florian).
+                    cooldownReduction += 0.05f;
+                    break;
+            }
+        }
+
+        // =========================================================
         // PUSH SUR ENTITY
         // =========================================================
         float FinalOf(StatType stat, float baseAndDirectFlat)
