@@ -55,7 +55,7 @@ public class MailReward
     // ── Équipement générique (SO) ─────────────────────────────
     // Contient WeaponData, ArmorData, HelmetData, GlovesData,
     // BootsData, JewelryData, SpiritData, CosmeticDataHead,
-    // CosmeticDataBody ou CardData selon rewardType.
+    // CosmeticDataBody ou TalismanData selon rewardType.
     public ScriptableObject  rewardEquipment;
 
     // ── Ressource / Consommable ───────────────────────────────
@@ -68,6 +68,9 @@ public class MailReward
     public string            rewardPetID;
     // ── Recette ────────────────────────────────────────────────
     public RecipeData        rewardRecipe;
+
+    // ── Quête ──────────────────────────────────────────────────
+    public QuestData         rewardQuest;
 
     // ── Description ───────────────────────────────────────────
     public string            rewardDescription;
@@ -94,11 +97,12 @@ public class MailReward
             RewardType.Spirit            => equipName("Esprit"),
             RewardType.CosmeticHead      => equipName("Cosmétique Tête"),
             RewardType.CosmeticBody      => equipName("Cosmétique Corps"),
-            RewardType.Card              => equipName("Carte"),
+            RewardType.Talisman          => equipName("Talisman"),
             RewardType.Resource          => rewardResource   != null ? $"{rewardResource.displayName.Get(lang)} ×{rewardResourceQuantity}"     : "Ressource",
             RewardType.Consumable        => rewardConsumable != null ? $"{rewardConsumable.displayName.Get(lang)} ×{rewardConsumableQuantity}" : "Consommable",
             RewardType.Recipe            => rewardRecipe?.result != null ? $"Recette : {rewardRecipe.result.displayName.Get(lang)}" : "Recette",
             RewardType.Pet               => !string.IsNullOrEmpty(rewardPetID)    ? $"Pet : {rewardPetID}"        : "Pet",
+            RewardType.Quest             => rewardQuest != null ? $"Quête : {rewardQuest.questName}" : "Quête",
             _                            => rewardDescription ?? "Récompense",
         };
     }
@@ -119,7 +123,7 @@ public class MailReward
             RewardType.Spirit            => (rewardEquipment as SpiritData)?.icon,
             RewardType.CosmeticHead      => (rewardEquipment as CosmeticDataHead)?.icon,
             RewardType.CosmeticBody      => (rewardEquipment as CosmeticDataBody)?.icon,
-            RewardType.Card              => (rewardEquipment as CardData)?.icon,
+            RewardType.Talisman          => (rewardEquipment as TalismanData)?.icon,
             RewardType.Resource          => rewardResource?.icon,
             RewardType.Consumable        => rewardConsumable?.icon,
             RewardType.Recipe            => rewardRecipe?.result?.icon,
@@ -154,9 +158,6 @@ public class MailboxSystem : MonoBehaviour
     /// </summary>
     public void SendRewardMail(ConditionData condition, ConditionReward condReward)
     {
-        string subject = $"Récompense débloquée : {condition.displayName}";
-        string body    = condition.description;
-
         var mailReward = new MailReward
         {
             rewardType               = condReward.rewardType,
@@ -169,17 +170,69 @@ public class MailboxSystem : MonoBehaviour
             rewardConsumableQuantity = condReward.rewardConsumableQuantity,
             rewardPetID              = condReward.rewardPetID,
             rewardRecipe             = condReward.rewardRecipe,
+            rewardQuest              = condReward.rewardQuest,
         };
 
+        SendMail(
+            mailID:     $"reward_{condition.conditionID}_{System.DateTime.Now.Ticks}",
+            senderName: "Serveur AetherTree",
+            subject:    $"Récompense débloquée : {condition.displayName}",
+            body:       condition.description,
+            reward:     mailReward);
+    }
+
+    /// <summary>Envoie un loot de combat en mail de secours — l'inventaire du gagnant était
+    /// plein au moment du kill (voir LootManager.DeliverItem). Ne stocke QU'une référence
+    /// vers le SO d'origine, pas l'instance déjà rollée au kill — les stats sont rerollées à
+    /// la réclamation (CreateDropInstance()/CreateInstance()), exactement comme un mail de
+    /// récompense ConditionData aujourd'hui. Pas de préservation du roll exact — décision du
+    /// design (voir spec §Gestion inventaire plein).</summary>
+    public void SendLootOverflowMail(InventoryItem item, string mobName)
+    {
+        if (item == null) return;
+
+        var reward = new MailReward { rewardDescription = item.Name };
+
+        if      (item.WeaponInstance?.data     != null) { reward.rewardType = RewardType.Weapon;    reward.rewardEquipment = item.WeaponInstance.data; }
+        else if (item.ArmorInstance?.data      != null) { reward.rewardType = RewardType.Armor;      reward.rewardEquipment = item.ArmorInstance.data; }
+        else if (item.HelmetInstance?.data     != null) { reward.rewardType = RewardType.Helmet;     reward.rewardEquipment = item.HelmetInstance.data; }
+        else if (item.GlovesInstance?.data     != null) { reward.rewardType = RewardType.Gloves;     reward.rewardEquipment = item.GlovesInstance.data; }
+        else if (item.BootsInstance?.data      != null) { reward.rewardType = RewardType.Boots;      reward.rewardEquipment = item.BootsInstance.data; }
+        else if (item.JewelryInstance?.data    != null) { reward.rewardType = RewardType.Jewelry;    reward.rewardEquipment = item.JewelryInstance.data; }
+        else if (item.SpiritInstance?.data     != null) { reward.rewardType = RewardType.Spirit;     reward.rewardEquipment = item.SpiritInstance.data; }
+        else if (item.ConsumableInstance?.data != null) { reward.rewardType = RewardType.Consumable; reward.rewardConsumable = item.ConsumableInstance.data; reward.rewardConsumableQuantity = item.ConsumableInstance.quantity; }
+        else if (item.ResourceInstance?.data   != null) { reward.rewardType = RewardType.Resource;   reward.rewardResource   = item.ResourceInstance.data;   reward.rewardResourceQuantity   = item.ResourceInstance.quantity; }
+        else
+        {
+            // Gem/Rune (ou tout type non géré ci-dessus) — pas de RewardType dédié, ces deux
+            // types sont "hors scope, refonte prévue" (voir GemData.cs/RuneData.cs, aucun
+            // CreateAssetMenu). Perdu si l'inventaire est plein — acceptable tant qu'aucun
+            // contenu réel n'existe pour ces types.
+            Debug.LogWarning($"[MAILBOX] Loot perdu (inventaire plein, type non géré par le mail) : {item.Name} ({mobName})");
+            return;
+        }
+
+        SendMail(
+            mailID:     $"loot_{mobName}_{System.DateTime.Now.Ticks}",
+            senderName: "Butin de combat",
+            subject:    $"Butin de {mobName} (inventaire plein)",
+            body:       "Ton inventaire était plein au moment du kill — voici ton butin.",
+            reward:     reward);
+    }
+
+    /// <summary>Construit et envoie un MailMessage — factorisé entre SendRewardMail et
+    /// SendLootOverflowMail (même structure, seule la source de la récompense diffère).</summary>
+    private void SendMail(string mailID, string senderName, string subject, string body, MailReward reward)
+    {
         var mail = new MailMessage
         {
-            mailID        = $"reward_{condition.conditionID}_{System.DateTime.Now.Ticks}",
-            senderName    = "Serveur AetherTree",
+            mailID        = mailID,
+            senderName    = senderName,
             isFromServer  = true,
             sentAt        = System.DateTime.Now,
             subject       = subject,
             body          = body,
-            reward        = mailReward,
+            reward        = reward,
             rewardClaimed = false,
             isRead        = false,
         };
@@ -341,12 +394,12 @@ public class MailboxSystem : MonoBehaviour
                 }
                 break;
 
-            case RewardType.Card:
-                var card = reward.rewardEquipment as CardData;
-                if (card != null)
+            case RewardType.Talisman:
+                var talisman = reward.rewardEquipment as TalismanData;
+                if (talisman != null)
                 {
-                    InventorySystem.Instance?.AddItem(new InventoryItem(card.CreateInstance()));
-                    Debug.Log($"[MAILBOX] Carte ajoutée : {card.itemID}");
+                    InventorySystem.Instance?.AddItem(new InventoryItem(talisman.CreateInstance()));
+                    Debug.Log($"[MAILBOX] Talisman ajouté : {talisman.itemID}");
                 }
                 break;
 
@@ -383,6 +436,18 @@ public class MailboxSystem : MonoBehaviour
                 {
                     Debug.Log($"[MAILBOX] Pet débloqué : {reward.rewardPetID}");
                     // TODO: PetSystem.Instance?.UnlockPet(reward.rewardPetID, player)
+                }
+                break;
+
+            // ── Quête ───────────────────────────────────────────
+            case RewardType.Quest:
+                if (reward.rewardQuest != null)
+                {
+                    bool accepted = QuestSystem.Instance != null
+                        && QuestSystem.Instance.AcceptQuest(reward.rewardQuest, player);
+                    Debug.Log(accepted
+                        ? $"[MAILBOX] Quête ajoutée au journal : {reward.rewardQuest.questName}"
+                        : $"[MAILBOX] Échec ajout quête (prérequis/niveau non remplis ou déjà active) : {reward.rewardQuest.questName}");
                 }
                 break;
 
