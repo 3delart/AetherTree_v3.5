@@ -91,8 +91,14 @@ public class LootManager : MonoBehaviour
     {
         if (winner == null || item == null) return;
 
-        bool added = InventorySystem.Instance != null && InventorySystem.Instance.AddItem(item);
-        if (added)
+        if (InventorySystem.Instance == null)
+        {
+            Debug.LogWarning($"[LOOT] InventorySystem introuvable — impossible de livrer {item.Name} ({mobName}), envoi par mail en secours.");
+            MailboxSystem.Instance?.SendLootOverflowMail(item, mobName);
+            return;
+        }
+
+        if (InventorySystem.Instance.AddItem(item))
         {
             Debug.Log($"[LOOT] {winner.entityName} a reçu {item.Name} ({mobName}).");
         }
@@ -112,8 +118,14 @@ public class LootManager : MonoBehaviour
     {
         if (winner == null || amount <= 0) return;
 
+        if (AerisSystem.Instance == null)
+        {
+            Debug.LogWarning($"[LOOT] AerisSystem introuvable — {amount} Aeris perdus ({mobName}).");
+            return;
+        }
+
         int boosted = Mathf.RoundToInt(amount * (1f + winner.GoldBonusPercent));
-        AerisSystem.Instance?.Add(boosted);
+        AerisSystem.Instance.Add(boosted);
         Debug.Log($"[LOOT] {winner.entityName} a reçu {boosted} Aeris ({mobName}).");
     }
 }

@@ -131,7 +131,15 @@ public class InventorySystem : MonoBehaviour
                 OnInventoryChanged?.Invoke();
 
                 if (overflow > 0)
-                    return AddItem(new InventoryItem(item.ResourceInstance.data.CreateInstance(overflow)));
+                {
+                    // item reflète maintenant le SOLDE non absorbé — si l'appelant tient
+                    // encore une référence à `item` après un retour false (ex: LootManager
+                    // qui bascule sur un mail de secours), elle doit refléter overflow, pas
+                    // la quantité d'origine, sinon la part déjà absorbée dans le stack
+                    // existant serait comptée deux fois.
+                    item.ResourceInstance.quantity = overflow;
+                    return AddItem(item);
+                }
 
                 return true;
             }
@@ -147,7 +155,11 @@ public class InventorySystem : MonoBehaviour
                 OnInventoryChanged?.Invoke();
 
                 if (overflow > 0)
-                    return AddItem(new InventoryItem(item.ConsumableInstance.data.CreateInstance(overflow)));
+                {
+                    // Même raison que la branche Ressources ci-dessus.
+                    item.ConsumableInstance.quantity = overflow;
+                    return AddItem(item);
+                }
 
                 return true;
             }
