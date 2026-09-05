@@ -148,22 +148,26 @@ public enum StatModifierType
     // +20% dans les deux cas, choisis celui qui te semble le plus clair.
     XPBonus,    // +% XP gagnée sur kill de mob (joueur) — GDD Talisman XP_Bonus
     GoldBonus,  // +% Aeris gagné au ramassage — GDD Talisman Gold_Find
+
+    // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
+    AllDefense, // Écrit simultanément sur MeleeDefense + RangedDefense + MagicDefense — jamais
+                // stockée comme cible finale elle-même, toujours répartie au moment de
+                // l'accumulation. Voir StatusEffectSystem.AccumulateStatLine.
 }
 
 // ── Ligne de stat additionnelle (BuffData.bonusStats / DebuffData.bonusStats) ─────
 // S'applique EN PLUS de l'effet principal (Heal/Shield/Regeneration/...), quel que soit
 // buffType/debuffType — permet de composer plusieurs stats sur un seul effet (ex: Talisman
 // HP_Boost = +%MaxHP ET +%RegenHP ; Def_Boost = +%melee ET +%ranged ET +%magic ET +10% du
-// TOTAL des 3 par-dessus). Voir StatusEffectSystem.ApplyBonusStats pour l'ordre d'évaluation.
+// TOTAL des 3 par-dessus). Voir StatusEffectSystem.AccumulateStatLine pour l'ordre d'évaluation.
 public enum StatLineMode
 {
-    Flat,           // Valeur directe (ex: +300 MaxHP)
-    PercentOfBase,  // % de la valeur AVANT les bonusStats de ce même effet (ex: +10% MaxHP)
-    PercentOfFinal, // % du total APRÈS les lignes Flat/PercentOfBase de ce MÊME effet — pour
-                    // un bonus "global" calculé sur le résultat déjà composé (ex: 3 lignes
-                    // +10% melee/ranged/magic, puis 1 ligne PercentOfFinal +10% par-dessus
-                    // les 3 déjà appliquées). Toujours évalué en 2e passe, jamais mélangé
-                    // avec les 2 autres modes dans l'ordre d'apparition de la liste.
+    Flat,     // Valeur directe (ex: +300 MaxHP)
+    Percent,  // % — sommé GLOBALEMENT avec tous les autres % actifs ciblant la même stat
+              // (tous buffs/debuffs actifs confondus, pas juste les lignes de CET effet), puis
+              // appliqué en une seule fois : (Base + ΣFlat) × (1 + Σ%). Remplace
+              // PercentOfBase/PercentOfFinal (retirés v3.5 unification) — plus de distinction
+              // scopée par effet individuel. Voir StatusEffectSystem.AccumulateStatLine.
 }
 
 [System.Serializable]
@@ -171,7 +175,7 @@ public class StatLine
 {
     public StatModifierType stat;
     public StatLineMode mode = StatLineMode.Flat;
-    [Tooltip("Flat : valeur directe\nPercentOfBase : % de la valeur avant les bonusStats de cet effet\nPercentOfFinal : % du total après les lignes Flat/PercentOfBase de CE MÊME effet")]
+    [Tooltip("Flat : valeur directe\nPercent : % sommé globalement avec tous les autres % actifs ciblant la même stat, appliqué en une seule fois : (Base+Flat)*(1+Percent)")]
     public float value;
 }
 

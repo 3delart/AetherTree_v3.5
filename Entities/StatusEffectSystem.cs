@@ -365,6 +365,20 @@ public class StatusEffectSystem : MonoBehaviour
         // Pas besoin de le rappeler ici.
     }
 
+    /// <summary>Stats sans sélecteur Flat/% (masqué côté Inspector via ShowIf) — toujours
+    /// additives, jamais de multiplication par (1+%). AccumulateStatLine y route toute
+    /// contribution en Flat, quel que soit le mode fourni (filet de sécurité en plus du
+    /// masquage Inspector).</summary>
+    private static readonly HashSet<StatModifierType> ExceptionStats = new HashSet<StatModifierType>
+    {
+        StatModifierType.CritChance, StatModifierType.CritDamage,
+        StatModifierType.FireResistance, StatModifierType.WaterResistance,
+        StatModifierType.EarthResistance, StatModifierType.NatureResistance,
+        StatModifierType.LightningResistance, StatModifierType.DarknessResistance,
+        StatModifierType.LightResistance, StatModifierType.AllResistances,
+        StatModifierType.MoveSpeed, StatModifierType.XPBonus, StatModifierType.GoldBonus,
+    };
+
     /// <summary>
     /// Ré-applique tous les modificateurs numériques des effets actifs sur l'entité.
     /// Appelé par Entity.RequestRecalculate() après restauration des stats de base.
@@ -373,24 +387,24 @@ public class StatusEffectSystem : MonoBehaviour
     public void ReapplyActiveModifiers(Entity target)
     {
         // Snapshot des stats "pures" — juste restaurées depuis _base par RequestRecalculate,
-        // AVANT que cette méthode n'ajoute le moindre modificateur ce cycle-ci. Sert de
-        // référence stable pour bonusStats/PercentOfBase (voir ApplyBonusStats) : sans ça,
-        // 2 bonus "+10%" indépendants (2 talismans/buffs actifs différents, ou 2 lignes dans
-        // la même liste) composeraient (100→110→121) au lieu de s'additionner (100→120),
-        // et le résultat dépendrait de l'ordre d'itération de _activeBuffs/_activeDebuffs
-        // (non garanti par Dictionary) plutôt que d'être déterministe.
+        // AVANT que cette méthode n'ajoute le moindre modificateur ce cycle-ci. Référence
+        // stable pour tous les % actifs — sans ça, plusieurs % indépendants ciblant la même
+        // stat composeraient entre eux au lieu de s'additionner, et le résultat dépendrait de
+        // l'ordre d'itération de _activeBuffs/_activeDebuffs (non garanti par Dictionary).
         var pureBase = new Dictionary<StatModifierType, float>();
         foreach (StatModifierType s in System.Enum.GetValues(typeof(StatModifierType)))
             pureBase[s] = GetBaseStatValue(target, s);
 
         // ── Debuffs numériques ────────────────────────────────
-        // Reset des valeurs locales avant recalcul
         armorBreakReduction   = 0f;
         shockDefenseReduction = 0f;
         poisonHealReduction   = 0f;
         blindPrecisionMalus   = 0f;
         markDamageBonus       = 0f;
         slowMultiplier        = 1f;
+
+        var flatSum    = new Dictionary<StatModifierType, float>();
+        var percentSum = new Dictionary<StatModifierType, float>();
 
         foreach (var kvp in _activeDebuffs)
         {
@@ -421,14 +435,14 @@ public class StatusEffectSystem : MonoBehaviour
                     markDamageBonus += d.debuffValue;
                     break;
                 case DebuffType.Stats:
-                    ApplyStatDebuff(target, d);
+                    AccumulateStatLine(flatSum, percentSum, d.debuffStatType,
+                        d.debuffModifier == ModifierType.Percent, -d.debuffValue);
                     break;
             }
-            ApplyBonusStats(target, d.bonusStats, isDebuff: true, pureBase);
+            AccumulateBonusStatsLines(flatSum, percentSum, d.bonusStats, sign: -1f);
         }
 
         // ── Buffs numériques ──────────────────────────────────
-        // Reset des valeurs locales avant recalcul
         buffDefenseBonus    = 0f;
         buffDodgeBonus      = 0f;
         buffPrecisionBonus  = 0f;
@@ -439,76 +453,68 @@ public class StatusEffectSystem : MonoBehaviour
         barrierElementResist = 0f;
 
         // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp
-        // retirés (2026) — redondants avec Stats. Les accumulateurs buffDefenseBonus/
-        // buffDodgeBonus/buffPrecisionBonus/buffSpeedMultiplier/buffAttackBonus/
-        // buffCritChanceBonus/buffCritDamageBonus/barrierElementResist restent déclarés
-        // (lus par Entity.cs/CombatSystem.cs/PlayerController.cs/Mob.cs) mais ne sont
-        // plus jamais réécrits ici — toujours à leur valeur par défaut (0 ou 1),
-        // sans effet, sans rien à changer côté lecteurs.
+        // retirés (2026) — voir accumulateurs ci-dessus, jamais réécrits, sans effet.
         foreach (var kvp in _activeBuffs)
         {
             if (kvp.Key == BuffType.Stats)
-                ApplyStatBuff(target, kvp.Value.BuffData);
-            ApplyBonusStats(target, kvp.Value.BuffData.bonusStats, isDebuff: false, pureBase);
+            {
+                var b = kvp.Value.BuffData;
+                AccumulateStatLine(flatSum, percentSum, b.buffStatType,
+                    b.buffModifier == ModifierType.Percent, b.buffStatValue);
+            }
+            AccumulateBonusStatsLines(flatSum, percentSum, kvp.Value.BuffData.bonusStats, sign: 1f);
+        }
+
+        // ── Application finale — une fois par stat ─────────────
+        foreach (StatModifierType stat in System.Enum.GetValues(typeof(StatModifierType)))
+        {
+            float flat = flatSum.TryGetValue(stat, out var f) ? f : 0f;
+            float pct  = percentSum.TryGetValue(stat, out var p) ? p : 0f;
+            if (flat == 0f && pct == 0f) continue;
+
+            float baseVal = pureBase[stat];
+            float final   = (baseVal + flat) * (1f + pct);
+            ModifyEntityStat(target, stat, final - baseVal);
         }
     }
 
-    /// <summary>Applique la liste bonusStats d'UN effet actif (Buff ou Debuff), en 2 passes :
-    /// Flat/PercentOfBase d'abord (indépendants entre eux), puis PercentOfFinal (calculé sur
-    /// le total déjà boosté par la 1ère passe de CE MÊME effet — jamais mélangé dans l'ordre
-    /// brut de la liste, sinon le résultat dépendrait de l'ordre d'apparition dans
-    /// l'Inspector). isDebuff inverse le signe — un debuff RETIRE, jamais besoin de valeurs
-    /// négatives côté designer.
-    /// PercentOfBase lit TOUJOURS `pureBase` (snapshot pris une fois en tête de
-    /// ReapplyActiveModifiers, avant tout effet actif) — jamais la stat live de la cible —
-    /// pour que 2 sources "+10%" indépendantes s'additionnent (100→120) au lieu de composer
-    /// (100→110→121) selon l'ordre d'itération des buffs/debuffs actifs (non garanti).
-    /// PercentOfFinal se base sur pureBase + la contribution de CE SEUL effet (ownDelta),
-    /// jamais celle des autres effets actifs en parallèle.</summary>
-    private void ApplyBonusStats(Entity target, List<StatLine> lines, bool isDebuff,
-        Dictionary<StatModifierType, float> pureBase)
+    /// <summary>Accumule les lignes bonusStats d'UN effet actif (Buff ou Debuff) dans les
+    /// sommes globales — plus de logique 2-passes par-effet (PercentOfBase/PercentOfFinal),
+    /// juste un ajout à la somme Flat ou % de la stat ciblée. isDebuff inverse le signe — un
+    /// debuff RETIRE, jamais besoin de valeurs négatives côté designer.</summary>
+    private void AccumulateBonusStatsLines(Dictionary<StatModifierType, float> flatSum,
+        Dictionary<StatModifierType, float> percentSum, List<StatLine> lines, float sign)
     {
-        if (lines == null || lines.Count == 0) return;
-        float sign = isDebuff ? -1f : 1f;
-        var ownDelta = new Dictionary<StatModifierType, float>();
-
+        if (lines == null) return;
         foreach (var line in lines)
         {
-            if (line == null || line.mode == StatLineMode.PercentOfFinal) continue;
-            float baseVal = pureBase.TryGetValue(line.stat, out var b) ? b : 0f;
-            float v = line.mode == StatLineMode.PercentOfBase ? baseVal * line.value : line.value;
-            ModifyEntityStat(target, line.stat, sign * v);
-            ownDelta[line.stat] = ownDelta.TryGetValue(line.stat, out var d) ? d + v : v;
+            if (line == null) continue;
+            AccumulateStatLine(flatSum, percentSum, line.stat,
+                line.mode == StatLineMode.Percent, sign * line.value);
         }
+    }
 
-        foreach (var line in lines)
+    /// <summary>Route une contribution (Flat ou %) dans les sommes globales par stat.
+    /// `AllDefense` n'est jamais stockée comme cible : répartie sur les 3 défenses réelles,
+    /// chacune calculera son propre résultat avec sa propre base. Les stats de `ExceptionStats`
+    /// tombent toujours en Flat, quel que soit `isPercent` (filet de sécurité — le champ mode
+    /// est de toute façon masqué côté Inspector pour elles).</summary>
+    private void AccumulateStatLine(Dictionary<StatModifierType, float> flatSum,
+        Dictionary<StatModifierType, float> percentSum, StatModifierType stat, bool isPercent,
+        float value)
+    {
+        if (stat == StatModifierType.AllDefense)
         {
-            if (line == null || line.mode != StatLineMode.PercentOfFinal) continue;
-            float baseVal = pureBase.TryGetValue(line.stat, out var b) ? b : 0f;
-            float ownSoFar = ownDelta.TryGetValue(line.stat, out var d) ? d : 0f;
-            float v = (baseVal + ownSoFar) * line.value;
-            ModifyEntityStat(target, line.stat, sign * v);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.MeleeDefense, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.RangedDefense, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.MagicDefense, isPercent, value);
+            return;
         }
-    }
 
-    // ── Application directe sur Entity ────────────────────────
-
-    private void ApplyStatDebuff(Entity target, DebuffData d)
-    {
-        float v = d.debuffModifier == ModifierType.Percent
-            ? GetBaseStatValue(target, d.debuffStatType) * d.debuffValue
-            : d.debuffValue;
-
-        ModifyEntityStat(target, d.debuffStatType, -v);
-    }
-
-    private void ApplyStatBuff(Entity target, BuffData b)
-    {
-        float v = b.buffModifier == ModifierType.Percent
-            ? GetBaseStatValue(target, b.buffStatType) * b.buffStatValue
-            : b.buffStatValue;
-
-        ModifyEntityStat(target, b.buffStatType, v);
+        if (isPercent && !ExceptionStats.Contains(stat))
+            percentSum[stat] = percentSum.TryGetValue(stat, out var p) ? p + value : value;
+        else
+            flatSum[stat] = flatSum.TryGetValue(stat, out var f) ? f + value : value;
     }
 
     /// <summary>Lit la valeur actuelle d'une stat sur l'entité — sert de base pour les Percent.</summary>
