@@ -193,6 +193,15 @@ public class CombatSystem : MonoBehaviour
         if (attacker?.statusEffects != null)
             totalDamage += attacker.statusEffects.GetBuffAttackBonus();
 
+        // ── 9. Dégâts finaux — bonus attaquant puis réduction défenseur ──
+        // Mécanisme séparé de la partie stat (Plan A) — appliqué sur le NOMBRE de dégâts déjà
+        // calculé, en tout dernier, avant le clamp minimum. Symétrique : flat puis % pour
+        // chaque côté. GDD — spec unified-stat-modifiers §B.
+        if (attacker != null)
+            totalDamage = (totalDamage + attacker.FinalDamageBonusFlat) * (1f + attacker.FinalDamageBonusPercent);
+        if (target != null)
+            totalDamage = (totalDamage - target.FinalDamageReductionFlat) * (1f - target.FinalDamageReductionPercent);
+
         // ── Résistance pour le log ────────────────────────────
         float elemResistLog = 0f;
         if (target != null && skill.EffectiveElementalMultiplier > 0f)
@@ -286,6 +295,13 @@ public class CombatSystem : MonoBehaviour
 
         if (target?.statusEffects != null && target.statusEffects.isMarked)
             total *= (1f + target.statusEffects.GetMarkDamageBonus());
+
+        // ── Dégâts finaux — bonus attaquant puis réduction défenseur ──
+        // Même mécanisme que CalculateDamage (joueur) — voir ce commentaire là-bas.
+        if (caster != null)
+            total = (total + caster.FinalDamageBonusFlat) * (1f + caster.FinalDamageBonusPercent);
+        if (target != null)
+            total = (total - target.FinalDamageReductionFlat) * (1f - target.FinalDamageReductionPercent);
 
         //LogDamageReport("MOB/PNJ", caster, target, null, skill, baseDamage, physDamage, elemRaw, elemDamage, 0f,total, false);
 
