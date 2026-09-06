@@ -182,6 +182,26 @@ public class CombatSystem : MonoBehaviour
             isCrit = true;
         }
 
+        // ── Amplification / Réduction On-Hit — même stage que le critique, roulé
+        // indépendamment (peut proc en même temps que le crit) ──
+        var dealtEffects = attacker?.GetOnHitDealtEffects();
+        if (dealtEffects != null)
+            foreach (var entry in dealtEffects)
+                if (entry?.effect != null && entry.effect.effectType == OnHitDealtEffectType.DamageAmpOnHit && entry.Roll())
+                {
+                    physDamage *= (1f + entry.effect.ampPercent);
+                    elemFinal  *= (1f + entry.effect.ampPercent);
+                }
+
+        var receivedEffects = target?.GetOnHitReceivedEffects();
+        if (receivedEffects != null)
+            foreach (var entry in receivedEffects)
+                if (entry?.effect != null && entry.effect.effectType == OnHitReceivedEffectType.DamageReductionOnHit && entry.Roll())
+                {
+                    physDamage *= (1f - entry.effect.reductionPercent);
+                    elemFinal  *= (1f - entry.effect.reductionPercent);
+                }
+
         // ── 6. Total ──────────────────────────────────────────
         float totalDamage = physDamage + elemFinal;
         // Mark : routé dans FinalDamageReductionPercent (négatif) — voir StatusEffectSystem,
@@ -289,6 +309,26 @@ public class CombatSystem : MonoBehaviour
                 elemDamage *= (1f - Mathf.Clamp01(elemResist));
             }
         }
+
+        // ── Amplification / Réduction On-Hit — mêmes types que côté joueur, roulés ici
+        // faute de bloc critique dans cette variante (CalculateMobDamage n'a pas de crit) ──
+        var dealtEffects = caster?.GetOnHitDealtEffects();
+        if (dealtEffects != null)
+            foreach (var entry in dealtEffects)
+                if (entry?.effect != null && entry.effect.effectType == OnHitDealtEffectType.DamageAmpOnHit && entry.Roll())
+                {
+                    physDamage *= (1f + entry.effect.ampPercent);
+                    elemDamage *= (1f + entry.effect.ampPercent);
+                }
+
+        var receivedEffects = target?.GetOnHitReceivedEffects();
+        if (receivedEffects != null)
+            foreach (var entry in receivedEffects)
+                if (entry?.effect != null && entry.effect.effectType == OnHitReceivedEffectType.DamageReductionOnHit && entry.Roll())
+                {
+                    physDamage *= (1f - entry.effect.reductionPercent);
+                    elemDamage *= (1f - entry.effect.reductionPercent);
+                }
 
         float total = physDamage + elemDamage;
         // Mark : routé dans FinalDamageReductionPercent (négatif) — voir StatusEffectSystem,
