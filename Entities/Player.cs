@@ -249,9 +249,14 @@ public class Player : Entity
     // =========================================================
 
     /// <summary>Applique/retire la transparence du modèle quand l'état Stealth change — ne
-    /// touche les Renderer que sur transition (pas chaque frame). Utilise un
-    /// MaterialPropertyBlock (pas d'instanciation de matériau) et essaie _Color (Built-in RP) ET
-    /// _BaseColor (URP) — l'un des deux existera selon le shader du modèle.</summary>
+    /// touche les Renderer que sur transition (pas chaque frame). Instancie le matériau de
+    /// chaque Renderer (via renderer.material — Unity clone automatiquement à la 1ère
+    /// utilisation, jamais le sharedMaterial d'origine) plutôt que d'utiliser un
+    /// MaterialPropertyBlock : en URP, un matériau en Surface Type "Opaque" ignore
+    /// complètement l'alpha au niveau GPU, donc juste changer la couleur ne suffit pas — il
+    /// faut aussi basculer le matériau en "Transparent" au runtime (voir
+    /// SetMaterialSurfaceTransparent). Choix voulu pour le futur multijoueur : marche sur
+    /// N'IMPORTE QUEL modèle/skin sans préparation manuelle d'un matériau dédié par asset.</summary>
     private void UpdateStealthVisual()
     {
         bool stealthed = statusEffects != null && statusEffects.isStealthed;
@@ -261,24 +266,61 @@ public class Player : Entity
         if (_renderers == null) _renderers = GetComponentsInChildren<Renderer>();
 
         float alpha = stealthed ? stealthAlpha : 1f;
-        var mpb = new MaterialPropertyBlock();
         foreach (var r in _renderers)
         {
-            if (r == null || r.sharedMaterial == null) continue;
-            r.GetPropertyBlock(mpb);
-            if (r.sharedMaterial.HasProperty(ColorID))
+            if (r == null) continue;
+            Material mat = r.material; // instance per-renderer, jamais le sharedMaterial
+
+            if (mat.HasProperty(ColorID))
             {
-                Color c = r.sharedMaterial.GetColor(ColorID);
+                Color c = mat.GetColor(ColorID);
                 c.a = alpha;
-                mpb.SetColor(ColorID, c);
+                mat.SetColor(ColorID, c);
             }
-            if (r.sharedMaterial.HasProperty(BaseColorID))
+            if (mat.HasProperty(BaseColorID))
             {
-                Color c = r.sharedMaterial.GetColor(BaseColorID);
+                Color c = mat.GetColor(BaseColorID);
                 c.a = alpha;
-                mpb.SetColor(BaseColorID, c);
+                mat.SetColor(BaseColorID, c);
             }
-            r.SetPropertyBlock(mpb);
+
+            SetMaterialSurfaceTransparent(mat, stealthed);
+        }
+    }
+
+    /// <summary>Bascule un matériau URP Lit/SimpleLit entre Opaque et Transparent au runtime —
+    /// recette standard (SetOverrideTag/SrcBlend/DstBlend/ZWrite/keywords/renderQueue/_Surface).
+    /// Sans effet si le shader n'expose pas _Surface (ex: ShaderGraph custom sans ce paramètre)
+    /// — dans ce cas seule la couleur change, pas de régression par rapport à avant.</summary>
+    private static void SetMaterialSurfaceTransparent(Material mat, bool transparent)
+    {
+        if (!mat.HasProperty("_Surface")) return;
+
+        if (transparent)
+        {
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetInt("_ZWrite", 0);
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.EnableKeyword("_ALPHABLEND_ON");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            mat.SetFloat("_Surface", 1f);
+        }
+        else
+        {
+            mat.SetOverrideTag("RenderType", "Opaque");
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.Zero);
+            mat.SetInt("_ZWrite", 1);
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.DisableKeyword("_ALPHABLEND_ON");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = -1; // reset — reprend la queue par défaut du shader
+            mat.SetFloat("_Surface", 0f);
         }
     }
 
