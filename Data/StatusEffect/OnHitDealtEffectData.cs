@@ -42,10 +42,11 @@ public class OnHitDealtEffectData : ScriptableObject
     [Header("Type")]
     public OnHitDealtEffectType effectType = OnHitDealtEffectType.LifestealOnHit;
 
-    [Header("Déclenchement")]
-    [Tooltip("Probabilité de déclenchement par coup infligé [0..1].\nEx: 0.15 = 15% de chance.")]
-    [Range(0f, 1f)]
-    public float chance = 0.15f;
+    // Pas de champ "chance" ici — la probabilité de déclenchement se règle UNIQUEMENT sur
+    // l'Entry (équipement/permanent/MobData/PNJData), voir OnHitDealtEffectEntry.chance.
+    // Avant, un champ existait ici EN PLUS de l'override sur l'Entry — deux endroits pour
+    // régler la même chose, aucun double-jet réel (un seul Random.value via EffectiveChance),
+    // mais confus pour le designer. Retiré (2026-09-06, demande Florian).
 
     // ── DamageAmpOnHit ────────────────────────────────────────
     [Tooltip("% de dégâts en plus sur CE coup. Ex: 0.10 = +10%. Roulé dans CombatSystem, " +
@@ -82,9 +83,6 @@ public class OnHitDealtEffectData : ScriptableObject
 
     // ── Helpers ───────────────────────────────────────────────
 
-    /// <summary>Retourne true si l'effet se déclenche ce coup.</summary>
-    public bool Roll() => Random.value < chance;
-
     /// <summary>Calcule le montant de vol de vie selon les dégâts infligés ce coup.</summary>
     public float GetLifestealAmount(float damageDealt)
         => lifestealModifier == ModifierType.Percent ? damageDealt * lifestealAmount : lifestealAmount;
@@ -103,15 +101,10 @@ public class OnHitDealtEffectEntry
     [Tooltip("SO de l'effet On-Hit infligé à appliquer.")]
     public OnHitDealtEffectData effect;
 
-    [Tooltip("Override de la chance du SO [0..1].\nSi 0, utilise la chance définie dans le SO.")]
+    [Tooltip("Probabilité de déclenchement par coup infligé [0..1].\nEx: 0.15 = 15% de chance.")]
     [Range(0f, 1f)]
-    public float chanceOverride = 0f;
-
-    /// <summary>Chance effective : override si > 0, sinon valeur du SO.</summary>
-    public float EffectiveChance => (chanceOverride > 0f && effect != null)
-        ? chanceOverride
-        : (effect != null ? effect.chance : 0f);
+    public float chance = 0.15f;
 
     /// <summary>Roll si l'effet se déclenche ce coup.</summary>
-    public bool Roll() => effect != null && Random.value < EffectiveChance;
+    public bool Roll() => effect != null && Random.value < chance;
 }
