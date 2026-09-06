@@ -32,21 +32,27 @@ public class DebuffData : StatusEffectData
     // rang/points lus sur la SOURCE (celui qui a appliqué le debuff), résistance sur la CIBLE —
     // même schéma que CombatSystem. rangTerme/pointsTerme sont un BONUS qui vient s'ajouter au
     // socle si la source investit dans damageElement — décision explicite Florian (2026-09-06).
+    // IMPORTANT — le socle N'EST PAS réduit par la résistance élémentaire de la cible
+    // (dégâts "vrais"), seul le bonus rang+points l'est — voir ComputeDotDps. Valeurs par
+    // défaut (0.01/0.2/0.1) calibrées après comparaison chiffrée sur 3 profils de mob
+    // (loup 50hp/0%, golem 2000hp/40%, boss 20000hp/80%) et 2 profils joueur (non-spécialisé
+    // vs spécialisé 450 points/rang4) — décision explicite Florian (2026-09-06).
     // Toujours en % du MaxHP cible pour base/rang (pas de mode Flat) — un DoT flat ne scale pas
     // avec le contenu (mob lvl30 vs lvl85), voir discussion — le % est la seule forme qui a du
     // sens ici.
 #pragma warning disable CS0618 // Burn/Poison/Bleed obsolètes — gardés pour compat assets existants
-    [Tooltip("% du Max HP de la cible par seconde, TOUJOURS appliqué (socle) — indépendant de\n" +
-             "l'investissement élémentaire de la source. Ex: 0.2 = 0.2% MaxHP/s minimum garanti.")]
+    [Tooltip("% du Max HP de la cible par seconde, TOUJOURS appliqué (socle), NON réduit par la\n" +
+             "résistance élémentaire de la cible (dégâts vrais) — indépendant de l'investissement\n" +
+             "élémentaire de la source. Ex: 0.01 = 0.01% MaxHP/s minimum garanti.")]
     [ShowIf(nameof(debuffType), DebuffType.Burn, DebuffType.Poison, DebuffType.Bleed, DebuffType.Dot,
         Header = "Dégâts sur la durée (Dot)")]
-    public float baseDamagePercent = 0.2f;
+    public float baseDamagePercent = 0.01f;
 
     [Tooltip("% du Max HP de la cible ajouté PAR RANG élémentaire (0-5) de la source, par seconde,\n" +
-             "EN PLUS du socle — 0 si la source n'a pas investi dans damageElement.\n" +
-             "Ex: 0.15 = +0.15%MaxHP/rang → rang 5 = +0.75% Max HP/s en bonus.")]
+             "EN PLUS du socle, réduit par la résistance élémentaire de la cible — 0 si la source\n" +
+             "n'a pas investi dans damageElement. Ex: 0.2 = +0.2%MaxHP/rang → rang 5 = +1% Max HP/s en bonus.")]
     [ShowIf(nameof(debuffType), DebuffType.Burn, DebuffType.Poison, DebuffType.Bleed, DebuffType.Dot)]
-    public float rankDamagePercent = 0.15f;
+    public float rankDamagePercent = 0.2f;
 
     [Tooltip("Dégâts flat ajoutés PAR POINT élémentaire EFFECTIF (brut + bonus de rang) de la\n" +
              "source dans damageElement, EN PLUS du socle — 0 si la source n'a pas investi.\n" +
