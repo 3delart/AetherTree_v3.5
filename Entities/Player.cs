@@ -918,11 +918,6 @@ public class Player : Entity
     {
         if (skill == null) return;
 
-        // Stealth — utiliser un skill/attaque révèle toujours (coup d'ouverture), pas
-        // seulement subir un coup (déjà géré dans StatusEffectSystem.OnTakeDamage).
-        if (statusEffects != null && statusEffects.isStealthed)
-            statusEffects.RemoveBuff(BuffType.Stealth);
-
         lastSkillUsed = skill;
         RegisterCombatAction();
         animatorController?.PlayAttack(skill.attackAnimation);
@@ -934,6 +929,13 @@ public class Player : Entity
         // dégâts (Damage/Other, ex: DrainHP) font bouger le rang élémentaire.
         bool countsForAffinity = skill.effectType != SkillEffectType.Buff
                                && skill.effectType != SkillEffectType.Debuff;
+
+        // Stealth — casser UNIQUEMENT sur dégâts infligés (Damage/Other), pas sur un
+        // Buff/Debuff seul (soigner/buffer un allié, ou même debuff un ennemi sans dégâts, ne
+        // révèle pas) — décision explicite Florian, même distinction que countsForAffinity.
+        if (countsForAffinity && statusEffects != null && statusEffects.isStealthed)
+            statusEffects.RemoveBuff(BuffType.Stealth);
+
         if (countsForAffinity)
         {
             if (!skill.IsNeutral)
