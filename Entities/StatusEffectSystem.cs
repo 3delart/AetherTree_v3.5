@@ -403,6 +403,7 @@ public class StatusEffectSystem : MonoBehaviour
         StatModifierType.LightningResistance, StatModifierType.DarknessResistance,
         StatModifierType.LightResistance, StatModifierType.AllResistances,
         StatModifierType.MoveSpeed, StatModifierType.XPBonus, StatModifierType.GoldBonus,
+        StatModifierType.SpiritXpBonus,
         // ElementalPoint (obsolète) retiré — remplacé par ElementalPointFire/.../All, traités
         // comme des stats NORMALES (Base+Flat)×(1+%), PAS des exceptions — demande explicite
         // Florian, divergence volontaire avec StatType.PointsX côté équipement (resté exception).
@@ -614,7 +615,8 @@ public class StatusEffectSystem : MonoBehaviour
             // bonus (0.20 = +20%) — base neutre 1f pour que Flat ET Percent donnent le même
             // résultat correct (value × 1 = value), aucun piège de dropdown pour le designer.
             case StatModifierType.XPBonus:
-            case StatModifierType.GoldBonus:       return 1f;
+            case StatModifierType.GoldBonus:
+            case StatModifierType.SpiritXpBonus:   return 1f;
             case StatModifierType.ElementalPointFire:      return target.GetElementalPoints(ElementType.Fire);
             case StatModifierType.ElementalPointWater:     return target.GetElementalPoints(ElementType.Water);
             case StatModifierType.ElementalPointLightning: return target.GetElementalPoints(ElementType.Lightning);
@@ -678,6 +680,9 @@ public class StatusEffectSystem : MonoBehaviour
                 break;
             case StatModifierType.GoldBonus:
                 target.SetGoldBonusPercent(target.GoldBonusPercent + delta);
+                break;
+            case StatModifierType.SpiritXpBonus:
+                target.SetSpiritXpBonusPercent(target.SpiritXpBonusPercent + delta);
                 break;
             case StatModifierType.FireResistance:
                 target.AddElementalResistance(ElementType.Fire, delta);

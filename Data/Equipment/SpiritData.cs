@@ -89,9 +89,15 @@ public class SpiritData : EquipmentDataBase
         return Mathf.RoundToInt(Mathf.Lerp(pointsAtLevel1, pointsAtMaxLevel, tPow));
     }
 
-    /// <summary>XP requis pour passer du niveau N au niveau N+1.</summary>
+    /// <summary>XP requis pour passer du niveau N au niveau N+1 — formule GDD §5.8 :
+    /// 100 + (palier×20)×N, où palier = floor((N-1)/10)+1 (1 pour N=1-10, 2 pour N=11-20, etc.).
+    /// Remplace l'ancienne formule 100×N^1.3 (bien plus dure tôt, plus douce en fin — écart
+    /// vérifié par comparaison chiffrée avec Florian). Décision explicite Florian (2026-09-06).</summary>
     public int GetXPRequired(int level)
-        => Mathf.RoundToInt(100 * Mathf.Pow(level, 1.3f));
+    {
+        int palier = (level - 1) / 10 + 1;
+        return 100 + (palier * 20) * level;
+    }
 
     /// <summary>Points élémentaires cumulés de niveau 1 à N.</summary>
     public int GetTotalPointsAtLevel(int level)
@@ -149,6 +155,7 @@ public class SpiritInstance
     }
 
     // ── Accesseurs ────────────────────────────────────────────
+    public int         RequiredLevel => data != null ? data.requiredLevel : 1;
     public string      ItemId      => data != null ? data.itemID : "unknown_spirit";
     public string      SpiritName  => data != null ? data.displayName.Get(LocalizationManager.CurrentLanguage) : "Spirit";
     public Sprite      Icon        => data != null ? data.icon       : null;

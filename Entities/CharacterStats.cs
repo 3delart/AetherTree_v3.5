@@ -141,6 +141,7 @@ public class CharacterStats
         // recalcul (équipement, level up...) — empilement infini.
         player.SetXPBonusPercent(0f);
         player.SetGoldBonusPercent(0f);
+        player.SetSpiritXpBonusPercent(0f);
 
         // =========================================================
         // ① ARME — stats rollées + config.bonuses (GDD §5.1)

@@ -534,7 +534,7 @@ public class Mob : Entity
             totalDamage += d;
 
 
-        // ── Joueurs éligibles — ≥10% des dégâts totaux ───────
+        // ── Joueurs éligibles — ≥10% des dégâts totaux (XP joueur / loot) ────
         var eligiblePlayers = new List<Player>();
         if (totalDamage > 0f)
         {
@@ -544,6 +544,12 @@ public class Mob : Entity
                     eligiblePlayers.Add(entry.Key);
             }
         }
+
+        // ── Joueurs contributeurs — ≥1 dégât (XP Esprit, GDD §5.8) ───────────
+        var contributingPlayers = new List<Player>();
+        foreach (KeyValuePair<Player, float> entry in damageContributions)
+            if (entry.Value > 0f)
+                contributingPlayers.Add(entry.Key);
 
         // ── Résolution du killerSkill ─────────────────────────
         // On prend le skill du joueur qui a infligé le plus de dégâts.
@@ -571,10 +577,12 @@ public class Mob : Entity
         // Mob.Die() ne connaît plus ni Player, ni XPSystem, ni LootManager.
         GameEventBus.Publish(new MobKilledEvent
         {
-            mob             = data,
-            killerSkill     = killerSkill,
-            killerWeapon    = topContributor?.equippedWeapon?.weaponType ?? WeaponType.Any,
-            eligiblePlayers = eligiblePlayers,
+            mob                 = data,
+            mobLevel            = mobLevel,
+            killerSkill         = killerSkill,
+            killerWeapon        = topContributor?.equippedWeapon?.weaponType ?? WeaponType.Any,
+            eligiblePlayers     = eligiblePlayers,
+            contributingPlayers = contributingPlayers,
             deathPosition   = transform.position,
             wasStealth      = topContributor?.statusEffects?.isStealthed ?? false,
             wasUnarmed      = topContributor?.equippedWeapon == null,

@@ -132,6 +132,10 @@ public abstract class Entity : MonoBehaviour
     protected float xpBonusPercent   = 0f;
     protected float goldBonusPercent = 0f;
 
+    /// <summary>Bonus de gain XP Esprit [0f..], additif — même schéma que XPBonusPercent, voir
+    /// SpiritXpBonusPercent. Base toujours 0f, uniquement via talisman Spirit_XP.</summary>
+    protected float spiritXpBonusPercent = 0f;
+
     /// <summary>Dégâts finaux — accumulateurs bruts (pas de "stat de base" à multiplier),
     /// alimentés par StatModifierType.FinalDamageBonus/FinalDamageReduction (buffs) et
     /// StatType.FinalDamageBonus/FinalDamageReduction (équipement). Appliqués par
@@ -251,6 +255,10 @@ public abstract class Entity : MonoBehaviour
     /// base toujours 0f.</summary>
     public float XPBonusPercent   => xpBonusPercent;
     public float GoldBonusPercent => goldBonusPercent;
+
+    /// <summary>Bonus de gain XP Esprit [0f = aucun, 0.25 = +25%] — alimenté uniquement par
+    /// StatModifierType.SpiritXpBonus (talisman Spirit_XP). Base toujours 0f.</summary>
+    public float SpiritXpBonusPercent => spiritXpBonusPercent;
 
     public float FinalDamageBonusFlat        => finalDamageBonusFlat;
     public float FinalDamageBonusPercent     => finalDamageBonusPercent;
@@ -679,7 +687,7 @@ public abstract class Entity : MonoBehaviour
         public float maxHP, maxMana;
         public float regenHP, regenMana;
         public float moveSpeed;
-        public float xpBonusPercent, goldBonusPercent;
+        public float xpBonusPercent, goldBonusPercent, spiritXpBonusPercent;
         public float finalDamageBonusFlat, finalDamageBonusPercent;
         public float finalDamageReductionFlat, finalDamageReductionPercent;
     }
@@ -710,6 +718,7 @@ public abstract class Entity : MonoBehaviour
             moveSpeed       = moveSpeed,
             xpBonusPercent  = 0f, // pas de base — uniquement additif via talismans
             goldBonusPercent = 0f,
+            spiritXpBonusPercent = 0f,
             finalDamageBonusFlat        = 0f, // pas de base — uniquement additif via buffs/équipement
             finalDamageBonusPercent     = 0f,
             finalDamageReductionFlat    = 0f,
@@ -746,6 +755,7 @@ public abstract class Entity : MonoBehaviour
         SetMoveSpeed      (_base.moveSpeed);
         SetXPBonusPercent  (_base.xpBonusPercent);
         SetGoldBonusPercent(_base.goldBonusPercent);
+        SetSpiritXpBonusPercent(_base.spiritXpBonusPercent);
         SetFinalDamageBonusFlat       (_base.finalDamageBonusFlat);
         SetFinalDamageBonusPercent    (_base.finalDamageBonusPercent);
         SetFinalDamageReductionFlat   (_base.finalDamageReductionFlat);
@@ -791,6 +801,7 @@ public abstract class Entity : MonoBehaviour
     public void SetCritDamageReduction(float v) => critDamageReduction = Mathf.Clamp01(v);
     public void SetXPBonusPercent(float value)   => xpBonusPercent   = Mathf.Max(0f, value);
     public void SetGoldBonusPercent(float value) => goldBonusPercent = Mathf.Max(0f, value);
+    public void SetSpiritXpBonusPercent(float value) => spiritXpBonusPercent = Mathf.Max(0f, value);
 
     public void SetFinalDamageBonusFlat(float value)        => finalDamageBonusFlat        = Mathf.Max(0f, value);
     public void SetFinalDamageBonusPercent(float value)     => finalDamageBonusPercent     = Mathf.Max(0f, value);

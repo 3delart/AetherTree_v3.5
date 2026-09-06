@@ -52,14 +52,42 @@ public class XPSystem : MonoBehaviour
     private void HandleMobKilled(MobKilledEvent e)
     {
         if (e.mob == null) return;
-        if (e.eligiblePlayers == null || e.eligiblePlayers.Count == 0) return;
 
-        // XP depuis LootTable — source de vérité centralisée
-        int xp = e.mob.lootTable?.xpReward ?? 0;
-        if (xp <= 0) return;
+        if (e.eligiblePlayers != null && e.eligiblePlayers.Count > 0)
+        {
+            // XP depuis LootTable — source de vérité centralisée
+            int xp = e.mob.lootTable?.xpReward ?? 0;
+            if (xp > 0)
+                foreach (Player p in e.eligiblePlayers)
+                    GiveCombatXP(p, xp);
+        }
 
-        foreach (Player p in e.eligiblePlayers)
-            GiveCombatXP(p, xp);
+        GiveSpiritXP(e);
+    }
+
+    /// <summary>XP Esprit — GDD §5.8 : chaque mob tué dans la plage ±15 niveaux du joueur
+    /// accorde 1 XP à l'Esprit actif, à condition que le joueur ait contribué au kill (≥1 hit
+    /// — seuil bien plus bas que l'éligibilité XP joueur/loot à 10%, voir
+    /// MobKilledEvent.contributingPlayers). Boosté par StatModifierType.SpiritXpBonus
+    /// (talisman Spirit_XP), même schéma que XPBonus côté XP joueur.</summary>
+    private void GiveSpiritXP(MobKilledEvent e)
+    {
+        if (e.contributingPlayers == null || e.contributingPlayers.Count == 0) return;
+
+        const int MAX_LEVEL_GAP = 15;
+
+        foreach (Player p in e.contributingPlayers)
+        {
+            if (p == null) continue;
+            if (Mathf.Abs(p.level - e.mobLevel) > MAX_LEVEL_GAP) continue;
+            if (p.equippedSpiritInstances == null || p.equippedSpiritInstances.Count == 0) continue;
+
+            SpiritInstance spirit = p.equippedSpiritInstances[0];
+            int boosted = Mathf.Max(1, Mathf.RoundToInt(1 * (1f + p.SpiritXpBonusPercent)));
+            bool leveledUp = spirit.AddXP(boosted);
+            if (leveledUp)
+                p.RequestRecalculate();
+        }
     }
 
     // =========================================================

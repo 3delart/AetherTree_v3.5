@@ -191,6 +191,11 @@ public enum StatModifierType
     ElementalPointAll, // Répartie sur les 7 ci-dessus au moment de l'accumulation, chacune
                        // calcule son propre résultat avec sa propre base — jamais stockée
                        // comme cible finale elle-même.
+
+    // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety). Même schéma exact que
+    // XPBonus/GoldBonus (exception toujours additive, base neutre — voir ExceptionStats) —
+    // alimente le talisman Spirit_XP (2026-09-06).
+    SpiritXpBonus, // +% XP gagnée par l'Esprit actif au kill — GDD Talisman Spirit_XP
 }
 
 // ── Ligne de stat additionnelle (BuffData.bonusStats / DebuffData.bonusStats) ─────

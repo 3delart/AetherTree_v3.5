@@ -517,6 +517,11 @@ public class Player : Entity
     public void EquipWeapon(WeaponInstance instance)
     {
         if (instance == null) return;
+        if (level < instance.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour {instance.WeaponName} (requis {instance.RequiredLevel}, actuel {level}).");
+            return;
+        }
         // GDD §5.1 — weaponCategory imposée à la création, immuable.
         if (instance.data != null && instance.Category != weaponCategory)
         {
@@ -541,22 +546,65 @@ public class Player : Entity
     public void EquipArmor(ArmorInstance instance)
     {
         if (instance == null) return;
+        if (level < instance.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour cette armure (requis {instance.RequiredLevel}, actuel {level}).");
+            return;
+        }
         // GDD §5.2 — l'armure est entièrement libre, aucune restriction par weaponCategory.
         equippedArmorInstance = instance;
         stats.RecalculateStats(this);
     }
 
     public void UnequipArmor()  { equippedArmorInstance  = null; stats.RecalculateStats(this); }
-    public void EquipHelmet (HelmetInstance  i) { if (i == null) return; equippedHelmetInstance  = i; stats.RecalculateStats(this); }
+
+    public void EquipHelmet(HelmetInstance i)
+    {
+        if (i == null) return;
+        if (level < i.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour ce casque (requis {i.RequiredLevel}, actuel {level}).");
+            return;
+        }
+        equippedHelmetInstance = i;
+        stats.RecalculateStats(this);
+    }
     public void UnequipHelmet() { equippedHelmetInstance  = null; stats.RecalculateStats(this); }
-    public void EquipGloves (GlovesInstance  i) { if (i == null) return; equippedGlovesInstance  = i; stats.RecalculateStats(this); }
+
+    public void EquipGloves(GlovesInstance i)
+    {
+        if (i == null) return;
+        if (level < i.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour ces gants (requis {i.RequiredLevel}, actuel {level}).");
+            return;
+        }
+        equippedGlovesInstance = i;
+        stats.RecalculateStats(this);
+    }
     public void UnequipGloves() { equippedGlovesInstance  = null; stats.RecalculateStats(this); }
-    public void EquipBoots  (BootsInstance   i) { if (i == null) return; equippedBootsInstance   = i; stats.RecalculateStats(this); }
+
+    public void EquipBoots(BootsInstance i)
+    {
+        if (i == null) return;
+        if (level < i.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour ces bottes (requis {i.RequiredLevel}, actuel {level}).");
+            return;
+        }
+        equippedBootsInstance = i;
+        stats.RecalculateStats(this);
+    }
     public void UnequipBoots()  { equippedBootsInstance   = null; stats.RecalculateStats(this); }
 
     public void EquipJewelry(JewelryInstance instance)
     {
         if (instance == null || equippedJewelryInstances.Contains(instance)) return;
+        if (level < instance.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour {instance.JewelryName} (requis {instance.RequiredLevel}, actuel {level}).");
+            return;
+        }
         foreach (var j in equippedJewelryInstances)
         {
             if (j.Slot == instance.Slot)
@@ -578,6 +626,11 @@ public class Player : Entity
     public void EquipSpirit(SpiritInstance instance)
     {
         if (instance == null || equippedSpiritInstances.Contains(instance)) return;
+        if (level < instance.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour {instance.SpiritName} (requis {instance.RequiredLevel}, actuel {level}).");
+            return;
+        }
         if (equippedSpiritInstances.Count >= 1)
         {
             Debug.LogWarning($"[PLAYER] Esprit déjà actif ({equippedSpiritInstances[0].SpiritName}). Déséquipez-le d'abord.");
@@ -598,6 +651,11 @@ public class Player : Entity
     public void EquipTalisman(TalismanInstance instance)
     {
         if (instance == null || instance.IsExpired) return;
+        if (level < instance.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour ce talisman (requis {instance.RequiredLevel}, actuel {level}).");
+            return;
+        }
         instance.Activate();
         equippedTalismanInstance = instance;
         if (instance.data?.buffToApply != null)
@@ -632,6 +690,11 @@ public class Player : Entity
     public void EquipCosmeticHead(CosmeticInstanceHead instance)
     {
         if (instance == null) return;
+        if (level < instance.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour ce cosmétique (requis {instance.RequiredLevel}, actuel {level}).");
+            return;
+        }
         equippedCosmeticHeadInstance = instance;
         stats.RecalculateStats(this);
     }
@@ -645,6 +708,11 @@ public class Player : Entity
     public void EquipCosmeticBody(CosmeticInstanceBody instance)
     {
         if (instance == null) return;
+        if (level < instance.RequiredLevel)
+        {
+            Debug.LogWarning($"[PLAYER] Niveau insuffisant pour ce cosmétique (requis {instance.RequiredLevel}, actuel {level}).");
+            return;
+        }
         equippedCosmeticBodyInstance = instance;
         stats.RecalculateStats(this);
     }

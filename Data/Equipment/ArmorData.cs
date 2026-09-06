@@ -143,6 +143,8 @@ public class ArmorInstance
 {
     public ArmorData data;
 
+    public int RequiredLevel => data != null ? data.requiredLevel : 1;
+
     // Ratios rollés — fixés à la génération, position (0..1) dans la fourchette
     // DÉRIVÉE du SO (voir ArmorData.MeleeDefenseLow/High etc.). Indépendants les uns
     // des autres — un item peut rouler bas en mêlée et haut en magique.

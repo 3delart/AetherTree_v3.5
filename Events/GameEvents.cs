@@ -12,9 +12,14 @@ using UnityEngine;
 public struct MobKilledEvent
 {
     public MobData      mob;
+    public int          mobLevel;
     public SkillData    killerSkill;
     public WeaponType   killerWeapon;
     public List<Player> eligiblePlayers;
+    /// <summary>TOUS les joueurs ayant infligé au moins 1 dégât (seuil bien plus bas que
+    /// eligiblePlayers, ≥10%) — sert au grant XP Esprit (GDD §5.8 : "≥1 hit"), pas à l'XP
+    /// joueur ni au loot.</summary>
+    public List<Player> contributingPlayers;
     public Vector3      deathPosition;
     public bool         wasStealth;
     public bool         wasUnarmed;

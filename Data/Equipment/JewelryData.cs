@@ -121,6 +121,8 @@ public class JewelryInstance
     public JewelryData data;
     public GemSlotInstance[] gemSlots;
 
+    public int RequiredLevel => data != null ? data.requiredLevel : 1;
+
     // Ratios rollés — fixés à la génération, position (0..1) dans la fourchette
     // DÉRIVÉE du SO. Pas de rareté/upgrade sur ce slot (GDD §5.2).
     public float rolledRatioMelee;
