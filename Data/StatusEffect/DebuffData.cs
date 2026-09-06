@@ -20,27 +20,38 @@ public class DebuffData : StatusEffectData
     // ── Dégâts sur la durée (Dot — Burn/Poison/Bleed gardés ici en ShowIf UNIQUEMENT
     // pour que les assets déjà créés avec ces types obsolètes gardent leurs champs
     // visibles/éditables ; ne plus jamais choisir ces 3 types sur un nouvel asset) ──
-    // Formule complète par tick (voir DebuffInstance.Tick) — 2 termes, pas de socle séparé :
+    // Formule complète par tick (voir DebuffInstance.Tick) — 3 termes :
+    //   baseTerme   = target.MaxHP × (baseDamagePercent / 100) — TOUJOURS appliqué, peu importe
+    //                 l'investissement élémentaire de la source (socle — un Dot octroyé par un
+    //                 équipement/proc ne doit jamais faire 0 dégât juste parce que le porteur ne
+    //                 joue pas cet élément)
     //   rangTerme   = target.MaxHP × (rang élémentaire de la source × rankDamagePercent / 100)
-    //   pointsTerme = points élémentaires BRUTS de la source × elementalPointsMultiplier (flat)
-    //   dps = (rangTerme + pointsTerme) × (1 - résistance élémentaire de la cible à damageElement)
+    //   pointsTerme = points élémentaires EFFECTIFS (brut + bonus de rang, même valeur que
+    //                 CombatSystem/l'UI) de la source × elementalPointsMultiplier (flat)
+    //   dps = (baseTerme + rangTerme + pointsTerme) × (1 - résistance élémentaire de la cible)
     // rang/points lus sur la SOURCE (celui qui a appliqué le debuff), résistance sur la CIBLE —
-    // même schéma que CombatSystem. Rang 0 ET points 0 (source sans investissement dans
-    // damageElement) → 0 dégât, volontaire : un Dot est un mécanisme élémentaire, pas universel.
-    // Toujours en % du MaxHP cible (pas de mode Flat) — un DoT flat ne scale pas avec le
-    // contenu (mob lvl30 vs lvl85), voir discussion — le % est la seule forme qui a du sens ici.
+    // même schéma que CombatSystem. rangTerme/pointsTerme sont un BONUS qui vient s'ajouter au
+    // socle si la source investit dans damageElement — décision explicite Florian (2026-09-06).
+    // Toujours en % du MaxHP cible pour base/rang (pas de mode Flat) — un DoT flat ne scale pas
+    // avec le contenu (mob lvl30 vs lvl85), voir discussion — le % est la seule forme qui a du
+    // sens ici.
 #pragma warning disable CS0618 // Burn/Poison/Bleed obsolètes — gardés pour compat assets existants
-    [Tooltip("% du Max HP de la cible ajouté PAR RANG élémentaire (0-5) de la source, par seconde.\n" +
-             "Ex: 0.2 = +0.2%MaxHP/rang → rang 5 = +1% Max HP/s. Plafonné naturellement (rang max 5).")]
+    [Tooltip("% du Max HP de la cible par seconde, TOUJOURS appliqué (socle) — indépendant de\n" +
+             "l'investissement élémentaire de la source. Ex: 0.2 = 0.2% MaxHP/s minimum garanti.")]
     [ShowIf(nameof(debuffType), DebuffType.Burn, DebuffType.Poison, DebuffType.Bleed, DebuffType.Dot,
         Header = "Dégâts sur la durée (Dot)")]
-    public float rankDamagePercent = 0.2f;
+    public float baseDamagePercent = 0.2f;
 
-    [Tooltip("Dégâts flat ajoutés PAR POINT élémentaire BRUT de la source (pas les points \"effectifs\"\n" +
-             "avec bonus de rang — évite de compter le rang deux fois). Ex: 0.10 = +0.1 dégât/point.\n" +
-             "Toujours flat (pas de mode Percent) — volontairement SANS plafond, l'investissement\n" +
-             "doit toujours payer (cœur du jeu). 0 pour un élément sans points investissables (ex:\n" +
-             "Neutral) — compenser en montant rankDamagePercent sur cet asset.")]
+    [Tooltip("% du Max HP de la cible ajouté PAR RANG élémentaire (0-5) de la source, par seconde,\n" +
+             "EN PLUS du socle — 0 si la source n'a pas investi dans damageElement.\n" +
+             "Ex: 0.15 = +0.15%MaxHP/rang → rang 5 = +0.75% Max HP/s en bonus.")]
+    [ShowIf(nameof(debuffType), DebuffType.Burn, DebuffType.Poison, DebuffType.Bleed, DebuffType.Dot)]
+    public float rankDamagePercent = 0.15f;
+
+    [Tooltip("Dégâts flat ajoutés PAR POINT élémentaire EFFECTIF (brut + bonus de rang) de la\n" +
+             "source dans damageElement, EN PLUS du socle — 0 si la source n'a pas investi.\n" +
+             "Ex: 0.10 = +0.1 dégât/point. Toujours flat (pas de mode Percent) — volontairement\n" +
+             "SANS plafond, l'investissement doit toujours payer (cœur du jeu).")]
     [ShowIf(nameof(debuffType), DebuffType.Burn, DebuffType.Poison, DebuffType.Bleed, DebuffType.Dot)]
     public float elementalPointsMultiplier = 0.10f;
 

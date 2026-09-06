@@ -92,16 +92,19 @@ public class DebuffInstance : StatusEffectInstance
     }
 
     /// <summary>Dégâts/s d'un DoT (Dot, + Burn/Poison/Bleed obsolètes gardés pour compat) —
-    /// 2 termes, pas de socle séparé : rang élémentaire de la SOURCE × rankDamagePercent (%
-    /// du MaxHP cible, plafonné naturellement par le rang max 5) + points élémentaires
-    /// EFFECTIFS (brut + bonus de rang, même valeur que CombatSystem/l'UI — GetEffectiveElementPoints)
-    /// de la source × elementalPointsMultiplier (flat, volontairement sans plafond —
-    /// l'investissement doit toujours payer), réduit par la résistance élémentaire de la
-    /// CIBLE. Les deux termes comptent le rang — CE N'EST PAS un double-compte par erreur,
-    /// décision explicite Florian : rankTerm et le bonus de rang inclus dans pointsTerm sont
-    /// deux bonus différents qui doivent tous les deux s'appliquer. Toujours en % du
-    /// MaxHP cible (pas de mode Flat — un DoT flat ne scale pas avec le contenu). Rang 0 ET
-    /// points 0 → 0 dégât (Dot = mécanisme élémentaire, pas universel).</summary>
+    /// 3 termes : un SOCLE (baseDamagePercent, % du MaxHP cible, TOUJOURS appliqué peu importe
+    /// l'investissement élémentaire de la source — un Dot octroyé par un équipement/proc ne doit
+    /// jamais faire 0 dégât juste parce que le porteur ne joue pas cet élément), PLUS un bonus
+    /// rang élémentaire de la SOURCE × rankDamagePercent (% du MaxHP cible, plafonné
+    /// naturellement par le rang max 5), PLUS un bonus points élémentaires EFFECTIFS (brut +
+    /// bonus de rang, même valeur que CombatSystem/l'UI — GetEffectiveElementPoints) de la
+    /// source × elementalPointsMultiplier (flat, volontairement sans plafond — l'investissement
+    /// doit toujours payer), le tout réduit par la résistance élémentaire de la CIBLE. Les deux
+    /// bonus comptent le rang — CE N'EST PAS un double-compte par erreur, décision explicite
+    /// Florian : rankTerm et le bonus de rang inclus dans pointsTerm sont deux bonus différents
+    /// qui doivent tous les deux s'appliquer, en plus du socle (décision explicite Florian,
+    /// 2026-09-06). Rang 0 ET points 0 (source hors élément) → seul le socle s'applique, jamais
+    /// 0 dégât total.</summary>
     private float ComputeDotDps(Entity target)
     {
         var element = DebuffData.damageElement;
@@ -112,9 +115,10 @@ public class DebuffInstance : StatusEffectInstance
             ? sourceES.GetEffectiveElementPoints(element)
             : source?.GetElementalPoints(element) ?? 0f;
 
+        float baseTerm   = target.MaxHP * (DebuffData.baseDamagePercent / 100f);
         float rankTerm   = target.MaxHP * (rank * DebuffData.rankDamagePercent / 100f);
         float pointsTerm = points * DebuffData.elementalPointsMultiplier;
-        float dps        = rankTerm + pointsTerm;
+        float dps        = baseTerm + rankTerm + pointsTerm;
 
         Mob   targetMob = target.GetComponent<Mob>();
         float resist    = targetMob?.data != null
@@ -128,6 +132,7 @@ public class DebuffInstance : StatusEffectInstance
             Debug.Log($"━━━ DOT REPORT ({DebuffData.name}) ━━━\n" +
                       $"  Source : {source?.entityName ?? "?"}   Target : {target.entityName} (MaxHP {target.MaxHP:F0})\n" +
                       $"  Élément : {element}   Rang source : {rank}   Points effectifs source : {points:F1}\n" +
+                      $"  BaseTerm ({DebuffData.baseDamagePercent}% MaxHP, socle) : {baseTerm:F2}\n" +
                       $"  RankTerm ({DebuffData.rankDamagePercent}% MaxHP × rang) : {rankTerm:F2}\n" +
                       $"  PointsTerm (points × {DebuffData.elementalPointsMultiplier}) : {pointsTerm:F2}\n" +
                       $"  DPS brut : {dps:F2}   Résist cible : {resist * 100f:F1}%   DPS final : {finalDps:F2}");
