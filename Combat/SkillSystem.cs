@@ -238,6 +238,7 @@ public class SkillSystem : MonoBehaviour
                 mobStep.RegisterLastSkill(p, skill);
 
             target.TakeDamage(dmg, step.element, caster);
+            ApplyOnHitDealtEffects(caster, target, dmg);
 
             if (caster.entityType == EntityType.Player && caster is Player playerStep)
             {
@@ -661,6 +662,7 @@ public class SkillSystem : MonoBehaviour
                 }
 
                 target.TakeDamage(dmg, skill.PrimaryElement, caster);
+                ApplyOnHitDealtEffects(caster, target, dmg);
 
                 if (caster.entityType == EntityType.Player && caster is Player playerDmg)
                 {
@@ -734,6 +736,48 @@ public class SkillSystem : MonoBehaviour
 
             default:
                 return caster.AttackDamageMin * skill.damageMultiplier;
+        }
+    }
+
+    // =========================================================
+    // EFFETS SECONDAIRES — On-Hit infligés (réactions, PAS DamageAmpOnHit —
+    // celui-ci est un modificateur consommé dans CombatSystem.CalculateDamage/
+    // CalculateMobDamage, jamais ici)
+    // =========================================================
+
+    /// <summary>Applique les effets On-Hit INFLIGÉS (Lifesteal/Mana/ApplyDebuff/ApplyBuff) de
+    /// l'attaquant après un coup qui a effectivement touché (jamais appelée sur un Miss — les
+    /// call sites sont placés juste après un target.TakeDamage(dmg,...) réussi).</summary>
+    private void ApplyOnHitDealtEffects(Entity attacker, Entity target, float damageDealt)
+    {
+        var effects = attacker?.GetOnHitDealtEffects();
+        if (effects == null) return;
+
+        foreach (var entry in effects)
+        {
+            if (entry?.effect == null || !entry.Roll()) continue;
+            switch (entry.effect.effectType)
+            {
+                case OnHitDealtEffectType.LifestealOnHit:
+                    attacker.Heal(entry.effect.GetLifestealAmount(damageDealt));
+                    break;
+
+                case OnHitDealtEffectType.ManaOnHit:
+                    attacker.RecoverMana(entry.effect.GetManaAmount(attacker.MaxMana));
+                    break;
+
+                case OnHitDealtEffectType.ApplyDebuffOnHit:
+                    if (entry.effect.debuffToApply != null && target?.statusEffects != null)
+                        target.statusEffects.TryApplyDebuff(entry.effect.debuffToApply, attacker);
+                    break;
+
+                case OnHitDealtEffectType.ApplyBuffOnHit:
+                    if (entry.effect.buffToApply != null && attacker.statusEffects != null)
+                        attacker.statusEffects.ApplyBuff(entry.effect.buffToApply, attacker);
+                    break;
+
+                // DamageAmpOnHit : modificateur, jamais géré ici — voir CombatSystem.
+            }
         }
     }
 
@@ -896,6 +940,7 @@ public class SkillSystem : MonoBehaviour
                     mobDrn.RegisterLastSkill(pDrn, skill);
 
                 target.TakeDamage(dmg, skill.PrimaryElement, caster);
+                ApplyOnHitDealtEffects(caster, target, dmg);
                 float healed = dmg * skill.drainHealRatio;
                 caster.Heal(healed);
 
