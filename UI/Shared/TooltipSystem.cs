@@ -736,7 +736,7 @@ public class TooltipSystem : MonoBehaviour
         if (effects == null || effects.Count == 0) return "";
         var sb = new System.Text.StringBuilder();
         foreach (var e in effects)
-            if (e?.effect != null) sb.AppendLine($"{e.effect.effectName} : {e.chance * 100f:F0}%");
+            if (e?.effect != null) sb.AppendLine($"{e.effect.description.Get(LocalizationManager.CurrentLanguage)} ({e.chance * 100f:F0}%)");
         return sb.ToString().TrimEnd();
     }
 

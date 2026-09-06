@@ -40,7 +40,13 @@ public enum OnHitReceivedEffectType
 public class OnHitReceivedEffectData : ScriptableObject
 {
     [Header("Identité")]
-    public string effectName = "OnHitReceivedEffect";
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"ohr_\"\n" +
+             "(ex: \"ohr_thorns_armure\"). Ne JAMAIS afficher au joueur — voir effectName pour l'affichage.")]
+    public string effectID;
+    [Tooltip("Nom affiché au joueur (fr/en).")]
+    public LocalizedText effectName = new LocalizedText();
+    [Tooltip("Description affichée au joueur (fr/en) — tooltip équipement/permanent.")]
+    public LocalizedText description = new LocalizedText();
     public Sprite icon;
 
     [Header("Type")]
@@ -104,6 +110,14 @@ public class OnHitReceivedEffectData : ScriptableObject
     /// <summary>Calcule le soin à appliquer selon le MaxHP de la cible.</summary>
     public float GetHealAmount(float targetMaxHP)
         => healModifier == ModifierType.Percent ? targetMaxHP * healAmount : healAmount;
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(effectID))
+            effectID = name;
+    }
+#endif
 }
 
 // =============================================================

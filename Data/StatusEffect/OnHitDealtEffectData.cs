@@ -36,7 +36,13 @@ public enum OnHitDealtEffectType
 public class OnHitDealtEffectData : ScriptableObject
 {
     [Header("Identité")]
-    public string effectName = "OnHitDealtEffect";
+    [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"ohd_\"\n" +
+             "(ex: \"ohd_lifesteal_arme\"). Ne JAMAIS afficher au joueur — voir effectName pour l'affichage.")]
+    public string effectID;
+    [Tooltip("Nom affiché au joueur (fr/en).")]
+    public LocalizedText effectName = new LocalizedText();
+    [Tooltip("Description affichée au joueur (fr/en) — tooltip équipement/permanent.")]
+    public LocalizedText description = new LocalizedText();
     public Sprite icon;
 
     [Header("Type")]
@@ -90,6 +96,14 @@ public class OnHitDealtEffectData : ScriptableObject
     /// <summary>Calcule le montant de mana restauré selon le MaxMana de l'attaquant.</summary>
     public float GetManaAmount(float attackerMaxMana)
         => manaModifier == ModifierType.Percent ? attackerMaxMana * manaAmount : manaAmount;
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (string.IsNullOrEmpty(effectID))
+            effectID = name;
+    }
+#endif
 }
 
 // =============================================================
