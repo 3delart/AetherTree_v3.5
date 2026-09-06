@@ -175,18 +175,25 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (_entity.isDead) return;
 
-        // Tick debuffs (DoT, ManaDrain via DebuffInstance.Tick)
+        // Tick debuffs (DoT, ManaDrain via DebuffInstance.Tick) — snapshot AVANT d'itérer :
+        // Tick() peut infliger des dégâts (DoT) qui tuent l'entité, ce qui appelle Die() →
+        // ClearAllEffects() → _activeDebuffs.Remove(...) SYNCHRONE pendant qu'on est encore en
+        // train d'énumérer ce même dictionnaire ("Collection was modified" crash, vécu en test —
+        // un DoT assez fort pour achever la cible pendant son propre tick). Itérer une copie
+        // rend le dictionnaire live libre d'être muté pendant le Tick() ; les instances
+        // restantes de la copie no-op proprement ensuite (DebuffInstance.Tick vérifie déjà
+        // target.isDead en tête).
         var expiredDebuffs = new List<DebuffType>();
-        foreach (var kvp in _activeDebuffs)
+        foreach (var kvp in new List<KeyValuePair<DebuffType, DebuffInstance>>(_activeDebuffs))
         {
             kvp.Value.Tick(_entity, Time.deltaTime);
             if (kvp.Value.IsExpired) expiredDebuffs.Add(kvp.Key);
         }
         foreach (var t in expiredDebuffs) ExpireDebuff(t);
 
-        // Tick buffs (Regeneration via BuffInstance.Tick)
+        // Tick buffs (Regeneration via BuffInstance.Tick) — même précaution, voir ci-dessus.
         var expiredBuffs = new List<BuffType>();
-        foreach (var kvp in _activeBuffs)
+        foreach (var kvp in new List<KeyValuePair<BuffType, BuffInstance>>(_activeBuffs))
         {
             kvp.Value.Tick(_entity, Time.deltaTime);
             if (kvp.Value.IsExpired) expiredBuffs.Add(kvp.Key);
