@@ -252,7 +252,7 @@ public class SkillBar : MonoBehaviour
         }
 
         // Vérification mana
-        if (_player.CurrentMana < skill.manaCost)
+        if (_player.CurrentMana < GetEffectiveManaCost(skill))
         {
             Debug.Log($"[SKILLBAR] Mana insuffisante pour {skill.name}");
             return false;
@@ -362,7 +362,7 @@ public class SkillBar : MonoBehaviour
             _comboSlot  = slot;
             _comboStep  = 1; // prochain appui = comboSteps[0]
 
-            _player.SpendMana(skill.manaCost);
+            _player.SpendMana(GetEffectiveManaCost(skill));
             SkillSystem.Instance?.Execute(skill, _player, target);
             if (target != null) TargetingSystem.Instance?.EngageFromSkill(target);
 
@@ -386,7 +386,7 @@ public class SkillBar : MonoBehaviour
         SkillData stepSkill = _comboSkill.comboSteps[stepIndex];
         if (stepSkill == null) { ResetCombo(); return true; }
 
-        _player.SpendMana(stepSkill.manaCost);
+        _player.SpendMana(GetEffectiveManaCost(stepSkill));
         SkillSystem.Instance?.Execute(stepSkill, _player, target);
         if (target != null) TargetingSystem.Instance?.EngageFromSkill(target);
 
@@ -464,10 +464,19 @@ public class SkillBar : MonoBehaviour
         }
     }
 
+    /// <summary>Coût en mana réel d'un skill après réduction PAR élément (paliers Esprit, etc.
+    /// — StatType.ManaCostReductionX, voir Entity.GetManaCostReduction). Utilisé pour le check
+    /// de mana disponible ET la dépense réelle, jamais skill.manaCost brut directement.</summary>
+    private float GetEffectiveManaCost(SkillData skill)
+    {
+        float reduction = Mathf.Clamp01(_player.GetManaCostReduction(skill.PrimaryElement));
+        return skill.manaCost * (1f - reduction);
+    }
+
     // ── Exécution ─────────────────────────────────────────────
     private void ExecuteSkill(SkillData skill, int slot, Entity target)
     {
-        _player.SpendMana(skill.manaCost);
+        _player.SpendMana(GetEffectiveManaCost(skill));
         if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
         // NOTE : Ne PAS appeler player.UseSkill() ici.

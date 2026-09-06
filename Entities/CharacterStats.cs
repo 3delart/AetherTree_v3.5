@@ -18,7 +18,8 @@ using UnityEngine;
 //   ⑤ Bottes (BootsData)   → défenses + résist. élémentaires + config.bonuses
 //   ⑥ Bijoux (JewelryData) → défenses + config.bonuses
 //   ⑦ Runes               → config.bonuses (weapon.equippedRune / armor.equippedRune)
-//   ⑧ Esprits (SpiritData) → points élémentaires + milestones.bonuses + config.bonuses
+//   ⑧ Esprits (SpiritData) → points élémentaires + config.bonuses + paliers (Neutre :
+//      milestones.bonuses StatBonus ; élémentaires : sharedElementalMilestones partagée)
 //   ⑨ Skills permanents    → StatBonus + DebuffResistances
 //   ⑩ StatPointSystem      → bonus paliers investis — GDD §3.2.1
 //   ⑪ Rang d'affinité élém → appliqué à la volée dans CombatSystem (Mono/Dual) — GDD §6.2
@@ -123,8 +124,18 @@ public class CharacterStats
 
         // Résistances élémentaires — accumulateur local avant push
         var accResist = new Dictionary<ElementType, float>();
+        // Bonus dégâts élémentaires / pénétration / réduction coût mana PAR élément —
+        // même famille additive que accResist, source principale : paliers SpiritData.
+        var accDamageBonus       = new Dictionary<ElementType, float>();
+        var accPenetration       = new Dictionary<ElementType, float>();
+        var accManaCostReduction = new Dictionary<ElementType, float>();
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
-            accResist[e] = 0f;
+        {
+            accResist[e]             = 0f;
+            accDamageBonus[e]        = 0f;
+            accPenetration[e]        = 0f;
+            accManaCostReduction[e]  = 0f;
+        }
 
         var flatAcc = new Dictionary<StatType, float>();
         var percentAcc = new Dictionary<StatType, float>();
@@ -163,7 +174,7 @@ public class CharacterStats
             accPrecision      = weapon.FinalPrecision;
             accCritChance     = weapon.CritChance;
             accCritMultiplier += weapon.CritMultiplier;
-            AccumulateStatBonuses(weapon.Bonuses, flatAcc, percentAcc, accResist);
+            AccumulateStatBonuses(weapon.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
         }
 
         // =========================================================
@@ -176,7 +187,7 @@ public class CharacterStats
             accRangedDefense += armor.FinalRangedDefense;
             accMagicDefense  += armor.FinalMagicDefense;
             accDodge         += armor.FinalDodge;
-            AccumulateStatBonuses(armor.Bonuses, flatAcc, percentAcc, accResist);
+            AccumulateStatBonuses(armor.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
         }
 
         // =========================================================
@@ -189,7 +200,7 @@ public class CharacterStats
             accMeleeDefense  += helmet.MeleeDefense;
             accRangedDefense += helmet.RangedDefense;
             accMagicDefense  += helmet.MagicDefense;
-            AccumulateStatBonuses(helmet.Bonuses, flatAcc, percentAcc, accResist);
+            AccumulateStatBonuses(helmet.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
         }
 
         // =========================================================
@@ -203,7 +214,7 @@ public class CharacterStats
             accMagicDefense  += gloves.MagicDefense;
             foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                 accResist[e] += gloves.GetResistance(e);
-            AccumulateStatBonuses(gloves.Bonuses, flatAcc, percentAcc, accResist);
+            AccumulateStatBonuses(gloves.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
         }
 
         // =========================================================
@@ -217,7 +228,7 @@ public class CharacterStats
             accMagicDefense  += boots.MagicDefense;
             foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                 accResist[e] += boots.GetResistance(e);
-            AccumulateStatBonuses(boots.Bonuses, flatAcc, percentAcc, accResist);
+            AccumulateStatBonuses(boots.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
         }
 
         // =========================================================
@@ -231,7 +242,7 @@ public class CharacterStats
                 accMeleeDefense  += jewelry.MeleeDefense;
                 accRangedDefense += jewelry.RangedDefense;
                 accMagicDefense  += jewelry.MagicDefense;
-                AccumulateStatBonuses(jewelry.Bonuses, flatAcc, percentAcc, accResist);
+                AccumulateStatBonuses(jewelry.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
             }
         }
 
@@ -239,12 +250,14 @@ public class CharacterStats
         // ⑦ RUNES — config.bonuses via RuneInstance (GDD §5.7)
         // =========================================================
         if (weapon?.equippedRune != null)
-            AccumulateStatBonuses(weapon.equippedRune.bonuses, flatAcc, percentAcc, accResist);
+            AccumulateStatBonuses(weapon.equippedRune.bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
         if (armor?.equippedRune != null)
-            AccumulateStatBonuses(armor.equippedRune.bonuses, flatAcc, percentAcc, accResist);
+            AccumulateStatBonuses(armor.equippedRune.bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
 
         // =========================================================
-        // ⑧ ESPRITS — points élémentaires + milestones.bonuses + config.bonuses (GDD §5.6)
+        // ⑧ ESPRITS — points élémentaires + config.bonuses + paliers (GDD §5.6)
+        // Neutre : milestones.bonuses (StatBonus, par-asset). Élémentaires : sharedElementalMilestones
+        // (table PARTAGÉE, ciblée sur spirit.Element — voir SpiritData.cs, 2026-09-06).
         // =========================================================
         if (player.equippedSpiritInstances != null)
         {
@@ -256,15 +269,28 @@ public class CharacterStats
                 elementalPoints[spirit.Element] += spirit.TotalElementalPoints;
 
                 // Bonus passifs de base de l esprit (actifs dès l équipement)
-                AccumulateStatBonuses(spirit.Bonuses, flatAcc, percentAcc, accResist);
+                AccumulateStatBonuses(spirit.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
 
-                // Bonus de paliers débloqués jusqu au niveau actuel
+                // Bonus de paliers Esprit Neutre débloqués jusqu au niveau actuel
                 for (int mileLvl = 1; mileLvl <= spirit.level; mileLvl++)
                 {
                     var milestone = spirit.data.GetMilestone(mileLvl);
                     if (milestone != null)
-                        AccumulateStatBonuses(milestone.bonuses, flatAcc, percentAcc, accResist);
+                        AccumulateStatBonuses(milestone.bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
                 }
+
+                // Bonus de paliers élémentaires — table PARTAGÉE entre les 7 esprits élémentaires
+                // (SpiritMilestoneTable), toujours ciblés sur l'élément propre de CET esprit.
+                var table = spirit.data.sharedElementalMilestones;
+                if (table?.milestones != null)
+                    foreach (var m in table.milestones)
+                    {
+                        if (m.level > spirit.level) continue;
+                        accResist[spirit.Element]            += m.resistBonusPercent;
+                        accDamageBonus[spirit.Element]        += m.elementalDamageBonusPercent;
+                        accPenetration[spirit.Element]        += m.resistPenetrationPercent;
+                        accManaCostReduction[spirit.Element]  += m.manaCostReductionPercent;
+                    }
             }
         }
 
@@ -276,7 +302,7 @@ public class CharacterStats
             foreach (var p in player.unlockedPermanents)
             {
                 if (p == null) continue;
-                AccumulateStatBonuses(p.bonuses, flatAcc, percentAcc, accResist);
+                AccumulateStatBonuses(p.bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
             }
         }
 
@@ -406,7 +432,7 @@ public class CharacterStats
                 // CharacterPanelUI) — voir plus bas dans ce fichier, section ACCUMULATEUR StatBonus.
                 case ArmorType.Lourde:
                 case ArmorType.Legere:
-                    AccumulateStatBonuses(GetArmorTypePassives(armor.data.armorType), flatAcc, percentAcc, accResist);
+                    AccumulateStatBonuses(GetArmorTypePassives(armor.data.armorType), flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
                     break;
 
                 case ArmorType.Robe:
@@ -471,6 +497,15 @@ public class CharacterStats
         // Valeurs négatives possibles uniquement via debuffs (vulnérabilité).
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
             player.SetElementalResistance(e, accResist[e]);
+
+        // Bonus dégâts élémentaires / pénétration / réduction coût mana PAR élément —
+        // source principale : paliers SpiritData (2026-09-06).
+        foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+        {
+            player.SetElementalDamageBonus(e, accDamageBonus[e]);
+            player.SetElementalResistPenetration(e, accPenetration[e]);
+            player.SetManaCostReduction(e, accManaCostReduction[e]);
+        }
 
         // Points élémentaires — poussés sur Entity pour lecture par CombatSystem / ElementalSystem
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
@@ -552,17 +587,29 @@ public class CharacterStats
         StatType.MoveSpeed,
         StatType.PointsFire, StatType.PointsWater, StatType.PointsEarth, StatType.PointsNature,
         StatType.PointsLightning, StatType.PointsDarkness, StatType.PointsLight, StatType.PointsAll,
+        StatType.ElementalDamageBonusFire, StatType.ElementalDamageBonusWater, StatType.ElementalDamageBonusEarth,
+        StatType.ElementalDamageBonusNature, StatType.ElementalDamageBonusLightning,
+        StatType.ElementalDamageBonusDarkness, StatType.ElementalDamageBonusLight, StatType.ElementalDamageBonusAll,
+        StatType.ResistPenetrationFire, StatType.ResistPenetrationWater, StatType.ResistPenetrationEarth,
+        StatType.ResistPenetrationNature, StatType.ResistPenetrationLightning,
+        StatType.ResistPenetrationDarkness, StatType.ResistPenetrationLight, StatType.ResistPenetrationAll,
+        StatType.ManaCostReductionFire, StatType.ManaCostReductionWater, StatType.ManaCostReductionEarth,
+        StatType.ManaCostReductionNature, StatType.ManaCostReductionLightning,
+        StatType.ManaCostReductionDarkness, StatType.ManaCostReductionLight, StatType.ManaCostReductionAll,
     };
 
     private void AccumulateStatBonuses(
         System.Collections.Generic.List<StatBonus> bonuses,
         Dictionary<StatType, float> flatAcc,
         Dictionary<StatType, float> percentAcc,
-        Dictionary<ElementType, float> resist)
+        Dictionary<ElementType, float> resist,
+        Dictionary<ElementType, float> damageBonus,
+        Dictionary<ElementType, float> penetration,
+        Dictionary<ElementType, float> manaCostReduction)
     {
         if (bonuses == null) return;
         foreach (var b in bonuses)
-            AccumulateBonus(b, flatAcc, percentAcc, resist);
+            AccumulateBonus(b, flatAcc, percentAcc, resist, damageBonus, penetration, manaCostReduction);
     }
 
     /// <summary>Bonus passifs automatiques par ArmorType (GDD §5.4) — source unique partagée entre
@@ -594,7 +641,10 @@ public class CharacterStats
         StatBonus b,
         Dictionary<StatType, float> flatAcc,
         Dictionary<StatType, float> percentAcc,
-        Dictionary<ElementType, float> resist)
+        Dictionary<ElementType, float> resist,
+        Dictionary<ElementType, float> damageBonus,
+        Dictionary<ElementType, float> penetration,
+        Dictionary<ElementType, float> manaCostReduction)
     {
         switch (b.statType)
         {
@@ -609,6 +659,47 @@ public class CharacterStats
             case StatType.ResistAll:
                 foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                     resist[e] += b.value;
+                return;
+
+            // Bonus dégâts élémentaires PAR élément — toujours additifs (source principale :
+            // paliers SpiritData, voir StatBonus.cs).
+            case StatType.ElementalDamageBonusFire:      damageBonus[ElementType.Fire]      += b.value; return;
+            case StatType.ElementalDamageBonusWater:     damageBonus[ElementType.Water]     += b.value; return;
+            case StatType.ElementalDamageBonusEarth:     damageBonus[ElementType.Earth]     += b.value; return;
+            case StatType.ElementalDamageBonusNature:    damageBonus[ElementType.Nature]    += b.value; return;
+            case StatType.ElementalDamageBonusLightning: damageBonus[ElementType.Lightning] += b.value; return;
+            case StatType.ElementalDamageBonusDarkness:  damageBonus[ElementType.Darkness]  += b.value; return;
+            case StatType.ElementalDamageBonusLight:     damageBonus[ElementType.Light]     += b.value; return;
+            case StatType.ElementalDamageBonusAll:
+                foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+                    damageBonus[e] += b.value;
+                return;
+
+            // Pénétration de résistance ennemie PAR élément — toujours additive, s'ajoute à
+            // ElementalSystem.GetRank5ResistPenetration (source séparée).
+            case StatType.ResistPenetrationFire:      penetration[ElementType.Fire]      += b.value; return;
+            case StatType.ResistPenetrationWater:     penetration[ElementType.Water]     += b.value; return;
+            case StatType.ResistPenetrationEarth:     penetration[ElementType.Earth]     += b.value; return;
+            case StatType.ResistPenetrationNature:    penetration[ElementType.Nature]    += b.value; return;
+            case StatType.ResistPenetrationLightning: penetration[ElementType.Lightning] += b.value; return;
+            case StatType.ResistPenetrationDarkness:  penetration[ElementType.Darkness]  += b.value; return;
+            case StatType.ResistPenetrationLight:     penetration[ElementType.Light]     += b.value; return;
+            case StatType.ResistPenetrationAll:
+                foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+                    penetration[e] += b.value;
+                return;
+
+            // Réduction de coût en mana PAR élément du skill lancé — toujours additive.
+            case StatType.ManaCostReductionFire:      manaCostReduction[ElementType.Fire]      += b.value; return;
+            case StatType.ManaCostReductionWater:     manaCostReduction[ElementType.Water]     += b.value; return;
+            case StatType.ManaCostReductionEarth:     manaCostReduction[ElementType.Earth]     += b.value; return;
+            case StatType.ManaCostReductionNature:    manaCostReduction[ElementType.Nature]    += b.value; return;
+            case StatType.ManaCostReductionLightning: manaCostReduction[ElementType.Lightning] += b.value; return;
+            case StatType.ManaCostReductionDarkness:  manaCostReduction[ElementType.Darkness]  += b.value; return;
+            case StatType.ManaCostReductionLight:     manaCostReduction[ElementType.Light]     += b.value; return;
+            case StatType.ManaCostReductionAll:
+                foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+                    manaCostReduction[e] += b.value;
                 return;
 
             // Points élémentaires — inchangé, toujours additifs (spec §A)

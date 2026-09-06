@@ -115,6 +115,9 @@ public class CombatSystem : MonoBehaviour
             elemRaw    = elemPoints * skill.EffectiveElementalMultiplier;
             elemDamage = elemRaw;
 
+            // ── Bonus dégâts élémentaires (paliers Esprit, etc.) — attaquant ──
+            elemDamage *= (1f + attacker.GetElementalDamageBonus(skill.PrimaryElement));
+
             // ── 4a. Vulnérabilité — si la cible est un joueur ──────
             if (target != null)
             {
@@ -146,6 +149,10 @@ public class CombatSystem : MonoBehaviour
                 // descendre encore plus bas, pas être ramenée à 0 par la pénétration.
                 if (elemental != null)
                     elemResist -= elemental.GetRank5ResistPenetration(skill.PrimaryElement);
+
+                // Pénétration flexible (paliers Esprit, etc.) — source séparée, s'additionne
+                // à la pénétration rang 5 ci-dessus.
+                elemResist -= attacker.GetElementalResistPenetration(skill.PrimaryElement);
 
                 // Barrier — résistance élémentaire du buff actif sur la cible. GDD §3.1.1.2.
                 if (target.statusEffects != null)
@@ -232,6 +239,7 @@ public class CombatSystem : MonoBehaviour
             elemResistLog = target.GetElementalResistance(skill.PrimaryElement);
             if (elemental != null)
                 elemResistLog -= elemental.GetRank5ResistPenetration(skill.PrimaryElement);
+            elemResistLog -= attacker.GetElementalResistPenetration(skill.PrimaryElement);
         }
 
         LogDamageReport("PLAYER", attacker, target, weapon, skill, baseDamage, physDamage, elemRaw, elemFinal, elemResistLog, totalDamage, isCrit, effectiveCritMult);

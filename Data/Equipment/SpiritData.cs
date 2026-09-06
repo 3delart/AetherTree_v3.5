@@ -16,22 +16,43 @@ using System.Collections.Generic;
 //
 // Règles générales (GDD §5.8) :
 //   1 seul esprit actif à la fois — changement libre depuis inventaire.
-//   XP accordée par mobs dans la plage ±15 niveaux du joueur.
-//   Niveau max 50 — bonus aux paliers 10, 20, 30, 40, 50.
+//   XP accordée par mobs dans la plage ±15 niveaux du joueur (≥1 hit, seuil bas — voir
+//   XPSystem.GiveSpiritXP), seul l'esprit ÉQUIPÉ xp (pas ceux en inventaire).
 //   Obtention principale : conditions in-game (IConditionChecker).
+//
+// Système de tiers (2026-09-06, décision Florian) — 3 SpiritData SÉPARÉES par élément,
+// pas un tier enum sur un seul asset :
+//   Common       — requiredLevel 1,  maxLevel 50
+//   Intermediate — requiredLevel 40, maxLevel 70
+//   Advanced     — requiredLevel 80, maxLevel 100
+//   Tier supérieur = repart à level 1 (pas de transfert — futur "Spirit Fusion" éventuel,
+//   voir mémoire project_aethertree_spirit_system).
 //
 // Esprit Neutre (GDD §5.8) :
 //   Équipé à la place d'un esprit élémentaire.
 //   N'apporte aucun point élémentaire.
 //   Bonus via config.bonuses : BonusAttack%, CritChance, MaxHP.
 //
-// Stats fixes sur le SO :
-//   element        — détermine quels points élémentaires sont apportés
-//   elementalPoints — base de points élémentaires au niveau 1
-//   maxLevel (50)  — niveau maximum de l'esprit
+// Points élémentaires (esprits non-Neutre uniquement) — formule universelle, voir
+// GetPointsAtLevel : 1 à 10 pts/niveau par bande de 10 niveaux, 550 points cumulés à 100.
 //
-// Paliers de bonus via SpiritMilestone.config (GDD §5.8) :
-//   Lv10, 20, 30, 40, 50 — valeurs à calibrer en test (§14.2)
+// Paliers élémentaires (2026-09-06, table finale Florian) — TOUJOURS liés au SEUL élément
+// de l'esprit, jamais les autres. TOUT (4 stats + proc) vit dans UNE SEULE SpiritMilestoneTable
+// partagée entre les 7 éléments — le proc de chaque palier porte une entrée par élément
+// (SpiritElementalMilestone.procs), l'esprit équipé ne lisant que celle qui le concerne :
+//   Lv10  : +2% résistance propre à l'élément
+//   Lv20  : +2% dégâts de l'élément
+//   Lv30  : -2% coût mana des skills de l'élément
+//   Lv40  : +4% résistance propre (cumulé, pas remplacé)
+//   Lv50  : -4% pénétration résist. ennemie de l'élément + 1% proc debuff au hit
+//   Lv60  : +4% dégâts de l'élément
+//   Lv70  : -6% pénétration + 3% proc debuff
+//   Lv80  : +6% résistance propre + -4% coût mana
+//   Lv90  : +6% dégâts de l'élément
+//   Lv100 : -8% pénétration + 5% proc debuff
+//   (Common s'arrête à Lv50, Intermediate à Lv70 — seuls les paliers ≤ maxLevel comptent.)
+// Esprit Neutre : paliers séparés via SpiritMilestone.bonuses (StatBonus, BonusAttack/
+// CritChance/BonusHP), voir plus bas dans ce fichier.
 // =============================================================
 
 [CreateAssetMenu(fileName = "spr_", menuName = "AetherTree/Inventaire/Equipement/SpiritData")]
@@ -48,45 +69,47 @@ public class SpiritData : EquipmentDataBase
     public ElementType element = ElementType.Fire;
 
     // ── Points élémentaires ───────────────────────────────────
-    [Tooltip("Points élémentaires apportés au niveau 1.")]
-    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light, Header = "Points élémentaires (ignoré si element = Neutral — GDD §5.8)")]
-    public int pointsAtLevel1 = 1;
-
-    [Tooltip("Points élémentaires apportés au niveau maximum.")]
-    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light)]
-    public int pointsAtMaxLevel = 20;
-
-    [Tooltip("Exposant de la courbe de progression (1.0 = linéaire, 1.5 = progressive).\n" +
-             "Recommandé : 1.5")]
-    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light)]
-    public float pointsCurveExponent = 1.5f;
+    // Formule universelle (2026-09-06, décision Florian) — même "palier" que GetXPRequired :
+    // palier = floor((niveau-1)/10)+1, gain = palier points CE niveau (1 pt/niveau en 1-10,
+    // 2 pts/niveau en 11-20, ..., 10 pts/niveau en 91-100). Total cumulé à 100 = 550 points
+    // (10 paliers × 10 niveaux × palier = 10×55). Pas de champ à calibrer par asset — la
+    // courbe est fixe pour tous les esprits élémentaires, seul maxLevel (tier) change combien
+    // de paliers sont atteignables. Remplace l'ancienne courbe Lerp/exponent (jamais calibrée,
+    // pointsAtLevel1/pointsAtMaxLevel/pointsCurveExponent retirés).
 
     // ── Progression ───────────────────────────────────────────
     [Header("Progression")]
-    [Tooltip("Niveau maximum de l'esprit (défaut 50 — GDD §5.8).")]
+    [Tooltip("Niveau maximum de cet esprit — dépend du tier de l'asset : 50 (Common), " +
+             "70 (Intermediate), 100 (Advanced).")]
     public int maxLevel = 50;
 
-    // ── Paliers de bonus ──────────────────────────────────────
-    [Header("Paliers de bonus (Lv10, 20, 30, 40, 50 — GDD §5.8)")]
-    [Tooltip("Bonus débloqués à certains niveaux.\n" +
-             "⚠ Valeurs à calibrer en test — §14.2.\n" +
-             "Esprits élémentaires : recommandé PointsFire/etc.\n" +
-             "Esprit Neutre : recommandé BonusAttack, CritChance, BonusHP.")]
+    // ── Paliers de bonus — Esprit NEUTRE uniquement ────────────
+    // Esprits élémentaires : voir sharedElementalMilestones ci-dessous — les 4 stats ET le
+    // proc sont TOUS dans cette table partagée (2026-09-06, demande Florian) plutôt que
+    // dupliqués sur 21 assets ; seul l'élément CIBLE lu diffère par esprit.
+    [ShowIf(nameof(element), ElementType.Neutral, Header = "Paliers de bonus (Esprit Neutre — BonusAttack/CritChance/BonusHP)")]
+    [Tooltip("Bonus débloqués à certains niveaux, cumulatifs (chaque palier atteint s'additionne\n" +
+             "aux précédents). Esprit Neutre uniquement — recommandé : BonusAttack, CritChance, BonusHP.")]
     public List<SpiritMilestone> milestones = new List<SpiritMilestone>();
+
+    // ── Paliers de bonus — Esprits ÉLÉMENTAIRES uniquement ─────
+    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light, Header = "Paliers élémentaires (table finale 2026-09-06)")]
+    [Tooltip("Table PARTAGÉE entre les 7 esprits élémentaires — TOUT y est (4 stats + proc par\n" +
+             "élément), un seul asset SpiritMilestoneTable à créer/éditer pour affecter les 21\n" +
+             "SpiritData élémentaires (7 éléments × 3 tiers) d'un coup. Les 4 stats visent\n" +
+             "toujours l'élément CIBLE (= data.element de cet asset) ; le proc va chercher dans\n" +
+             "SpiritElementalMilestone.procs l'entrée dont l'élément correspond à data.element.")]
+    public SpiritMilestoneTable sharedElementalMilestones;
 
     // ── Utilitaires ───────────────────────────────────────────
 
-    /// <summary>
-    /// Points élémentaires apportés au niveau N.
-    /// Retourne 0 si element == Neutral (Esprit Neutre).
-    /// </summary>
+    /// <summary>Points élémentaires apportés AU niveau N (pas cumulé — voir
+    /// GetTotalPointsAtLevel pour le cumul). Retourne 0 si element == Neutral (Esprit Neutre).
+    /// Formule universelle : palier = floor((N-1)/10)+1, gain = palier points (2026-09-06).</summary>
     public int GetPointsAtLevel(int level)
     {
         if (element == ElementType.Neutral) return 0;
-        if (maxLevel <= 1) return pointsAtLevel1;
-        float t    = Mathf.Clamp01((float)(level - 1) / (maxLevel - 1));
-        float tPow = Mathf.Pow(t, pointsCurveExponent);
-        return Mathf.RoundToInt(Mathf.Lerp(pointsAtLevel1, pointsAtMaxLevel, tPow));
+        return (level - 1) / 10 + 1;
     }
 
     /// <summary>XP requis pour passer du niveau N au niveau N+1 — formule GDD §5.8 :
@@ -108,7 +131,8 @@ public class SpiritData : EquipmentDataBase
         return total;
     }
 
-    /// <summary>Retourne les bonus du palier atteint à ce niveau (null si aucun).</summary>
+    /// <summary>Retourne les bonus du palier Neutre atteint à ce niveau (null si aucun).
+    /// Esprit Neutre uniquement — voir sharedElementalMilestones pour les esprits élémentaires.</summary>
     public SpiritMilestone GetMilestone(int level)
     {
         if (milestones == null) return null;
@@ -119,8 +143,8 @@ public class SpiritData : EquipmentDataBase
 }
 
 // =============================================================
-// SpiritMilestone — Bonus débloqué à un palier de niveau
-// GDD v3.6 — §5.8 (valeurs à calibrer §14.2)
+// SpiritMilestone — Bonus débloqué à un palier de niveau, ESPRIT NEUTRE UNIQUEMENT
+// (esprits élémentaires : voir SpiritMilestoneTable/SpiritElementalMilestone plus bas)
 // =============================================================
 [System.Serializable]
 public class SpiritMilestone
@@ -128,9 +152,7 @@ public class SpiritMilestone
     [Tooltip("Niveau auquel ce palier est débloqué (ex: 10, 20, 30, 40, 50).")]
     public int level;
 
-    [Tooltip("Bonus débloqués à ce palier.\n" +
-             "⚠ Valeurs à calibrer — §14.2.\n" +
-             "Esprits élémentaires : PointsFire/etc.\n" +
+    [Tooltip("Bonus débloqués à ce palier — cumulatifs avec tous les paliers déjà atteints.\n" +
              "Esprit Neutre : BonusAttack, CritChance, BonusHP.")]
     public List<StatBonus> bonuses = new List<StatBonus>();
 }

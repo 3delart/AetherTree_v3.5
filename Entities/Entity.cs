@@ -207,6 +207,31 @@ public abstract class Entity : MonoBehaviour
     protected Dictionary<ElementType, float> elementalPoints
         = new Dictionary<ElementType, float>();
 
+    /// <summary>
+    /// Bonus de dégâts élémentaires PAR élément [0f = aucun, 0.05 = +5%] — toujours additif.
+    /// Source principale : paliers SpiritData (2026-09-06), mais générique (StatType.
+    /// ElementalDamageBonusX) — n'importe quel équipement peut en donner via CharacterStats.
+    /// Lu par CombatSystem.CalculateDamage, ciblé par skill.PrimaryElement.
+    /// </summary>
+    protected Dictionary<ElementType, float> elementalDamageBonusPercent
+        = new Dictionary<ElementType, float>();
+
+    /// <summary>
+    /// Pénétration de résistance ennemie PAR élément [0f = aucune, 0.05 = -5% résist cible] —
+    /// toujours additive, s'ajoute à ElementalSystem.GetRank5ResistPenetration (source séparée).
+    /// Source principale : paliers SpiritData. Lu par CombatSystem.CalculateDamage.
+    /// </summary>
+    protected Dictionary<ElementType, float> elementalResistPenetration
+        = new Dictionary<ElementType, float>();
+
+    /// <summary>
+    /// Réduction du coût en mana PAR élément du skill lancé [0f = aucune, 0.05 = -5%] —
+    /// toujours additive. Source principale : paliers SpiritData. Lu par SkillBar au moment
+    /// de la dépense, jamais une stat de combat.
+    /// </summary>
+    protected Dictionary<ElementType, float> elementalManaCostReduction
+        = new Dictionary<ElementType, float>();
+
     // =========================================================
     // ÉTAT
     // =========================================================
@@ -285,6 +310,18 @@ public abstract class Entity : MonoBehaviour
     public float GetElementalPoints(ElementType element)
         => elementalPoints.TryGetValue(element, out float v) ? v : 0f;
 
+    /// <summary>Bonus de dégâts élémentaires pour un élément donné [0f = aucun, 0.05 = +5%].</summary>
+    public float GetElementalDamageBonus(ElementType element)
+        => elementalDamageBonusPercent.TryGetValue(element, out float v) ? v : 0f;
+
+    /// <summary>Pénétration de résistance ennemie pour un élément donné [0f = aucune, 0.05 = -5%].</summary>
+    public float GetElementalResistPenetration(ElementType element)
+        => elementalResistPenetration.TryGetValue(element, out float v) ? v : 0f;
+
+    /// <summary>Réduction de coût en mana pour un élément donné [0f = aucune, 0.05 = -5%].</summary>
+    public float GetManaCostReduction(ElementType element)
+        => elementalManaCostReduction.TryGetValue(element, out float v) ? v : 0f;
+
     // =========================================================
     // INITIALISATION
     // =========================================================
@@ -294,8 +331,11 @@ public abstract class Entity : MonoBehaviour
         // Initialise toutes les résistances élémentaires à 0f
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
         {
-            elementalResistances[e] = 0f;
-            elementalPoints[e]      = 0f;
+            elementalResistances[e]         = 0f;
+            elementalPoints[e]              = 0f;
+            elementalDamageBonusPercent[e]  = 0f;
+            elementalResistPenetration[e]   = 0f;
+            elementalManaCostReduction[e]   = 0f;
         }
 
         currentHP    = maxHP;
@@ -821,6 +861,21 @@ public abstract class Entity : MonoBehaviour
     /// </summary>
     public void SetElementalPoints(ElementType element, float value)
         => elementalPoints[element] = Mathf.Max(0f, value);
+
+    /// <summary>Écrit le bonus de dégâts élémentaires pour un élément. Appelé par
+    /// CharacterStats.RecalculateStats().</summary>
+    public void SetElementalDamageBonus(ElementType element, float value)
+        => elementalDamageBonusPercent[element] = value;
+
+    /// <summary>Écrit la pénétration de résistance ennemie pour un élément. Appelé par
+    /// CharacterStats.RecalculateStats().</summary>
+    public void SetElementalResistPenetration(ElementType element, float value)
+        => elementalResistPenetration[element] = value;
+
+    /// <summary>Écrit la réduction de coût en mana pour un élément. Appelé par
+    /// CharacterStats.RecalculateStats().</summary>
+    public void SetManaCostReduction(ElementType element, float value)
+        => elementalManaCostReduction[element] = value;
 
     /// <summary>
     /// Modifie une résistance élémentaire de façon additive.

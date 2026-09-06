@@ -1,0 +1,94 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f40de8024587eac4295c97897178d6ee, type: 3}
+  m_Name: spr_milestones_elemental 1
+  m_EditorClassIdentifier: 
+  milestones:
+  - level: 10
+    resistBonusPercent: 0.02
+    elementalDamageBonusPercent: 0
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: 0
+  - level: 20
+    resistBonusPercent: 0
+    elementalDamageBonusPercent: 0.02
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: 0
+  - level: 30
+    resistBonusPercent: 0
+    elementalDamageBonusPercent: 0
+    manaCostReductionPercent: -0.02
+    resistPenetrationPercent: 0
+  - level: 40
+    resistBonusPercent: 0.02
+    elementalDamageBonusPercent: 0
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: 0
+  - level: 50
+    resistBonusPercent: 0
+    elementalDamageBonusPercent: 0
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: -0.04
+  - level: 60
+    resistBonusPercent: 0
+    elementalDamageBonusPercent: 0.02
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: 0
+  - level: 70
+    resistBonusPercent: 0
+    elementalDamageBonusPercent: 0
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: -0.02
+  - level: 80
+    resistBonusPercent: 0.02
+    elementalDamageBonusPercent: 0
+    manaCostReductionPercent: -0.02
+    resistPenetrationPercent: 0
+  - level: 90
+    resistBonusPercent: 0
+    elementalDamageBonusPercent: 0.02
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: 0
+  - level: 100
+    resistBonusPercent: 0
+    elementalDamageBonusPercent: 0
+    manaCostReductionPercent: 0
+    resistPenetrationPercent: -0.02
+  procRates:
+  - level: 50
+    chance: 0.01
+  - level: 70
+    chance: 0.03
+  - level: 100
+    chance: 0.05
+  elementDebuffs:
+  - element: 1
+    effect: {fileID: 0}
+    receivedEffect: {fileID: 0}
+  - element: 2
+    effect: {fileID: 0}
+    receivedEffect: {fileID: 0}
+  - element: 3
+    effect: {fileID: 0}
+    receivedEffect: {fileID: 0}
+  - element: 4
+    effect: {fileID: 0}
+    receivedEffect: {fileID: 0}
+  - element: 5
+    effect: {fileID: 0}
+    receivedEffect: {fileID: 0}
+  - element: 6
+    effect: {fileID: 0}
+    receivedEffect: {fileID: 0}
+  - element: 7
+    effect: {fileID: 0}
+    receivedEffect: {fileID: 0}

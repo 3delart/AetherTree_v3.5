@@ -111,6 +111,45 @@ public enum StatType
     // sur le NOMBRE de dégâts par CombatSystem, pas une stat persistante.
     [InspectorName("Final Damage Bonus (attaquant, flat ou %, voir mode)")]     FinalDamageBonus,
     [InspectorName("Final Damage Reduction (défenseur, flat ou %, voir mode)")] FinalDamageReduction,
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Bonus de dégâts élémentaires
+    // PAR élément — toujours additifs (même famille que ResistX/PointsX, pas de formule
+    // Base+Flat×%). Source principale : paliers SpiritData (2026-09-06), mais génériques comme
+    // tout StatType — n'importe quel équipement peut en donner. Appliqué dans
+    // CombatSystem.CalculateDamage sur elemDamage, ciblé par skill.PrimaryElement.
+    [InspectorName("Dégâts élémentaires Feu (ratio 0.05 = +5%)")]      ElementalDamageBonusFire,
+    [InspectorName("Dégâts élémentaires Eau (ratio 0.05 = +5%)")]      ElementalDamageBonusWater,
+    [InspectorName("Dégâts élémentaires Foudre (ratio 0.05 = +5%)")]   ElementalDamageBonusLightning,
+    [InspectorName("Dégâts élémentaires Terre (ratio 0.05 = +5%)")]    ElementalDamageBonusEarth,
+    [InspectorName("Dégâts élémentaires Nature (ratio 0.05 = +5%)")]   ElementalDamageBonusNature,
+    [InspectorName("Dégâts élémentaires Ténèbres (ratio 0.05 = +5%)")] ElementalDamageBonusDarkness,
+    [InspectorName("Dégâts élémentaires Lumière (ratio 0.05 = +5%)")]  ElementalDamageBonusLight,
+    [InspectorName("Dégâts élémentaires TOUS (ratio 0.05 = +5%)")]     ElementalDamageBonusAll,
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Pénétration de résistance
+    // ennemie PAR élément — toujours additive, généralise l'ancien bonus rang5 Neutre/élémentaire
+    // hardcodé (ElementalSystem.GetRank5ResistPenetration) qui reste une source séparée et
+    // s'additionne avec celle-ci. Soustrait de la résistance cible dans CombatSystem.
+    [InspectorName("Pénétration résist. Feu (ratio 0.05 = -5% résist ennemie)")]      ResistPenetrationFire,
+    [InspectorName("Pénétration résist. Eau (ratio 0.05 = -5% résist ennemie)")]      ResistPenetrationWater,
+    [InspectorName("Pénétration résist. Foudre (ratio 0.05 = -5% résist ennemie)")]   ResistPenetrationLightning,
+    [InspectorName("Pénétration résist. Terre (ratio 0.05 = -5% résist ennemie)")]    ResistPenetrationEarth,
+    [InspectorName("Pénétration résist. Nature (ratio 0.05 = -5% résist ennemie)")]   ResistPenetrationNature,
+    [InspectorName("Pénétration résist. Ténèbres (ratio 0.05 = -5% résist ennemie)")] ResistPenetrationDarkness,
+    [InspectorName("Pénétration résist. Lumière (ratio 0.05 = -5% résist ennemie)")]  ResistPenetrationLight,
+    [InspectorName("Pénétration résist. TOUS (ratio 0.05 = -5% résist ennemie)")]     ResistPenetrationAll,
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Réduction de coût en mana
+    // PAR élément du skill lancé — toujours additive. Lu par SkillBar au moment de la dépense
+    // (Player.SpendMana), jamais une stat de combat.
+    [InspectorName("Réduction coût mana Feu (ratio 0.05 = -5%)")]      ManaCostReductionFire,
+    [InspectorName("Réduction coût mana Eau (ratio 0.05 = -5%)")]      ManaCostReductionWater,
+    [InspectorName("Réduction coût mana Foudre (ratio 0.05 = -5%)")]   ManaCostReductionLightning,
+    [InspectorName("Réduction coût mana Terre (ratio 0.05 = -5%)")]    ManaCostReductionEarth,
+    [InspectorName("Réduction coût mana Nature (ratio 0.05 = -5%)")]   ManaCostReductionNature,
+    [InspectorName("Réduction coût mana Ténèbres (ratio 0.05 = -5%)")] ManaCostReductionDarkness,
+    [InspectorName("Réduction coût mana Lumière (ratio 0.05 = -5%)")]  ManaCostReductionLight,
+    [InspectorName("Réduction coût mana TOUS (ratio 0.05 = -5%)")]     ManaCostReductionAll,
 }
 
 // =============================================================

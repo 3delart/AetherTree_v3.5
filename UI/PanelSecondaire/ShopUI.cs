@@ -414,6 +414,7 @@ public class ShopUI : MonoBehaviour
             case GlovesData gd:     return new InventoryItem(gd.CreateInstance());
             case BootsData bd:      return new InventoryItem(bd.CreateInstance());
             case JewelryData jd:    return new InventoryItem(jd.CreateInstance());
+            case SpiritData sd:     return new InventoryItem(new SpiritInstance(sd));
             case ConsumableData cd: return new InventoryItem(cd.CreateInstance());
             case ResourceData rd:   return new InventoryItem(rd.CreateInstance());
             case SkillData:             return null;

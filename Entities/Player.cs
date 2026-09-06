@@ -638,12 +638,39 @@ public class Player : Entity
         }
         equippedSpiritInstances.Add(instance);
         stats.RecalculateStats(this);
+        SpawnSpiritCompanion(instance.data);
     }
 
     public void UnequipSpirit(SpiritInstance instance)
     {
         if (equippedSpiritInstances.Remove(instance))
+        {
             stats.RecalculateStats(this);
+            DespawnSpiritCompanion();
+        }
+    }
+
+    // ── Compagnon visuel Esprit ─────────────────────────────────
+    private GameObject _spiritCompanionInstance;
+
+    /// <summary>Instancie le prefab visuel de l'esprit équipé (SpiritData.spiritPrefab) et
+    /// l'accroche au suivi procédural (SpiritCompanion). Couvre équipement live ET restauration
+    /// au chargement (SaveSystem.Load → InventorySystem.EquipItem → EquipSpirit, même chemin).</summary>
+    private void SpawnSpiritCompanion(SpiritData data)
+    {
+        DespawnSpiritCompanion();
+        if (data?.spiritPrefab == null) return;
+
+        _spiritCompanionInstance = Instantiate(data.spiritPrefab, transform.position, Quaternion.identity);
+        var companion = _spiritCompanionInstance.GetComponent<SpiritCompanion>();
+        if (companion == null) companion = _spiritCompanionInstance.AddComponent<SpiritCompanion>();
+        companion.Init(transform);
+    }
+
+    private void DespawnSpiritCompanion()
+    {
+        if (_spiritCompanionInstance != null) Destroy(_spiritCompanionInstance);
+        _spiritCompanionInstance = null;
     }
 
     /// <summary>Équipe le talisman — démarre son chrono s'il n'a jamais été activé (sans
@@ -932,6 +959,21 @@ public class Player : Entity
             foreach (var p in unlockedPermanents)
                 if (p?.onHitDealtEffects != null) all.AddRange(p.onHitDealtEffects);
 
+        // Proc on-hit de palier Esprit — table PARTAGÉE (SpiritMilestoneTable) : le taux vient
+        // de procRates (dernier palier atteint, pas cumulatif), le debuff vient d'elementDebuffs
+        // (fixe par élément, le même à tous les paliers) — table finale 2026-09-06 : Lv50=1%,
+        // Lv70=3%, Lv100=5%.
+        if (equippedSpiritInstances != null)
+            foreach (var spirit in equippedSpiritInstances)
+            {
+                var table = spirit?.data?.sharedElementalMilestones;
+                if (table == null) continue;
+                float chance = table.GetActiveProcChance(spirit.level);
+                if (chance <= 0f) continue;
+                var effect = table.GetDebuffEffectForElement(spirit.Element);
+                if (effect != null) all.Add(new OnHitDealtEffectEntry { effect = effect, chance = chance });
+            }
+
         return all;
     }
 
@@ -952,6 +994,19 @@ public class Player : Entity
         if (unlockedPermanents != null)
             foreach (var p in unlockedPermanents)
                 if (p?.onHitReceivedEffects != null) all.AddRange(p.onHitReceivedEffects);
+
+        // Proc on-hit REÇU de palier Esprit — même taux que le proc infligé (procRates),
+        // réaction défensive au lieu d'offensive (voir SpiritElementalProcEffect.receivedEffect).
+        if (equippedSpiritInstances != null)
+            foreach (var spirit in equippedSpiritInstances)
+            {
+                var table = spirit?.data?.sharedElementalMilestones;
+                if (table == null) continue;
+                float chance = table.GetActiveProcChance(spirit.level);
+                if (chance <= 0f) continue;
+                var receivedEffect = table.GetReceivedEffectForElement(spirit.Element);
+                if (receivedEffect != null) all.Add(new OnHitReceivedEffectEntry { effect = receivedEffect, chance = chance });
+            }
 
         return all;
     }
