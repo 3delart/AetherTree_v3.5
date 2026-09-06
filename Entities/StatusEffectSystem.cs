@@ -385,9 +385,16 @@ public class StatusEffectSystem : MonoBehaviour
     }
 
     /// <summary>Stats sans sélecteur Flat/% (masqué côté Inspector via ShowIf) — toujours
-    /// additives, jamais de multiplication par (1+%). AccumulateStatLine y route toute
-    /// contribution en Flat, quel que soit le mode fourni (filet de sécurité en plus du
-    /// masquage Inspector).</summary>
+    /// additives, jamais de multiplication par (1+%) DANS l'accumulation (AccumulateStatLine y
+    /// route toute contribution en Flat, quel que soit le mode fourni — filet de sécurité en
+    /// plus du masquage Inspector). CritChance/CritDamage/Résistances/XPBonus/GoldBonus sont
+    /// nativement stockées en ratio (0.05 = 5%) — additionner leur valeur telle quelle EST déjà
+    /// un %, rien de spécial à faire à l'application. MoveSpeed est un cas à part : stockée en
+    /// unités brutes (ex: 5.0/s), donc sa valeur accumulée ici est réinterprétée comme un % DE
+    /// LA BASE au moment de l'application finale (voir le cas spécial StatModifierType.MoveSpeed
+    /// dans ReapplyActiveModifiers, même traitement que FinalDamageBonus/Reduction juste
+    /// au-dessus) — décision explicite Florian (2026-09-06) : "-0.3" doit vouloir dire -30% de
+    /// la vitesse de base, pas -0.3 unité brute.</summary>
     private static readonly HashSet<StatModifierType> ExceptionStats = new HashSet<StatModifierType>
     {
         StatModifierType.CritChance, StatModifierType.CritDamage,
@@ -511,6 +518,20 @@ public class StatusEffectSystem : MonoBehaviour
             {
                 target.SetFinalDamageReductionFlat   (target.FinalDamageReductionFlat    + flat);
                 target.SetFinalDamageReductionPercent(target.FinalDamageReductionPercent + pct);
+                continue;
+            }
+
+            // MoveSpeed — exception au sens "toujours en %", PAS "toujours flat" comme
+            // CritChance/Résistances : ces derniers sont nativement stockés en ratio (0.05 =
+            // 5%), donc les additionner tel quel EST déjà un %. MoveSpeed est stockée en
+            // unités brutes (ex: 5.0/s) — additionner -0.3 telle quelle retire 0.3 unité, pas
+            // 30%. La valeur (routée dans flatSum par AccumulateStatLine, comme toute
+            // ExceptionStats) est donc interprétée ici comme un pourcentage DE LA BASE, pas un
+            // delta brut — décision explicite Florian (2026-09-06).
+            if (stat == StatModifierType.MoveSpeed)
+            {
+                float baseSpeed = pureBase[stat];
+                ModifyEntityStat(target, stat, baseSpeed * flat);
                 continue;
             }
 
