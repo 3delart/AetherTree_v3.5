@@ -157,10 +157,16 @@ public class Player : Entity
     [HideInInspector] public bool CombatActive = false;
 
     // ── AFK ───────────────────────────────────────────────────
+    // Définition unifiée (2026-09-06, remplace l'ancienne "30s sans RegisterAction") : AFK =
+    // immobile ET sans vrai skill (slot 0/attaque de base exclu, utiliser UNIQUEMENT
+    // l'attaque de base en restant immobile compte comme AFK — anti "cheat" farm passif)
+    // depuis `afkDelay` secondes. Sert à ZoneTrigger (inchangé, bénéficie juste d'une détection
+    // plus correcte) ET à ElementalSystem.RegisterCast (anti farm d'affinité passif).
     [Header("AFK")]
-    [Tooltip("Délai d'inactivité en secondes avant de passer AFK.")]
-    public float afkDelay = 30f;
-    private float _lastActionTime = 0f;
+    [Tooltip("Délai d'inactivité (sans mouvement ET sans vrai skill) en secondes avant AFK.")]
+    public float afkDelay = 60f;
+    private float _lastMovementTime  = 0f;
+    private float _lastRealSkillTime = 0f;
 
     // ── Combat ────────────────────────────────────────────────
     [Header("Combat")]
@@ -328,26 +334,39 @@ public class Player : Entity
     // AFK
     // =========================================================
 
-    /// <summary>
-    /// Appelé par PlayerController, SkillBar, et tout système
-    /// qui représente une action volontaire du joueur.
-    /// </summary>
-    public void RegisterAction()
+    /// <summary>Appelé par PlayerController sur un vrai déplacement (clic-au-sol). Un des
+    /// deux volets de la détection AFK — voir UpdateAFK().</summary>
+    public void RegisterMovement()
     {
-        _lastActionTime = Time.time;
-        if (IsAFK)
-        {
-            IsAFK = false;
-            if (UnlockManager.Instance != null && UnlockManager.Instance.verboseLogs)
-                Debug.Log("[PLAYER] AFK terminé.");
-        }
+        _lastMovementTime = Time.time;
+        ClearAFKIfNeeded();
+    }
+
+    /// <summary>Appelé par UseSkill() UNIQUEMENT pour un vrai skill (pas l'attaque de base,
+    /// slot 0) — rester immobile en ne spammant QUE l'attaque de base compte toujours comme
+    /// AFK, volontairement (anti farm passif "je clique sur auto-attack et je pars"). Voir
+    /// UpdateAFK().</summary>
+    public void RegisterRealSkillUse()
+    {
+        _lastRealSkillTime = Time.time;
+        ClearAFKIfNeeded();
+    }
+
+    private void ClearAFKIfNeeded()
+    {
+        if (!IsAFK) return;
+        IsAFK = false;
+        if (UnlockManager.Instance != null && UnlockManager.Instance.verboseLogs)
+            Debug.Log("[PLAYER] AFK terminé.");
     }
 
     private void UpdateAFK()
     {
         if (isDead) return;
 
-        bool shouldBeAFK = (Time.time - _lastActionTime) >= afkDelay;
+        bool noMovement  = (Time.time - _lastMovementTime)  >= afkDelay;
+        bool noRealSkill = (Time.time - _lastRealSkillTime) >= afkDelay;
+        bool shouldBeAFK = noMovement && noRealSkill;
         if (shouldBeAFK != IsAFK)
         {
             IsAFK = shouldBeAFK;
@@ -924,6 +943,10 @@ public class Player : Entity
 
         bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
 
+        // AFK — voir RegisterRealSkillUse() : seul un VRAI skill (pas l'attaque de base) casse
+        // l'AFK, volontairement (spammer juste l'attaque de base en restant immobile reste AFK).
+        if (!isBasic) RegisterRealSkillUse();
+
         // Buff/Debuff ne comptent PAS pour la fenêtre d'affinité — un soin/buff tagué Eau ne
         // "joue" pas de l'eau au sens combat, seuls les skills qui infligent réellement des
         // dégâts (Damage/Other, ex: DrainHP) font bouger le rang élémentaire.
@@ -938,11 +961,16 @@ public class Player : Entity
 
         if (countsForAffinity)
         {
+            // Écart de niveau avec la cible — anti farm d'un mob hors de portée (trop faible ou
+            // trop fort) pour faire bouger l'affinité gratuitement. Pas de cible/PNJ (pas de
+            // niveau comparable) → pas de restriction, voir ElementalSystem.RegisterCast.
+            int? targetLevel = target is Mob targetMob ? targetMob.mobLevel : (int?)null;
+
             if (!skill.IsNeutral)
                 foreach (var element in skill.elements)
-                    elementalSystem.RegisterCast(element, isBasicAttack: isBasic);
+                    elementalSystem.RegisterCast(element, isBasicAttack: isBasic, targetLevel: targetLevel);
             else
-                elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic);
+                elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic, targetLevel: targetLevel);
         }
 
         // RequestRecalculate() (pas juste stats.RecalculateStats()) — sinon le pass équipement
@@ -1097,6 +1125,11 @@ public class Player : Entity
     {
         level = newLevel;
         activityCounter.Set("PLAYER_LEVEL", newLevel);
+
+        // Fenêtre d'affinité élémentaire — grossit avec le niveau (500 + niveau×15), les %
+        // actuels restent inchangés, seule l'inertie future augmente. Décision explicite
+        // Florian (2026-09-06).
+        elementalSystem?.RecomputeWindowSize(newLevel);
 
         // Total attendu = level × 3 — on donne la différence pour gérer
         // les level ups multiples (chargement save) sans doubler. GDD §3.2.1.

@@ -15,7 +15,12 @@ using UnityEngine;
 //   Mono        — 1 élément ≥25% (Neutre pur inclus — affinité Neutral ≥99%)
 //   Dual        — 2 éléments ≥20%, écart <10%, sort combo équipé
 //   Équilibriste — aucun élément ≥25% mais plusieurs actifs
-//   Neutral     — état de départ pur, aucune affinité non-neutre active
+//   Neutral     — aucune affinité non-neutre active (inclut l'état de départ, "vide" —
+//                 voir _emptyWeight — où AUCUN élément, Neutre compris, n'a encore de rang)
+//
+// État de départ (2026-09-06, décision explicite Florian) : plus de Neutral à 100% gratuit à
+// la création du perso (rang 5 Neutre immédiat sans rien faire) — tout part de rang 0, la
+// fenêtre se remplit progressivement via de vrais casts, Neutre y compris. Voir _emptyWeight.
 //
 // Rangs Neutre (GDD §6.3) — cumulatifs, basés sur affinité Neutral :
 //   1 ≥25% : +10% dégâts base
@@ -33,24 +38,51 @@ public enum TitleMode { Neutral, Mono, Dual, Equilibriste }
 public class ElementalSystem : MonoBehaviour
 {
     [Header("Fenêtre glissante")]
-    [Tooltip("Taille de la fenêtre en cast-équivalents (basic = 0.25, sort = 1.0)")]
-    [SerializeField] private float _windowSize = 200f;
+    [Tooltip("Taille de la fenêtre en cast-équivalents (basic = 0.25, sort = 1.0). Recalculée\n" +
+             "automatiquement selon le niveau (500 + niveau×15) — voir RecomputeWindowSize().")]
+    [SerializeField] private float _windowSize = 500f;
 
     public const float BASIC_ATTACK_WEIGHT = 0.25f;
     public const float SKILL_WEIGHT        = 1.0f;
+
+    /// <summary>Écart de niveau maximum avec la cible pour qu'un cast compte dans la fenêtre —
+    /// empêche de faire bouger son affinité en tapant (ou en se faisant AFK-farm sur) un mob
+    /// hors de portée de niveau. Décision explicite Florian (2026-09-06).</summary>
+    private const int MAX_LEVEL_GAP_FOR_AFFINITY = 15;
 
     private Dictionary<ElementType, float> _weightCounts
         = new Dictionary<ElementType, float>();
     private int _totalCasts = 0;
 
+    /// <summary>Poids "non réparti" de la fenêtre — au tout début, avant que le joueur ait
+    /// vraiment joué, presque toute la fenêtre est ici (jamais lu comme un vrai élément, jamais
+    /// exposé publiquement). Se dilue exactement comme n'importe quel élément au fil des casts
+    /// — voir RegisterCast/Renormalize. Remplace l'ancien départ "Neutral à 100%" (rang 5
+    /// Neutre gratuit dès la création du perso) — décision explicite Florian (2026-09-06).</summary>
+    private float _emptyWeight = 0f;
+
+    private Player _player;
+
     private void Awake()
     {
         EnsureInitialized();
+        _player = GetComponent<Player>();
     }
 
     private void Start()
     {
         InitNeutralWindow();
+        RecomputeWindowSize(_player != null ? _player.level : 1);
+    }
+
+    /// <summary>Recalcule la taille de fenêtre pour le niveau donné (500 + niveau×15) et
+    /// renormalise — les affinités actuelles (en %) restent inchangées immédiatement après un
+    /// level up, seule l'inertie future change (plus dur de faire bouger une grosse fenêtre).
+    /// Appelée au démarrage et à chaque level up (voir Player.OnLevelUp).</summary>
+    public void RecomputeWindowSize(int level)
+    {
+        _windowSize = 500f + (level * 15f);
+        Renormalize();
     }
 
     /// <summary>
@@ -79,8 +111,11 @@ public class ElementalSystem : MonoBehaviour
             if (t == ElementType.Any) continue;
             _weightCounts[t] = 0f;
         }
-        _weightCounts[ElementType.Neutral] = _windowSize;
-        _totalCasts = 0;
+        // Départ "vide" — plus de Neutral à 100% (rang 5 Neutre gratuit dès la création du
+        // perso). Rang 0 partout, la fenêtre se remplit progressivement via de vrais casts,
+        // exactement comme n'importe quel élément. Décision explicite Florian (2026-09-06).
+        _emptyWeight = _windowSize;
+        _totalCasts  = 0;
     }
 
     // =========================================================
@@ -93,11 +128,17 @@ public class ElementalSystem : MonoBehaviour
     /// </summary>
     public void LoadAffinities(List<SavedElementAffinity> affinities)
     {
+        if (_player == null) _player = GetComponent<Player>();
+        RecomputeWindowSize(_player != null ? _player.level : 1);
+
         if (affinities == null || affinities.Count == 0)
         {
             InitNeutralWindow();
             return;
         }
+
+        // Un perso déjà sauvegardé a une vraie répartition — plus d'état "vide" à représenter.
+        _emptyWeight = 0f;
 
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
         {
@@ -119,17 +160,39 @@ public class ElementalSystem : MonoBehaviour
     // ENREGISTREMENT D'UN CAST — dilution égale
     // =========================================================
 
-    public void RegisterCast(ElementType element, bool isBasicAttack = false)
+    /// <summary>Enregistre un cast dans la fenêtre glissante. `targetLevel` (niveau du Mob
+    /// visé, null si pas de cible/PNJ) et l'état AFK du joueur filtrent ce qui compte
+    /// vraiment — décisions explicites Florian (2026-09-06) :
+    ///   - Joueur AFK (Player.IsAFK) → ignoré entièrement (anti farm passif).
+    ///   - Écart de niveau avec la cible > MAX_LEVEL_GAP_FOR_AFFINITY → ignoré (anti farm d'un
+    ///     mob hors de portée, trop faible ou trop fort).
+    ///   - Sous niveau 30, le poids du cast est réduit (÷4 avant 10, ÷3 avant 20, ÷2 avant 30)
+    ///     — un perso qui reste volontairement bas niveau peut toujours atteindre rang 5 en
+    ///     théorie, mais ça demande un vrai investissement, pas 1h de spam.</summary>
+    public void RegisterCast(ElementType element, bool isBasicAttack = false, int? targetLevel = null)
     {
         if (element == ElementType.Any) return;
+        if (_player == null) _player = GetComponent<Player>();
+        if (_player != null && _player.IsAFK) return;
+
+        int playerLevel = _player != null ? _player.level : 1;
+
+        if (targetLevel.HasValue && Mathf.Abs(playerLevel - targetLevel.Value) > MAX_LEVEL_GAP_FOR_AFFINITY)
+            return;
 
         float weight = isBasicAttack ? BASIC_ATTACK_WEIGHT : SKILL_WEIGHT;
+        if      (playerLevel < 10) weight /= 4f;
+        else if (playerLevel < 20) weight /= 3f;
+        else if (playerLevel < 30) weight /= 2f;
+
         _totalCasts++;
 
         // 1. Ajoute le poids à l'élément entrant
         _weightCounts[element] += weight;
 
-        // 2. Retire équitablement sur les autres éléments présents
+        // 2. Retire équitablement sur les autres éléments présents ET sur le poids "vide"
+        // (_emptyWeight) — traité comme un détenteur de plus dans la dilution, exactement comme
+        // n'importe quel élément déjà investi.
         float toDistribute = weight;
 
         while (toDistribute > 0.0001f)
@@ -139,10 +202,23 @@ public class ElementalSystem : MonoBehaviour
                 if (kvp.Key != element && kvp.Value > 0f)
                     others.Add(kvp.Key);
 
-            if (others.Count == 0) break;
+            bool hasEmpty  = _emptyWeight > 0f;
+            int  poolCount = others.Count + (hasEmpty ? 1 : 0);
+            if (poolCount == 0) break;
 
-            float shareEach = toDistribute / others.Count;
+            float shareEach = toDistribute / poolCount;
             float leftover  = 0f;
+
+            if (hasEmpty)
+            {
+                if (_emptyWeight >= shareEach)
+                    _emptyWeight -= shareEach;
+                else
+                {
+                    leftover    += shareEach - _emptyWeight;
+                    _emptyWeight = 0f;
+                }
+            }
 
             foreach (ElementType key in others)
             {
@@ -171,7 +247,7 @@ public class ElementalSystem : MonoBehaviour
 
     private void Renormalize()
     {
-        float total = 0f;
+        float total = _emptyWeight;
         foreach (var kvp in _weightCounts)
             total += kvp.Value;
 
@@ -185,6 +261,7 @@ public class ElementalSystem : MonoBehaviour
         var keys = new List<ElementType>(_weightCounts.Keys);
         foreach (ElementType key in keys)
             _weightCounts[key] *= factor;
+        _emptyWeight *= factor;
     }
 
     // =========================================================

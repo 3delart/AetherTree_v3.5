@@ -108,7 +108,7 @@ public class PlayerController : MonoBehaviour
         // par lancer ce skill périmé dès que la cible redevenait à portée.
         TargetingSystem.Instance?.StopApproach();
         SkillBar.Instance?.CancelApproach();
-        _player?.RegisterAction();
+        _player?.RegisterMovement();
 
         _agent.SetDestination(hit.point);
 
