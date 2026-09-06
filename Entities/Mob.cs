@@ -512,6 +512,13 @@ public class Mob : Entity
     // GDD v3.5 §3.3
     // =========================================================
 
+    /// <summary>Effets On-Hit infligés de ce mob — source unique, MobData, pas d'agrégation
+    /// (contrairement à Player qui combine plusieurs pièces d'équipement).</summary>
+    public override List<OnHitDealtEffectEntry> GetOnHitDealtEffects() => data?.onHitDealtEffects;
+
+    /// <summary>Effets On-Hit reçus de ce mob — voir GetOnHitDealtEffects().</summary>
+    public override List<OnHitReceivedEffectEntry> GetOnHitReceivedEffects() => data?.onHitReceivedEffects;
+
     protected override void Die()
     {
         base.Die();

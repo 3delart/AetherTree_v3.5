@@ -612,6 +612,12 @@ public class PNJ : Entity
     // data.canDie contrôle qui peut mourir — plus de hardcode pnjType.
     // =========================================================
 
+    /// <summary>Effets On-Hit infligés de ce PNJ — source unique, PNJData.</summary>
+    public override List<OnHitDealtEffectEntry> GetOnHitDealtEffects() => data?.onHitDealtEffects;
+
+    /// <summary>Effets On-Hit reçus de ce PNJ — voir GetOnHitDealtEffects().</summary>
+    public override List<OnHitReceivedEffectEntry> GetOnHitReceivedEffects() => data?.onHitReceivedEffects;
+
     protected override void Die()
     {
         // PNJ sans canDie (civils, décoratifs) → invulnérables
