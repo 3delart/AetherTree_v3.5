@@ -168,6 +168,16 @@ public class Player : Entity
     public float combatExitDelay = 6f;
     private float _lastCombatActionTime = -999f;
 
+    // ── Stealth — visuel ──────────────────────────────────────
+    [Header("Stealth")]
+    [Tooltip("Opacité du modèle pendant le Stealth [0..1]. Nécessite un matériau en mode\n" +
+             "Transparent/Fade (Opaque ignore l'alpha, aucun effet visible dans ce cas).")]
+    [Range(0f, 1f)] public float stealthAlpha = 0.35f;
+    private Renderer[] _renderers;
+    private bool       _wasStealthed = false;
+    private static readonly int ColorID     = Shader.PropertyToID("_Color");
+    private static readonly int BaseColorID = Shader.PropertyToID("_BaseColor");
+
     // ── Guilde ────────────────────────────────────────────────
     [HideInInspector] public HashSet<string> uniqueGroupMembersLed = new HashSet<string>();
 
@@ -231,6 +241,45 @@ public class Player : Entity
         UpdateAFK();
         UpdateCombat();
         CheckTalismanExpiry();
+        UpdateStealthVisual();
+    }
+
+    // =========================================================
+    // STEALTH — visuel
+    // =========================================================
+
+    /// <summary>Applique/retire la transparence du modèle quand l'état Stealth change — ne
+    /// touche les Renderer que sur transition (pas chaque frame). Utilise un
+    /// MaterialPropertyBlock (pas d'instanciation de matériau) et essaie _Color (Built-in RP) ET
+    /// _BaseColor (URP) — l'un des deux existera selon le shader du modèle.</summary>
+    private void UpdateStealthVisual()
+    {
+        bool stealthed = statusEffects != null && statusEffects.isStealthed;
+        if (stealthed == _wasStealthed) return;
+        _wasStealthed = stealthed;
+
+        if (_renderers == null) _renderers = GetComponentsInChildren<Renderer>();
+
+        float alpha = stealthed ? stealthAlpha : 1f;
+        var mpb = new MaterialPropertyBlock();
+        foreach (var r in _renderers)
+        {
+            if (r == null || r.sharedMaterial == null) continue;
+            r.GetPropertyBlock(mpb);
+            if (r.sharedMaterial.HasProperty(ColorID))
+            {
+                Color c = r.sharedMaterial.GetColor(ColorID);
+                c.a = alpha;
+                mpb.SetColor(ColorID, c);
+            }
+            if (r.sharedMaterial.HasProperty(BaseColorID))
+            {
+                Color c = r.sharedMaterial.GetColor(BaseColorID);
+                c.a = alpha;
+                mpb.SetColor(BaseColorID, c);
+            }
+            r.SetPropertyBlock(mpb);
+        }
     }
 
     // =========================================================
@@ -826,6 +875,12 @@ public class Player : Entity
     public void UseSkill(SkillData skill, Entity target = null)
     {
         if (skill == null) return;
+
+        // Stealth — utiliser un skill/attaque révèle toujours (coup d'ouverture), pas
+        // seulement subir un coup (déjà géré dans StatusEffectSystem.OnTakeDamage).
+        if (statusEffects != null && statusEffects.isStealthed)
+            statusEffects.RemoveBuff(BuffType.Stealth);
+
         lastSkillUsed = skill;
         RegisterCombatAction();
         animatorController?.PlayAttack(skill.attackAnimation);

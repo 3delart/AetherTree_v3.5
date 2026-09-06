@@ -179,9 +179,10 @@ public class Mob : Entity
         Collider[] hits = Physics.OverlapSphere(transform.position, data.detectionRange);
         foreach (Collider col in hits)
         {
-            // Joueur
+            // Joueur — Stealth = totalement ignoré (jamais détecté, mouvement ou pas — le
+            // "clignotement" en bougeant existe seulement côté PvP futur, pas contre l'IA).
             Player player = col.GetComponent<Player>();
-            if (player != null && !player.isDead)
+            if (player != null && !player.isDead && !(player.statusEffects?.isStealthed ?? false))
             {
                 if (!enemyList.Contains(player))
                     enemyList.Add(player);

@@ -122,10 +122,14 @@ public enum BuffType
     Purified,       // Suppression des debuffs actifs, jet indépendant par debuff actif
                     // (chancePerEffect sur BuffData) — Lumière (§3.1.1.2)
     Invincible,     // Invincibilité temporaire — post-respawn 3s (§3.1.1.3)
-    Stealth,        // Furtivité — interrompue par attaque/dégât reçu (§3.1.1.3)
-                    // (à implémenter) : flag seul aujourd'hui (isStealthed), aucune invisibilité
-                    // réelle — mobs voient/attaquent pareil, aggro/detection pas câblé. Sert
-                    // uniquement à MobKilledEvent.wasStealth (KillChecker.mustBeStealth).
+    Stealth,        // Furtivité — interrompue par attaque (Player.UseSkill) ou dégât reçu
+                    // (StatusEffectSystem.OnTakeDamage) — §3.1.1.3. Invisible aux Mobs (exclu de
+                    // Mob.RefreshEnemyList tant qu'actif, sans exception liée au mouvement) —
+                    // PNJ ne ciblent jamais les joueurs de toute façon (canFight ne détecte que
+                    // les Mobs). Transparence visuelle locale sur Player (voir
+                    // Player.UpdateStealthVisual/stealthAlpha). Le "clignotement toutes les 3s
+                    // en bougeant" (repérage PvP) est HORS SCOPE tant qu'aucune infra réseau
+                    // n'existe (2026-09-06) — rien à câbler contre des mobs/PNJ pour ça.
     [System.Obsolete("Retiré — Dispel cible un ennemi comme effet négatif, voir DebuffType.Dispel.")]
     Dispel,         // Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.
     Stats,          // Augmentation de stat spécifique (utilise StatModifierType)
