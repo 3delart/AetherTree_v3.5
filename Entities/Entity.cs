@@ -466,6 +466,88 @@ public abstract class Entity : MonoBehaviour
                 Die();
             }
         }
+
+        // Réactions On-Hit reçues (Thorns/Reflect/HealOnHit/CounterDebuff/CounterBuff) —
+        // centralisé ici (au lieu de Player uniquement) pour que Mob/PNJ en bénéficient aussi
+        // via leur propre override de GetOnHitReceivedEffects(). `amount` ici reflète déjà le
+        // Shield (contrairement à l'ancien Player.ApplyOnHitEffects, qui recevait la valeur
+        // AVANT absorption de bouclier — précision, pas un changement de comportement visible
+        // puisque le montant absorbé n'était de toute façon jamais la cible d'un proc réel).
+        if (source != null)
+            ApplyOnHitReceivedEffects(amount, source);
+    }
+
+    /// <summary>Effets On-Hit infligés actifs sur cette entité (équipement+permanents pour
+    /// Player, MobData/PNJData pour Mob/PNJ). Null par défaut — override dans les sous-classes
+    /// concernées. Consommé par SkillSystem (réactions) et CombatSystem (DamageAmpOnHit).</summary>
+    public virtual List<OnHitDealtEffectEntry> GetOnHitDealtEffects() => null;
+
+    /// <summary>Effets On-Hit reçus actifs sur cette entité — voir GetOnHitDealtEffects().
+    /// Consommé par ApplyOnHitReceivedEffects (réactions) et CombatSystem
+    /// (DamageReductionOnHit).</summary>
+    public virtual List<OnHitReceivedEffectEntry> GetOnHitReceivedEffects() => null;
+
+    /// <summary>Applique les effets On-Hit REÇUS (Thorns/ReflectPercent/HealOnHit/
+    /// CounterDebuff/CounterBuff) de cette entité quand elle reçoit un coup. DamageReductionOnHit
+    /// n'apparaît pas ici — c'est un modificateur, déjà consommé dans CombatSystem au moment
+    /// du calcul, pas une réaction post-coup.</summary>
+    private void ApplyOnHitReceivedEffects(float damageTaken, Entity attacker)
+    {
+        var effects = GetOnHitReceivedEffects();
+        if (effects == null) return;
+
+        foreach (var entry in effects)
+        {
+            if (entry?.effect == null || !entry.Roll()) continue;
+            switch (entry.effect.effectType)
+            {
+                case OnHitReceivedEffectType.Thorns:
+                    DealOnHitCounterDamage(entry.effect.thornsDamage, entry.effect, attacker);
+                    break;
+                case OnHitReceivedEffectType.ReflectPercent:
+                    DealOnHitCounterDamage(damageTaken * entry.effect.reflectPercent, entry.effect, attacker);
+                    break;
+                case OnHitReceivedEffectType.HealOnHit:
+                    Heal(entry.effect.GetHealAmount(MaxHP));
+                    break;
+                case OnHitReceivedEffectType.CounterDebuff:
+                    if (entry.effect.counterDebuff != null && attacker.statusEffects != null)
+                        attacker.statusEffects.TryApplyDebuff(entry.effect.counterDebuff, this);
+                    break;
+                case OnHitReceivedEffectType.CounterBuff:
+                    if (entry.effect.counterBuff != null && statusEffects != null)
+                        statusEffects.ApplyBuff(entry.effect.counterBuff, this);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>Applique les dégâts d'un Thorns/ReflectPercent à l'attaquant. `pierceDefense`
+    /// (Inspector: "Dégâts renvoyés bruts") true → montant tel quel. False → réduit comme un
+    /// dégât normal : formule physique quadratique (défense mêlée) si reflectElement = Neutral,
+    /// résistance élémentaire linéaire sinon — même split physique/élémentaire indépendant que
+    /// CombatSystem, pas de mélange des deux canaux. Déplacé depuis Player.cs (session
+    /// précédente) pour être partagé par toutes les entités.</summary>
+    private void DealOnHitCounterDamage(float rawAmount, OnHitReceivedEffectData effect, Entity attacker)
+    {
+        if (rawAmount <= 0f || attacker == null) return;
+
+        float amount = rawAmount;
+        if (!effect.pierceDefense)
+        {
+            if (effect.reflectElement == ElementType.Neutral)
+            {
+                float def = attacker.GetMeleeDefense();
+                amount = (rawAmount * rawAmount) / (rawAmount + def * 1.5f);
+            }
+            else
+            {
+                float resist = attacker.GetElementalResistance(effect.reflectElement);
+                amount = rawAmount * (1f - Mathf.Clamp01(resist));
+            }
+        }
+
+        attacker.TakeDamage(amount, effect.reflectElement, this);
     }
 
     // =========================================================
