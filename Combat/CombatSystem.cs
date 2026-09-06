@@ -216,7 +216,7 @@ public class CombatSystem : MonoBehaviour
                     - elemental.GetRank5ResistPenetration(skill.PrimaryElement));
         }
 
-        //LogDamageReport("PLAYER", attacker, target, weapon, skill, baseDamage, physDamage, elemRaw, elemFinal, elemResistLog, totalDamage, isCrit, effectiveCritMult);
+        LogDamageReport("PLAYER", attacker, target, weapon, skill, baseDamage, physDamage, elemRaw, elemFinal, elemResistLog, totalDamage, isCrit, effectiveCritMult);
 
         return Mathf.Max(1f, totalDamage);
     }

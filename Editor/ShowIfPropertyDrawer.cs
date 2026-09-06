@@ -43,6 +43,16 @@ public class ShowIfPropertyDrawer : PropertyDrawer
 
         var showIf = (ShowIfAttribute)attribute;
 
+        // Copie défensive — EditorGUI.LabelField(rect, string, style) construit son propre
+        // GUIContent via un pool interne à Unity (EditorGUIUtility.TempContent) qui peut
+        // partager LA MÊME instance que le `label` transmis par Unity pour ce champ. Sans
+        // cette copie, dessiner le header (ci-dessous, AVANT le champ) écrase silencieusement
+        // le texte du label du champ lui-même par celui du header — bug vécu : "Damage
+        // Multiplier" affichait le texte du Header à la place de son propre nom.
+        var fieldLabel = new GUIContent(label);
+        if (!string.IsNullOrEmpty(showIf.DisplayName))
+            fieldLabel.text = showIf.DisplayName;
+
         if (!string.IsNullOrEmpty(showIf.Header))
         {
             var headerRect = new Rect(position.x, position.y, position.width, HeaderHeight);
@@ -57,16 +67,16 @@ public class ShowIfPropertyDrawer : PropertyDrawer
         if (rangeAttr.Length > 0 && property.propertyType == SerializedPropertyType.Float)
         {
             var range = (RangeAttribute)rangeAttr[0];
-            EditorGUI.BeginProperty(position, label, property);
-            property.floatValue = EditorGUI.Slider(position, label, property.floatValue, range.min, range.max);
+            EditorGUI.BeginProperty(position, fieldLabel, property);
+            property.floatValue = EditorGUI.Slider(position, fieldLabel, property.floatValue, range.min, range.max);
             EditorGUI.EndProperty();
             return;
         }
         if (rangeAttr.Length > 0 && property.propertyType == SerializedPropertyType.Integer)
         {
             var range = (RangeAttribute)rangeAttr[0];
-            EditorGUI.BeginProperty(position, label, property);
-            property.intValue = EditorGUI.IntSlider(position, label, property.intValue, (int)range.min, (int)range.max);
+            EditorGUI.BeginProperty(position, fieldLabel, property);
+            property.intValue = EditorGUI.IntSlider(position, fieldLabel, property.intValue, (int)range.min, (int)range.max);
             EditorGUI.EndProperty();
             return;
         }
@@ -75,39 +85,52 @@ public class ShowIfPropertyDrawer : PropertyDrawer
         if (minAttr.Length > 0 && property.propertyType == SerializedPropertyType.Float)
         {
             var min = (MinAttribute)minAttr[0];
-            EditorGUI.BeginProperty(position, label, property);
-            property.floatValue = Mathf.Max(min.min, EditorGUI.FloatField(position, label, property.floatValue));
+            EditorGUI.BeginProperty(position, fieldLabel, property);
+            property.floatValue = Mathf.Max(min.min, EditorGUI.FloatField(position, fieldLabel, property.floatValue));
             EditorGUI.EndProperty();
             return;
         }
         if (minAttr.Length > 0 && property.propertyType == SerializedPropertyType.Integer)
         {
             var min = (MinAttribute)minAttr[0];
-            EditorGUI.BeginProperty(position, label, property);
-            property.intValue = Mathf.Max((int)min.min, EditorGUI.IntField(position, label, property.intValue));
+            EditorGUI.BeginProperty(position, fieldLabel, property);
+            property.intValue = Mathf.Max((int)min.min, EditorGUI.IntField(position, fieldLabel, property.intValue));
             EditorGUI.EndProperty();
             return;
         }
 
-        EditorGUI.PropertyField(position, property, label, true);
+        EditorGUI.PropertyField(position, property, fieldLabel, true);
     }
 
     private bool IsVisible(SerializedProperty property)
     {
         var showIf = (ShowIfAttribute)attribute;
 
-        // Résout le champ frère par chemin relatif — robuste dans les listes/objets
-        // imbriqués (ex: "effects.Array.data[0].effectType"), contrairement à un
-        // simple Replace(property.name, ...) qui peut matcher au mauvais endroit.
+        if (!MatchesAny(property, showIf.conditionField, showIf.values)) return false;
+
+        // AndField optionnel — condition ET secondaire (voir ShowIfAttribute.AndField).
+        // Absente (null) par défaut → n'affecte aucun des usages existants à un seul champ.
+        if (showIf.AndField != null && !MatchesAny(property, showIf.AndField, new[] { showIf.AndValue }))
+            return false;
+
+        return true;
+    }
+
+    /// <summary>Résout le champ frère `fieldName` (chemin relatif, robuste dans les listes/objets
+    /// imbriqués — ex: "effects.Array.data[0].effectType", contrairement à un simple
+    /// Replace(property.name, ...) qui peut matcher au mauvais endroit) et retourne true si sa
+    /// valeur correspond à AU MOINS UNE des `values` fournies.</summary>
+    private bool MatchesAny(SerializedProperty property, string fieldName, object[] values)
+    {
         int lastDot = property.propertyPath.LastIndexOf('.');
         string siblingPath = lastDot >= 0
-            ? property.propertyPath.Substring(0, lastDot + 1) + showIf.conditionField
-            : showIf.conditionField;
+            ? property.propertyPath.Substring(0, lastDot + 1) + fieldName
+            : fieldName;
 
         SerializedProperty condition = property.serializedObject.FindProperty(siblingPath);
         if (condition == null) return true; // champ introuvable — n'échoue pas silencieusement en masquant tout
 
-        foreach (var value in showIf.values)
+        foreach (var value in values)
         {
             switch (condition.propertyType)
             {

@@ -377,7 +377,9 @@ public class StatusEffectSystem : MonoBehaviour
         StatModifierType.LightningResistance, StatModifierType.DarknessResistance,
         StatModifierType.LightResistance, StatModifierType.AllResistances,
         StatModifierType.MoveSpeed, StatModifierType.XPBonus, StatModifierType.GoldBonus,
-        StatModifierType.ElementalPoint,
+        // ElementalPoint (obsolète) retiré — remplacé par ElementalPointFire/.../All, traités
+        // comme des stats NORMALES (Base+Flat)×(1+%), PAS des exceptions — demande explicite
+        // Florian, divergence volontaire avec StatType.PointsX côté équipement (resté exception).
     };
 
     /// <summary>
@@ -529,6 +531,18 @@ public class StatusEffectSystem : MonoBehaviour
             return;
         }
 
+        if (stat == StatModifierType.ElementalPointAll)
+        {
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.ElementalPointFire, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.ElementalPointWater, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.ElementalPointLightning, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.ElementalPointEarth, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.ElementalPointNature, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.ElementalPointDarkness, isPercent, value);
+            AccumulateStatLine(flatSum, percentSum, StatModifierType.ElementalPointLight, isPercent, value);
+            return;
+        }
+
         if (isPercent && !ExceptionStats.Contains(stat))
             percentSum[stat] = percentSum.TryGetValue(stat, out var p) ? p + value : value;
         else
@@ -557,8 +571,15 @@ public class StatusEffectSystem : MonoBehaviour
             // résultat correct (value × 1 = value), aucun piège de dropdown pour le designer.
             case StatModifierType.XPBonus:
             case StatModifierType.GoldBonus:       return 1f;
-            // ElementalPoint : pas de valeur globale — retourne 0f (base neutre pour Percent).
-            // La valeur réelle dépend de l'élément ciblé ; voir ModifyEntityStat.
+            case StatModifierType.ElementalPointFire:      return target.GetElementalPoints(ElementType.Fire);
+            case StatModifierType.ElementalPointWater:     return target.GetElementalPoints(ElementType.Water);
+            case StatModifierType.ElementalPointLightning: return target.GetElementalPoints(ElementType.Lightning);
+            case StatModifierType.ElementalPointEarth:     return target.GetElementalPoints(ElementType.Earth);
+            case StatModifierType.ElementalPointNature:    return target.GetElementalPoints(ElementType.Nature);
+            case StatModifierType.ElementalPointDarkness:  return target.GetElementalPoints(ElementType.Darkness);
+            case StatModifierType.ElementalPointLight:     return target.GetElementalPoints(ElementType.Light);
+            // ElementalPointAll : jamais stockée elle-même, toujours répartie sur les 7 ci-dessus
+            // au moment de l'accumulation (AccumulateStatLine) — jamais transmise ici.
             default:                               return 0f;
         }
     }
@@ -639,8 +660,29 @@ public class StatusEffectSystem : MonoBehaviour
                 foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                     target.AddElementalResistance(e, delta);
                 break;
-            // ElementalPoint — SetElementalPoints() existe sur Entity (GDD §3.1) :
-            // câblé en additif sur l'élément ciblé par le buff/debuff SO (debuffStatElement).
+            case StatModifierType.ElementalPointFire:
+                target.SetElementalPoints(ElementType.Fire, target.GetElementalPoints(ElementType.Fire) + delta);
+                break;
+            case StatModifierType.ElementalPointWater:
+                target.SetElementalPoints(ElementType.Water, target.GetElementalPoints(ElementType.Water) + delta);
+                break;
+            case StatModifierType.ElementalPointLightning:
+                target.SetElementalPoints(ElementType.Lightning, target.GetElementalPoints(ElementType.Lightning) + delta);
+                break;
+            case StatModifierType.ElementalPointEarth:
+                target.SetElementalPoints(ElementType.Earth, target.GetElementalPoints(ElementType.Earth) + delta);
+                break;
+            case StatModifierType.ElementalPointNature:
+                target.SetElementalPoints(ElementType.Nature, target.GetElementalPoints(ElementType.Nature) + delta);
+                break;
+            case StatModifierType.ElementalPointDarkness:
+                target.SetElementalPoints(ElementType.Darkness, target.GetElementalPoints(ElementType.Darkness) + delta);
+                break;
+            case StatModifierType.ElementalPointLight:
+                target.SetElementalPoints(ElementType.Light, target.GetElementalPoints(ElementType.Light) + delta);
+                break;
+            // ElementalPointAll — jamais reçue ici, toujours répartie sur les 7 ci-dessus au
+            // moment de l'accumulation (AccumulateStatLine), chacune avec sa propre base.
             // AttackSpeed : non géré sur Entity base — réservé CombatSystem.
         }
     }

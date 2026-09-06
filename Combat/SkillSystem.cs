@@ -167,7 +167,7 @@ public class SkillSystem : MonoBehaviour
                 break;
 
             case TargetType.Dash_Target:
-                if (target != null && !target.isDead)
+                if (target != null && !target.isDead && PassesAoeFilter(skill.aoeFaction, caster, target))
                     StartCoroutine(DashToTarget(skill, caster, target));
                 else
                     LogMissingTarget(skill, caster);
@@ -290,6 +290,7 @@ public class SkillSystem : MonoBehaviour
     private void ExecuteOnTarget(SkillData skill, Entity caster, Entity target)
     {
         if (target == null || target.isDead) return;
+        if (!PassesAoeFilter(skill.aoeFaction, caster, target)) return;
         ApplyEffectType(skill, caster, target);
         ApplyStatusEffects(skill, caster, target);
         if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)

@@ -258,6 +258,22 @@ public class SkillBar : MonoBehaviour
             return false;
         }
 
+        // Vérification HP — même convention que mana : bloqué si pas assez de marge,
+        // jamais de mort déclenchée par le coût d'un skill (<=, pas <, pour ne jamais
+        // autoriser de retomber exactement à 0).
+        if (skill.hpCost > 0f && _player.CurrentHP <= skill.hpCost)
+        {
+            Debug.Log($"[SKILLBAR] HP insuffisants pour {skill.name}");
+            return false;
+        }
+
+        // Vérification Aeris
+        if (skill.goldCost > 0 && (AerisSystem.Instance == null || AerisSystem.Instance.Aeris < skill.goldCost))
+        {
+            Debug.Log($"[SKILLBAR] Aeris insuffisant pour {skill.name}");
+            return false;
+        }
+
         // Récupère la cible courante — le tick auto-attaque continu (isAutoTick,
         // appelé par TargetingSystem.PerformAutoAttack) reste strictement sur
         // l'engagée (rouge) tant qu'elle existe, sans dévier vers une simple
@@ -452,6 +468,8 @@ public class SkillBar : MonoBehaviour
     private void ExecuteSkill(SkillData skill, int slot, Entity target)
     {
         _player.SpendMana(skill.manaCost);
+        if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
+        if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
         // NOTE : Ne PAS appeler player.UseSkill() ici.
         // SkillSystem.Execute() → player.UseSkill() s'en charge.
         // Double appel = RegisterCast() élémentaire × 2 → affinité doublée.
@@ -493,13 +511,19 @@ public class SkillBar : MonoBehaviour
         //    (son 1er garde-fou est `!autoAttacking || engagedTarget == null`).
         //  - Slots ≥ 1 : EngageFromSkill() complet (Select + Engage) — un vrai
         //    skill doit aussi ramener le TargetPanel sur sa cible.
+        // Buff/Debuff n'engagent JAMAIS le combat, même sur Target/AoE_Target/Dash_Target/
+        // LineTarget — un buff n'est jamais hostile (ex: buffer un PNJ allié ne doit pas
+        // déclencher l'auto-attaque dessus ensuite), et on peut débuff une cible sans pour
+        // autant l'agresser (l'auto-attaque doit rester un choix explicite du joueur).
         if (target != null
             && skill.targetType != TargetType.Self
             && skill.targetType != TargetType.AoE_Self
             && skill.targetType != TargetType.GroundTarget
             && skill.targetType != TargetType.Direction
             && skill.targetType != TargetType.Skillshot
-            && skill.targetType != TargetType.Cone)
+            && skill.targetType != TargetType.Cone
+            && skill.effectType != SkillEffectType.Buff
+            && skill.effectType != SkillEffectType.Debuff)
         {
             if (slot == 0) TargetingSystem.Instance?.Engage(target);
             else           TargetingSystem.Instance?.EngageFromSkill(target);

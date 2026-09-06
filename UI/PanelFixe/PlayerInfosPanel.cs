@@ -136,7 +136,7 @@ public class PlayerInfosPanel : MonoBehaviour, IPointerClickHandler
             hpBar.value    = _player.CurrentHP;
         }
         if (hpValueText != null)
-            hpValueText.text = $"{Mathf.CeilToInt(_player.CurrentHP)} / {_player.MaxHP}";
+            hpValueText.text = $"{Mathf.CeilToInt(_player.CurrentHP)} / {Mathf.CeilToInt(_player.MaxHP)}";
 
         // MP
         if (mpBar != null)
@@ -145,7 +145,7 @@ public class PlayerInfosPanel : MonoBehaviour, IPointerClickHandler
             mpBar.value    = _player.CurrentMana;
         }
         if (mpValueText != null)
-            mpValueText.text = $"{Mathf.CeilToInt(_player.CurrentMana)} / {_player.MaxMana}";
+            mpValueText.text = $"{Mathf.CeilToInt(_player.CurrentMana)} / {Mathf.CeilToInt(_player.MaxMana)}";
     }
 
     private void RefreshIcon()

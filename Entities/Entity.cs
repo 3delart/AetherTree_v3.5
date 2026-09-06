@@ -535,6 +535,16 @@ public abstract class Entity : MonoBehaviour
         currentMana = Mathf.Max(0f, currentMana - amount);
     }
 
+    /// <summary>Coût en HP d'un skill (SkillData.hpCost) — PAS des dégâts : pas de check
+    /// Invincible/Sleep/Poison, pas de floating text, pas de mort déclenchée. L'appelant
+    /// (SkillBar.TryUseSlot) garantit déjà CurrentHP > amount avant d'appeler ceci (bloque
+    /// le cast sinon, même convention que SpendMana), donc ce clamp à 0f n'est qu'un
+    /// filet de sécurité, jamais censé s'activer en pratique.</summary>
+    public virtual void SpendHP(float amount)
+    {
+        currentHP = Mathf.Max(0f, currentHP - amount);
+    }
+
     public virtual void RecoverMana(float amount)
     {
         if (isDead) return;

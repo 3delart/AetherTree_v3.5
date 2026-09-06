@@ -78,19 +78,24 @@ public class DebuffInstance : StatusEffectInstance
 
     /// <summary>Dégâts/s d'un DoT (Dot, + Burn/Poison/Bleed obsolètes gardés pour compat) —
     /// 2 termes, pas de socle séparé : rang élémentaire de la SOURCE × rankDamagePercent (%
-    /// du MaxHP cible, plafonné naturellement par le rang max 5) + points élémentaires BRUTS
+    /// du MaxHP cible, plafonné naturellement par le rang max 5) + points élémentaires
+    /// EFFECTIFS (brut + bonus de rang, même valeur que CombatSystem/l'UI — GetEffectiveElementPoints)
     /// de la source × elementalPointsMultiplier (flat, volontairement sans plafond —
     /// l'investissement doit toujours payer), réduit par la résistance élémentaire de la
-    /// CIBLE. Points bruts (pas "effectifs" avec bonus de rang inclus) pour ne pas compter
-    /// le rang deux fois — même séparation source/cible que CombatSystem. Toujours en % du
+    /// CIBLE. Les deux termes comptent le rang — CE N'EST PAS un double-compte par erreur,
+    /// décision explicite Florian : rankTerm et le bonus de rang inclus dans pointsTerm sont
+    /// deux bonus différents qui doivent tous les deux s'appliquer. Toujours en % du
     /// MaxHP cible (pas de mode Flat — un DoT flat ne scale pas avec le contenu). Rang 0 ET
     /// points 0 → 0 dégât (Dot = mécanisme élémentaire, pas universel).</summary>
     private float ComputeDotDps(Entity target)
     {
         var element = DebuffData.damageElement;
 
-        int   rank   = source?.GetComponent<ElementalSystem>()?.GetElementRank(element) ?? 0;
-        float points = source != null ? source.GetElementalPoints(element) : 0f;
+        ElementalSystem sourceES = source?.GetComponent<ElementalSystem>();
+        int   rank   = sourceES?.GetElementRank(element) ?? 0;
+        float points = sourceES != null
+            ? sourceES.GetEffectiveElementPoints(element)
+            : source?.GetElementalPoints(element) ?? 0f;
 
         float rankTerm   = target.MaxHP * (rank * DebuffData.rankDamagePercent / 100f);
         float pointsTerm = points * DebuffData.elementalPointsMultiplier;
@@ -101,7 +106,19 @@ public class DebuffInstance : StatusEffectInstance
             ? targetMob.data.GetElementalResistance(element)
             : target.GetElementalResistance(element);
 
-        return dps * (1f - resist);
+        float finalDps = dps * (1f - resist);
+
+        if (CombatSystem.Instance != null && CombatSystem.Instance.debugDamage)
+        {
+            Debug.Log($"━━━ DOT REPORT ({DebuffData.name}) ━━━\n" +
+                      $"  Source : {source?.entityName ?? "?"}   Target : {target.entityName} (MaxHP {target.MaxHP:F0})\n" +
+                      $"  Élément : {element}   Rang source : {rank}   Points effectifs source : {points:F1}\n" +
+                      $"  RankTerm ({DebuffData.rankDamagePercent}% MaxHP × rang) : {rankTerm:F2}\n" +
+                      $"  PointsTerm (points × {DebuffData.elementalPointsMultiplier}) : {pointsTerm:F2}\n" +
+                      $"  DPS brut : {dps:F2}   Résist cible : {resist * 100f:F1}%   DPS final : {finalDps:F2}");
+        }
+
+        return finalDps;
     }
 }
 

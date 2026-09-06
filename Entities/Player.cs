@@ -839,13 +839,25 @@ public class Player : Entity
 
         bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
 
-        if (!skill.IsNeutral)
-            foreach (var element in skill.elements)
-                elementalSystem.RegisterCast(element, isBasicAttack: isBasic);
-        else
-            elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic);
+        // Buff/Debuff ne comptent PAS pour la fenêtre d'affinité — un soin/buff tagué Eau ne
+        // "joue" pas de l'eau au sens combat, seuls les skills qui infligent réellement des
+        // dégâts (Damage/Other, ex: DrainHP) font bouger le rang élémentaire.
+        bool countsForAffinity = skill.effectType != SkillEffectType.Buff
+                               && skill.effectType != SkillEffectType.Debuff;
+        if (countsForAffinity)
+        {
+            if (!skill.IsNeutral)
+                foreach (var element in skill.elements)
+                    elementalSystem.RegisterCast(element, isBasicAttack: isBasic);
+            else
+                elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic);
+        }
 
-        stats.RecalculateStats(this);
+        // RequestRecalculate() (pas juste stats.RecalculateStats()) — sinon le pass équipement
+        // tourne seul, SANS jamais relancer ReapplyActiveModifiers() après : un buff actif sur
+        // n'importe quelle stat se faisait effacer dès le skill suivant (attaque de base
+        // incluse), car son contenu n'était jamais réappliqué par-dessus le recalcul équipement.
+        RequestRecalculate();
         RefreshTitle();
     }
 
@@ -1073,8 +1085,15 @@ public class Player : Entity
     public ActivityCounter GetActivityCounter() => activityCounter;
     public ElementalSystem GetElementalSystem()  => elementalSystem;
 
+    /// <summary>Points élémentaires EFFECTIFS (équipement + buffs) — lit la valeur poussée sur
+    /// l'Entity, comme TOUTE autre stat (MaxHP, MeleeDefense...). AVANT ce fix, lisait
+    /// `stats.GetElementalPoints()` — le dictionnaire SCRATCH interne de CharacterStats,
+    /// rempli uniquement par RecalculateStats (esprits/StatPoints) et jamais mis à jour par
+    /// un buff — un buff ElementalPoint modifiait bien l'Entity (SetElementalPoints, via
+    /// StatusEffectSystem) mais restait invisible ici et dans CombatSystem/l'UI (qui passent
+    /// tous deux par GetEffectiveElementPoints → ce getter).</summary>
     public float GetElementPoints(ElementType element)
-        => stats.GetElementalPoints(element);
+        => GetElementalPoints(element);
 
     // =========================================================
     // SETTERS ENTITY spécifiques au joueur

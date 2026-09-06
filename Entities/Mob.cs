@@ -144,6 +144,15 @@ public class Mob : Entity
 
         if (IsDashing) return;
 
+        // Stun/Sleep — CC dur, GDD §3.1.1.1 : "bloque TOUTES les actions". Avant ce fix, seul
+        // HandleAttack() vérifiait isStunned (l'attaque était bloquée mais le mob continuait
+        // de patrouiller/chasser normalement) et isSleeping n'était vérifié NULLE PART pour
+        // bloquer une action (seulement utilisé pour le réveil au premier dégât reçu) — gel
+        // complet ici, un seul endroit, plutôt que dans chaque Handle* séparément.
+        bool isCCd = statusEffects != null && (statusEffects.isStunned || statusEffects.isSleeping);
+        if (agent != null && agent.isOnNavMesh) agent.isStopped = isCCd;
+        if (isCCd) return;
+
         switch (currentState)
         {
             case MobState.Patrol: HandlePatrol(); break;

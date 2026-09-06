@@ -68,10 +68,6 @@ public class SkillData : ScriptableObject
              "Debuff → applique uniquement des debuffs (via StatusEffects)\n" +
              "Other  → effet spécial (drain, téléport, invocation...)")]
     public SkillEffectType effectType       = SkillEffectType.Damage;
-
-    [Tooltip("Multiplicateur global sur les dégâts physiques.\n" +
-             "Ex: 1.0 = dégâts normaux | 2.0 = double dégâts physiques")]
-    public float           damageMultiplier = 1f;
     public float           cooldown         = 1f;
     public float           castTime         = 0f;
 
@@ -97,21 +93,31 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
     public float summonDuration = 30f;
 
-    // ── ③ Ratios de dégâts physiques ──────────────────────────
-    [Header("③ Ratios de dégâts physiques (somme doit = 1.0)")]
+    // ── ③ Dégâts physiques — Damage ou Other (ex: DrainHP) uniquement ──────
+    // Jamais utilisés pour Buff/Debuff (aucun calcul de dégâts ne les lit,
+    // voir SkillSystem.ApplyEffectType/CalculateDamage).
+    [Tooltip("Multiplicateur global sur les dégâts physiques.\n" +
+             "Ex: 1.0 = dégâts normaux | 2.0 = double dégâts physiques")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
+        Header = "③ Ratios de dégâts physiques (somme doit = 1.0)")]
+    public float damageMultiplier = 1f;
+
     [Tooltip("Part des dégâts réduite par la défense Mêlée de la cible.\n" +
              "Ex: skill mêlée pur → 1.0 | skill hybride → 0.7")]
     [Range(0f, 1f)]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float damageMeleeRatio  = 1f;
 
     [Tooltip("Part des dégâts réduite par la défense Distance de la cible.\n" +
              "Ex: projectile → 1.0 | lancer de lame → 0.5")]
     [Range(0f, 1f)]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float damageRangedRatio = 0f;
 
     [Tooltip("Part des dégâts réduite par la défense Magique de la cible.\n" +
              "Ex: sort pur → 1.0 | skill hybride → 0.3")]
     [Range(0f, 1f)]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float damageMagicRatio  = 0f;
 
     // ── ④ Coût ────────────────────────────────────────────────
@@ -131,20 +137,22 @@ public class SkillData : ScriptableObject
     public float      projectileSpeed = 15f;
     public GameObject projectilePrefab;
 
-    [Tooltip("Qui est touché par les effets de zone (AoE/multi-cibles).\n" +
+    [Tooltip("Qui peut être touché par ce skill — AoE ou non (Target/Dash_Target y compris,\n" +
+             "pas seulement les zones).\n" +
              "Enemies  → seulement les ennemis du caster (dégâts classiques)\n" +
-             "Allies   → seulement les alliés du caster (soin/buff de groupe, inclut le caster\n" +
-             "           lui-même s'il est dans la zone — ex: Purify de zone)\n" +
-             "Everyone → tout le monde dans la zone, sans distinction")]
+             "Allies   → seulement les alliés du caster (soin/buff, inclut le caster lui-même\n" +
+             "           s'il est dans la zone pour un AoE — ex: Purify de zone)\n" +
+             "Everyone → tout le monde, sans distinction")]
     [ShowIf(nameof(targetType), TargetType.AoE_Self, TargetType.AoE_Target, TargetType.GroundTarget,
-        TargetType.Cone, TargetType.Direction, TargetType.Skillshot, TargetType.LineTarget)]
+        TargetType.Cone, TargetType.Direction, TargetType.Skillshot, TargetType.LineTarget,
+        TargetType.Target, TargetType.Dash_Target, DisplayName = "Cible")]
     public SkillAoeFaction aoeFaction = SkillAoeFaction.Enemies;
 
-    // ── ⑥ Éléments ────────────────────────────────────────────
-    [Header("⑥ Éléments")]
+    // ── ⑥ Éléments — Damage ou Other (ex: DrainHP) uniquement ─────────────
     [Tooltip("Vide = Neutre pur (pas de dégâts élémentaires)\n" +
              "1 élément = skill élémentaire\n" +
              "2+ éléments = skill combo élémentaire")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other, Header = "⑥ Éléments")]
     public List<ElementType> elements = new List<ElementType>();
 
     [Range(0f, 5f)]
@@ -154,6 +162,7 @@ public class SkillData : ScriptableObject
              "2.5 = elemPoints × 2.5  (ex: 300 pts → 750 dégâts elem)\n" +
              "5.0 = skill burst élémentaire maximum\n" +
              "⚠ Ignoré automatiquement si elements est vide (skill Neutre)")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float elementalMultiplier = 1f;
 
     // ── ⑦ Effets secondaires (StatusEffects SO) ───────────────
@@ -165,11 +174,15 @@ public class SkillData : ScriptableObject
              "Ex: Skill Debuff pur → glisse un DebuffData Poison à 100%")]
     public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
 
-    // ── ⑨ Exécution avancée ───────────────────────────────────
-    [Header("⑨ Exécution avancée")]
+    // ── ⑨ Exécution avancée — Active uniquement (pas BasicAttack/Ultimate), ──
+    // Damage ou Other uniquement (jamais Buff/Debuff, pas de sens à multi-hit/comboter
+    // un soin ou un buff pur avec ce mécanisme).
     [Tooltip("Normal        → exécution standard\n" +
              "MultiHit      → une activation, N hits en séquence (hitSteps)\n" +
              "ComboSequence → N appuis successifs sur le même slot (comboSteps)")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
+        AndField = nameof(skillType), AndValue = SkillType.Active,
+        Header = "⑨ Exécution avancée")]
     public SkillExecutionType executionType = SkillExecutionType.Normal;
 
     [Tooltip("MultiHit uniquement — liste des hits avec leurs stats propres.\n" +

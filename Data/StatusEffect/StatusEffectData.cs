@@ -137,6 +137,9 @@ public enum StatModifierType
     AttackDamage, AttackSpeed, MoveSpeed,
     MeleeDefense, RangedDefense, MagicDefense,
     CritChance, CritDamage,
+    [System.Obsolete("Retiré — jamais câblé (GetBaseStatValue/ModifyEntityStat n'avaient pas de " +
+        "case, et aucun moyen de choisir l'élément visé). Remplacé par ElementalPointFire/Water/" +
+        "Lightning/Earth/Nature/Darkness/Light/All — ordinal gardé, jamais réutilisé.")]
     ElementalPoint, Dodge, Precision,
     FireResistance, WaterResistance, EarthResistance,
     NatureResistance, LightningResistance,
@@ -162,6 +165,16 @@ public enum StatModifierType
     // le NOMBRE de dégâts par CombatSystem.CalculateDamage/CalculateMobDamage, en tout dernier.
     FinalDamageBonus,     // Attaquant — bonus de dégâts infligés.
     FinalDamageReduction, // Défenseur — réduction des dégâts reçus.
+
+    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Remplacent l'ancien
+    // ElementalPoint générique (obsolète, jamais câblé) — un vrai stat "normal" par élément,
+    // formule (Base+Flat)×(1+%) comme le reste de cet enum (PAS une exception comme
+    // StatType.PointsX côté équipement — divergence volontaire, demande explicite Florian).
+    ElementalPointFire, ElementalPointWater, ElementalPointLightning, ElementalPointEarth,
+    ElementalPointNature, ElementalPointDarkness, ElementalPointLight,
+    ElementalPointAll, // Répartie sur les 7 ci-dessus au moment de l'accumulation, chacune
+                       // calcule son propre résultat avec sa propre base — jamais stockée
+                       // comme cible finale elle-même.
 }
 
 // ── Ligne de stat additionnelle (BuffData.bonusStats / DebuffData.bonusStats) ─────
@@ -195,7 +208,11 @@ public class StatLine
         StatModifierType.AttackDamage, StatModifierType.AttackSpeed,
         StatModifierType.MeleeDefense, StatModifierType.RangedDefense, StatModifierType.MagicDefense,
         StatModifierType.AllDefense, StatModifierType.Dodge, StatModifierType.Precision,
-        StatModifierType.FinalDamageBonus, StatModifierType.FinalDamageReduction)]
+        StatModifierType.FinalDamageBonus, StatModifierType.FinalDamageReduction,
+        StatModifierType.ElementalPointFire, StatModifierType.ElementalPointWater,
+        StatModifierType.ElementalPointLightning, StatModifierType.ElementalPointEarth,
+        StatModifierType.ElementalPointNature, StatModifierType.ElementalPointDarkness,
+        StatModifierType.ElementalPointLight, StatModifierType.ElementalPointAll)]
     public StatLineMode mode = StatLineMode.Flat;
 
     [Tooltip("Flat : valeur directe\nPercent : % sommé globalement avec tous les autres % actifs ciblant la même stat, appliqué une fois : (Base+ΣFlat)×(1+Σ%). Masqué pour les stats toujours additives (Crit, Résistances, Points élémentaires, MoveSpeed, XPBonus, GoldBonus).")]

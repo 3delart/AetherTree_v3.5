@@ -543,6 +543,7 @@ public class TooltipSystem : MonoBehaviour
         string costStr = "";
         if (skill.manaCost > 0f) costStr += $"Mana : {skill.manaCost}";
         if (skill.hpCost   > 0f) costStr += (costStr.Length > 0 ? " | " : "") + $"HP : {skill.hpCost}";
+        if (skill.goldCost > 0)  costStr += (costStr.Length > 0 ? " | " : "") + $"Aeris : {skill.goldCost}";
         SetText(skillManaCostText, costStr);
         SetText(skillDamageText,   skill.effectType == SkillEffectType.Damage
             ? $"x{skill.damageMultiplier:F2}" : "");

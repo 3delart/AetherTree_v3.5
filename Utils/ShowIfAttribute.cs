@@ -44,6 +44,23 @@ public class ShowIfAttribute : PropertyAttribute
     /// est visible (remplace un [Header] classique, toujours affiché sinon).</summary>
     public string Header;
 
+    /// <summary>Condition ET secondaire optionnelle — le champ n'est visible que si LA
+    /// condition principale (conditionField/values) ET celle-ci sont vraies. Un seul
+    /// champ AndField (pas de liste de valeurs multiples comme la condition principale) —
+    /// AllowMultiple=false interdit d'empiler deux [ShowIf], donc c'est la façon de
+    /// combiner deux enums DIFFÉRENTS sur le même champ (ex: skillType ET effectType).
+    /// Ex: [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
+    ///             AndField = nameof(skillType), AndValue = SkillType.Active)]</summary>
+    public string AndField;
+    public object AndValue;
+
+    /// <summary>Optionnel — remplace le LIBELLÉ du champ lui-même (pas juste le Header au-dessus).
+    /// `[InspectorName]` ne fonctionne QUE sur les valeurs d'enum côté Unity, jamais sur un champ
+    /// lui-même — c'est le seul moyen de renommer l'étiquette d'un champ normal dans l'Inspector
+    /// sans renommer l'identifiant C# (donc sans risque de perte de données déjà sérialisées).
+    /// Ex: [ShowIf(nameof(targetType), TargetType.Target, DisplayName = "Cible")]</summary>
+    public string DisplayName;
+
     public ShowIfAttribute(string conditionField, params object[] values)
     {
         this.conditionField = conditionField;
