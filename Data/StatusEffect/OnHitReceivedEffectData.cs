@@ -54,6 +54,7 @@ public class OnHitReceivedEffectData : ScriptableObject
     // ── DamageReductionOnHit ──────────────────────────────────
     [Tooltip("% de dégâts en moins sur CE coup reçu. Ex: 0.50 = -50%. Roulé dans CombatSystem, " +
              "au même stage que le critique — voir CalculateDamage/CalculateMobDamage.")]
+    [Range(0f, 1f)]
     [ShowIf(nameof(effectType), OnHitReceivedEffectType.DamageReductionOnHit, Header = "Réduction (DamageReductionOnHit)")]
     public float reductionPercent = 0.30f;
 

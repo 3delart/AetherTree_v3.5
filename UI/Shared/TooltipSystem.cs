@@ -344,6 +344,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(weaponBonusSection,  weaponBonusText,  BuildBonuses(w.Bonuses));
         ShowSection(weaponResistSection, weaponResistText, BuildDebuffResist(w.DebuffResistances));
         ShowSection(weaponOnHitSection,  weaponOnHitText,  BuildOnHitEffects(w.OnHitReceivedEffects));
+        weaponStatusSection?.SetActive(false);
         SetText(weaponDescText, FormatDesc(w.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -370,6 +371,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(armorBonusSection,  armorBonusText,  BuildBonuses(a.Bonuses));
         ShowSection(armorResistSection, armorResistText, BuildDebuffResist(a.DebuffResistances));
         ShowSection(armorOnHitSection,  armorOnHitText,  BuildOnHitEffects(a.OnHitReceivedEffects));
+        armorStatusSection?.SetActive(false);
         SetText(armorDescText, FormatDesc(a.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -387,6 +389,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(helmetBonusSection,  helmetBonusText,  BuildBonuses(h.Bonuses));
         ShowSection(helmetResistSection, helmetResistText, BuildDebuffResist(h.DebuffResistances));
         ShowSection(helmetOnHitSection,  helmetOnHitText,  BuildOnHitEffects(h.OnHitReceivedEffects));
+        helmetStatusSection?.SetActive(false);
         SetText(helmetDescText, FormatDesc(h.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -409,6 +412,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(glovesBonusSection,        glovesBonusText,        BuildBonuses(g.Bonuses));
         ShowSection(glovesDebuffResistSection, glovesDebuffResistText, BuildDebuffResist(g.DebuffResistances));
         ShowSection(glovesOnHitSection,        glovesOnHitText,        BuildOnHitEffects(g.OnHitReceivedEffects));
+        glovesStatusSection?.SetActive(false);
         SetText(glovesDescText, FormatDesc(g.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -431,6 +435,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(bootsBonusSection,        bootsBonusText,        BuildBonuses(b.Bonuses));
         ShowSection(bootsDebuffResistSection, bootsDebuffResistText, BuildDebuffResist(b.DebuffResistances));
         ShowSection(bootsOnHitSection,        bootsOnHitText,        BuildOnHitEffects(b.OnHitReceivedEffects));
+        bootsStatusSection?.SetActive(false);
         SetText(bootsDescText, FormatDesc(b.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -460,6 +465,7 @@ public class TooltipSystem : MonoBehaviour
         ShowSection(jewelryBonusSection,  jewelryBonusText,  BuildBonuses(j.Bonuses));
         ShowSection(jewelryResistSection, jewelryResistText, BuildDebuffResist(j.DebuffResistances));
         ShowSection(jewelryOnHitSection,  jewelryOnHitText,  BuildOnHitEffects(j.OnHitReceivedEffects));
+        jewelryStatusSection?.SetActive(false);
         SetText(jewelryDescText, FormatDesc(j.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }

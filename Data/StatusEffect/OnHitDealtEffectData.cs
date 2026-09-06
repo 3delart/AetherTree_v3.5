@@ -50,6 +50,7 @@ public class OnHitDealtEffectData : ScriptableObject
     // ── DamageAmpOnHit ────────────────────────────────────────
     [Tooltip("% de dégâts en plus sur CE coup. Ex: 0.10 = +10%. Roulé dans CombatSystem, " +
              "au même stage que le critique — voir CalculateDamage/CalculateMobDamage.")]
+    [Min(0f)]
     [ShowIf(nameof(effectType), OnHitDealtEffectType.DamageAmpOnHit, Header = "Amplification (DamageAmpOnHit)")]
     public float ampPercent = 0.10f;
 

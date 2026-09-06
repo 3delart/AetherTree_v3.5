@@ -487,38 +487,54 @@ public abstract class Entity : MonoBehaviour
     /// (DamageReductionOnHit).</summary>
     public virtual List<OnHitReceivedEffectEntry> GetOnHitReceivedEffects() => null;
 
+    private bool _isProcessingOnHitReceived = false;
+
     /// <summary>Applique les effets On-Hit REÇUS (Thorns/ReflectPercent/HealOnHit/
     /// CounterDebuff/CounterBuff) de cette entité quand elle reçoit un coup. DamageReductionOnHit
     /// n'apparaît pas ici — c'est un modificateur, déjà consommé dans CombatSystem au moment
     /// du calcul, pas une réaction post-coup.</summary>
     private void ApplyOnHitReceivedEffects(float damageTaken, Entity attacker)
     {
+        // Garde de ré-entrance — Thorns/Reflect mutuels (joueur ET cible ont un effet reçu)
+        // provoqueraient sinon une récursion infinie : A riposte sur B, B riposte sur A, etc.
+        // jusqu'au StackOverflow (crash non-rattrapable). Le 2e rebond sur la MÊME entité,
+        // pendant que sa 1ère résolution est encore sur la pile, est ignoré ici.
+        if (_isProcessingOnHitReceived) return;
+
         var effects = GetOnHitReceivedEffects();
         if (effects == null) return;
 
-        foreach (var entry in effects)
+        _isProcessingOnHitReceived = true;
+        try
         {
-            if (entry?.effect == null || !entry.Roll()) continue;
-            switch (entry.effect.effectType)
+            foreach (var entry in effects)
             {
-                case OnHitReceivedEffectType.Thorns:
-                    DealOnHitCounterDamage(entry.effect.thornsDamage, entry.effect, attacker);
-                    break;
-                case OnHitReceivedEffectType.ReflectPercent:
-                    DealOnHitCounterDamage(damageTaken * entry.effect.reflectPercent, entry.effect, attacker);
-                    break;
-                case OnHitReceivedEffectType.HealOnHit:
-                    Heal(entry.effect.GetHealAmount(MaxHP));
-                    break;
-                case OnHitReceivedEffectType.CounterDebuff:
-                    if (entry.effect.counterDebuff != null && attacker.statusEffects != null)
-                        attacker.statusEffects.TryApplyDebuff(entry.effect.counterDebuff, this);
-                    break;
-                case OnHitReceivedEffectType.CounterBuff:
-                    if (entry.effect.counterBuff != null && statusEffects != null)
-                        statusEffects.ApplyBuff(entry.effect.counterBuff, this);
-                    break;
+                if (entry?.effect == null || !entry.Roll()) continue;
+                switch (entry.effect.effectType)
+                {
+                    case OnHitReceivedEffectType.Thorns:
+                        DealOnHitCounterDamage(entry.effect.thornsDamage, entry.effect, attacker);
+                        break;
+                    case OnHitReceivedEffectType.ReflectPercent:
+                        DealOnHitCounterDamage(damageTaken * entry.effect.reflectPercent, entry.effect, attacker);
+                        break;
+                    case OnHitReceivedEffectType.HealOnHit:
+                        Heal(entry.effect.GetHealAmount(MaxHP));
+                        break;
+                    case OnHitReceivedEffectType.CounterDebuff:
+                        if (entry.effect.counterDebuff != null && attacker.statusEffects != null)
+                            attacker.statusEffects.TryApplyDebuff(entry.effect.counterDebuff, this);
+                        break;
+                    case OnHitReceivedEffectType.CounterBuff:
+                        if (entry.effect.counterBuff != null && statusEffects != null)
+                            statusEffects.ApplyBuff(entry.effect.counterBuff, this);
+                        break;
+                }
             }
+        }
+        finally
+        {
+            _isProcessingOnHitReceived = false;
         }
     }
 
