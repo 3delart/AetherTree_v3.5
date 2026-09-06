@@ -342,9 +342,8 @@ public class TooltipSystem : MonoBehaviour
             ? (w.equippedRune.isIdentified ? $"Rune : {w.equippedRune.Label}" : "Rune : ???")
             : "Rune : aucune");
         ShowSection(weaponBonusSection,  weaponBonusText,  BuildBonuses(w.Bonuses));
-        ShowSection(weaponStatusSection, weaponStatusText, BuildStatusEffects(w.StatusEffects));
         ShowSection(weaponResistSection, weaponResistText, BuildDebuffResist(w.DebuffResistances));
-        ShowSection(weaponOnHitSection,  weaponOnHitText,  BuildOnHitEffects(w.OnHitEffects));
+        ShowSection(weaponOnHitSection,  weaponOnHitText,  BuildOnHitEffects(w.OnHitReceivedEffects));
         SetText(weaponDescText, FormatDesc(w.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -369,9 +368,8 @@ public class TooltipSystem : MonoBehaviour
             ? (a.equippedRune.isIdentified ? $"Rune : {a.equippedRune.Label}" : "Rune : ???")
             : "Rune : aucune");
         ShowSection(armorBonusSection,  armorBonusText,  BuildBonuses(a.Bonuses));
-        ShowSection(armorStatusSection, armorStatusText, BuildStatusEffects(a.StatusEffects));
         ShowSection(armorResistSection, armorResistText, BuildDebuffResist(a.DebuffResistances));
-        ShowSection(armorOnHitSection,  armorOnHitText,  BuildOnHitEffects(a.OnHitEffects));
+        ShowSection(armorOnHitSection,  armorOnHitText,  BuildOnHitEffects(a.OnHitReceivedEffects));
         SetText(armorDescText, FormatDesc(a.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -387,9 +385,8 @@ public class TooltipSystem : MonoBehaviour
         SetText(helmetNameText,  h.HelmetName);
         SetText(helmetLevelText, h.data != null ? LevelTag(h.data.requiredLevel) : "");
         ShowSection(helmetBonusSection,  helmetBonusText,  BuildBonuses(h.Bonuses));
-        ShowSection(helmetStatusSection, helmetStatusText, BuildStatusEffects(h.StatusEffects));
         ShowSection(helmetResistSection, helmetResistText, BuildDebuffResist(h.DebuffResistances));
-        ShowSection(helmetOnHitSection,  helmetOnHitText,  BuildOnHitEffects(h.OnHitEffects));
+        ShowSection(helmetOnHitSection,  helmetOnHitText,  BuildOnHitEffects(h.OnHitReceivedEffects));
         SetText(helmetDescText, FormatDesc(h.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -410,9 +407,8 @@ public class TooltipSystem : MonoBehaviour
         SetText(glovesMagicText,  $"Déf. magie : {Mathf.RoundToInt(g.MagicDefense)}");
         ShowSection(glovesResistElemSection,   glovesResistElemText,   BuildElemResist(g.resistFire, g.resistWater, g.resistLightning, g.resistEarth, g.resistNature, g.resistDarkness, g.resistLight));
         ShowSection(glovesBonusSection,        glovesBonusText,        BuildBonuses(g.Bonuses));
-        ShowSection(glovesStatusSection,       glovesStatusText,       BuildStatusEffects(g.StatusEffects));
         ShowSection(glovesDebuffResistSection, glovesDebuffResistText, BuildDebuffResist(g.DebuffResistances));
-        ShowSection(glovesOnHitSection,        glovesOnHitText,        BuildOnHitEffects(g.OnHitEffects));
+        ShowSection(glovesOnHitSection,        glovesOnHitText,        BuildOnHitEffects(g.OnHitReceivedEffects));
         SetText(glovesDescText, FormatDesc(g.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -433,9 +429,8 @@ public class TooltipSystem : MonoBehaviour
         SetText(bootsMagicText,  $"Déf. magie : {Mathf.RoundToInt(b.MagicDefense)}");
         ShowSection(bootsResistElemSection,   bootsResistElemText,   BuildElemResist(b.resistFire, b.resistWater, b.resistLightning, b.resistEarth, b.resistNature, b.resistDarkness, b.resistLight));
         ShowSection(bootsBonusSection,        bootsBonusText,        BuildBonuses(b.Bonuses));
-        ShowSection(bootsStatusSection,       bootsStatusText,       BuildStatusEffects(b.StatusEffects));
         ShowSection(bootsDebuffResistSection, bootsDebuffResistText, BuildDebuffResist(b.DebuffResistances));
-        ShowSection(bootsOnHitSection,        bootsOnHitText,        BuildOnHitEffects(b.OnHitEffects));
+        ShowSection(bootsOnHitSection,        bootsOnHitText,        BuildOnHitEffects(b.OnHitReceivedEffects));
         SetText(bootsDescText, FormatDesc(b.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -463,9 +458,8 @@ public class TooltipSystem : MonoBehaviour
                     : $"Slot {i+1} : {j.gemSlots[i].gem.Label}");
         SetText(jewelryGemsText, sbGems.ToString().TrimEnd());
         ShowSection(jewelryBonusSection,  jewelryBonusText,  BuildBonuses(j.Bonuses));
-        ShowSection(jewelryStatusSection, jewelryStatusText, BuildStatusEffects(j.StatusEffects));
         ShowSection(jewelryResistSection, jewelryResistText, BuildDebuffResist(j.DebuffResistances));
-        ShowSection(jewelryOnHitSection,  jewelryOnHitText,  BuildOnHitEffects(j.OnHitEffects));
+        ShowSection(jewelryOnHitSection,  jewelryOnHitText,  BuildOnHitEffects(j.OnHitReceivedEffects));
         SetText(jewelryDescText, FormatDesc(j.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
@@ -731,7 +725,7 @@ public class TooltipSystem : MonoBehaviour
         return sb.ToString().TrimEnd();
     }
 
-    private string BuildOnHitEffects(List<OnHitEffectEntry> effects)
+    private string BuildOnHitEffects(List<OnHitReceivedEffectEntry> effects)
     {
         if (effects == null || effects.Count == 0) return "";
         var sb = new System.Text.StringBuilder();

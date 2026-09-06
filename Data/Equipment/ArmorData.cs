@@ -248,9 +248,9 @@ public class ArmorInstance
 
     // ── Raccourcis config (4 slots fusionnés) ─────────────────
     public List<StatBonus>             Bonuses           => data?.config?.bonuses;
-    public List<StatusEffectEntry>     StatusEffects     => data?.config?.statusEffects;
+    public List<OnHitReceivedEffectEntry> OnHitReceivedEffects => data?.config?.onHitReceivedEffects;
     public List<DebuffResistanceEntry> DebuffResistances => data?.config?.debuffResistances;
-    public List<OnHitEffectEntry>      OnHitEffects      => data?.config?.onHitEffects;
+    public List<OnHitDealtEffectEntry>    OnHitDealtEffects    => data?.config?.onHitDealtEffects;
 
     // ── Rune ──────────────────────────────────────────────────
 

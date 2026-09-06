@@ -293,8 +293,6 @@ public class SkillSystem : MonoBehaviour
         if (!PassesAoeFilter(skill.aoeFaction, caster, target)) return;
         ApplyEffectType(skill, caster, target);
         ApplyStatusEffects(skill, caster, target);
-        if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-            ApplyWeaponStatusEffects(caster as Player, target);
         CheckKill(target);
     }
 
@@ -326,8 +324,6 @@ public class SkillSystem : MonoBehaviour
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
-            if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                ApplyWeaponStatusEffects(caster as Player, entity);
             CheckKill(entity);
             count++;
         }
@@ -349,8 +345,6 @@ public class SkillSystem : MonoBehaviour
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
-            if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                ApplyWeaponStatusEffects(caster as Player, entity);
             CheckKill(entity);
         }
     }
@@ -373,8 +367,6 @@ public class SkillSystem : MonoBehaviour
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
-            if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                ApplyWeaponStatusEffects(caster as Player, entity);
             CheckKill(entity);
         }
     }
@@ -407,8 +399,6 @@ public class SkillSystem : MonoBehaviour
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
-            if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                ApplyWeaponStatusEffects(caster as Player, entity);
             CheckKill(entity);
         }
     }
@@ -448,8 +438,6 @@ public class SkillSystem : MonoBehaviour
         {
             ApplyEffectType(skill, caster, closest);
             ApplyStatusEffects(skill, caster, closest);
-            if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                ApplyWeaponStatusEffects(caster as Player, closest);
             CheckKill(closest);
         }
     }
@@ -477,8 +465,6 @@ public class SkillSystem : MonoBehaviour
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
-            if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                ApplyWeaponStatusEffects(caster as Player, entity);
             CheckKill(entity);
         }
     }
@@ -512,8 +498,6 @@ public class SkillSystem : MonoBehaviour
 
             ApplyEffectType(skill, caster, entity);
             ApplyStatusEffects(skill, caster, entity);
-            if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                ApplyWeaponStatusEffects(caster as Player, entity);
             CheckKill(entity);
             count++;
         }
@@ -557,8 +541,6 @@ public class SkillSystem : MonoBehaviour
             {
                 ApplyEffectType(skill, caster, target);
                 ApplyStatusEffects(skill, caster, target);
-                if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                    ApplyWeaponStatusEffects(caster as Player, target);
                 CheckKill(target);
             }
         }
@@ -611,8 +593,6 @@ public class SkillSystem : MonoBehaviour
                 alreadyHit.Add(entity);
                 ApplyEffectType(skill, caster, entity);
                 ApplyStatusEffects(skill, caster, entity);
-                if (skill.effectType == SkillEffectType.Damage && caster.entityType == EntityType.Player)
-                    ApplyWeaponStatusEffects(caster as Player, entity);
                 CheckKill(entity);
             }
 
@@ -803,48 +783,6 @@ public class SkillSystem : MonoBehaviour
         {
             case BuffData buff:   statusSystem.ApplyBuff(buff, caster);           break;
             case DebuffData deb:  statusSystem.TryApplyDebuff(deb, caster);       break;
-        }
-    }
-
-    // =========================================================
-    // EFFETS SECONDAIRES — StatusEffects de l'équipement du Player
-    // =========================================================
-
-    private void ApplyWeaponStatusEffects(Player player, Entity target)
-    {
-        if (player == null || target == null || target.isDead) return;
-
-        var statusSystem = target.statusEffects;
-        if (statusSystem == null) return;
-
-        var allEffects = new List<(List<StatusEffectEntry> effects, string source)>();
-
-        if (player.equippedWeaponInstance?.data  != null) allEffects.Add((player.equippedWeaponInstance.StatusEffects, player.equippedWeaponInstance.WeaponName));
-        if (player.equippedArmorInstance?.data   != null) allEffects.Add((player.equippedArmorInstance.StatusEffects,  player.equippedArmorInstance.ArmorName));
-        if (player.equippedHelmetInstance?.data  != null) allEffects.Add((player.equippedHelmetInstance.StatusEffects, player.equippedHelmetInstance.HelmetName));
-        if (player.equippedGlovesInstance?.data  != null) allEffects.Add((player.equippedGlovesInstance.StatusEffects, player.equippedGlovesInstance.GlovesName));
-        if (player.equippedBootsInstance?.data   != null) allEffects.Add((player.equippedBootsInstance.StatusEffects,  player.equippedBootsInstance.BootsName));
-        if (player.equippedJewelryInstances != null)
-            foreach (var jewelry in player.equippedJewelryInstances)
-                if (jewelry != null) allEffects.Add((jewelry.StatusEffects, jewelry.JewelryName));
-
-        foreach (var (effects, sourceName) in allEffects)
-        {
-            if (effects == null) continue;
-            foreach (var entry in effects)
-            {
-                if (entry == null || entry.effect == null || !entry.Roll()) continue;
-                switch (entry.effect)
-                {
-                    case BuffData buff:
-                        statusSystem.ApplyBuff(buff, player);
-                        break;
-                    case DebuffData debuff:
-                        if (statusSystem.TryApplyDebuff(debuff, player))
-                            Debug.Log($"[EQUIP] {sourceName} → {debuff.effectName.Get(LocalizationManager.CurrentLanguage)} sur {target.entityName}.");
-                        break;
-                }
-            }
         }
     }
 

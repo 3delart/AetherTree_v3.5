@@ -178,6 +178,13 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public float critMultiplier = 1.5f;
 
+    // ── Effets On-Hit — actifs même hors canFight (un garde peut avoir Thorns) ──
+    [Header("Effets On-Hit reçus")]
+    public List<OnHitReceivedEffectEntry> onHitReceivedEffects = new List<OnHitReceivedEffectEntry>();
+    [Header("Effets On-Hit infligés")]
+    [ShowIf(nameof(canFight), true)]
+    public List<OnHitDealtEffectEntry> onHitDealtEffects = new List<OnHitDealtEffectEntry>();
+
     // =========================================================
     // VALIDATION EDITOR
     // =========================================================

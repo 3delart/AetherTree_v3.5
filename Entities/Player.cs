@@ -735,35 +735,38 @@ public class Player : Entity
     /// </summary>
     public override void ApplyKnockBack(Vector3 direction, float force)
     {
-        if (isDead || statusEffects.isStunned || statusEffects.isRooted) return;
+        if (isDead || statusEffects.isStunned || statusEffects.isShocked || statusEffects.isRooted) return;
         base.ApplyKnockBack(direction, force);
     }
 
     /// <summary>
     /// Applique les effets On-Hit de tout l'équipement quand le joueur reçoit un coup.
-    /// Chaque effet a une chance d'activation définie sur OnHitEffectData.
-    /// Les effets sont lus depuis instance.OnHitEffects → data.config.onHitEffects.
+    /// Chaque effet a une chance d'activation définie sur OnHitReceivedEffectData.
+    /// Les effets sont lus depuis instance.OnHitReceivedEffects → data.config.onHitReceivedEffects.
     /// GDD §5.1 à §5.6 — unifié via EquipmentConfig.
+    /// NOTE (2026-09-06) : renommage mécanique OnHitEffect* → OnHitReceivedEffect* pour rester
+    /// compilable après la Tâche 2 — DamageReductionOnHit (nouveau type) n'est PAS géré ici,
+    /// voir OnHitReceivedEffectData.cs (roulé dans CombatSystem). Rewiring complet en Tâche 3+.
     /// </summary>
     private void ApplyOnHitEffects(float damageTaken, Entity attacker)
     {
-        var allOnHit = new List<List<OnHitEffectEntry>>();
+        var allOnHit = new List<List<OnHitReceivedEffectEntry>>();
 
-        // Équipements via EquipmentConfig.onHitEffects
-        if (equippedWeaponInstance?.OnHitEffects != null) allOnHit.Add(equippedWeaponInstance.OnHitEffects);
-        if (equippedArmorInstance?.OnHitEffects  != null) allOnHit.Add(equippedArmorInstance.OnHitEffects);
-        if (equippedHelmetInstance?.OnHitEffects != null) allOnHit.Add(equippedHelmetInstance.OnHitEffects);
-        if (equippedGlovesInstance?.OnHitEffects != null) allOnHit.Add(equippedGlovesInstance.OnHitEffects);
-        if (equippedBootsInstance?.OnHitEffects  != null) allOnHit.Add(equippedBootsInstance.OnHitEffects);
+        // Équipements via EquipmentConfig.onHitReceivedEffects
+        if (equippedWeaponInstance?.OnHitReceivedEffects != null) allOnHit.Add(equippedWeaponInstance.OnHitReceivedEffects);
+        if (equippedArmorInstance?.OnHitReceivedEffects  != null) allOnHit.Add(equippedArmorInstance.OnHitReceivedEffects);
+        if (equippedHelmetInstance?.OnHitReceivedEffects != null) allOnHit.Add(equippedHelmetInstance.OnHitReceivedEffects);
+        if (equippedGlovesInstance?.OnHitReceivedEffects != null) allOnHit.Add(equippedGlovesInstance.OnHitReceivedEffects);
+        if (equippedBootsInstance?.OnHitReceivedEffects  != null) allOnHit.Add(equippedBootsInstance.OnHitReceivedEffects);
         if (equippedJewelryInstances != null)
             foreach (var j in equippedJewelryInstances)
-                if (j?.OnHitEffects != null) allOnHit.Add(j.OnHitEffects);
+                if (j?.OnHitReceivedEffects != null) allOnHit.Add(j.OnHitReceivedEffects);
 
         // Skills permanents — liste propre (pas via EquipmentConfig)
         if (unlockedPermanents != null)
             foreach (var p in unlockedPermanents)
-                if (p?.onHitEffects != null && p.onHitEffects.Count > 0)
-                    allOnHit.Add(p.onHitEffects);
+                if (p?.onHitReceivedEffects != null && p.onHitReceivedEffects.Count > 0)
+                    allOnHit.Add(p.onHitReceivedEffects);
 
         foreach (var list in allOnHit)
         {
@@ -773,20 +776,20 @@ public class Player : Entity
                 if (entry?.effect == null || !entry.Roll()) continue;
                 switch (entry.effect.effectType)
                 {
-                    case OnHitEffectType.Thorns:
-                        attacker.TakeDamage(entry.effect.thornsDamage, entry.effect.reflectElement, this);
+                    case OnHitReceivedEffectType.Thorns:
+                        DealOnHitCounterDamage(entry.effect.thornsDamage, entry.effect, attacker);
                         break;
-                    case OnHitEffectType.ReflectPercent:
-                        attacker.TakeDamage(damageTaken * entry.effect.reflectPercent, entry.effect.reflectElement, this);
+                    case OnHitReceivedEffectType.ReflectPercent:
+                        DealOnHitCounterDamage(damageTaken * entry.effect.reflectPercent, entry.effect, attacker);
                         break;
-                    case OnHitEffectType.HealOnHit:
+                    case OnHitReceivedEffectType.HealOnHit:
                         Heal(entry.effect.GetHealAmount(MaxHP));
                         break;
-                    case OnHitEffectType.CounterDebuff:
+                    case OnHitReceivedEffectType.CounterDebuff:
                         if (entry.effect.counterDebuff != null && attacker.statusEffects != null)
                             attacker.statusEffects.TryApplyDebuff(entry.effect.counterDebuff, this);
                         break;
-                    case OnHitEffectType.CounterBuff:
+                    case OnHitReceivedEffectType.CounterBuff:
                         if (entry.effect.counterBuff != null && statusEffects != null)
                             statusEffects.ApplyBuff(entry.effect.counterBuff, this);
                         break;
@@ -795,8 +798,41 @@ public class Player : Entity
         }
     }
 
+    /// <summary>Applique les dégâts d'un Thorns/ReflectPercent à l'attaquant. `pierceDefense`
+    /// (Inspector: "Dégâts renvoyés bruts") true → montant tel quel. False → réduit comme un
+    /// dégât normal : formule physique quadratique (défense mêlée) si reflectElement = Neutral,
+    /// résistance élémentaire linéaire sinon — même split physique/élémentaire indépendant que
+    /// CombatSystem, pas de mélange des deux canaux.</summary>
+    private void DealOnHitCounterDamage(float rawAmount, OnHitReceivedEffectData effect, Entity attacker)
+    {
+        if (rawAmount <= 0f || attacker == null) return;
+
+        float amount = rawAmount;
+        if (!effect.pierceDefense)
+        {
+            if (effect.reflectElement == ElementType.Neutral)
+            {
+                float def = attacker.GetMeleeDefense();
+                amount = (rawAmount * rawAmount) / (rawAmount + def * 1.5f);
+            }
+            else
+            {
+                float resist = attacker.GetElementalResistance(effect.reflectElement);
+                amount = rawAmount * (1f - Mathf.Clamp01(resist));
+            }
+        }
+
+        attacker.TakeDamage(amount, effect.reflectElement, this);
+    }
+
     protected override void Die()
     {
+        // Consommé AVANT base.Die() — celui-ci wipe tous les effets actifs via
+        // ClearAllEffects(), Revive y compris s'il n'est pas déjà retiré ici.
+        float reviveDelay = 0f, reviveHP = 0f, reviveMana = 0f;
+        bool hasRevive = statusEffects != null &&
+            statusEffects.TryConsumeRevive(out reviveDelay, out reviveHP, out reviveMana);
+
         base.Die();
         GameEventBus.Publish(new PlayerDeathEvent
         {
@@ -805,7 +841,11 @@ public class Player : Entity
             hpAtDeath = currentHP,
             context   = DeathContext.OpenWorld,
         });
-        RespawnSystem.Instance?.TriggerDeath();
+
+        if (hasRevive)
+            RespawnSystem.Instance?.TriggerDelayedRevive(reviveDelay, reviveHP, reviveMana);
+        else
+            RespawnSystem.Instance?.TriggerDeath();
     }
 
     // =========================================================

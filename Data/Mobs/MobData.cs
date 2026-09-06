@@ -129,6 +129,12 @@ public class MobData : ScriptableObject
     public float captureHPThreshold = 0.2f;
     public PetType petType          = PetType.Damage;
 
+    // ── Effets On-Hit ─────────────────────────────────────────
+    [Header("Effets On-Hit reçus")]
+    public List<OnHitReceivedEffectEntry> onHitReceivedEffects = new List<OnHitReceivedEffectEntry>();
+    [Header("Effets On-Hit infligés")]
+    public List<OnHitDealtEffectEntry> onHitDealtEffects = new List<OnHitDealtEffectEntry>();
+
     // ── Visuel ────────────────────────────────────────────────
     [Header("Visuel")]
     public Sprite portrait;

@@ -1,88 +1,100 @@
 using UnityEngine;
-using System.Collections.Generic;
 
 // =============================================================
-// OnHitEffectData — ScriptableObject template d'effet On-Hit
-// Path : Assets/Scripts/Data/StatusEffect/OnHitEffectData.cs
-// AetherTree GDD v3.5 — §5.1 à §5.6 (OnHitEffects via EquipmentConfig)
+// OnHitReceivedEffectData — ScriptableObject template d'effet On-Hit REÇU
+// Path : Assets/Scripts/Data/StatusEffect/OnHitReceivedEffectData.cs
+// AetherTree GDD v3.5 §5.1 à §5.6 — refonte OnHitDealt/OnHitReceived (2026-09-06)
 //
-// Déclenché quand l'entité équipée REÇOIT un coup.
-// Chaque effet a une chance d'activation [0..1].
+// Déclenché quand l'entité PORTEUSE (celle qui a cet effet dans sa liste
+// onHitReceivedEffects) REÇOIT un coup. Chaque effet a une chance [0..1].
 //
 // Types disponibles :
+//   DamageReductionOnHit — MODIFICATEUR, réduit CE coup en cours de calcul
+//                          (roulé/appliqué dans CombatSystem.CalculateDamage/
+//                          CalculateMobDamage, PAS ici comme réaction)
 //   ReflectPercent   — renvoie X% des dégâts reçus à l'attaquant
 //   Thorns           — renvoie une valeur fixe de dégâts à l'attaquant
 //   CounterDebuff    — applique un debuff sur l'attaquant
-//   HealOnHit        — soigne la cible sur le coup reçu
+//   HealOnHit        — soigne la cible (self)
 //   CounterBuff      — applique un buff sur soi-même
 //
-// ReflectPercent & Thorns : pierceDefense contrôle si les
-//   dégâts renvoyés ignorent la défense de l'attaquant.
+// ReflectPercent & Thorns : pierceDefense contrôle si les dégâts renvoyés
+//   ignorent la défense/résistance de l'attaquant (true = brut).
 //
-// Assets > Create > AetherTree > Equipment > OnHitEffectData
+// Voir OnHitDealtEffectData.cs pour le pendant côté "coup infligé".
+//
+// Assets > Create > AetherTree > StatusEffects > OnHitReceivedEffectData
 // =============================================================
 
-public enum OnHitEffectType
+public enum OnHitReceivedEffectType
 {
-    ReflectPercent, // Renvoie X% des dégâts reçus
-    Thorns,         // Renvoie une valeur fixe
-    CounterDebuff,  // Applique un debuff sur l'attaquant
-    HealOnHit,      // Soigne la cible (self)
-    CounterBuff,    // Applique un buff sur soi-même
+    DamageReductionOnHit,
+    ReflectPercent,
+    Thorns,
+    CounterDebuff,
+    HealOnHit,
+    CounterBuff,
 }
 
-[CreateAssetMenu(fileName = "NewOnHitEffect", menuName = "AetherTree/StatusEffects/OnHitEffectData")]
-public class OnHitEffectData : ScriptableObject
+[CreateAssetMenu(fileName = "NewOnHitReceived", menuName = "AetherTree/StatusEffects/OnHitReceivedEffectData")]
+public class OnHitReceivedEffectData : ScriptableObject
 {
     [Header("Identité")]
-    public string effectName = "OnHitEffect";
+    public string effectName = "OnHitReceivedEffect";
     public Sprite icon;
 
     [Header("Type")]
-    public OnHitEffectType effectType = OnHitEffectType.Thorns;
+    public OnHitReceivedEffectType effectType = OnHitReceivedEffectType.Thorns;
 
     [Header("Déclenchement")]
     [Tooltip("Probabilité de déclenchement par coup reçu [0..1].\nEx: 0.15 = 15% de chance.")]
     [Range(0f, 1f)]
     public float chance = 0.15f;
 
+    // ── DamageReductionOnHit ──────────────────────────────────
+    [Tooltip("% de dégâts en moins sur CE coup reçu. Ex: 0.50 = -50%. Roulé dans CombatSystem, " +
+             "au même stage que le critique — voir CalculateDamage/CalculateMobDamage.")]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.DamageReductionOnHit, Header = "Réduction (DamageReductionOnHit)")]
+    public float reductionPercent = 0.30f;
+
     // ── ReflectPercent ────────────────────────────────────────
     [Tooltip("Pourcentage des dégâts reçus renvoyés à l'attaquant.\nEx: 0.20 = 20% réfléchis.")]
     [Range(0f, 1f)]
-    [ShowIf(nameof(effectType), OnHitEffectType.ReflectPercent, Header = "Reflect % (ReflectPercent)")]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.ReflectPercent, Header = "Reflect % (ReflectPercent)")]
     public float reflectPercent = 0.20f;
 
     // ── Thorns ────────────────────────────────────────────────
     [Tooltip("Dégâts fixes renvoyés à l'attaquant.")]
-    [ShowIf(nameof(effectType), OnHitEffectType.Thorns, Header = "Épines fixes (Thorns)")]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.Thorns, Header = "Épines fixes (Thorns)")]
     public float thornsDamage = 10f;
 
     // ── Commun Reflect + Thorns ───────────────────────────────
-    [Tooltip("Si true : les dégâts renvoyés ignorent la défense de l'attaquant (dégâts bruts).\n" +
-             "Si false : passent par CombatSystem normalement.")]
-    [ShowIf(nameof(effectType), OnHitEffectType.ReflectPercent, OnHitEffectType.Thorns, Header = "Options Reflect & Thorns")]
+    [Tooltip("True : l'attaquant reçoit le montant fixé, tel quel (ignore défense/résistance).\n" +
+             "False : réduit comme un dégât normal — défense (Neutral) ou résistance élémentaire\n" +
+             "(autre élément) de l'attaquant, selon reflectElement ci-dessous.")]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.ReflectPercent, OnHitReceivedEffectType.Thorns, Header = "Options Reflect & Thorns", DisplayName = "Dégâts renvoyés bruts")]
     public bool pierceDefense = false;
 
     [Tooltip("Élément des dégâts renvoyés.\nNeutral = pas d'élément.")]
-    [ShowIf(nameof(effectType), OnHitEffectType.ReflectPercent, OnHitEffectType.Thorns)]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.ReflectPercent, OnHitReceivedEffectType.Thorns)]
     public ElementType reflectElement = ElementType.Neutral;
 
     // ── CounterDebuff ─────────────────────────────────────────
     [Tooltip("Debuff appliqué sur l'attaquant au déclenchement.\nGlisser un DebuffData ici.")]
-    [ShowIf(nameof(effectType), OnHitEffectType.CounterDebuff, Header = "Counter-Debuff (CounterDebuff)")]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.CounterDebuff, Header = "Counter-Debuff (CounterDebuff)")]
     public DebuffData counterDebuff;
 
     // ── HealOnHit ─────────────────────────────────────────────
     [Tooltip("Flat : valeur fixe soignée.\nPercent : % du MaxHP de la cible.")]
-    [ShowIf(nameof(effectType), OnHitEffectType.HealOnHit, Header = "Soin au coup reçu (HealOnHit)")]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.HealOnHit, Header = "Soin au coup reçu (HealOnHit)")]
     public ModifierType healModifier = ModifierType.Flat;
     [Tooltip("Montant de soin.\nEx: 50 (Flat) ou 0.05 (Percent = 5% MaxHP).")]
-    [ShowIf(nameof(effectType), OnHitEffectType.HealOnHit)]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.HealOnHit)]
     public float healAmount = 50f;
 
     // ── CounterBuff ───────────────────────────────────────────
     [Tooltip("Buff appliqué sur soi-même au déclenchement.\nGlisser un BuffData ici.")]
-    [ShowIf(nameof(effectType), OnHitEffectType.CounterBuff, Header = "Counter-Buff sur soi (CounterBuff)")]
+    [ShowIf(nameof(effectType), OnHitReceivedEffectType.CounterBuff, Header = "Counter-Buff sur soi (CounterBuff)")]
     public BuffData counterBuff;
 
     // ── Helpers ───────────────────────────────────────────────
@@ -96,14 +108,13 @@ public class OnHitEffectData : ScriptableObject
 }
 
 // =============================================================
-// OnHitEffectEntry — une ligne dans la liste d'un équipement
-// Glisse le SO + possibilité d'override la chance localement.
+// OnHitReceivedEffectEntry — une ligne dans la liste d'un équipement/permanent/mob/pnj
 // =============================================================
 [System.Serializable]
-public class OnHitEffectEntry
+public class OnHitReceivedEffectEntry
 {
-    [Tooltip("SO de l'effet On-Hit à appliquer.")]
-    public OnHitEffectData effect;
+    [Tooltip("SO de l'effet On-Hit reçu à appliquer.")]
+    public OnHitReceivedEffectData effect;
 
     [Tooltip("Override de la chance du SO [0..1].\nSi 0, utilise la chance définie dans le SO.")]
     [Range(0f, 1f)]

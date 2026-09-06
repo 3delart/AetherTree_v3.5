@@ -52,10 +52,15 @@ public class PermanentSkillData : ScriptableObject
              "Ex: Stun 0.10 = 10% de chance de résister à l'étourdissement.")]
     public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
 
-    [Header("③ Effets On-Hit (déclenchés quand on reçoit un coup)")]
+    [Header("③ Effets On-Hit reçus (déclenchés quand on reçoit un coup)")]
     [Tooltip("Effets déclenchés quand le joueur reçoit un coup.\n" +
              "Ex: Thorns 5 dmg | CounterPoison 8% | HealOnHit 1% MaxHP")]
-    public List<OnHitEffectEntry> onHitEffects = new List<OnHitEffectEntry>();
+    public List<OnHitReceivedEffectEntry> onHitReceivedEffects = new List<OnHitReceivedEffectEntry>();
+
+    [Header("④ Effets On-Hit infligés (déclenchés quand on touche une cible)")]
+    [Tooltip("Effets déclenchés quand le joueur touche une cible.\n" +
+             "Ex: LifestealOnHit 10% | ManaOnHit 5")]
+    public List<OnHitDealtEffectEntry> onHitDealtEffects = new List<OnHitDealtEffectEntry>();
 
     // ── Helpers ───────────────────────────────────────────────
 
