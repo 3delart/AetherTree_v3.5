@@ -163,7 +163,7 @@ public class TargetingSystem : MonoBehaviour
         {
             return;
         }
-        if (player.statusEffects != null && player.statusEffects.isStunned)
+        if (player.statusEffects != null && (player.statusEffects.isStunned || player.statusEffects.isShocked))
         {
             return;
         }

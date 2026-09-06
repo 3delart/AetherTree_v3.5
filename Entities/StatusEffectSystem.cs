@@ -100,14 +100,18 @@ public class StatusEffectSystem : MonoBehaviour
     public Entity GetDebuffSource(DebuffType type)
         => _activeDebuffs.TryGetValue(type, out var instance) ? instance.source : null;
 
+#pragma warning disable CS0618 // Blinded — obsolète (utiliser Stats+Precision), gardé pour compat assets existants
     /// <summary>Blinded — réduit la précision.</summary>
     public bool isBlinded    { get; private set; } = false;
+#pragma warning restore CS0618
 
     /// <summary>Poisoned — DoT + réduction soins reçus.</summary>
     public bool isPoisoned   { get; private set; } = false;
 
+#pragma warning disable CS0618 // ArmorBreak obsolète — gardé pour compat assets existants
     /// <summary>ArmorBreak — réduction de défense % temporaire.</summary>
     public bool isArmorBroken { get; private set; } = false;
+#pragma warning restore CS0618
 
     /// <summary>Sleeping — immobilisé jusqu'au premier dégât reçu.</summary>
     public bool isSleeping   { get; private set; } = false;
@@ -115,22 +119,29 @@ public class StatusEffectSystem : MonoBehaviour
     /// <summary>Freeze — immobilisation totale (hard CC). Réattribué Eau v3.0 — §3.1.1.1.</summary>
     public bool isFreezed    { get; private set; } = false;
 
+    /// <summary>Shocked — identique à Stun (bloque toutes les actions), flag séparé pour ne
+    /// jamais couper prématurément un Stun actif en parallèle ou l'inverse.</summary>
+    public bool isShocked    { get; private set; } = false;
+
     /// <summary>Silence — bloque l'utilisation des skills.</summary>
     public bool isSilenced   { get; private set; } = false;
 
     /// <summary>Taunted — force les ennemis à cibler cette entité (attaque basique seulement en PvP). §3.1.1.1.</summary>
     public bool isTaunted    { get; private set; } = false;
 
-    /// <summary>Marked — cible marquée, reçoit des dégâts supplémentaires. Design decision.</summary>
+    /// <summary>Marked — cible marquée, reçoit des dégâts supplémentaires (valeur numérique
+    /// routée dans l'accumulateur FinalDamageReduction, pas ici — voir ReapplyActiveModifiers).</summary>
     public bool isMarked     { get; private set; } = false;
 
     // Valeurs numériques debuff
     public float slowMultiplier        { get; private set; } = 1f;
-    public float armorBreakReduction   { get; private set; } = 0f;
-    public float shockDefenseReduction { get; private set; } = 0f;
     public float poisonHealReduction   { get; private set; } = 0f;
+#pragma warning disable CS0618 // ArmorBreak obsolète — gardé pour compat assets existants
+    public float armorBreakReduction   { get; private set; } = 0f;
+#pragma warning restore CS0618
+#pragma warning disable CS0618 // Blind obsolète — gardé pour compat assets existants
     public float blindPrecisionMalus   { get; private set; } = 0f;
-    public float markDamageBonus       { get; private set; } = 0f;
+#pragma warning restore CS0618
 
     // =========================================================
     // FLAGS & VALEURS BUFF — GDD v3.5 §3.1.1.2 & §3.1.1.3
@@ -232,12 +243,11 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (buff == null || _entity.isDead) return;
 
-        // Refresh si déjà actif — sauf Revive, effet instantané (pas de sens à prolonger une
-        // "durée" ; un 2e proc pendant que la 1ère instance est encore active doit quand même
-        // relever le joueur).
-        if (buff.buffType != BuffType.Revive && _activeBuffs.TryGetValue(buff.buffType, out var existing))
+        // Refresh si déjà actif.
+        if (_activeBuffs.TryGetValue(buff.buffType, out var existing))
         {
             existing.Refresh();
+            existing.source = source; // Revive : re-cast met à jour QUI recevra le crédit/log au déclenchement
             return;
         }
 
@@ -255,9 +265,10 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (buff == null || _entity.isDead || remainingSeconds <= 0f) return;
 
-        if (buff.buffType != BuffType.Revive && _activeBuffs.TryGetValue(buff.buffType, out var existing))
+        if (_activeBuffs.TryGetValue(buff.buffType, out var existing))
         {
             existing.remainingTime = remainingSeconds;
+            existing.source = source;
             return;
         }
 
@@ -280,6 +291,7 @@ public class StatusEffectSystem : MonoBehaviour
             case DebuffType.Fear:    isFeared   = true; break;
             case DebuffType.Root:    isRooted   = true; break;
             case DebuffType.Sleep:   isSleeping = true; break;
+            case DebuffType.Shocked: isShocked  = true; break; // identique à Stun, flag séparé
             case DebuffType.Silence: isSilenced = true; break;
             case DebuffType.Taunt:   isTaunted  = true; break;
 
@@ -288,11 +300,12 @@ public class StatusEffectSystem : MonoBehaviour
                 slowMultiplier = 0f;
                 break;
 
-            // ── Flags + valeurs locales (lues par CombatSystem via accesseurs) ──
+#pragma warning disable CS0618 // Blind obsolète (utiliser Stats+Precision) — gardé pour compat assets existants
             case DebuffType.Blind:
                 isBlinded = true;
                 blindPrecisionMalus += instance.DebuffData.debuffValue;
                 break;
+#pragma warning restore CS0618
 
 #pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:
@@ -302,24 +315,23 @@ public class StatusEffectSystem : MonoBehaviour
                 break;
 #pragma warning restore CS0618
 
+#pragma warning disable CS0618 // ArmorBreak obsolète (utiliser Stats+Defense) — gardé pour compat assets existants
             case DebuffType.ArmorBreak:
-                // §3.1.1.1 — réduction défense % (lue dans Entity.GetMeleeDefense etc.)
+                // réduction défense % (lue dans Entity.GetMeleeDefense etc.)
                 isArmorBroken = true;
                 armorBreakReduction += instance.DebuffData.defenseReduction;
                 break;
-
-            case DebuffType.Shocked:
-                // §3.1.1.1 — interruption cast + mini-stun 0.5s (géré par CombatSystem)
-                shockDefenseReduction += instance.DebuffData.defenseReduction;
-                break;
+#pragma warning restore CS0618
 
             case DebuffType.Slow:
                 slowMultiplier = Mathf.Min(slowMultiplier, instance.DebuffData.slowMultiplier);
                 break;
 
             case DebuffType.Mark:
+                // Flag pour l'UI/status — la valeur numérique (% dégâts subis) est routée dans
+                // l'accumulateur FinalDamageReduction par ReapplyActiveModifiers ci-dessous.
                 isMarked = true;
-                markDamageBonus += instance.DebuffData.debuffValue;
+                RecalculateAndReapply();
                 break;
 
             // ── Stats — modifie directement les champs Entity via Recalculate ──
@@ -335,9 +347,9 @@ public class StatusEffectSystem : MonoBehaviour
                 RemoveBuffsByChance(instance.DebuffData.chancePerEffect);
                 break;
 
-            // ManaDrain : tick dans DebuffInstance.Tick — pas de flag local
-            // Knockback  : effet ponctuel — Entity.ApplyKnockBack()
-            // Bleed      : DoT pur — tick dans DebuffInstance.Tick, pas de flag
+            // ManaDrain, HpDrain : tick dans DebuffInstance.Tick — pas de flag local
+            // Knockback           : effet ponctuel — Entity.ApplyKnockBack()
+            // Bleed               : DoT pur — tick dans DebuffInstance.Tick, pas de flag
         }
 
         // bonusStats s'applique quel que soit debuffType — sans recalcul ici, un debuff dont
@@ -399,12 +411,12 @@ public class StatusEffectSystem : MonoBehaviour
             pureBase[s] = GetBaseStatValue(target, s);
 
         // ── Debuffs numériques ────────────────────────────────
-        armorBreakReduction   = 0f;
-        shockDefenseReduction = 0f;
         poisonHealReduction   = 0f;
-        blindPrecisionMalus   = 0f;
-        markDamageBonus       = 0f;
         slowMultiplier        = 1f;
+#pragma warning disable CS0618 // ArmorBreak/Blind obsolètes — gardés pour compat assets existants
+        armorBreakReduction   = 0f;
+        blindPrecisionMalus   = 0f;
+#pragma warning restore CS0618
 
         var flatSum    = new Dictionary<StatModifierType, float>();
         var percentSum = new Dictionary<StatModifierType, float>();
@@ -420,22 +432,26 @@ public class StatusEffectSystem : MonoBehaviour
                 case DebuffType.Freeze:
                     slowMultiplier = 0f;
                     break;
+#pragma warning disable CS0618 // Blind obsolète (utiliser Stats+Precision) — gardé pour compat assets existants
                 case DebuffType.Blind:
                     blindPrecisionMalus += d.debuffValue;
                     break;
+#pragma warning restore CS0618
 #pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
                 case DebuffType.Poison:
                     poisonHealReduction += d.healReduction;
                     break;
 #pragma warning restore CS0618
+#pragma warning disable CS0618 // ArmorBreak obsolète (utiliser Stats+Defense) — gardé pour compat assets existants
                 case DebuffType.ArmorBreak:
                     armorBreakReduction += d.defenseReduction;
                     break;
-                case DebuffType.Shocked:
-                    shockDefenseReduction += d.defenseReduction;
-                    break;
+#pragma warning restore CS0618
                 case DebuffType.Mark:
-                    markDamageBonus += d.debuffValue;
+                    // Routé dans l'accumulateur FinalDamageReduction (négatif = +dégâts subis) —
+                    // compose avec les autres sources au lieu d'être un multiplicateur séparé.
+                    AccumulateStatLine(flatSum, percentSum, StatModifierType.FinalDamageReduction,
+                        true, -d.markDamageBonusPercent);
                     break;
                 case DebuffType.Stats:
                     AccumulateStatLine(flatSum, percentSum, d.debuffStatType,
@@ -705,11 +721,8 @@ public class StatusEffectSystem : MonoBehaviour
                 RemoveDebuffsByChance(instance.BuffData.chancePerEffect);
                 break;
 
-            // ── Résurrection (Player uniquement) ─────────────────
-            case BuffType.Revive:
-                if (_entity is Player p)
-                    p.Revive(instance.BuffData.reviveHPPercent, instance.BuffData.reviveManaPercent);
-                break;
+            // Revive : ne fait RIEN au cast — buff dormant, consommé uniquement par
+            // Player.Die() via TryConsumeRevive() si les HP tombent à 0 pendant sa durée.
 
             // ── Bouclier — valeur stockée dans l'instance ────────
             case BuffType.Shield:
@@ -809,16 +822,19 @@ public class StatusEffectSystem : MonoBehaviour
             case DebuffType.Fear:    isFeared   = false; break;
             case DebuffType.Root:    isRooted   = false; break;
             case DebuffType.Sleep:   isSleeping = false; break;
+            case DebuffType.Shocked: isShocked  = false; break;
             case DebuffType.Silence: isSilenced = false; break;
             case DebuffType.Taunt:   isTaunted  = false; break;
             case DebuffType.Freeze:  isFreezed  = false; break;
 
             // Flags dérivés de valeurs numériques — recalculés dans ReapplyActiveModifiers
+#pragma warning disable CS0618 // Blind/ArmorBreak obsolètes — gardés pour compat assets existants
             case DebuffType.Blind:      isBlinded     = false; break;
+            case DebuffType.ArmorBreak: isArmorBroken = false; break;
+#pragma warning restore CS0618
 #pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:     isPoisoned    = false; break;
 #pragma warning restore CS0618
-            case DebuffType.ArmorBreak: isArmorBroken = false; break;
             case DebuffType.Mark:       isMarked      = false; break;
         }
 
@@ -828,17 +844,18 @@ public class StatusEffectSystem : MonoBehaviour
 
         // ── Valeurs numériques — recalcul propre ──────────────
         // Tout effet qui touche des stats ou des multiplicateurs numériques
-        // déclenche un recalcul. Les flags purs (Stun, Fear, etc.) n'en ont pas besoin.
+        // déclenche un recalcul. Les flags purs (Stun, Fear, Shocked...) n'en ont pas besoin.
         switch (type)
         {
             case DebuffType.Slow:
             case DebuffType.Freeze:
+#pragma warning disable CS0618 // Blind/ArmorBreak obsolètes — gardés pour compat assets existants
             case DebuffType.Blind:
+            case DebuffType.ArmorBreak:
+#pragma warning restore CS0618
 #pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:
 #pragma warning restore CS0618
-            case DebuffType.ArmorBreak:
-            case DebuffType.Shocked:
             case DebuffType.Mark:
             case DebuffType.Stats:
                 RecalculateAndReapply();
@@ -866,6 +883,38 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (_activeBuffs.ContainsKey(type))
             ExpireBuff(type);
+    }
+
+    /// <summary>Consomme le buff Revive actif (s'il y en a un) — appelé par Player.Die() AVANT
+    /// le wipe généralisé des effets (ClearAllEffects), sinon ses valeurs seraient perdues.
+    /// Retourne false si aucun Revive actif (mort normale, pas de résurrection).</summary>
+    public bool TryConsumeRevive(out float delay, out float hpPercent, out float manaPercent)
+    {
+        if (_activeBuffs.TryGetValue(BuffType.Revive, out var instance))
+        {
+            var d = instance.BuffData;
+            delay = d.reviveDelay;
+            hpPercent = d.reviveHPPercent;
+            manaPercent = d.reviveManaPercent;
+            _activeBuffs.Remove(BuffType.Revive);
+            return true;
+        }
+        delay = hpPercent = manaPercent = 0f;
+        return false;
+    }
+
+    /// <summary>Retire TOUS les buffs et debuffs actifs immédiatement — appelé à la mort
+    /// (Entity.Die()) : "si mort, alors perd tout les buffs/debuffs" (décision explicite
+    /// Florian). Repasse par ExpireBuff/ExpireDebuff pour chaque effet (pas un Clear() direct
+    /// des dictionnaires) pour que les flags booléens et le recalcul de stats restent
+    /// cohérents, exactement comme une expiration naturelle.</summary>
+    public void ClearAllEffects()
+    {
+        var debuffKeys = new List<DebuffType>(_activeDebuffs.Keys);
+        foreach (var t in debuffKeys) ExpireDebuff(t);
+
+        var buffKeys = new List<BuffType>(_activeBuffs.Keys);
+        foreach (var t in buffKeys) ExpireBuff(t);
     }
 
     private void ExpireBuff(BuffType type)
@@ -952,10 +1001,12 @@ public class StatusEffectSystem : MonoBehaviour
     public float GetBuffAttackBonus()       => buffAttackBonus;
     public float GetBuffCritChanceBonus()   => buffCritChanceBonus;
     public float GetBuffCritDamageBonus()   => buffCritDamageBonus;
-    public float GetMarkDamageBonus()       => isMarked ? markDamageBonus : 0f;
+#pragma warning disable CS0618 // Blind obsolète — gardé pour compat assets existants
     public float GetBlindMalus()            => blindPrecisionMalus;
-    public float GetShockDefenseReduction() => shockDefenseReduction;
+#pragma warning restore CS0618
+#pragma warning disable CS0618 // ArmorBreak obsolète — gardé pour compat assets existants
     public float GetArmorBreakReduction()   => isArmorBroken ? armorBreakReduction : 0f;
+#pragma warning restore CS0618
     public float GetPoisonHealReduction()   => isPoisoned ? poisonHealReduction : 0f;
     public float GetBarrierElementResist()  => barrierElementResist;
 

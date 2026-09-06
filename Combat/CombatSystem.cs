@@ -184,10 +184,8 @@ public class CombatSystem : MonoBehaviour
 
         // ── 6. Total ──────────────────────────────────────────
         float totalDamage = physDamage + elemFinal;
-
-        // ── 7. Mark ───────────────────────────────────────────
-        if (target?.statusEffects != null && target.statusEffects.isMarked)
-            totalDamage *= (1f + target.statusEffects.GetMarkDamageBonus());
+        // Mark : routé dans FinalDamageReductionPercent (négatif) — voir StatusEffectSystem,
+        // appliqué avec la réduction de dégâts finale ci-dessous, pas ici séparément.
 
         // ── 8. AttackUp buff ──────────────────────────────────
         if (attacker?.statusEffects != null)
@@ -293,9 +291,8 @@ public class CombatSystem : MonoBehaviour
         }
 
         float total = physDamage + elemDamage;
-
-        if (target?.statusEffects != null && target.statusEffects.isMarked)
-            total *= (1f + target.statusEffects.GetMarkDamageBonus());
+        // Mark : routé dans FinalDamageReductionPercent (négatif) — voir StatusEffectSystem,
+        // appliqué avec la réduction de dégâts finale ci-dessous, pas ici séparément.
 
         // ── Dégâts finaux — bonus attaquant puis réduction défenseur ──
         // Même mécanisme que CalculateDamage (joueur) — voir ce commentaire là-bas.

@@ -91,6 +91,51 @@ public class RespawnSystem : MonoBehaviour
     }
 
     // =========================================================
+    // RÉSURRECTION DIFFÉRÉE (buff Revive) — sur place, pas de téléport
+    // =========================================================
+
+    /// <summary>Appelé par Player.Die() quand un buff Revive était actif au moment de la mort
+    /// — résurrection après `delay` secondes (0 = instantané), SUR PLACE (position de mort),
+    /// contrairement au respawn normal qui téléporte au PlayerSpawnPoint.</summary>
+    public void TriggerDelayedRevive(float delay, float hpPercent, float manaPercent)
+    {
+        if (_player == null) _player = FindObjectOfType<Player>();
+        if (_player == null) { Debug.LogError("[RESPAWN] TriggerDelayedRevive — Player introuvable !"); return; }
+
+        TargetingSystem.Instance?.ClearEverything();
+
+        NavMeshAgent agent = _player.GetComponent<NavMeshAgent>();
+        if (agent != null) { agent.ResetPath(); agent.enabled = false; }
+
+        PlayerController controller = _player.GetComponent<PlayerController>();
+        if (controller != null) controller.enabled = false;
+
+        DeathScreenUI.Show();
+        StartCoroutine(DelayedReviveCoroutine(delay, hpPercent, manaPercent));
+    }
+
+    private IEnumerator DelayedReviveCoroutine(float delay, float hpPercent, float manaPercent)
+    {
+        int seconds = Mathf.RoundToInt(delay);
+        while (seconds > 0)
+        {
+            DeathScreenUI.UpdateTimer(seconds);
+            yield return new WaitForSeconds(1f);
+            seconds--;
+        }
+
+        // Pas de téléport — le joueur ressuscite là où il est tombé.
+        NavMeshAgent agent = _player.GetComponent<NavMeshAgent>();
+        if (agent != null) agent.enabled = true;
+
+        PlayerController controller = _player.GetComponent<PlayerController>();
+        if (controller != null) controller.enabled = true;
+
+        _player.Revive(hpPercent, manaPercent);
+        DeathScreenUI.Hide();
+    }
+
+    // =========================================================
     // RESPAWN
     // =========================================================
     private void Respawn()

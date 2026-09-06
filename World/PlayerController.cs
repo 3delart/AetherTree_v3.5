@@ -56,7 +56,7 @@ public class PlayerController : MonoBehaviour
         var fx = _player?.statusEffects;
 
         // Stun, Root ou Knockback (mini-stun) — bloque le mouvement
-        if (fx != null && (fx.isStunned || fx.isRooted || fx.isKnockedBack)) return;
+        if (fx != null && (fx.isStunned || fx.isShocked || fx.isRooted || fx.isKnockedBack)) return;
 
         // MultiHit en cours — immobile le temps du combo (ComboSequence exclu,
         // on peut se déplacer entre deux sorts d'un ComboSequence).

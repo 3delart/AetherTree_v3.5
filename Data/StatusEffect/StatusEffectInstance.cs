@@ -64,10 +64,25 @@ public class DebuffInstance : StatusEffectInstance
                 break;
 
             case DebuffType.ManaDrain:
-                // Drain de mana progressif sur la durée (§3.1.1.1)
+                // Drain de mana progressif sur la durée, reversé au lanceur (§3.1.1.1)
                 float drain = DebuffData.manaDrainPerSecond * deltaTime;
                 if (drain > 0f)
+                {
                     target.SpendMana(drain);
+                    source?.RecoverMana(drain);
+                }
+                break;
+
+            case DebuffType.HpDrain:
+                // Vol de vie progressif — dégâts réels sur la cible (respecte défense/
+                // résistances, peut tuer, même pipeline que le DrainHP côté skill), reversés
+                // en soin identique au lanceur.
+                float hpDrain = DebuffData.hpDrainPerSecond * deltaTime;
+                if (hpDrain > 0f)
+                {
+                    target.TakeDamage(hpDrain, ElementType.Neutral, source);
+                    source?.Heal(hpDrain);
+                }
                 break;
 
             // Freeze, Slow, Root, Stun, Fear, Sleep, Shocked, Silence, Taunt :

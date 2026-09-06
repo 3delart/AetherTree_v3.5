@@ -56,9 +56,19 @@ public class BuffData : StatusEffectData
     public float buffStatValue = 0f;
 
     // ── Résurrection (Revive — Player uniquement) ─────────────
+    // Buff passif/en attente : ne fait RIEN au moment du cast. Consommé UNIQUEMENT si les HP
+    // tombent à 0 pendant qu'il est actif (voir StatusEffectSystem.TryConsumeRevive, appelé par
+    // Player.Die()) — la vraie mort a toujours lieu, la résurrection suit après reviveDelay,
+    // SUR PLACE (position de mort, pas le point de respawn). S'il expire sans jamais avoir
+    // servi (jamais tombé à 0 HP pendant sa durée), rien ne se passe.
+    [Tooltip("Délai avant résurrection après la mort, en secondes. 0 = instantané.")]
+    [Min(0f)]
+    [ShowIf(nameof(buffType), BuffType.Revive, Header = "Résurrection (Revive)")]
+    public float reviveDelay = 0f;
+
     [Tooltip("HP restaurés à la résurrection (ratio du MaxHP). Ex: 0.50 = 50% HP.")]
     [Range(0f, 1f)]
-    [ShowIf(nameof(buffType), BuffType.Revive, Header = "Résurrection (Revive)")]
+    [ShowIf(nameof(buffType), BuffType.Revive)]
     public float reviveHPPercent = 0.50f;
 
     [Tooltip("Mana restaurée à la résurrection (ratio du MaxMana).")]

@@ -46,13 +46,17 @@ public enum DebuffType
 
     // Déplacement & Interrupt
     Knockback,  // Recul      — Eau        — déplace la cible à l'impact, ponctuel (§3.1.1.1)
-    Shocked,    // Choc       — Foudre     — interruption du cast + mini-stun 0.5s (§3.1.1.1)
+    Shocked,    // Choc       — Foudre     — identique à Stun (bloque toutes les actions),
+                // sa propre durée/valeurs via DebuffData (§3.1.1.1) — flag séparé (isShocked)
+                // pour ne jamais couper prématurément un Stun actif en parallèle ou l'inverse.
 
     // Précision & Ressource
+    [System.Obsolete("Retiré du design — utilise Stats + StatModifierType.Precision à la place. Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.")]
     Blind,      // Aveugle    — Lumière    — réduction précision drastique (§3.1.1.1)
-    ManaDrain,  // Drain mana — Ténèbres   — drain progressif sur la durée (§3.1.1.1)
+    ManaDrain,  // Drain mana — Ténèbres   — drain progressif sur la durée, reversé au lanceur (§3.1.1.1)
 
     // Défense
+    [System.Obsolete("Retiré du design — utilise Stats + StatModifierType.MeleeDefense/RangedDefense/MagicDefense/AllDefense à la place. Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.")]
     ArmorBreak, // Armure brisée — Terre  — réduction défense physique % temporaire (§3.1.1.1)
 
     // Utilitaire
@@ -61,7 +65,10 @@ public enum DebuffType
 
     // Stats & Spéciaux
     Stats,      // Réduction de stat spécifique (utilise StatModifierType)
-    Mark,       // Marque pour bonus dégâts (design decision)
+    Mark,       // Marque — bonus % dégâts subis par la cible (routé dans l'accumulateur
+                // FinalDamageReduction, en négatif — compose avec les autres sources au lieu
+                // d'être un multiplicateur séparé en plus, voir StatusEffectSystem)
+    [System.Obsolete("Retiré — jamais utilisé, aucun hook custom implémenté. Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.")]
     Other,      // Effet spécial custom
 
     // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
@@ -73,6 +80,8 @@ public enum DebuffType
     Dispel,     // Retire les buffs actifs de la cible, jet indépendant par buff actif
                 // (chancePerEffect sur DebuffData) — voir BuffType.Dispel, obsolète,
                 // mal placé (Dispel est un effet négatif sur cible ennemie, pas un buff).
+    HpDrain,    // Vol de vie progressif — dégâts/s sur la cible (TakeDamage, respecte
+                // défense/résistances) reversés en soin au lanceur du debuff (§3.1.1.1)
 }
 
 // ── Enums buff ────────────────────────────────────────────────
@@ -114,6 +123,9 @@ public enum BuffType
                     // (chancePerEffect sur BuffData) — Lumière (§3.1.1.2)
     Invincible,     // Invincibilité temporaire — post-respawn 3s (§3.1.1.3)
     Stealth,        // Furtivité — interrompue par attaque/dégât reçu (§3.1.1.3)
+                    // (à implémenter) : flag seul aujourd'hui (isStealthed), aucune invisibilité
+                    // réelle — mobs voient/attaquent pareil, aggro/detection pas câblé. Sert
+                    // uniquement à MobKilledEvent.wasStealth (KillChecker.mustBeStealth).
     [System.Obsolete("Retiré — Dispel cible un ennemi comme effet négatif, voir DebuffType.Dispel.")]
     Dispel,         // Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.
     Stats,          // Augmentation de stat spécifique (utilise StatModifierType)

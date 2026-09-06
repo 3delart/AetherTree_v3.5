@@ -330,8 +330,7 @@ public abstract class Entity : MonoBehaviour
         if (statusEffects != null)
         {
             base_ += statusEffects.GetBuffDefenseBonus();
-            base_ *= (1f - statusEffects.GetArmorBreakReduction());
-            base_ -= statusEffects.GetShockDefenseReduction();
+            base_ *= (1f - statusEffects.GetArmorBreakReduction()); // ArmorBreak obsolète, compat assets existants
         }
         return Mathf.Max(0f, base_);
     }
@@ -342,8 +341,7 @@ public abstract class Entity : MonoBehaviour
         if (statusEffects != null)
         {
             base_ += statusEffects.GetBuffDefenseBonus();
-            base_ *= (1f - statusEffects.GetArmorBreakReduction());
-            base_ -= statusEffects.GetShockDefenseReduction();
+            base_ *= (1f - statusEffects.GetArmorBreakReduction()); // ArmorBreak obsolète, compat assets existants
         }
         return Mathf.Max(0f, base_);
     }
@@ -562,6 +560,10 @@ public abstract class Entity : MonoBehaviour
         if (isDead) return;
         isDead    = true;
         currentHP = 0f;
+        // Perd tous les buffs/debuffs actifs à la mort — décision explicite Florian. Un Revive
+        // en attente doit être consommé par l'appelant (voir Player.Die()) AVANT ce Die() de
+        // base, sinon ClearAllEffects() l'efface avant qu'il ait pu servir.
+        statusEffects?.ClearAllEffects();
     }
 
     // =========================================================

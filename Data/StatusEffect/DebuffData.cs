@@ -63,15 +63,28 @@ public class DebuffData : StatusEffectData
     public float healReduction = 0f;
 #pragma warning restore CS0618
 
-    // ── Réduction de défense (ArmorBreak, Shocked) ────────────
-    [Tooltip("ArmorBreak : réduction flat appliquée aux 3 types de défense.\nShocked : même champ — utilisé pour le mini-stun via CombatSystem.")]
-    [ShowIf(nameof(debuffType), DebuffType.ArmorBreak, DebuffType.Shocked, Header = "Réduction de défense (ArmorBreak, Shocked)")]
+#pragma warning disable CS0618 // ArmorBreak obsolète — gardé pour compat assets existants
+    // ── Réduction de défense (ArmorBreak — obsolète, utiliser Stats) ──
+    [Tooltip("ArmorBreak (obsolète) : réduction flat appliquée aux 3 types de défense.\nNouveaux debuffs : utiliser Stats + StatModifierType.MeleeDefense/RangedDefense/MagicDefense/AllDefense.")]
+    [ShowIf(nameof(debuffType), DebuffType.ArmorBreak, Header = "Réduction de défense (ArmorBreak — obsolète)")]
     public float defenseReduction = 0f;
+#pragma warning restore CS0618
 
     // ── Drain de mana (ManaDrain) ─────────────────────────────
-    [Tooltip("ManaDrain (§3.1.1.1) : mana drainé par seconde.\nRéutilise damagePerSecond pour le tick — ce champ est un alias lisible.")]
+    [Tooltip("ManaDrain (§3.1.1.1) : mana drainé par seconde, reversé au lanceur du debuff.\nRéutilise damagePerSecond pour le tick — ce champ est un alias lisible.")]
     [ShowIf(nameof(debuffType), DebuffType.ManaDrain, Header = "Drain de mana (ManaDrain)")]
     public float manaDrainPerSecond = 0f;
+
+    // ── Drain de vie (HpDrain) ─────────────────────────────────
+    [Tooltip("HpDrain : dégâts par seconde infligés à la cible (respecte défense/résistances,\npeut tuer), reversés en soin identique au lanceur du debuff.")]
+    [ShowIf(nameof(debuffType), DebuffType.HpDrain, Header = "Drain de vie (HpDrain)")]
+    public float hpDrainPerSecond = 0f;
+
+    // ── Marque (Mark) ──────────────────────────────────────────
+    [Tooltip("% de dégâts supplémentaires subis par la cible marquée. Routé dans le même\naccumulateur que FinalDamageReduction (en négatif) — compose avec les autres sources\nau lieu d'être un multiplicateur séparé en plus.")]
+    [Range(0f, 5f)]
+    [ShowIf(nameof(debuffType), DebuffType.Mark, Header = "Marque (Mark)")]
+    public float markDamageBonusPercent = 0f;
 
     // ── Réduction de stat (Stats) ─────────────────────────────
     [Tooltip("Stat à réduire — utilisé uniquement si debuffType = Stats.\nv3.5 : utilise StatModifierType (fusion BuffStatType + DebuffStatType).")]

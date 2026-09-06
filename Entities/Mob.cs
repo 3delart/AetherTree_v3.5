@@ -149,7 +149,7 @@ public class Mob : Entity
         // de patrouiller/chasser normalement) et isSleeping n'était vérifié NULLE PART pour
         // bloquer une action (seulement utilisé pour le réveil au premier dégât reçu) — gel
         // complet ici, un seul endroit, plutôt que dans chaque Handle* séparément.
-        bool isCCd = statusEffects != null && (statusEffects.isStunned || statusEffects.isSleeping);
+        bool isCCd = statusEffects != null && (statusEffects.isStunned || statusEffects.isSleeping || statusEffects.isShocked);
         if (agent != null && agent.isOnNavMesh) agent.isStopped = isCCd;
         if (isCCd) return;
 
@@ -206,13 +206,21 @@ public class Mob : Entity
     }
 
     /// <summary>
-    /// Retourne l'entité la plus proche dans enemyList.
-    /// Réévaluée à chaque tick — GDD v3.5 §3.3.
+    /// Retourne l'entité la plus proche dans enemyList — sauf si CE MOB LUI-MÊME subit Taunt
+    /// (le debuff cible "Enemies" = le mob, pas le lanceur), auquel cas il cible systématiquement
+    /// la SOURCE du debuff (GDD §3.1.1.1 : "force les ennemis à cibler cette entité" = celle qui
+    /// a taunté), peu importe la proximité normale. Réévaluée à chaque tick — GDD v3.5 §3.3.
     /// </summary>
     private Entity GetClosestEnemy()
     {
-        Entity closest  = null;
-        float  minDist  = float.MaxValue;
+        if (statusEffects != null && statusEffects.isTaunted)
+        {
+            Entity tauntSource = statusEffects.GetDebuffSource(DebuffType.Taunt);
+            if (tauntSource != null && !tauntSource.isDead) return tauntSource;
+        }
+
+        Entity closest = null;
+        float  minDist = float.MaxValue;
 
         foreach (Entity e in enemyList)
         {
@@ -233,7 +241,14 @@ public class Mob : Entity
 
     private void HandlePatrol()
     {
-        if (data.aiType == MobAIType.Aggressive && enemyList.Count > 0)
+        // Taunt (GDD §3.1.1.1) force l'engagement même sur un mob Passif — le debuff cible
+        // "Enemies" = CE mob (pas le lanceur), donc c'est statusEffects.isTaunted DE CE MOB
+        // qu'il faut checker, pas scanner enemyList. Sans ce check, un mob Passif tauntée
+        // ignorait purement et simplement l'appel au combat tant qu'il n'avait pas déjà pris
+        // de dégâts (seul déclencheur normal de son aggro).
+        bool isTaunted = statusEffects != null && statusEffects.isTaunted;
+
+        if ((data.aiType == MobAIType.Aggressive || isTaunted) && enemyList.Count > 0)
         {
             BeginChase();
             return;
@@ -315,7 +330,7 @@ public class Mob : Entity
 
         if (IsBeyondLeash()) { GoReturn(); return; }
 
-        if (statusEffects != null && statusEffects.isStunned) return;
+        if (statusEffects != null && (statusEffects.isStunned || statusEffects.isShocked)) return;
 
         Entity target = GetClosestEnemy();
         if (target == null || target.isDead) { GoReturn(); return; }

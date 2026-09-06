@@ -208,10 +208,10 @@ public class SkillBar : MonoBehaviour
         var fx = _player.statusEffects;
         if (fx != null)
         {
-            // Stun ou Knockback (mini-stun ponctuel) — bloque toutes les actions (GDD §21bis.1)
-            if (fx.isStunned || fx.isKnockedBack)
+            // Stun, Shocked (identique à Stun) ou Knockback (mini-stun ponctuel) — bloque toutes les actions (GDD §21bis.1)
+            if (fx.isStunned || fx.isShocked || fx.isKnockedBack)
             {
-                Debug.Log("[SKILLBAR] ❌ Bloqué — Stun/Knockback actif");
+                Debug.Log("[SKILLBAR] ❌ Bloqué — Stun/Shocked/Knockback actif");
                 return false;
             }
             // Fear — fuite incontrôlée, bloque toutes les actions (CC dur au même titre que Stun)
