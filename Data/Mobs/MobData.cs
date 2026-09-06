@@ -89,14 +89,18 @@ public class MobData : ScriptableObject
     public WeaponCategory weaponCategory = WeaponCategory.Melee;
 
     // ── Résistances élémentaires — profil fixe ────────────────
-    [Header("Résistances élémentaires [0;1] — fixes, ne scalent pas")]
-    [Range(0f, 1f)] public float fireResist      = 0f;
-    [Range(0f, 1f)] public float waterResist     = 0f;
-    [Range(0f, 1f)] public float lightningResist = 0f;
-    [Range(0f, 1f)] public float earthResist     = 0f;
-    [Range(0f, 1f)] public float natureResist    = 0f;
-    [Range(0f, 1f)] public float darknessResist  = 0f;
-    [Range(0f, 1f)] public float lightResist     = 0f;
+    // Range étendu au négatif (2026-09-06, demande Florian) — une valeur négative = faiblesse/
+    // vulnérabilité DÉLIBÉRÉE (ex: un boss Feu qui craint l'Eau à -20%), amplifie les dégâts de
+    // cet élément au lieu de les réduire. Le plafond haut (jamais >100% dans le calcul final)
+    // reste géré côté CombatSystem/ComputeDotDps — pas de plafond bas ici.
+    [Header("Résistances élémentaires [-1;1] — fixes, ne scalent pas (négatif = vulnérabilité)")]
+    [Range(-1f, 1f)] public float fireResist      = 0f;
+    [Range(-1f, 1f)] public float waterResist     = 0f;
+    [Range(-1f, 1f)] public float lightningResist = 0f;
+    [Range(-1f, 1f)] public float earthResist     = 0f;
+    [Range(-1f, 1f)] public float natureResist    = 0f;
+    [Range(-1f, 1f)] public float darknessResist  = 0f;
+    [Range(-1f, 1f)] public float lightResist     = 0f;
 
     // ── Skills ────────────────────────────────────────────────
     [Header("Skills")]

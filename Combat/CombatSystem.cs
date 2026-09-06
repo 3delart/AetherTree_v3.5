@@ -132,30 +132,34 @@ public class CombatSystem : MonoBehaviour
             
             if (target != null)
             {
-                Mob targetMob = target.GetComponent<Mob>();
-
-                // Mob → résistance sur MobData SO
-                // Joueur / PNJ / Familier → résistance poussée sur Entity par RecalculateStats
-                if (targetMob?.data != null)
-                    elemResist = targetMob.data.GetElementalResistance(skill.PrimaryElement);
-                else
-                    elemResist = target.GetElementalResistance(skill.PrimaryElement);
+                // Entity.GetElementalResistance lit déjà (base MobData/CharacterData + tout
+                // modificateur actif — buff/debuff Stats ciblant XResistance) pour Mob comme
+                // pour Player/PNJ : Mob.ApplyData() pousse le profil SO sur l'Entity puis
+                // SnapshotBaseStats(), donc un debuff de résistance négative ("faiblesse")
+                // fonctionne pour tout le monde depuis ce seul appel — ne JAMAIS court-circuiter
+                // vers mob.data directement, sinon les debuffs de résistance sur mob restent
+                // sans effet (bug vécu — 2026-09-06).
+                elemResist = target.GetElementalResistance(skill.PrimaryElement);
 
                 // Pénétration rang 5 — local uniquement, ne modifie pas le vrai stat. GDD §6.2.
+                // Pas de floor à 0 : une résistance négative (vulnérabilité) doit pouvoir
+                // descendre encore plus bas, pas être ramenée à 0 par la pénétration.
                 if (elemental != null)
-                    elemResist = Mathf.Max(0f, elemResist
-                        - elemental.GetRank5ResistPenetration(skill.PrimaryElement));
+                    elemResist -= elemental.GetRank5ResistPenetration(skill.PrimaryElement);
 
                 // Barrier — résistance élémentaire du buff actif sur la cible. GDD §3.1.1.2.
                 if (target.statusEffects != null)
                     elemResist += target.statusEffects.GetBarrierElementResist();
 
-                // Clamp local au calcul — une résistance élémentaire peut dépasser 100%
-                // (Fusion sans plafond), mais le facteur de réduction ne doit jamais
-                // repasser négatif (inverserait le signe des dégâts élémentaires, pouvant
-                // annuler la part physique d'un skill mixte phys+élém). Le stat brut
-                // affiché/sauvegardé n'est PAS touché, seul ce calcul l'est.
-                elemDamage *= (1f - Mathf.Clamp01(elemResist));
+                // Clamp local au calcul — plafond haut UNIQUEMENT (une résistance élémentaire
+                // peut dépasser 100%, Fusion sans plafond, mais le facteur de réduction ne doit
+                // jamais repasser négatif au-delà de 1, ça inverserait le signe des dégâts
+                // élémentaires, pouvant annuler la part physique d'un skill mixte phys+élém).
+                // PAS de plancher bas : une résistance négative (vulnérabilité, ex: boss Feu
+                // craint l'Eau -20%) doit amplifier les dégâts normalement, jamais ramenée à 0
+                // — décision explicite Florian (2026-09-06). Le stat brut affiché/sauvegardé
+                // n'est PAS touché, seul ce calcul l'est.
+                elemDamage *= (1f - Mathf.Min(elemResist, 1f));
             }
         }
         // Neutre pur — les bonus offensifs sont appliqués en amont
@@ -225,13 +229,9 @@ public class CombatSystem : MonoBehaviour
         float elemResistLog = 0f;
         if (target != null && skill.EffectiveElementalMultiplier > 0f)
         {
-            Mob targetMobLog = target.GetComponent<Mob>();
-            elemResistLog = targetMobLog?.data != null
-                ? targetMobLog.data.GetElementalResistance(skill.PrimaryElement)
-                : target.GetElementalResistance(skill.PrimaryElement);
+            elemResistLog = target.GetElementalResistance(skill.PrimaryElement);
             if (elemental != null)
-                elemResistLog = Mathf.Max(0f, elemResistLog
-                    - elemental.GetRank5ResistPenetration(skill.PrimaryElement));
+                elemResistLog -= elemental.GetRank5ResistPenetration(skill.PrimaryElement);
         }
 
         LogDamageReport("PLAYER", attacker, target, weapon, skill, baseDamage, physDamage, elemRaw, elemFinal, elemResistLog, totalDamage, isCrit, effectiveCritMult);
@@ -291,22 +291,16 @@ public class CombatSystem : MonoBehaviour
 
             if (target != null)
             {
-                float elemResist = 0f;
-                Mob targetMob = target.GetComponent<Mob>();
-                elemResist = targetMob?.data != null
-                    ? targetMob.data.GetElementalResistance(skill.PrimaryElement)
-                    : target.GetElementalResistance(skill.PrimaryElement);
+                // Entity.GetElementalResistance lit base MobData + tout modificateur actif —
+                // voir le commentaire équivalent dans CalculateDamage (variante joueur).
+                float elemResist = target.GetElementalResistance(skill.PrimaryElement);
 
                 // Barrier — résistance élémentaire du buff actif sur la cible. GDD §3.1.1.2.
                 if (target.statusEffects != null)
                     elemResist += target.statusEffects.GetBarrierElementResist();
 
-                // Clamp local au calcul — une résistance élémentaire peut dépasser 100%
-                // (Fusion sans plafond), mais le facteur de réduction ne doit jamais
-                // repasser négatif (inverserait le signe des dégâts élémentaires, pouvant
-                // annuler la part physique d'un skill mixte phys+élém). Le stat brut
-                // affiché/sauvegardé n'est PAS touché, seul ce calcul l'est.
-                elemDamage *= (1f - Mathf.Clamp01(elemResist));
+                // Clamp local au calcul — plafond haut uniquement, voir CalculateDamage.
+                elemDamage *= (1f - Mathf.Min(elemResist, 1f));
             }
         }
 

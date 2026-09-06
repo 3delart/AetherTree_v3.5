@@ -120,10 +120,13 @@ public class DebuffInstance : StatusEffectInstance
         float pointsTerm = points * DebuffData.elementalPointsMultiplier;
         float dps        = baseTerm + rankTerm + pointsTerm;
 
-        Mob   targetMob = target.GetComponent<Mob>();
-        float resist    = targetMob?.data != null
-            ? targetMob.data.GetElementalResistance(element)
-            : target.GetElementalResistance(element);
+        // Entity.GetElementalResistance lit base MobData/CharacterData + tout modificateur
+        // actif (buff/debuff Stats ciblant XResistance) — jamais mob.data directement, sinon
+        // un debuff de résistance négative ("faiblesse") sur un mob resterait sans effet.
+        // Plafond haut uniquement (résist > 100% ne doit jamais inverser le signe du DoT en
+        // soin) — pas de plancher bas, une résistance négative (vulnérabilité) doit amplifier
+        // les dégâts normalement. Décision explicite Florian (2026-09-06).
+        float resist = Mathf.Min(target.GetElementalResistance(element), 1f);
 
         float finalDps = dps * (1f - resist);
 
