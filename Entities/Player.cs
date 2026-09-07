@@ -937,7 +937,7 @@ public class Player : Entity
     /// </summary>
     public override void ApplyKnockBack(Vector3 direction, float force)
     {
-        if (isDead || statusEffects.isStunned || statusEffects.isShocked || statusEffects.isRooted) return;
+        if (isDead || statusEffects.isStunned || statusEffects.isShocked || statusEffects.isFreezed || statusEffects.isRooted) return;
         base.ApplyKnockBack(direction, force);
     }
 

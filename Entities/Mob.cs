@@ -149,7 +149,7 @@ public class Mob : Entity
         // de patrouiller/chasser normalement) et isSleeping n'était vérifié NULLE PART pour
         // bloquer une action (seulement utilisé pour le réveil au premier dégât reçu) — gel
         // complet ici, un seul endroit, plutôt que dans chaque Handle* séparément.
-        bool isCCd = statusEffects != null && (statusEffects.isStunned || statusEffects.isSleeping || statusEffects.isShocked);
+        bool isCCd = statusEffects != null && (statusEffects.isStunned || statusEffects.isSleeping || statusEffects.isShocked || statusEffects.isFreezed);
         if (agent != null && agent.isOnNavMesh) agent.isStopped = isCCd;
         if (isCCd) return;
 
@@ -331,7 +331,7 @@ public class Mob : Entity
 
         if (IsBeyondLeash()) { GoReturn(); return; }
 
-        if (statusEffects != null && (statusEffects.isStunned || statusEffects.isShocked)) return;
+        if (statusEffects != null && (statusEffects.isStunned || statusEffects.isShocked || statusEffects.isFreezed)) return;
 
         Entity target = GetClosestEnemy();
         if (target == null || target.isDead) { GoReturn(); return; }
