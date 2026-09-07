@@ -697,7 +697,7 @@ public class Player : Entity
     public void UnequipTalisman()
     {
         if (equippedTalismanInstance?.data?.buffToApply != null)
-            statusEffects?.RemoveBuff(equippedTalismanInstance.data.buffToApply.buffType);
+            statusEffects?.RemoveBuff(equippedTalismanInstance.data.buffToApply);
         equippedTalismanInstance = null;
         stats.RecalculateStats(this);
     }
@@ -959,19 +959,17 @@ public class Player : Entity
             foreach (var p in unlockedPermanents)
                 if (p?.onHitDealtEffects != null) all.AddRange(p.onHitDealtEffects);
 
-        // Proc on-hit de palier Esprit — table PARTAGÉE (SpiritMilestoneTable) : le taux vient
-        // de procRates (dernier palier atteint, pas cumulatif), le debuff vient d'elementDebuffs
-        // (fixe par élément, le même à tous les paliers) — table finale 2026-09-06 : Lv50=1%,
-        // Lv70=3%, Lv100=5%.
+        // Proc DEALT de palier Esprit — table PARTAGÉE (SpiritMilestoneTable.elementProcs,
+        // 2026-09-07) : chaque proc a son propre niveau/taux, plusieurs procs au même élément
+        // stackent (rollés indépendamment). Neutre = juste une entrée `element` de plus.
         if (equippedSpiritInstances != null)
             foreach (var spirit in equippedSpiritInstances)
             {
                 var table = spirit?.data?.sharedElementalMilestones;
                 if (table == null) continue;
-                float chance = table.GetActiveProcChance(spirit.level);
-                if (chance <= 0f) continue;
-                var effect = table.GetDebuffEffectForElement(spirit.Element);
-                if (effect != null) all.Add(new OnHitDealtEffectEntry { effect = effect, chance = chance });
+                foreach (var p in table.GetActiveProcs(spirit.Element, spirit.level))
+                    if (p.direction == OnHitProcDirection.Dealt && p.dealtEffect != null)
+                        all.Add(new OnHitDealtEffectEntry { effect = p.dealtEffect, chance = p.chance });
             }
 
         return all;
@@ -995,17 +993,16 @@ public class Player : Entity
             foreach (var p in unlockedPermanents)
                 if (p?.onHitReceivedEffects != null) all.AddRange(p.onHitReceivedEffects);
 
-        // Proc on-hit REÇU de palier Esprit — même taux que le proc infligé (procRates),
-        // réaction défensive au lieu d'offensive (voir SpiritElementalProcEffect.receivedEffect).
+        // Proc RECEIVED de palier Esprit — table PARTAGÉE (SpiritMilestoneTable.elementProcs,
+        // 2026-09-07), voir GetOnHitDealtEffects() pour le détail du mécanisme. Neutre inclus.
         if (equippedSpiritInstances != null)
             foreach (var spirit in equippedSpiritInstances)
             {
                 var table = spirit?.data?.sharedElementalMilestones;
                 if (table == null) continue;
-                float chance = table.GetActiveProcChance(spirit.level);
-                if (chance <= 0f) continue;
-                var receivedEffect = table.GetReceivedEffectForElement(spirit.Element);
-                if (receivedEffect != null) all.Add(new OnHitReceivedEffectEntry { effect = receivedEffect, chance = chance });
+                foreach (var p in table.GetActiveProcs(spirit.Element, spirit.level))
+                    if (p.direction == OnHitProcDirection.Received && p.receivedEffect != null)
+                        all.Add(new OnHitReceivedEffectEntry { effect = p.receivedEffect, chance = p.chance });
             }
 
         return all;

@@ -1054,6 +1054,20 @@ public class StatusEffectSystem : MonoBehaviour
             ExpireBuff(type);
     }
 
+    /// <summary>Retire l'instance de CE buff précis (asset), pas "la première du type" — requis
+    /// pour les types stackable (Stats : talismans + potions coexistent, voir RemoveBuff(BuffType)
+    /// qui ne suffit plus pour eux depuis 2026-09-07). Non-stackable : équivalent à
+    /// RemoveBuff(BuffType), juste plus précis.</summary>
+    public void RemoveBuff(BuffData buff)
+    {
+        if (buff == null) return;
+        if (_activeBuffs.TryGetValue(buff.buffType, out var list))
+        {
+            var match = list.Find(i => i.data == buff);
+            if (match != null) ExpireBuffInstance(buff.buffType, match);
+        }
+    }
+
     /// <summary>Consomme le buff Revive actif (s'il y en a un) — appelé par Player.Die() AVANT
     /// le wipe généralisé des effets (ClearAllEffects), sinon ses valeurs seraient perdues.
     /// Retourne false si aucun Revive actif (mort normale, pas de résurrection).</summary>
