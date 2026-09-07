@@ -66,10 +66,14 @@ public class DebuffData : StatusEffectData
     public ElementType damageElement = ElementType.Neutral;
 #pragma warning restore CS0618
 
-    // ── Ralentissement (Freeze, Slow) ─────────────────────────
-    [Tooltip("Multiplicateur de vitesse [0..1].\n0 = immobilisé | 0.5 = 50% vitesse | 1 = aucun effet\nFreeze : toujours 0 — immobilisation totale (§3.1.1.1).")]
+    // ── Ralentissement (Slow uniquement) ──────────────────────
+    // Freeze n'utilise PAS ce champ — son immobilisation est toujours totale, câblée en dur
+    // (StatusEffectSystem.OnApplyDebuff : slowMultiplier = 0f) et Freeze bloque maintenant
+    // aussi les actions (isFreezed, comme Stun — 2026-09-07). Afficher ce champ sur un asset
+    // Freeze laissait croire qu'il était configurable alors qu'il ne l'a jamais été.
+    [Tooltip("Multiplicateur de vitesse [0..1].\n0 = immobilisé | 0.5 = 50% vitesse | 1 = aucun effet")]
     [Range(0f, 1f)]
-    [ShowIf(nameof(debuffType), DebuffType.Freeze, DebuffType.Slow, Header = "Ralentissement (Freeze, Slow)")]
+    [ShowIf(nameof(debuffType), DebuffType.Slow, Header = "Ralentissement (Slow)")]
     public float slowMultiplier = 0f;
 
     // ── Réduction de soins (Poison — obsolète, gardé pour compat assets existants) ──
