@@ -21,6 +21,8 @@ public class TargetPanel : MonoBehaviour, IPointerClickHandler
     [Header("Barres")]
     public Slider          hpBar;
     public Slider          mpBar;
+    [Tooltip("Slider superposé à hpBar — Direction = Right To Left dans son propre Inspector.\nmaxValue = MaxHP, value = shield actif, recouvre la barre HP verte au prorata.")]
+    public Slider          shieldBar;
 
     [Header("Effets (container HorizontalLayoutGroup)")]
     public Transform       statusEffectContainer;
@@ -118,6 +120,7 @@ public class TargetPanel : MonoBehaviour, IPointerClickHandler
         // Cache les barres HP/MP
         if (hpBar != null) hpBar.gameObject.SetActive(false);
         if (mpBar != null) mpBar.gameObject.SetActive(false);
+        if (shieldBar != null) shieldBar.gameObject.SetActive(false);
     }
 
     // =========================================================
@@ -162,6 +165,15 @@ public class TargetPanel : MonoBehaviour, IPointerClickHandler
         if (_currentTarget == null) return;
         if (hpBar != null) { hpBar.maxValue = _currentTarget.MaxHP;   hpBar.value = _currentTarget.CurrentHP; }
         if (mpBar != null) { mpBar.maxValue = _currentTarget.MaxMana; mpBar.value = _currentTarget.CurrentMana; }
+
+        // Shield actif — même overlay que PlayerInfosPanel (maxValue = MaxHP, pas CurrentHP).
+        if (shieldBar != null)
+        {
+            float shield = _currentTarget.statusEffects != null ? _currentTarget.statusEffects.GetActiveShieldAmount() : 0f;
+            shieldBar.maxValue = _currentTarget.MaxHP;
+            shieldBar.value    = shield;
+            shieldBar.gameObject.SetActive(shield > 0f);
+        }
     }
 
     private void RefreshEffects()

@@ -182,7 +182,7 @@ public class QuestData : ScriptableObject
 }
 
 // =============================================================
-public enum QuestRank { Main, Secondary, Daily, Guild, Event, Hidden }
+public enum QuestRank { Main = 0, Secondary = 1, Daily = 2, Guild = 3, Event = 4, Hidden = 5 }
 
 // =============================================================
 [System.Serializable]
@@ -239,4 +239,4 @@ public class QuestObjective
 }
 
 // =============================================================
-public enum QuestObjectiveType { Kill, TalkTo, Deliver, Gather, Explore, Craft, Boss }
+public enum QuestObjectiveType { Kill = 0, TalkTo = 1, Deliver = 2, Gather = 3, Explore = 4, Craft = 5, Boss = 6 }

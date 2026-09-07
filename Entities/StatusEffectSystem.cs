@@ -9,9 +9,10 @@ using System.Collections.Generic;
 // À attacher sur : Entity (Player, Mob, PNJ, Pet) via [RequireComponent] sur Entity.
 //
 // Debuffs (GDD v3.5 §3.1.1.1) :
-//   Burn, Slow, Knockback*, Root, Poison, Stun, ArmorBreak,
+//   Burn, Slow, Root, Poison, Stun, ArmorBreak,
 //   Shocked, Fear, ManaDrain, Blind, Freeze, Silence, Taunt, Mark
-//   (*) Knockback : effet ponctuel — déclenché via Entity.ApplyKnockBack().
+//   Knockback (mini-stun) n'est PAS un DebuffType — effet ponctuel déclenché directement via
+//   Entity.ApplyKnockBack() (voir isKnockedBack ci-dessous), hors du pipeline DebuffData.
 //
 // Buffs (GDD v3.5 §3.1.1.2) :
 //   Shield, Regeneration, Haste, DefenseUp, Purified*, Heal*,
@@ -172,7 +173,7 @@ public class StatusEffectSystem : MonoBehaviour
 
     /// <summary>Marked — cible marquée, reçoit des dégâts supplémentaires (valeur numérique
     /// routée dans l'accumulateur FinalDamageReduction, pas ici — voir ReapplyActiveModifiers).</summary>
-    public bool isMarked     { get; private set; } = false;
+    public bool isPreyed     { get; private set; } = false;
 
     // Valeurs numériques debuff
     public float slowMultiplier        { get; private set; } = 1f;
@@ -452,10 +453,10 @@ public class StatusEffectSystem : MonoBehaviour
                 slowMultiplier = Mathf.Min(slowMultiplier, instance.DebuffData.slowMultiplier);
                 break;
 
-            case DebuffType.Mark:
+            case DebuffType.Prey:
                 // Flag pour l'UI/status — la valeur numérique (% dégâts subis) est routée dans
                 // l'accumulateur FinalDamageReduction par ReapplyActiveModifiers ci-dessous.
-                isMarked = true;
+                isPreyed = true;
                 RecalculateAndReapply();
                 break;
 
@@ -580,11 +581,11 @@ public class StatusEffectSystem : MonoBehaviour
                     armorBreakReduction += d.defenseReduction;
                     break;
 #pragma warning restore CS0618
-                case DebuffType.Mark:
+                case DebuffType.Prey:
                     // Routé dans l'accumulateur FinalDamageReduction (négatif = +dégâts subis) —
                     // compose avec les autres sources au lieu d'être un multiplicateur séparé.
                     AccumulateStatLine(flatSum, percentSum, StatModifierType.FinalDamageReduction,
-                        true, -d.markDamageBonusPercent);
+                        true, -d.preyDamageBonusPercent);
                     break;
                 case DebuffType.Stats:
                     AccumulateStatLine(flatSum, percentSum, d.debuffStatType,
@@ -997,7 +998,7 @@ public class StatusEffectSystem : MonoBehaviour
 #pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:     isPoisoned    = false; break;
 #pragma warning restore CS0618
-            case DebuffType.Mark:       isMarked      = false; break;
+            case DebuffType.Prey:       isPreyed      = false; break;
         }
 
         // ── Valeurs numériques — recalcul propre ──────────────
@@ -1014,7 +1015,7 @@ public class StatusEffectSystem : MonoBehaviour
 #pragma warning disable CS0618 // Poison obsolète — gardé pour compat assets existants
             case DebuffType.Poison:
 #pragma warning restore CS0618
-            case DebuffType.Mark:
+            case DebuffType.Prey:
             case DebuffType.Stats:
                 RecalculateAndReapply();
                 return; // déjà fait — évite le 2e appel juste en dessous (idempotent de toute
@@ -1151,6 +1152,12 @@ public class StatusEffectSystem : MonoBehaviour
     /// <summary>
     /// Absorbe les dégâts avec le bouclier actif (Shield). Retourne les dégâts résiduels.
     /// </summary>
+    /// <summary>Montant de bouclier actif restant, 0 si aucun Shield actif — utilisé par l'UI
+    /// pour afficher un état visuel distinct (ex: PlayerInfosPanel.RefreshBars).</summary>
+    public float GetActiveShieldAmount()
+        => _activeBuffs.TryGetValue(BuffType.Shield, out var list) && list.Count > 0
+            ? list[0].remainingShield : 0f;
+
     public float AbsorbWithShield(float incomingDamage)
     {
         if (_activeBuffs.TryGetValue(BuffType.Shield, out var list) && list.Count > 0)

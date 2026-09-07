@@ -32,31 +32,31 @@ public enum PassiveTriggerType
 {
     // ── Dégâts reçus ──────────────────────────────────────────
     [InspectorName("OnFatalHit — Coup qui aurait tué le joueur")]
-    OnFatalHit,
+    OnFatalHit = 0,
 
     [InspectorName("OnLowHP — HP joueur ≤ seuil % (réévalué après chaque coup)")]
-    OnLowHP,
+    OnLowHP = 1,
 
     [InspectorName("OnTakeDamagePercent — Reçoit ≥ X% de son MaxHP en un seul coup")]
-    OnTakeDamagePercent,
+    OnTakeDamagePercent = 2,
 
     // ── Dégâts infligés ───────────────────────────────────────
     [InspectorName("OnKill — Tuer un ennemi")]
-    OnKill,
+    OnKill = 3,
 
     [InspectorName("OnCritical — Infliger un coup critique")]
-    OnCritical,
+    OnCritical = 4,
 
     // ── Skills ────────────────────────────────────────────────
     [InspectorName("OnCast — Utiliser un skill (spécifique ou n'importe lequel)")]
-    OnCast,
+    OnCast = 5,
 
     [InspectorName("OnCombo — Utiliser un skill avec 2+ éléments (combo élémentaire)")]
-    OnCombo,
+    OnCombo = 6,
 
     // ── Temps ─────────────────────────────────────────────────
     [InspectorName("OnInterval — Se redéclenche automatiquement toutes les `cooldown` secondes")]
-    OnInterval,
+    OnInterval = 7,
 }
 
 // ── Types d'effets disponibles ────────────────────────────────
@@ -67,35 +67,19 @@ public enum PassiveTriggerType
 public enum PassiveEffectType
 {
     [InspectorName("Buff — Applique un BuffData sur soi (Heal, Shield, Revive, Invincible...)")]
-    Buff, // BuffSelf(0) → Buff(0), ordinal stable, aucun placeholder nécessaire.
+    Buff = 0,
 
-    // HealSelf/ShieldSelf/InvincibleSelf/ReviveSelf/PushEnemiesAround/DebuffEnemiesAround/
-    // DamageEnemiesAround retirés (2026) — couverts par Buff (BuffData choisit son propre
-    // comportement) et Skill (délègue à SkillSystem.Execute()). Gardés ici comme placeholders
-    // [Obsolete] pour ne pas laisser Debuff/Skill hériter des anciens ordinaux 1/2
-    // (HealSelf/ShieldSelf) — un vieil asset sérialisé sur ces valeurs tomberait sinon
-    // silencieusement sur un comportement différent au lieu de ne rien faire. Ne jamais
-    // réutiliser ces slots pour une nouvelle valeur ; ajouter en fin d'enum à la place.
-    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Heal).")]
-    Removed_HealSelf,
-    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Shield).")]
-    Removed_ShieldSelf,
-    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Invincible).")]
-    Removed_InvincibleSelf,
-    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Buff (BuffData.buffType == Revive).")]
-    Removed_ReviveSelf,
-    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Skill (SkillData ciblant AoE_Self avec push).")]
-    Removed_PushEnemiesAround,
-    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Debuff.")]
-    Removed_DebuffEnemiesAround,
-    [System.Obsolete("Retiré 2026 — voir PassiveEffectType.Skill (SkillData avec dégâts AoE_Self).")]
-    Removed_DamageEnemiesAround,
+    // 1-7 retirés (2026-09-07) — anciens HealSelf/ShieldSelf/InvincibleSelf/ReviveSelf/
+    // PushEnemiesAround/DebuffEnemiesAround/DamageEnemiesAround, pré-refonte 2026 (couverts
+    // depuis par Buff/Debuff/Skill ci-dessous). Zéro switch case, zéro ShowIf, et zéro
+    // pas_*.asset n'existe encore dans le projet — vérifié avant suppression. Ordinaux 1-7
+    // jamais réutilisés.
 
     [InspectorName("Debuff — Applique un DebuffData aux ennemis proches")]
-    Debuff,
+    Debuff = 8,
 
     [InspectorName("Skill — Lance un SkillData (dégâts, push, zone... tout ce qu'un skill fait déjà)")]
-    Skill,
+    Skill = 9,
 }
 
 // =============================================================

@@ -53,82 +53,82 @@ public class WeaponInfoAttribute : Attribute
 // =============================================================
 public enum WeaponType
 {
-    Any,
+    Any = 0,
 
     [WeaponInfo(WeaponCategory.Unarmed)]
-    UnArmed,
+    UnArmed = 1,
 
     // ── Mêlée ───────────────────────────────────────────────────
     [WeaponInfo(WeaponCategory.Melee)]
-    ShortSword,
+    ShortSword = 2,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.ShortSword)]
-    LongSword,
+    LongSword = 3,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.ShortSword)]
-    DoubleSword,
+    DoubleSword = 4,
 
     [WeaponInfo(WeaponCategory.Melee)]
-    GreatAxe,
+    GreatAxe = 5,
 
     [WeaponInfo(WeaponCategory.Melee)]
-    Scythe,
+    Scythe = 6,
 
     [WeaponInfo(WeaponCategory.Melee)]
-    Mace,
+    Mace = 7,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.Mace)]
-    Hammer,
+    Hammer = 8,
 
     [WeaponInfo(WeaponCategory.Melee)]
-    Dagger,
+    Dagger = 9,
 
     [WeaponInfo(WeaponCategory.Melee, WeaponType.Dagger)]
-    DoubleDagger,
+    DoubleDagger = 10,
 
     [WeaponInfo(WeaponCategory.Melee)]
-    Shield,
+    Shield = 11,
 
     // ── Distance ────────────────────────────────────────────────
     [WeaponInfo(WeaponCategory.Ranged)]
-    Bow,
+    Bow = 12,
 
     [WeaponInfo(WeaponCategory.Ranged, WeaponType.Bow)]
-    Crossbow,
+    Crossbow = 13,
 
     [WeaponInfo(WeaponCategory.Ranged)]
-    Pistol,
+    Pistol = 14,
 
     [WeaponInfo(WeaponCategory.Ranged, WeaponType.Pistol)]
-    Shotgun,
+    Shotgun = 15,
 
     [WeaponInfo(WeaponCategory.Ranged, WeaponType.Pistol)]
-    Sniper,
+    Sniper = 16,
 
 
     // ── Magique ─────────────────────────────────────────────────
     [WeaponInfo(WeaponCategory.Magic)]
-    Staff,
+    Staff = 17,
 
     [WeaponInfo(WeaponCategory.Magic, WeaponType.Staff)]
-    Scepter,
+    Scepter = 18,
 
     [WeaponInfo(WeaponCategory.Magic)]
-    Orb,
+    Orb = 19,
 
     [WeaponInfo(WeaponCategory.Magic)]
-    Tome,
+    Tome = 20,
 
     [WeaponInfo(WeaponCategory.Magic)]
-    Wand,
+    Wand = 21,
 }
 
 
 // =============================================================
 // ENUMS LIÉS
 // =============================================================
-public enum WeaponCategory { Unarmed, Melee, Ranged, Magic }
-public enum ArmorType      { Lourde, Legere, Robe }
+public enum WeaponCategory { Unarmed = 0, Melee = 1, Ranged = 2, Magic = 3 }
+public enum ArmorType      { Lourde = 0, Legere = 1, Robe = 2 }
 
 
 // =============================================================

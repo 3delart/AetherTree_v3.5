@@ -51,34 +51,39 @@ public class ElementInfoAttribute : Attribute
 // Ajouter un élément = ajouter une ligne + son attribut [ElementInfo]
 // Cycle GDD §6.1 : Feu→Eau→Foudre→Terre→Nature→Feu | Lumière↔Ténèbres
 // =============================================================
+// Ordinaux figés explicitement (2026-09-07) — Unity sérialise un enum par sa position int,
+// jamais son nom. Avant ce figeage, insérer/retirer un membre au milieu décalait tous les
+// suivants et corrompait silencieusement les .asset déjà sauvegardés. Désormais : ajouter un
+// membre = choisir le prochain entier libre, n'importe où dans le fichier ; ne JAMAIS réutiliser
+// un entier déjà attribué (même à un membre retiré/[Obsolete]).
 public enum ElementType
 {
     [ElementInfo("— Any —",   0f,    0f,    0f,    ElementType.Any)]
     Any = -1,
 
     [ElementInfo("Neutre",    0.75f, 0.75f, 0.75f, ElementType.Neutral, isDemo: true)]
-    Neutral,
+    Neutral = 0,
 
     [ElementInfo("Feu",       1.0f,  0.35f, 0.0f,  ElementType.Water,   isDemo: true)]
-    Fire,
+    Fire = 1,
 
     [ElementInfo("Eau",       0.1f,  0.5f,  1.0f,  ElementType.Lightning, isDemo: true)]
-    Water,
+    Water = 2,
 
     [ElementInfo("Foudre",    0.8f,  0.6f,  1.0f,  ElementType.Earth)]
-    Lightning,
+    Lightning = 3,
 
     [ElementInfo("Terre",     0.6f,  0.4f,  0.1f,  ElementType.Nature,  isDemo: true)]
-    Earth,
+    Earth = 4,
 
     [ElementInfo("Nature",    0.15f, 0.75f, 0.2f,  ElementType.Fire,    isDemo: true)]
-    Nature,
+    Nature = 5,
 
     [ElementInfo("Ténèbres",  0.3f,  0.1f,  0.4f,  ElementType.Light)]
-    Darkness,
+    Darkness = 6,
 
     [ElementInfo("Lumière",   1.0f,  0.95f, 0.5f,  ElementType.Darkness)]
-    Light,
+    Light = 7,
 }
 
 // =============================================================

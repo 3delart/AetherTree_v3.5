@@ -122,26 +122,25 @@ public class DialogueOption
 // ── Actions possibles depuis une option — GDD v30 §19 ─────────
 public enum DialogueAction
 {
-    None,               // Aucune action — juste navigation de stage
-    OpenShop,           // Ouvre ShopUI (Merchant)
-    OpenForge,          // Ouvre ForgeUI — onglet Upgrade actuel (PNJType.Forge) — TODO Phase 6
-    OpenRarity,         // Ouvre RarityUI (Rarity) — pari de rareté GDD §3.4.8
-    OpenRuneUI,         // Ouvre RuneUI identification/insertion (Antiquarian) — TODO Phase 6
-    OpenFusionUI,       // Ouvre FusionUI Gants/Bottes (FusionNPC) — TODO Phase 6
-    [System.Obsolete("Retiré du design (2026) — métier jamais implémenté, ordinal gardé.")]
-    OpenMetierUI,
-    OpenQuestLog,       // Ouvre QuestUI (Quest) — TODO Phase 7
-    OpenHarborUI,       // Ouvre navigation bateau (HarborMaster) — TODO Phase 8
-    TriggerGuildCreation, // Lance la création de guilde (Mayor)
-    AcceptQuest,        // Accepte une quête (QuestNPC) — questData assignée sur le stage
-    TurnInQuest,        // Rend une quête complétée au PNJ donneur
-    CloseDialogue,      // Ferme le dialogue
+    None                 = 0,  // Aucune action — juste navigation de stage
+    OpenShop             = 1,  // Ouvre ShopUI (Merchant)
+    OpenForge            = 2,  // Ouvre ForgeUI — onglet Upgrade actuel (PNJType.Forge) — TODO Phase 6
+    OpenRarity           = 3,  // Ouvre RarityUI (Rarity) — pari de rareté GDD §3.4.8
+    OpenRuneUI           = 4,  // Ouvre RuneUI identification/insertion (Antiquarian) — TODO Phase 6
+    OpenFusionUI         = 5,  // Ouvre FusionUI Gants/Bottes (FusionNPC) — TODO Phase 6
+    // 6 retiré (2026-09-07) — OpenMetierUI, métier jamais implémenté. Zéro handler dans
+    // DialogueUI — vérifié avant suppression. Ordinal 6 jamais réutilisé.
+    OpenQuestLog         = 7,  // Ouvre QuestUI (Quest) — TODO Phase 7
+    OpenHarborUI         = 8,  // Ouvre navigation bateau (HarborMaster) — TODO Phase 8
+    TriggerGuildCreation = 9,  // Lance la création de guilde (Mayor)
+    AcceptQuest          = 10, // Accepte une quête (QuestNPC) — questData assignée sur le stage
+    TurnInQuest          = 11, // Rend une quête complétée au PNJ donneur
+    CloseDialogue        = 12, // Ferme le dialogue
 
     // ── Ajouté §13.2 — fenêtre PNJ partagée à onglets ──────────
     // Remplace OpenShop/OpenForge/OpenRarity pour tout PNJ composable (voir
     // PNJTypeExtensions.GetTabs()) — ouvre toujours sur l'onglet Boutique,
     // les autres onglets se changent depuis l'intérieur de la fenêtre, pas
-    // via une nouvelle DialogueAction. Ajouté en fin d'enum — ne jamais
-    // réordonner (int sérialisé sur les DialogueOption existantes).
-    OpenPNJWindow,
+    // via une nouvelle DialogueAction.
+    OpenPNJWindow        = 13,
 }

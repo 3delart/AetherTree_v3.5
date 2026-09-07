@@ -21,8 +21,8 @@ using UnityEngine;
 
 public enum Language
 {
-    FR,
-    EN,
+    FR = 0,
+    EN = 1,
     // Ajouter ici les futures langues (ES, DE, ...) — voir aussi LocalizedText.cs
 }
 

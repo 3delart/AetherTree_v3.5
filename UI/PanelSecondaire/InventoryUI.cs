@@ -86,7 +86,7 @@ public class InventoryUI : MonoBehaviour
         EquipmentSlot.Weapon, EquipmentSlot.Armor,  EquipmentSlot.Helmet,
         EquipmentSlot.Gloves, EquipmentSlot.Boots,
         EquipmentSlot.Ring,   EquipmentSlot.Necklace, EquipmentSlot.Bracelet,
-        EquipmentSlot.Spirit,
+        EquipmentSlot.Spirit, EquipmentSlot.Talisman,
     };
 
     // ── Drag & Drop état global ───────────────────────────────
@@ -202,7 +202,8 @@ public class InventoryUI : MonoBehaviour
         if (_inventory != null)
             foreach (var slot in EQUIP_SLOTS)
                 foreach (var item in _inventory.GetItems(slot))
-                    if (item.ItemCategory == InventoryCategory.Equipement)  // ← filtre ajouté
+                    if (item.ItemCategory == InventoryCategory.Equipement
+                        || item.ItemCategory == InventoryCategory.Talisman)  // ← filtre ajouté
                         items.Add(item);
         FillGrid(contentEquipements, _cellsEquip, items);
     }

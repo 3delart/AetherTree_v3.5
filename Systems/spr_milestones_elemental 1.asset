@@ -12,6 +12,528 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f40de8024587eac4295c97897178d6ee, type: 3}
   m_Name: spr_milestones_elemental 1
   m_EditorClassIdentifier: 
+  elementalPointGains:
+  - level: 10
+    elementalPoints: 10
+  - level: 20
+    elementalPoints: 20
+  - level: 30
+    elementalPoints: 30
+  - level: 40
+    elementalPoints: 40
+  - level: 50
+    elementalPoints: 50
+  - level: 60
+    elementalPoints: 60
+  - level: 70
+    elementalPoints: 70
+  - level: 80
+    elementalPoints: 80
+  - level: 90
+    elementalPoints: 90
+  - level: 100
+    elementalPoints: 100
+  neutralStatGains:
+  - level: 1
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 2
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 3
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 4
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 5
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 6
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 7
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 8
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 9
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 10
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 11
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 12
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 13
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 14
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 15
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 16
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 17
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 18
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 19
+    neutralAttack: 2
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 20
+    neutralAttack: 0
+    neutralHP: 20
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 21
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 22
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 23
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 24
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 25
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0.01
+  - level: 26
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 27
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 28
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 29
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 30
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 31
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 32
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 33
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 34
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 35
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 36
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 37
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 38
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 39
+    neutralAttack: 3
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 40
+    neutralAttack: 0
+    neutralHP: 25
+    neutralCritChance: 0.01
+    neutralResistAll: 0
+  - level: 41
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 42
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 43
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 44
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 45
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 46
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 47
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 48
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 49
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 50
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0.01
+  - level: 51
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 52
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 53
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 54
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 55
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 56
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 57
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 58
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 59
+    neutralAttack: 4
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 60
+    neutralAttack: 0
+    neutralHP: 30
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 61
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 62
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 63
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 64
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 65
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 66
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 67
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 68
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 69
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 70
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0.02
+    neutralResistAll: 0
+  - level: 71
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 72
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 73
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 74
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 75
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0.01
+  - level: 76
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 77
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 78
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 79
+    neutralAttack: 5
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 80
+    neutralAttack: 0
+    neutralHP: 35
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 81
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 82
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 83
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 84
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 85
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 86
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 87
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 88
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 89
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 90
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 91
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 92
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 93
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 94
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 95
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 96
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 97
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 98
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 99
+    neutralAttack: 6
+    neutralHP: 0
+    neutralCritChance: 0
+    neutralResistAll: 0
+  - level: 100
+    neutralAttack: 0
+    neutralHP: 40
+    neutralCritChance: 0.03
+    neutralResistAll: 0.02
   milestones:
   - level: 10
     resistBonusPercent: 0.02
@@ -63,32 +585,72 @@ MonoBehaviour:
     elementalDamageBonusPercent: 0
     manaCostReductionPercent: 0
     resistPenetrationPercent: -0.02
-  procRates:
+  neutralMilestones:
+  - level: 10
+    bonuses:
+    - statType: 8
+      mode: 0
+      value: 0.02
+  - level: 20
+    bonuses:
+    - statType: 39
+      mode: 1
+      value: 0.02
+  - level: 30
+    bonuses:
+    - statType: 40
+      mode: 1
+      value: 0.02
+  - level: 40
+    bonuses:
+    - statType: 65
+      mode: 0
+      value: 0.02
   - level: 50
-    chance: 0.01
+    bonuses:
+    - statType: 8
+      mode: 0
+      value: 0.02
+  - level: 60
+    bonuses:
+    - statType: 39
+      mode: 1
+      value: 0.02
   - level: 70
-    chance: 0.03
+    bonuses:
+    - statType: 40
+      mode: 1
+      value: 0.02
+  - level: 80
+    bonuses:
+    - statType: 65
+      mode: 0
+      value: 0.02
+  - level: 90
+    bonuses:
+    - statType: 8
+      mode: 0
+      value: 0.02
   - level: 100
-    chance: 0.05
-  elementDebuffs:
-  - element: 1
-    effect: {fileID: 0}
-    receivedEffect: {fileID: 0}
-  - element: 2
-    effect: {fileID: 0}
-    receivedEffect: {fileID: 0}
-  - element: 3
-    effect: {fileID: 0}
-    receivedEffect: {fileID: 0}
-  - element: 4
-    effect: {fileID: 0}
-    receivedEffect: {fileID: 0}
-  - element: 5
-    effect: {fileID: 0}
-    receivedEffect: {fileID: 0}
-  - element: 6
-    effect: {fileID: 0}
-    receivedEffect: {fileID: 0}
-  - element: 7
-    effect: {fileID: 0}
-    receivedEffect: {fileID: 0}
+    bonuses:
+    - statType: 39
+      mode: 1
+      value: 0.02
+  elementProcs:
+  - element: 0
+    procs:
+    - level: 50
+      direction: 0
+      dealtEffect: {fileID: 0}
+      receivedEffect: {fileID: 0}
+      chance: 0
+    - level: 70
+      direction: 1
+      dealtEffect: {fileID: 0}
+      receivedEffect: {fileID: 0}
+      chance: 0
+    - level: 100
+      direction: 0
+      dealtEffect: {fileID: 0}
+      receivedEffect: {fileID: 0}
+      chance: 0

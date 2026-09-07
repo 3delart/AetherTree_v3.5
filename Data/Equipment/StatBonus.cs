@@ -41,120 +41,114 @@ using UnityEngine;
 public enum StatType
 {
     // ── Défense ───────────────────────────────────────────────
-    [InspectorName("Melee Defense (flat)")]    MeleeDefense,
-    [InspectorName("Ranged Defense (flat)")]   RangedDefense,
-    [InspectorName("Magic Defense (flat)")]    MagicDefense,
+    [InspectorName("Melee Defense (flat)")]    MeleeDefense = 0,
+    [InspectorName("Ranged Defense (flat)")]   RangedDefense = 1,
+    [InspectorName("Magic Defense (flat)")]    MagicDefense = 2,
 
     // ── Attaque ───────────────────────────────────────────────
-    [InspectorName("Bonus Attack (flat)")]     BonusAttack,
+    [InspectorName("Bonus Attack (flat)")]     BonusAttack = 3,
 
     // ── Mobilité ──────────────────────────────────────────────
-    [InspectorName("Dodge (flat)")]            Dodge,
-    [InspectorName("Precision (flat)")]        Precision,
-    [InspectorName("Move Speed (flat)")]       MoveSpeed,
+    [InspectorName("Dodge (flat)")]            Dodge = 4,
+    [InspectorName("Precision (flat)")]        Precision = 5,
+    [InspectorName("Move Speed (flat)")]       MoveSpeed = 6,
 
     // ── Critique ──────────────────────────────────────────────
-    [InspectorName("Crit Chance (ratio 0.05 = 5%)")]   CritChance,
-    [InspectorName("Crit Multiplier (ratio 0.15 = +15%)")] CritMultiplier,
+    [InspectorName("Crit Chance (ratio 0.05 = 5%)")]   CritChance = 7,
+    [InspectorName("Crit Multiplier (ratio 0.15 = +15%)")] CritMultiplier = 8,
 
-    [InspectorName("Reduction de dmg critique (ratio 0.10 = -10% dmg crit)")] CritDmgReduction, 
+    [InspectorName("Reduction de dmg critique (ratio 0.10 = -10% dmg crit)")] CritDmgReduction = 9,
 
     // ── Résistances élémentaires ──────────────────────────────
-    [InspectorName("Resist Fire (ratio 0.10 = 10%)")]      ResistFire,
-    [InspectorName("Resist Water (ratio 0.10 = 10%)")]     ResistWater,
-    [InspectorName("Resist Lightning (ratio 0.10 = 10%)")] ResistLightning,
-    [InspectorName("Resist Earth (ratio 0.10 = 10%)")]     ResistEarth,
-    [InspectorName("Resist Nature (ratio 0.10 = 10%)")]    ResistNature,
-    [InspectorName("Resist Darkness (ratio 0.10 = 10%)")]  ResistDarkness,
-    [InspectorName("Resist Light (ratio 0.10 = 10%)")]     ResistLight,
-    [InspectorName("Resist ALL (ratio 0.10 = 10%)")]       ResistAll,
+    [InspectorName("Resist Fire (ratio 0.10 = 10%)")]      ResistFire = 10,
+    [InspectorName("Resist Water (ratio 0.10 = 10%)")]     ResistWater = 11,
+    [InspectorName("Resist Lightning (ratio 0.10 = 10%)")] ResistLightning = 12,
+    [InspectorName("Resist Earth (ratio 0.10 = 10%)")]     ResistEarth = 13,
+    [InspectorName("Resist Nature (ratio 0.10 = 10%)")]    ResistNature = 14,
+    [InspectorName("Resist Darkness (ratio 0.10 = 10%)")]  ResistDarkness = 15,
+    [InspectorName("Resist Light (ratio 0.10 = 10%)")]     ResistLight = 16,
+    [InspectorName("Resist ALL (ratio 0.10 = 10%)")]       ResistAll = 17,
 
     // ── Points élémentaires ───────────────────────────────────
-    [InspectorName("Points Fire (flat)")]      PointsFire,
-    [InspectorName("Points Water (flat)")]     PointsWater,
-    [InspectorName("Points Lightning (flat)")] PointsLightning,
-    [InspectorName("Points Earth (flat)")]     PointsEarth,
-    [InspectorName("Points Nature (flat)")]    PointsNature,
-    [InspectorName("Points Darkness (flat)")]  PointsDarkness,
-    [InspectorName("Points Light (flat)")]     PointsLight,
-    [InspectorName("Points ALL (flat)")]       PointsAll,
+    [InspectorName("Points Fire (flat)")]      PointsFire = 18,
+    [InspectorName("Points Water (flat)")]     PointsWater = 19,
+    [InspectorName("Points Lightning (flat)")] PointsLightning = 20,
+    [InspectorName("Points Earth (flat)")]     PointsEarth = 21,
+    [InspectorName("Points Nature (flat)")]    PointsNature = 22,
+    [InspectorName("Points Darkness (flat)")]  PointsDarkness = 23,
+    [InspectorName("Points Light (flat)")]     PointsLight = 24,
+    [InspectorName("Points ALL (flat)")]       PointsAll = 25,
 
-    // ── Multiplicateurs de points élémentaires — RETIRÉS (2026) ────────
-    // Jamais appliqués (accumulés dans CharacterStats mais jamais lus avant le
-    // push sur Entity — bug silencieux, pas une vraie feature). Ordinal gardé
-    // (au milieu de l'enum, BonusHP/BonusMana suivent) — jamais delete/réordonner.
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusFire,
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusWater,
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusLightning,
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusEarth,
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusNature,
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusDarkness,
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusLight,
-    [System.Obsolete("Retiré (2026) — jamais appliqué, ordinal gardé.")] ElementBonusAll,
+    // 26-33 retirés (2026-09-07) — anciens multiplicateurs de points élémentaires
+    // (ElementBonusFire..All), jamais appliqués (accumulés dans CharacterStats mais jamais lus
+    // avant le push sur Entity — bug silencieux, pas une vraie feature). Sans rapport avec
+    // PointsFire/../All (flat, actif) ni ElementalDamageBonusFire/../All (%, actif, alimenté
+    // par SpiritData) plus bas. Zéro référence code, zéro .asset — vérifié avant suppression.
+    // Ordinaux 26-33 jamais réutilisés.
 
     // ── Vie & Mana ────────────────────────────────────────────
     // Regen ici = PERMANENT (équipement / PermanentSkillData.bonuses, jamais expire).
     // Pour une regen TEMPORAIRE (buff/debuff avec durée), voir StatModifierType.RegenHP/
     // RegenMana dans StatusEffectData.cs — les deux s'additionnent sur le même champ final
     // Entity.RegenHP, pas de conflit, juste deux durées de vie différentes.
-    [InspectorName("Bonus HP (flat)")]         BonusHP,
-    [InspectorName("Bonus Mana (flat)")]       BonusMana,
-    [InspectorName("Regen HP naturel (flat)")]   BonusRegenHP,
-    [InspectorName("Regen Mana naturel (flat)")] BonusRegenMana,
+    [InspectorName("Bonus HP (flat)")]         BonusHP = 34,
+    [InspectorName("Bonus Mana (flat)")]       BonusMana = 35,
+    [InspectorName("Regen HP naturel (flat)")]   BonusRegenHP = 36,
+    [InspectorName("Regen Mana naturel (flat)")] BonusRegenMana = 37,
 
     // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
-    [InspectorName("All Defense (flat ou %, voir mode)")] AllDefense,
+    [InspectorName("All Defense (flat ou %, voir mode)")] AllDefense = 38,
 
     // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Accumulateurs BRUTS — PAS
     // la formule (Base+Flat)×(1+%) du reste de cet enum. Voir CharacterStats.RecalculateStats,
     // section PUSH — poussés directement depuis flatAcc/percentAcc, pas via FinalOf(). Appliqués
     // sur le NOMBRE de dégâts par CombatSystem, pas une stat persistante.
-    [InspectorName("Final Damage Bonus (attaquant, flat ou %, voir mode)")]     FinalDamageBonus,
-    [InspectorName("Final Damage Reduction (défenseur, flat ou %, voir mode)")] FinalDamageReduction,
+    [InspectorName("Final Damage Bonus (attaquant, flat ou %, voir mode)")]     FinalDamageBonus = 39,
+    [InspectorName("Final Damage Reduction (défenseur, flat ou %, voir mode)")] FinalDamageReduction = 40,
 
     // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Bonus de dégâts élémentaires
     // PAR élément — toujours additifs (même famille que ResistX/PointsX, pas de formule
     // Base+Flat×%). Source principale : paliers SpiritData (2026-09-06), mais génériques comme
     // tout StatType — n'importe quel équipement peut en donner. Appliqué dans
     // CombatSystem.CalculateDamage sur elemDamage, ciblé par skill.PrimaryElement.
-    [InspectorName("Dégâts élémentaires Feu (ratio 0.05 = +5%)")]      ElementalDamageBonusFire,
-    [InspectorName("Dégâts élémentaires Eau (ratio 0.05 = +5%)")]      ElementalDamageBonusWater,
-    [InspectorName("Dégâts élémentaires Foudre (ratio 0.05 = +5%)")]   ElementalDamageBonusLightning,
-    [InspectorName("Dégâts élémentaires Terre (ratio 0.05 = +5%)")]    ElementalDamageBonusEarth,
-    [InspectorName("Dégâts élémentaires Nature (ratio 0.05 = +5%)")]   ElementalDamageBonusNature,
-    [InspectorName("Dégâts élémentaires Ténèbres (ratio 0.05 = +5%)")] ElementalDamageBonusDarkness,
-    [InspectorName("Dégâts élémentaires Lumière (ratio 0.05 = +5%)")]  ElementalDamageBonusLight,
-    [InspectorName("Dégâts élémentaires TOUS (ratio 0.05 = +5%)")]     ElementalDamageBonusAll,
+    [InspectorName("Dégâts élémentaires Feu (ratio 0.05 = +5%)")]      ElementalDamageBonusFire = 41,
+    [InspectorName("Dégâts élémentaires Eau (ratio 0.05 = +5%)")]      ElementalDamageBonusWater = 42,
+    [InspectorName("Dégâts élémentaires Foudre (ratio 0.05 = +5%)")]   ElementalDamageBonusLightning = 43,
+    [InspectorName("Dégâts élémentaires Terre (ratio 0.05 = +5%)")]    ElementalDamageBonusEarth = 44,
+    [InspectorName("Dégâts élémentaires Nature (ratio 0.05 = +5%)")]   ElementalDamageBonusNature = 45,
+    [InspectorName("Dégâts élémentaires Ténèbres (ratio 0.05 = +5%)")] ElementalDamageBonusDarkness = 46,
+    [InspectorName("Dégâts élémentaires Lumière (ratio 0.05 = +5%)")]  ElementalDamageBonusLight = 47,
+    [InspectorName("Dégâts élémentaires TOUS (ratio 0.05 = +5%)")]     ElementalDamageBonusAll = 48,
 
     // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Pénétration de résistance
     // ennemie PAR élément — toujours additive, généralise l'ancien bonus rang5 Neutre/élémentaire
     // hardcodé (ElementalSystem.GetRank5ResistPenetration) qui reste une source séparée et
     // s'additionne avec celle-ci. Soustrait de la résistance cible dans CombatSystem.
-    [InspectorName("Pénétration résist. Feu (ratio 0.05 = -5% résist ennemie)")]      ResistPenetrationFire,
-    [InspectorName("Pénétration résist. Eau (ratio 0.05 = -5% résist ennemie)")]      ResistPenetrationWater,
-    [InspectorName("Pénétration résist. Foudre (ratio 0.05 = -5% résist ennemie)")]   ResistPenetrationLightning,
-    [InspectorName("Pénétration résist. Terre (ratio 0.05 = -5% résist ennemie)")]    ResistPenetrationEarth,
-    [InspectorName("Pénétration résist. Nature (ratio 0.05 = -5% résist ennemie)")]   ResistPenetrationNature,
-    [InspectorName("Pénétration résist. Ténèbres (ratio 0.05 = -5% résist ennemie)")] ResistPenetrationDarkness,
-    [InspectorName("Pénétration résist. Lumière (ratio 0.05 = -5% résist ennemie)")]  ResistPenetrationLight,
-    [InspectorName("Pénétration résist. TOUS (ratio 0.05 = -5% résist ennemie)")]     ResistPenetrationAll,
+    [InspectorName("Pénétration résist. Feu (ratio 0.05 = -5% résist ennemie)")]      ResistPenetrationFire = 49,
+    [InspectorName("Pénétration résist. Eau (ratio 0.05 = -5% résist ennemie)")]      ResistPenetrationWater = 50,
+    [InspectorName("Pénétration résist. Foudre (ratio 0.05 = -5% résist ennemie)")]   ResistPenetrationLightning = 51,
+    [InspectorName("Pénétration résist. Terre (ratio 0.05 = -5% résist ennemie)")]    ResistPenetrationEarth = 52,
+    [InspectorName("Pénétration résist. Nature (ratio 0.05 = -5% résist ennemie)")]   ResistPenetrationNature = 53,
+    [InspectorName("Pénétration résist. Ténèbres (ratio 0.05 = -5% résist ennemie)")] ResistPenetrationDarkness = 54,
+    [InspectorName("Pénétration résist. Lumière (ratio 0.05 = -5% résist ennemie)")]  ResistPenetrationLight = 55,
+    [InspectorName("Pénétration résist. TOUS (ratio 0.05 = -5% résist ennemie)")]     ResistPenetrationAll = 56,
 
     // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Réduction de coût en mana
     // PAR élément du skill lancé — toujours additive. Lu par SkillBar au moment de la dépense
     // (Player.SpendMana), jamais une stat de combat.
-    [InspectorName("Réduction coût mana Feu (ratio 0.05 = -5%)")]      ManaCostReductionFire,
-    [InspectorName("Réduction coût mana Eau (ratio 0.05 = -5%)")]      ManaCostReductionWater,
-    [InspectorName("Réduction coût mana Foudre (ratio 0.05 = -5%)")]   ManaCostReductionLightning,
-    [InspectorName("Réduction coût mana Terre (ratio 0.05 = -5%)")]    ManaCostReductionEarth,
-    [InspectorName("Réduction coût mana Nature (ratio 0.05 = -5%)")]   ManaCostReductionNature,
-    [InspectorName("Réduction coût mana Ténèbres (ratio 0.05 = -5%)")] ManaCostReductionDarkness,
-    [InspectorName("Réduction coût mana Lumière (ratio 0.05 = -5%)")]  ManaCostReductionLight,
-    [InspectorName("Réduction coût mana TOUS (ratio 0.05 = -5%)")]     ManaCostReductionAll,
+    [InspectorName("Réduction coût mana Feu (ratio 0.05 = -5%)")]      ManaCostReductionFire = 57,
+    [InspectorName("Réduction coût mana Eau (ratio 0.05 = -5%)")]      ManaCostReductionWater = 58,
+    [InspectorName("Réduction coût mana Foudre (ratio 0.05 = -5%)")]   ManaCostReductionLightning = 59,
+    [InspectorName("Réduction coût mana Terre (ratio 0.05 = -5%)")]    ManaCostReductionEarth = 60,
+    [InspectorName("Réduction coût mana Nature (ratio 0.05 = -5%)")]   ManaCostReductionNature = 61,
+    [InspectorName("Réduction coût mana Ténèbres (ratio 0.05 = -5%)")] ManaCostReductionDarkness = 62,
+    [InspectorName("Réduction coût mana Lumière (ratio 0.05 = -5%)")]  ManaCostReductionLight = 63,
+    [InspectorName("Réduction coût mana TOUS (ratio 0.05 = -5%)")]     ManaCostReductionAll = 64,
 
     // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety). Réduction de cooldown
     // globale — toujours additive, s'ajoute à CharacterStats.cooldownReduction (déjà alimenté
     // par StatPoints élémentaire et le passif Robe). Source ajoutée : paliers SpiritData.
-    [InspectorName("Réduction Cooldown (ratio 0.05 = -5%)")] CooldownReduction,
+    [InspectorName("Réduction Cooldown (ratio 0.05 = -5%)")] CooldownReduction = 65,
 }
 
 // =============================================================

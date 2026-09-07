@@ -40,15 +40,15 @@ using System.Collections.Generic;
 
 public enum CraftStationType
 {
-    CraftWeaponArmor,   // Forgeron
-    CraftFoodPotion,    // Cuisinier (nourriture + potions)
-    CraftDecor,         // Bricoleur (déco housing)
-    CraftHelmet,        // Tailleur
-    CraftIntermediate,  // Station de Craft (ressources de base → ressources de craft)
+    CraftWeaponArmor  = 0,   // Forgeron
+    CraftFoodPotion   = 1,   // Cuisinier (nourriture + potions)
+    CraftDecor        = 2,   // Bricoleur (déco housing)
+    CraftHelmet       = 3,   // Tailleur
+    CraftIntermediate = 4,   // Station de Craft (ressources de base → ressources de craft)
 
-    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety, voir note-nomenclature-id.md).
-    CraftGlovesBoots,   // Cordonnier (craft de base — distinct de sa Fusion S0→S6)
-    CraftJewelry,       // Bijoutier (craft de base — distinct de sa pose de Gemmes)
+    // Ordinaux figés explicitement (2026-09-07) — voir note en tête d'ElementType.cs.
+    CraftGlovesBoots  = 5,   // Cordonnier (craft de base — distinct de sa Fusion S0→S6)
+    CraftJewelry      = 6,   // Bijoutier (craft de base — distinct de sa pose de Gemmes)
 }
 
 // Catégorie de résultat — utilisée par CraftJournalUI pour trier (pas par station, le
@@ -68,8 +68,8 @@ public enum RecipeCategory
 // restera simplement inaccessible — pas de garde-fou automatique côté RecipeData.
 public enum RecipeTier
 {
-    Base,        // §13.3 — disponible dès le départ
-    Unlocked,    // §13.4 — débloquée via une condition (ex: craft 100 Base → recette suivante)
+    Base     = 0,   // §13.3 — disponible dès le départ
+    Unlocked = 1,   // §13.4 — débloquée via une condition (ex: craft 100 Base → recette suivante)
 }
 
 [CreateAssetMenu(fileName = "rcp_", menuName = "AetherTree/Craft/RecipeData")]

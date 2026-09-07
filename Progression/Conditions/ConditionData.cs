@@ -30,43 +30,43 @@ public enum CounterScope
 
 public enum ConditionMode
 {
-    Parallel,
-    Ordered,
-    AllRequired,
+    Parallel    = 0,
+    Ordered     = 1,
+    AllRequired = 2,
 }
 
 public enum RewardType
 {
-    None,
+    None          = 0,
 
     // ── Skills & Titres ───────────────────────────────────────
-    Skill,
-    SkillAndTitle,
-    Title,
+    Skill         = 1,
+    SkillAndTitle = 2,
+    Title         = 3,
 
     // ── Équipements (glisser dans rewardEquipment) ────────────
-    Weapon,
-    Armor,
-    Helmet,
-    Gloves,
-    Boots,
-    Jewelry,
-    Spirit,
-    CosmeticHead,
-    CosmeticBody,
-    Talisman,
+    Weapon        = 4,
+    Armor         = 5,
+    Helmet        = 6,
+    Gloves        = 7,
+    Boots         = 8,
+    Jewelry       = 9,
+    Spirit        = 10,
+    CosmeticHead  = 11,
+    CosmeticBody  = 12,
+    Talisman      = 13,
 
     // ── Items ─────────────────────────────────────────────────
-    Resource,
-    Consumable,
+    Resource      = 14,
+    Consumable    = 15,
 
     // ── Futurs SOs (string ID pour l'instant) ─────────────────
-    Recipe,
-    Pet,
+    Recipe        = 16,
+    Pet           = 17,
 
-    Other,
+    Other         = 18,
 
-    Quest,      // Ajouté après coup, TOUJOURS en fin d'enum (ordinal safety).
+    Quest         = 19,
 }
 
 [System.Serializable]

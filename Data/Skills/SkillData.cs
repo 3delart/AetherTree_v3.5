@@ -302,33 +302,33 @@ public class SkillData : ScriptableObject
 /// </summary>
 public enum SkillType
 {
-    BasicAttack,     // Attaque de base — slot 0 SkillBar uniquement
-    Active,          // Sort actif — slots 1-8 SkillBar
-    Ultimate,        // Ultime — slot 9 SkillBar
+    BasicAttack = 0, // Attaque de base — slot 0 SkillBar uniquement
+    Active      = 1, // Sort actif — slots 1-8 SkillBar
+    Ultimate    = 2, // Ultime — slot 9 SkillBar
 }
 
 public enum SkillEffectType
 {
-    Damage,  // Inflige des dégâts physiques + élémentaires
-    Buff,    // Applique uniquement des buffs (via StatusEffects SO)
-    Debuff,  // Applique uniquement des debuffs (via StatusEffects SO)
-    Other,   // Effet spécial (drain, téléport, invocation, dash...)
+    Damage = 0,  // Inflige des dégâts physiques + élémentaires
+    Buff   = 1,  // Applique uniquement des buffs (via StatusEffects SO)
+    Debuff = 2,  // Applique uniquement des debuffs (via StatusEffects SO)
+    Other  = 3,  // Effet spécial (drain, téléport, invocation, dash...)
 }
 
-public enum ModifierType  { Flat, Percent }
+public enum ModifierType  { Flat = 0, Percent = 1 }
 
 public enum TargetType
 {
-    Target, Self, AoE_Self, AoE_Target, Skillshot,
-    LineTarget, GroundTarget, Cone, Direction, Dash_Target, Dash_Direction
+    Target = 0, Self = 1, AoE_Self = 2, AoE_Target = 3, Skillshot = 4,
+    LineTarget = 5, GroundTarget = 6, Cone = 7, Direction = 8, Dash_Target = 9, Dash_Direction = 10
 }
 
 /// <summary>Qui est touché par un effet de zone/multi-cibles — voir SkillSystem.IsAlly.</summary>
 public enum SkillAoeFaction
 {
-    Enemies,    // Ne touche que les ennemis du caster (comportement historique implicite)
-    Allies,     // Ne touche que les alliés du caster (inclut le caster s'il est dans la zone)
-    Everyone,   // Touche tout le monde dans la zone, sans distinction
+    Enemies  = 0,   // Ne touche que les ennemis du caster (comportement historique implicite)
+    Allies   = 1,   // Ne touche que les alliés du caster (inclut le caster s'il est dans la zone)
+    Everyone = 2,   // Touche tout le monde dans la zone, sans distinction
 }
 
 // =============================================================
@@ -336,40 +336,40 @@ public enum SkillAoeFaction
 // =============================================================
 public enum SkillSpecialEffect
 {
-    None,           // Pas d'effet spécial (valeur par défaut)
+    None           = 0,  // Pas d'effet spécial (valeur par défaut)
 
     // ── Déplacement cible unique ──────────────────────────────
-    Pull,           // Attire la cible vers le caster
-    Push,           // Repousse la cible loin du caster
-    SwapPosition,   // Échange la position caster ↔ cible
+    Pull           = 1,  // Attire la cible vers le caster
+    Push           = 2,  // Repousse la cible loin du caster
+    SwapPosition   = 3,  // Échange la position caster ↔ cible
 
     // ── Déplacement zone ──────────────────────────────────────
-    PullAoE,        // Attire toutes les entités de la zone vers le caster
-    PushAoE,        // Repousse toutes les entités de la zone
-    GatherAoE,      // Regroupe toutes les entités vers le centre de la zone
-    Vortex,         // Attire en spirale vers un point (= GatherAoE + Slow)
+    PullAoE        = 4,  // Attire toutes les entités de la zone vers le caster
+    PushAoE        = 5,  // Repousse toutes les entités de la zone
+    GatherAoE      = 6,  // Regroupe toutes les entités vers le centre de la zone
+    Vortex         = 7,  // Attire en spirale vers un point (= GatherAoE + Slow)
 
     // ── Téléportation ─────────────────────────────────────────
-    TeleportSelf,   // Téléporte le caster vers la cible / point au sol
-    TeleportTarget, // Téléporte la cible vers le caster
+    TeleportSelf   = 8,  // Téléporte le caster vers la cible / point au sol
+    TeleportTarget = 9,  // Téléporte la cible vers le caster
 
     // ── Drain / Transfert ─────────────────────────────────────
-    DrainHP,        // Vol de HP : dégâts sur cible → soin caster (drainHealRatio)
-    DrainMana,      // Vol de Mana : vide la cible, rend le caster
+    DrainHP        = 10, // Vol de HP : dégâts sur cible → soin caster (drainHealRatio)
+    DrainMana      = 11, // Vol de Mana : vide la cible, rend le caster
 
     // ── Invocation ────────────────────────────────────────────
-    Summon,         // Invoque un mob allié (summonMobData) — TODO phase suivante
+    Summon         = 12, // Invoque un mob allié (summonMobData) — TODO phase suivante
 
     // ── Divers ────────────────────────────────────────────────
-    Interrupt,      // Annule le cast en cours de la cible — TODO phase suivante
+    Interrupt      = 13, // Annule le cast en cours de la cible — TODO phase suivante
 }
 
 public enum SkillTag
 {
-    Illusion, Invocateur, Berserker, Necromancien, Furtif, Duelliste,
-    Soutien, Mobilite, Zone,
-    Buff, Debuff, DoT, Bleed, Stun, Root, Knockback, Shield, Drain, Combo,
-    BasicAttack, HeavyAttack, RangedAttack, MagicAttack,
+    Illusion = 0, Invocateur = 1, Berserker = 2, Necromancien = 3, Furtif = 4, Duelliste = 5,
+    Soutien = 6, Mobilite = 7, Zone = 8,
+    Buff = 9, Debuff = 10, DoT = 11, Bleed = 12, Stun = 13, Root = 14, Knockback = 15, Shield = 16, Drain = 17, Combo = 18,
+    BasicAttack = 19, HeavyAttack = 20, RangedAttack = 21, MagicAttack = 22,
 }
 
 // =============================================================
@@ -377,9 +377,9 @@ public enum SkillTag
 // =============================================================
 public enum SkillExecutionType
 {
-    Normal,         // Comportement standard — aucun changement
-    MultiHit,       // Une activation, N hits en séquence (SkillData.hitSteps)
-    ComboSequence,  // N appuis successifs sur le même slot (SkillData.comboSteps)
+    Normal        = 0,  // Comportement standard — aucun changement
+    MultiHit      = 1,  // Une activation, N hits en séquence (SkillData.hitSteps)
+    ComboSequence = 2,  // N appuis successifs sur le même slot (SkillData.comboSteps)
 }
 
 // =============================================================

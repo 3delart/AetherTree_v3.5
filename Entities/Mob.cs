@@ -308,8 +308,11 @@ public class Mob : Entity
         Entity target = GetClosestEnemy();
         if (target == null) { GoReturn(); return; }
 
-        // Skill secondaire depuis Chase — dash, projectile, etc.
-        if (TryUseSkill(target)) return;
+        // Skill secondaire depuis Chase — dash, projectile, etc. Bloqué si Taunt actif : la
+        // cible est déjà forcée sur la source du taunt via GetClosestEnemy(), Taunt force
+        // AUSSI l'attaque de base uniquement, pas de skill spécial (§3.1.1.1).
+        bool tauntedInChase = statusEffects != null && statusEffects.isTaunted;
+        if (!tauntedInChase && TryUseSkill(target)) return;
 
         if (IsInRange(target, data.attackRange))
         {
@@ -344,8 +347,10 @@ public class Mob : Entity
 
         LookAt(target.transform);
 
-        // Skill secondaire prioritaire sur l'attaque de base
-        if (TryUseSkill(target)) return;
+        // Skill secondaire prioritaire sur l'attaque de base — bloqué si Taunt actif, force
+        // l'attaque de base uniquement sur la source du taunt (§3.1.1.1).
+        bool tauntedInAttack = statusEffects != null && statusEffects.isTaunted;
+        if (!tauntedInAttack && TryUseSkill(target)) return;
 
         // Attaque de base
         if (attackTimer <= 0f)

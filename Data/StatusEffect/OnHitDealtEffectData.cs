@@ -25,11 +25,11 @@ using UnityEngine;
 
 public enum OnHitDealtEffectType
 {
-    DamageAmpOnHit,
-    LifestealOnHit,
-    ManaOnHit,
-    ApplyDebuffOnHit,
-    ApplyBuffOnHit,
+    DamageAmpOnHit   = 0,
+    LifestealOnHit   = 1,
+    ManaOnHit        = 2,
+    ApplyDebuffOnHit = 3,
+    ApplyBuffOnHit   = 4,
 }
 
 [CreateAssetMenu(fileName = "NewOnHitDealt", menuName = "AetherTree/StatusEffects/OnHitDealtEffectData")]

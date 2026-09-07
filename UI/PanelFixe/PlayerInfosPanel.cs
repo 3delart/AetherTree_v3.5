@@ -41,6 +41,8 @@ public class PlayerInfosPanel : MonoBehaviour, IPointerClickHandler
     [Header("HP")]
     public Slider          hpBar;
     public TextMeshProUGUI hpValueText;     // "450 / 600"
+    [Tooltip("Slider superposé à hpBar — Direction = Right To Left dans son propre Inspector.\nmaxValue = MaxHP, value = shield actif, recouvre la barre HP verte au prorata.")]
+    public Slider          shieldBar;
 
     [Header("MP")]
     public Slider          mpBar;
@@ -137,6 +139,18 @@ public class PlayerInfosPanel : MonoBehaviour, IPointerClickHandler
         }
         if (hpValueText != null)
             hpValueText.text = $"{Mathf.CeilToInt(_player.CurrentHP)} / {Mathf.CeilToInt(_player.MaxHP)}";
+
+        // Shield actif — overlay blanc superposé (Direction = Right To Left en Inspector), se
+        // remplit au prorata Shield/MaxHP (voir StatusEffectSystem.GetActiveShieldAmount).
+        // maxValue = MaxHP (pas CurrentHP) : un shield = 20% du MaxHP recouvre toujours 20% de
+        // la largeur totale de la barre, peu importe le HP actuel du joueur.
+        if (shieldBar != null)
+        {
+            float shield = _player.statusEffects != null ? _player.statusEffects.GetActiveShieldAmount() : 0f;
+            shieldBar.maxValue = _player.MaxHP;
+            shieldBar.value    = shield;
+            shieldBar.gameObject.SetActive(shield > 0f);
+        }
 
         // MP
         if (mpBar != null)

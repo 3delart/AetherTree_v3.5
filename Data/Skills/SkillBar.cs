@@ -226,6 +226,13 @@ public class SkillBar : MonoBehaviour
                 Debug.Log("[SKILLBAR] ❌ Bloqué — Silence actif");
                 return false;
             }
+            // Taunt — bloque les skills, force l'attaque de base (slot 0) uniquement sur la
+            // source du taunt (§3.1.1.1) — voir override de cible plus bas.
+            if (fx.isTaunted && slot != 0)
+            {
+                Debug.Log("[SKILLBAR] ❌ Bloqué — Taunt actif");
+                return false;
+            }
         }
 
         // ── Vérification GCD & locks ──────────────────────────
@@ -285,6 +292,16 @@ public class SkillBar : MonoBehaviour
         Entity target = isAutoTick
             ? TargetingSystem.Instance?.GetEngagedTarget()  ?? TargetingSystem.Instance?.GetSelectedTarget()
             : TargetingSystem.Instance?.GetSelectedTarget() ?? TargetingSystem.Instance?.GetEngagedTarget();
+
+        // Taunt actif : à ce point slot == 0 forcément (skills déjà bloqués plus haut) — force
+        // la cible de l'attaque de base sur la source du taunt, peu importe la sélection/
+        // l'engagée du joueur (§3.1.1.1). Fallback sur la cible normale si la source est
+        // morte/introuvable — même garde-fou que Fear (PlayerController.HandleMovement).
+        if (fx != null && fx.isTaunted)
+        {
+            Entity tauntSource = fx.GetDebuffSource(DebuffType.Taunt);
+            if (tauntSource != null && !tauntSource.isDead) target = tauntSource;
+        }
 
         // Un nouvel appui valide (passé les checks CD/mana/stun ci-dessus) sur le
         // MÊME slot que l'approche en cours, pour un skill/cible différent, annule

@@ -144,7 +144,7 @@ public class SpiritElementalMilestone
 
 /// <summary>Dealt = proc en infligeant un coup (cible touchée). Received = proc en recevant un
 /// coup (soi-même) — réaction défensive.</summary>
-public enum OnHitProcDirection { Dealt, Received }
+public enum OnHitProcDirection { Dealt = 0, Received = 1 }
 
 [System.Serializable]
 public class SpiritElementalProcSet

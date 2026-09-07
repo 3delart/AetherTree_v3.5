@@ -27,11 +27,11 @@ using UnityEngine;
 
 public enum ConsumableType
 {
-    Potion,       // Restaure HP et/ou Mana, applique un BuffData
-    Food,         // Nourriture (Cuisiner) — mêmes champs que Potion, catégorie distincte
-    DungeonStone, // Ouvre l'accès à un donjon spécifique
-    TeleportItem, // Téléporte vers une zone
-    Other,        // Effet custom
+    Potion       = 0, // Restaure HP et/ou Mana, applique un BuffData
+    Food         = 1, // Nourriture (Cuisiner) — mêmes champs que Potion, catégorie distincte
+    DungeonStone = 2, // Ouvre l'accès à un donjon spécifique
+    TeleportItem = 3, // Téléporte vers une zone
+    Other        = 4, // Effet custom
 }
 
 [CreateAssetMenu(fileName = "cons_", menuName = "AetherTree/Inventaire/ConsumableData")]

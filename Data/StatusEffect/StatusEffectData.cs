@@ -28,59 +28,65 @@ public enum DebuffType
     // DoT — retirés du design, utiliser Dot (fin d'enum) avec damageElement à la place.
     // Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser ces 3 positions.
     [System.Obsolete("Retiré du design — utilise Dot + damageElement = Fire à la place.")]
-    Burn,
+    Burn       = 0,
     [System.Obsolete("Retiré du design — utilise Dot + damageElement = Nature à la place.")]
-    Poison,
+    Poison     = 1,
     [System.Obsolete("Retiré du design — utilise Dot + damageElement = Neutral à la place.")]
-    Bleed,
+    Bleed      = 2,
 
     // Ralentissement & Immobilisation
-    Freeze,     // Gel        — Eau        — immobilisation totale (réattribué Eau v3.0 — §3.1.1.1)
-    Slow,       // Ralenti    — Eau        — réduit la vitesse de déplacement % (§3.1.1.1)
-    Root,       // Enraciné   — Nature     — bloque le mouvement, peut toujours attaquer (§3.1.1.1)
+    Freeze     = 3,  // Gel        — Eau        — immobilisation totale (réattribué Eau v3.0 — §3.1.1.1)
+    Slow       = 4,  // Ralenti    — Eau        — réduit la vitesse de déplacement % (§3.1.1.1)
+    Root       = 5,  // Enraciné   — Nature     — bloque le mouvement, peut toujours attaquer (§3.1.1.1)
 
     // Contrôle de foule dur
-    Stun,       // Étourdi    — Terre      — bloque toutes les actions (CC dur §3.1.1.1)
-    Fear,       // Peur       — Ténèbres   — fuite incontrôlée (CC dur §3.1.1.1)
-    Sleep,      // Sommeil    — réveil au premier dégât reçu (§3.1.1.1)
+    Stun       = 6,  // Étourdi    — Terre      — bloque toutes les actions (CC dur §3.1.1.1)
+    Fear       = 7,  // Peur       — Ténèbres   — fuite incontrôlée (CC dur §3.1.1.1)
+    Sleep      = 8,  // Sommeil    — réveil au premier dégât reçu (§3.1.1.1)
 
     // Déplacement & Interrupt
-    Knockback,  // Recul      — Eau        — déplace la cible à l'impact, ponctuel (§3.1.1.1)
-    Shocked,    // Choc       — Foudre     — identique à Stun (bloque toutes les actions),
+    // 9 retiré (2026-09-07) — jamais fonctionnel comme DebuffType.debuffType (aucun ShowIf,
+    // aucun switch case dans StatusEffectSystem, aucun .asset ne l'utilisait). Le mini-stun
+    // "Knockback" existe réellement mais bypass totalement ce pipeline — voir
+    // StatusEffectSystem.isKnockedBack / Entity.ApplyKnockBack(). Ordinal 9 jamais réutilisé.
+    Shocked    = 10, // Choc       — Foudre     — identique à Stun (bloque toutes les actions),
                 // sa propre durée/valeurs via DebuffData (§3.1.1.1) — flag séparé (isShocked)
                 // pour ne jamais couper prématurément un Stun actif en parallèle ou l'inverse.
 
     // Précision & Ressource
     [System.Obsolete("Retiré du design — utilise Stats + StatModifierType.Precision à la place. Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.")]
-    Blind,      // Aveugle    — Lumière    — réduction précision drastique (§3.1.1.1)
-    ManaDrain,  // Drain mana — Ténèbres   — drain progressif sur la durée, reversé au lanceur (§3.1.1.1)
+    Blind      = 11, // Aveugle    — Lumière    — réduction précision drastique (§3.1.1.1)
+    ManaDrain  = 12, // Drain mana — Ténèbres   — drain progressif sur la durée, reversé au lanceur (§3.1.1.1)
 
     // Défense
     [System.Obsolete("Retiré du design — utilise Stats + StatModifierType.MeleeDefense/RangedDefense/MagicDefense/AllDefense à la place. Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.")]
-    ArmorBreak, // Armure brisée — Terre  — réduction défense physique % temporaire (§3.1.1.1)
+    ArmorBreak = 13, // Armure brisée — Terre  — réduction défense physique % temporaire (§3.1.1.1)
 
     // Utilitaire
-    Silence,    // Silence    — Ténèbres   — bloque les skills (§3.1.1.1)
-    Taunt,      // Taunt      — force les ennemis à cibler cette entité (§3.1.1.1)
+    Silence    = 14, // Silence    — Ténèbres   — bloque les skills (§3.1.1.1)
+    Taunt      = 15, // Taunt      — force les ennemis à cibler cette entité (§3.1.1.1)
 
     // Stats & Spéciaux
-    Stats,      // Réduction de stat spécifique (utilise StatModifierType)
-    Mark,       // Marque — bonus % dégâts subis par la cible (routé dans l'accumulateur
-                // FinalDamageReduction, en négatif — compose avec les autres sources au lieu
-                // d'être un multiplicateur séparé en plus, voir StatusEffectSystem)
-    [System.Obsolete("Retiré — jamais utilisé, aucun hook custom implémenté. Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.")]
-    Other,      // Effet spécial custom
+    Stats      = 16, // Réduction de stat spécifique (utilise StatModifierType)
+    Prey       = 17, // Proie (ex-Mark, renommé 2026-09-07 — ordinal 17 inchangé, aucun impact
+                // asset, Unity sérialise par int, pas par nom) — bonus % dégâts subis par la
+                // cible (routé dans l'accumulateur FinalDamageReduction, en négatif — compose
+                // avec les autres sources au lieu d'être un multiplicateur séparé en plus, voir
+                // StatusEffectSystem)
+    // 18 retiré (2026-09-07) — Other, confirmé mort (docs/superpowers/specs/
+    // 2026-09-07-stackable-status-effects-design.md) : aucun hook custom implémenté, zéro
+    // switch case, zéro .asset. Ordinal 18 jamais réutilisé.
 
-    // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
-    Dot,        // DoT générique réutilisable pour tout élément (voir damageElement) —
+    // Ordinaux figés explicitement (2026-09-07) — voir note en tête d'ElementType.cs.
+    Dot        = 19, // DoT générique réutilisable pour tout élément (voir damageElement) —
                 // même formule que Burn/Poison/Bleed, juste pas un nom/élément figé.
                 // Futurs debuffs par élément (noyade=Eau, etc.) : soit ce type générique
                 // avec damageElement + effectName/icon dédiés, soit un DebuffType propre —
                 // au choix du designer au moment de les créer.
-    Dispel,     // Retire les buffs actifs de la cible, jet indépendant par buff actif
+    Dispel     = 20, // Retire les buffs actifs de la cible, jet indépendant par buff actif
                 // (chancePerEffect sur DebuffData) — voir BuffType.Dispel, obsolète,
                 // mal placé (Dispel est un effet négatif sur cible ennemie, pas un buff).
-    HpDrain,    // Vol de vie progressif — dégâts/s sur la cible (TakeDamage, respecte
+    HpDrain    = 21, // Vol de vie progressif — dégâts/s sur la cible (TakeDamage, respecte
                 // défense/résistances) reversés en soin au lanceur du debuff (§3.1.1.1)
 }
 
@@ -88,41 +94,23 @@ public enum DebuffType
 public enum BuffType
 {
     // Soins
-    Heal,           // Soin instantané (§3.1.1.2)
-    Regeneration,   // Soin sur la durée — HoT (§3.1.1.2)
+    Heal                  = 0,  // Soin instantané (§3.1.1.2)
+    Regeneration          = 1,  // Soin sur la durée — HoT (§3.1.1.2)
 
     // Défense
-    Shield,         // Bouclier — absorbe les dégâts en priorité avant les HP (§3.1.1.2)
+    Shield                = 2,  // Bouclier — absorbe les dégâts en priorité avant les HP (§3.1.1.2)
 
-    // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp retirés
-    // (2026) — redondants avec Stats (StatModifierType couvre déjà chaque stat individuellement :
-    // AllResistances, MeleeDefense/RangedDefense/MagicDefense, Dodge, Precision, AttackDamage,
-    // MoveSpeed, CritChance, CritDamage). Gardés ici comme placeholders [Obsolete] pour ne pas
-    // décaler les ordinaux sérialisés de Purified/Invincible/Stealth/Dispel/Stats/Other qui
-    // suivent — Unity sérialise un enum par sa position int, pas son nom. Ne jamais réutiliser
-    // ces slots pour une nouvelle valeur ; ajouter en fin d'enum à la place (voir Revive).
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.AllResistances.")]
-    Removed_Barrier,
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.MeleeDefense/RangedDefense/MagicDefense.")]
-    Removed_DefenseUp,
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.Dodge.")]
-    Removed_DodgeUp,
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.Precision.")]
-    Removed_PrecisionUp,
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.AttackDamage.")]
-    Removed_AttackUp,
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.MoveSpeed.")]
-    Removed_Haste,
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.CritChance.")]
-    Removed_CritChanceUp,
-    [System.Obsolete("Retiré 2026 — voir BuffType.Stats + StatModifierType.CritDamage.")]
-    Removed_CritDamageUp,
+    // 3-10 retirés (2026-09-07) — anciens Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/
+    // CritChanceUp/CritDamageUp, un BuffType dédié par stat. Redondants avec BuffType.Stats +
+    // StatModifierType (couvre déjà chaque stat individuellement). Zéro ShowIf, zéro switch
+    // case, zéro .asset ne les utilisait — vérifié avant suppression. Ordinaux 3-10 jamais
+    // réutilisés.
 
     // Spéciaux
-    Purified,       // Suppression des debuffs actifs, jet indépendant par debuff actif
+    Purified              = 11, // Suppression des debuffs actifs, jet indépendant par debuff actif
                     // (chancePerEffect sur BuffData) — Lumière (§3.1.1.2)
-    Invincible,     // Invincibilité temporaire — post-respawn 3s (§3.1.1.3)
-    Stealth,        // Furtivité — interrompue par attaque (Player.UseSkill) ou dégât reçu
+    Invincible            = 12, // Invincibilité temporaire — post-respawn 3s (§3.1.1.3)
+    Stealth               = 13, // Furtivité — interrompue par attaque (Player.UseSkill) ou dégât reçu
                     // (StatusEffectSystem.OnTakeDamage) — §3.1.1.3. Invisible aux Mobs (exclu de
                     // Mob.RefreshEnemyList tant qu'actif, sans exception liée au mouvement) —
                     // PNJ ne ciblent jamais les joueurs de toute façon (canFight ne détecte que
@@ -130,12 +118,12 @@ public enum BuffType
                     // Player.UpdateStealthVisual/stealthAlpha). Le "clignotement toutes les 3s
                     // en bougeant" (repérage PvP) est HORS SCOPE tant qu'aucune infra réseau
                     // n'existe (2026-09-06) — rien à câbler contre des mobs/PNJ pour ça.
-    [System.Obsolete("Retiré — Dispel cible un ennemi comme effet négatif, voir DebuffType.Dispel.")]
-    Dispel,         // Ordinal gardé (assets déjà sauvegardés) — ne JAMAIS réutiliser cette position.
-    Stats,          // Augmentation de stat spécifique (utilise StatModifierType)
-    Other,          // Effet spécial custom
-    Revive,         // Résurrection instantanée (Player uniquement) — ajouté en fin d'enum
-                     // volontairement, pour ne jamais décaler les valeurs déjà sérialisées.
+    // 14 retiré (2026-09-07) — Dispel mal placé ici (effet négatif sur cible ennemie, jamais
+    // câblé côté buff), voir DebuffType.Dispel pour le vrai. 16 retiré (2026-09-07) — Other,
+    // confirmé mort (docs/superpowers/specs/2026-09-07-stackable-status-effects-design.md).
+    // Zéro switch case, zéro ShowIf, zéro .asset. Ordinaux 14 et 16 jamais réutilisés.
+    Stats                 = 15, // Augmentation de stat spécifique (utilise StatModifierType)
+    Revive                = 17, // Résurrection instantanée (Player uniquement)
 }
 
 // ── Stat ciblée par un modificateur de buff ou debuff ─────────
@@ -143,33 +131,34 @@ public enum BuffType
 // Utilisé par BuffData (buffType = Stats) et DebuffData (debuffType = Stats).
 public enum StatModifierType
 {
-    MaxHP, MaxMana,
+    MaxHP = 0, MaxMana = 1,
     // RegenHP/RegenMana ici = TEMPORAIRE (buff/debuff avec durée, expire). Pour un bonus
     // PERMANENT (équipement / PermanentSkillData.bonuses, jamais expire), voir
     // StatType.BonusRegenHP/BonusRegenMana dans StatBonus.cs — les deux s'additionnent sur
     // le même champ final Entity.RegenHP, pas de conflit, juste deux durées de vie différentes.
-    [InspectorName("Regen HP (temporaire, buff/debuff)")]   RegenHP,
-    [InspectorName("Regen Mana (temporaire, buff/debuff)")] RegenMana,
-    AttackDamage, AttackSpeed, MoveSpeed,
-    MeleeDefense, RangedDefense, MagicDefense,
-    CritChance, CritDamage,
-    [System.Obsolete("Retiré — jamais câblé (GetBaseStatValue/ModifyEntityStat n'avaient pas de " +
-        "case, et aucun moyen de choisir l'élément visé). Remplacé par ElementalPointFire/Water/" +
-        "Lightning/Earth/Nature/Darkness/Light/All — ordinal gardé, jamais réutilisé.")]
-    ElementalPoint, Dodge, Precision,
-    FireResistance, WaterResistance, EarthResistance,
-    NatureResistance, LightningResistance,
-    DarknessResistance, LightResistance,
-    AllResistances,
+    [InspectorName("Regen HP (temporaire, buff/debuff)")]   RegenHP = 2,
+    [InspectorName("Regen Mana (temporaire, buff/debuff)")] RegenMana = 3,
+    AttackDamage = 4, AttackSpeed = 5, MoveSpeed = 6,
+    MeleeDefense = 7, RangedDefense = 8, MagicDefense = 9,
+    CritChance = 10, CritDamage = 11,
+    // 12 retiré (2026-09-07) — ElementalPoint générique, jamais câblé (GetBaseStatValue/
+    // ModifyEntityStat n'avaient pas de case, aucun moyen de choisir l'élément visé). Remplacé
+    // par ElementalPointFire/Water/Lightning/Earth/Nature/Darkness/Light/All ci-dessous.
+    // Ordinal 12 jamais réutilisé.
+    Dodge = 13, Precision = 14,
+    FireResistance = 15, WaterResistance = 16, EarthResistance = 17,
+    NatureResistance = 18, LightningResistance = 19,
+    DarknessResistance = 20, LightResistance = 21,
+    AllResistances = 22,
 
     // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Bonus de gain purs — Flat
     // ET Percent donnent le même résultat (base neutre 1f, voir GetBaseStatValue), 0.20 =
     // +20% dans les deux cas, choisis celui qui te semble le plus clair.
-    XPBonus,    // +% XP gagnée sur kill de mob (joueur) — GDD Talisman XP_Bonus
-    GoldBonus,  // +% Aeris gagné au ramassage — GDD Talisman Gold_Find
+    XPBonus = 23,    // +% XP gagnée sur kill de mob (joueur) — GDD Talisman XP_Bonus
+    GoldBonus = 24,  // +% Aeris gagné au ramassage — GDD Talisman Gold_Find
 
     // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety).
-    AllDefense, // Écrit simultanément sur MeleeDefense + RangedDefense + MagicDefense — jamais
+    AllDefense = 25, // Écrit simultanément sur MeleeDefense + RangedDefense + MagicDefense — jamais
                 // stockée comme cible finale elle-même, toujours répartie au moment de
                 // l'accumulation. Voir StatusEffectSystem.AccumulateStatLine.
 
@@ -179,23 +168,23 @@ public enum StatModifierType
     // deux combinés) — voir StatusEffectSystem.ReapplyActiveModifiers, cas spécial dédié, PAS
     // dans ExceptionStats (ni "stat normale" ni "stat exception", 3e catégorie). Appliqués sur
     // le NOMBRE de dégâts par CombatSystem.CalculateDamage/CalculateMobDamage, en tout dernier.
-    FinalDamageBonus,     // Attaquant — bonus de dégâts infligés.
-    FinalDamageReduction, // Défenseur — réduction des dégâts reçus.
+    FinalDamageBonus = 26,     // Attaquant — bonus de dégâts infligés.
+    FinalDamageReduction = 27, // Défenseur — réduction des dégâts reçus.
 
     // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety). Remplacent l'ancien
     // ElementalPoint générique (obsolète, jamais câblé) — un vrai stat "normal" par élément,
     // formule (Base+Flat)×(1+%) comme le reste de cet enum (PAS une exception comme
     // StatType.PointsX côté équipement — divergence volontaire, demande explicite Florian).
-    ElementalPointFire, ElementalPointWater, ElementalPointLightning, ElementalPointEarth,
-    ElementalPointNature, ElementalPointDarkness, ElementalPointLight,
-    ElementalPointAll, // Répartie sur les 7 ci-dessus au moment de l'accumulation, chacune
+    ElementalPointFire = 28, ElementalPointWater = 29, ElementalPointLightning = 30, ElementalPointEarth = 31,
+    ElementalPointNature = 32, ElementalPointDarkness = 33, ElementalPointLight = 34,
+    ElementalPointAll = 35, // Répartie sur les 7 ci-dessus au moment de l'accumulation, chacune
                        // calcule son propre résultat avec sa propre base — jamais stockée
                        // comme cible finale elle-même.
 
     // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety). Même schéma exact que
     // XPBonus/GoldBonus (exception toujours additive, base neutre — voir ExceptionStats) —
     // alimente le talisman Spirit_XP (2026-09-06).
-    SpiritXpBonus, // +% XP gagnée par l'Esprit actif au kill — GDD Talisman Spirit_XP
+    SpiritXpBonus = 36, // +% XP gagnée par l'Esprit actif au kill — GDD Talisman Spirit_XP
 }
 
 // ── Ligne de stat additionnelle (BuffData.bonusStats / DebuffData.bonusStats) ─────
@@ -206,8 +195,8 @@ public enum StatModifierType
 // l'ordre d'évaluation.
 public enum StatLineMode
 {
-    Flat,     // Valeur directe (ex: +300 MaxHP)
-    Percent,  // % — sommé GLOBALEMENT avec tous les autres % actifs ciblant la même stat
+    Flat    = 0,  // Valeur directe (ex: +300 MaxHP)
+    Percent = 1,  // % — sommé GLOBALEMENT avec tous les autres % actifs ciblant la même stat
               // (tous buffs/debuffs actifs confondus, pas juste les lignes de CET effet), puis
               // appliqué en une seule fois : (Base + ΣFlat) × (1 + Σ%). Remplace
               // PercentOfBase (fusionné dans Percent, même ordinal 1) — plus de distinction
@@ -215,7 +204,7 @@ public enum StatLineMode
     [System.Obsolete("Retiré — PercentOfFinal fusionné dans Percent (voir AllDefense / somme " +
         "globale). Ordinal gardé (jamais réutilisé) pour qu'une valeur héritée=2 reste visible " +
         "et distincte dans l'Inspector plutôt que de silencieusement redevenir Flat.")]
-    Obsolete_PercentOfFinal,
+    Obsolete_PercentOfFinal = 2,
 }
 
 [System.Serializable]

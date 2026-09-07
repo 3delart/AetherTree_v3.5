@@ -92,20 +92,26 @@ public class DebuffData : StatusEffectData
 #pragma warning restore CS0618
 
     // ── Drain de mana (ManaDrain) ─────────────────────────────
-    [Tooltip("ManaDrain (§3.1.1.1) : mana drainé par seconde, reversé au lanceur du debuff.\nRéutilise damagePerSecond pour le tick — ce champ est un alias lisible.")]
+    [Tooltip("Flat : mana drainé par seconde (valeur directe).\nPercent : % du MaxMana DU LANCEUR (pas de la cible) drainé par seconde\n(ex: 0.01 = 1%/s) — même principe que HpDrain, évite la disproportion sur\nles gros pools cible.")]
     [ShowIf(nameof(debuffType), DebuffType.ManaDrain, Header = "Drain de mana (ManaDrain)")]
+    public ModifierType manaDrainModifier = ModifierType.Flat;
+    [Tooltip("ManaDrain (§3.1.1.1) : mana drainé par seconde, reversé au lanceur du debuff.\nRéutilise damagePerSecond pour le tick — ce champ est un alias lisible.")]
+    [ShowIf(nameof(debuffType), DebuffType.ManaDrain)]
     public float manaDrainPerSecond = 0f;
 
     // ── Drain de vie (HpDrain) ─────────────────────────────────
-    [Tooltip("HpDrain : dégâts par seconde infligés à la cible (respecte défense/résistances,\npeut tuer), reversés en soin identique au lanceur du debuff.")]
+    [Tooltip("Flat : dégâts vrais par seconde (valeur directe).\nPercent : % du MaxHP DU LANCEUR (pas de la cible) par seconde (ex: 0.01 = 1%/s)\n— évite la disproportion sur les boss à gros pool HP, scale avec la vraie\npuissance du lanceur (un tank plus tanky drain/soigne plus).")]
     [ShowIf(nameof(debuffType), DebuffType.HpDrain, Header = "Drain de vie (HpDrain)")]
+    public ModifierType hpDrainModifier = ModifierType.Flat;
+    [Tooltip("HpDrain : dégâts vrais par seconde infligés à la cible (ignore défense/résistances,\npeut tuer), reversés en soin identique au lanceur du debuff.")]
+    [ShowIf(nameof(debuffType), DebuffType.HpDrain)]
     public float hpDrainPerSecond = 0f;
 
-    // ── Marque (Mark) ──────────────────────────────────────────
-    [Tooltip("% de dégâts supplémentaires subis par la cible marquée. Routé dans le même\naccumulateur que FinalDamageReduction (en négatif) — compose avec les autres sources\nau lieu d'être un multiplicateur séparé en plus.")]
+    // ── Proie (Prey) ─────────────────────────────────────────
+    [Tooltip("% de dégâts supplémentaires subis par la proie. Routé dans le même\naccumulateur que FinalDamageReduction (en négatif) — compose avec les autres sources\nau lieu d'être un multiplicateur séparé en plus.")]
     [Range(0f, 5f)]
-    [ShowIf(nameof(debuffType), DebuffType.Mark, Header = "Marque (Mark)")]
-    public float markDamageBonusPercent = 0f;
+    [ShowIf(nameof(debuffType), DebuffType.Prey, Header = "Proie (Prey)")]
+    public float preyDamageBonusPercent = 0f;
 
     // ── Réduction de stat (Stats) ─────────────────────────────
     [Tooltip("Stat à réduire — utilisé uniquement si debuffType = Stats.\nv3.5 : utilise StatModifierType (fusion BuffStatType + DebuffStatType).")]

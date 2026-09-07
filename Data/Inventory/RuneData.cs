@@ -30,7 +30,7 @@ using System.Collections.Generic;
 // =============================================================
 
 // ── Catégorie de rune ─────────────────────────────────────────
-public enum RuneCategory { Weapon, Armor }
+public enum RuneCategory { Weapon = 0, Armor = 1 }
 
 // ── RuneStatEntry — une stat autorisée avec sa propre range ───
 [System.Serializable]

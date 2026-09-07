@@ -204,22 +204,22 @@ public class MobData : ScriptableObject
 // ── Type de mob ───────────────────────────────────────────────
 public enum MobType
 {
-    Normal,       // Mob standard
-    Elite,        // ×1.8 atk / ×2.0 def / ×4.0 HP
-    BossZone,     // ×2.5 atk / ×3.0 def / ×10.0 HP — erre en zone ouverte
-    BossDungeon,  // ×3.0 atk / ×3.5 def / ×12.0 HP — fixe en donjon
-    BossRaid,     // ×4.0 atk / ×5.0 def / ×60.0 HP — fixe en raid
-    Nocturnal,    // Actif uniquement la nuit (§18.1 / §20)
-    Capturable,   // Peut devenir un pet (§3.5)
+    Normal      = 0,  // Mob standard
+    Elite       = 1,  // ×1.8 atk / ×2.0 def / ×4.0 HP
+    BossZone    = 2,  // ×2.5 atk / ×3.0 def / ×10.0 HP — erre en zone ouverte
+    BossDungeon = 3,  // ×3.0 atk / ×3.5 def / ×12.0 HP — fixe en donjon
+    BossRaid    = 4,  // ×4.0 atk / ×5.0 def / ×60.0 HP — fixe en raid
+    Nocturnal   = 5,  // Actif uniquement la nuit (§18.1 / §20)
+    Capturable  = 6,  // Peut devenir un pet (§3.5)
 }
 
 // ── IA du mob ─────────────────────────────────────────────────
 public enum MobAIType
 {
-    Passive,      // N'attaque que si agressé
-    Aggressive,   // Attaque les joueurs à portée
-    Boss,         // IA scriptée — phases de combat (§3.3)
+    Passive    = 0,   // N'attaque que si agressé
+    Aggressive = 1,   // Attaque les joueurs à portée
+    Boss       = 2,   // IA scriptée — phases de combat (§3.3)
 }
 
 // ── Type de pet potentiel ─────────────────────────────────────
-public enum PetType { Tank, Damage, Support, Utility, Hybrid }
+public enum PetType { Tank = 0, Damage = 1, Support = 2, Utility = 3, Hybrid = 4 }

@@ -107,6 +107,17 @@ public class TargetingSystem : MonoBehaviour
 
     private void TickAutoAttack()
     {
+        // Taunt (§3.1.1.1) force l'engagement sur la source du debuff — MÊME si le joueur
+        // n'attaque rien actuellement (état idle, rien de sélectionné/engagé). Re-vérifié
+        // chaque frame ; ne ré-Engage() que si la cible engagée n'est pas déjà la source, pour
+        // ne pas reset autoAttackTimer/outline en boucle tant que Taunt reste actif dessus.
+        if (player?.statusEffects != null && player.statusEffects.isTaunted)
+        {
+            Entity tauntSource = player.statusEffects.GetDebuffSource(DebuffType.Taunt);
+            if (tauntSource != null && !tauntSource.isDead && engagedTarget != tauntSource)
+                Engage(tauntSource);
+        }
+
         if (!autoAttacking || engagedTarget == null)
         {
             return;

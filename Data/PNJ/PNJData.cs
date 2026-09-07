@@ -226,39 +226,38 @@ public class PNJData : ScriptableObject
 // nouveaux types (Cook..CraftStation) sont ajoutés en fin d'enum, jamais au milieu.
 public enum PNJType
 {
-    Merchant,       // 0 — Boutique seule
-    Forge,          // 1 — Boutique + Craft Équipement + Upgrade (+0→+10) + Pari (rareté) — ex-Blacksmith
+    Merchant      = 0,  // Boutique seule
+    Forge         = 1,  // Boutique + Craft Équipement + Upgrade (+0→+10) + Pari (rareté) — ex-Blacksmith
 
     [System.Obsolete("Retiré du design (2026) — Pari de rareté est un onglet de PNJType.Forge, " +
                       "plus un PNJ séparé. Réassigner les PNJData existants (ex: PNJ_rareté.asset) " +
                       "vers Forge. Ordinal gardé pour ne pas décaler Antiquarian/Cordonnier/... qui suivent.")]
-    Rarity,         // 2 — RETIRÉ, placeholder — voir PNJType.Forge
+    Rarity        = 2,  // RETIRÉ, placeholder — voir PNJType.Forge
 
-    Antiquarian,    // 3 — Boutique + Identification (runes)
-    Cordonnier,     // 4 — Boutique + Fusion Gants/Bottes (S0→S6) — ex-FusionNPC
+    Antiquarian   = 3,  // Boutique + Identification (runes)
+    Cordonnier    = 4,  // Boutique + Fusion Gants/Bottes (S0→S6) — ex-FusionNPC
 
-    [System.Obsolete("Retiré du design (2026) — déblocage métiers jamais implémenté. " +
-                      "Ordinal gardé pour ne pas décaler Quest/Mayor/HarborMaster/Guard/Decorative " +
-                      "déjà sérialisés sur des .asset existants (PNJ_01/PNJ_02).")]
-    CraftMaster,    // 5 — RETIRÉ, placeholder
+    // 5 retiré (2026-09-07) — CraftMaster, déblocage métiers jamais implémenté. Zéro case dans
+    // PNJ.cs (contrairement à Rarity/FactionNPC, toujours wirés eux) — vérifié avant
+    // suppression. Ordinal 5 jamais réutilisé.
 
-    Quest,          // 6 — Donneur de quêtes — conditions + récompenses
-    Mayor,          // 7 — Création de guilde — dialogue conditionnel
+    Quest         = 6,  // Donneur de quêtes — conditions + récompenses
+    Mayor         = 7,  // Création de guilde — dialogue conditionnel
 
     [System.Obsolete("Retiré du design (2026) — quêtes de faction pas prioritaires actuellement. " +
                       "Ordinal gardé pour ne pas décaler HarborMaster/Guard/Decorative déjà sérialisés.")]
-    FactionNPC,     // 8 — RETIRÉ, placeholder
+    FactionNPC    = 8,  // RETIRÉ, placeholder
 
-    HarborMaster,   // 9 — Navigation bateau — choix de destination (dialogue seul)
-    Guard,          // 10 — Dialogue neutre + IA combat mobs proches (dialogue seul)
-    Decorative,     // 11 — Ambiance, lore, rumeurs — pas de service (dialogue seul)
+    HarborMaster  = 9,  // Navigation bateau — choix de destination (dialogue seul)
+    Guard         = 10, // Dialogue neutre + IA combat mobs proches (dialogue seul)
+    Decorative    = 11, // Ambiance, lore, rumeurs — pas de service (dialogue seul)
 
     // ── Ajoutés §13.2 — modèle composable Boutique + onglets ──────────────────
-    Cook,           // 12 — Boutique + Cuisiner (nourriture + potions, partagé Alchimie)
-    Tinkerer,       // 13 — Boutique + Bricoler (fusion ressources + déco housing)
-    Jeweler,        // 14 — Boutique + Gemmes (pose sur bijoux)
-    Hatter,         // 15 — Boutique + Craft de casques
-    CraftStation,   // 16 — Boutique + Craft (ressources intermédiaires, tous domaines)
+    Cook          = 12, // Boutique + Cuisiner (nourriture + potions, partagé Alchimie)
+    Tinkerer      = 13, // Boutique + Bricoler (fusion ressources + déco housing)
+    Jeweler       = 14, // Boutique + Gemmes (pose sur bijoux)
+    Hatter        = 15, // Boutique + Craft de casques
+    CraftStation  = 16, // Boutique + Craft (ressources intermédiaires, tous domaines)
 }
 
 // ── Onglets de la fenêtre PNJ partagée — GDD §13.2 ────────────────────────────
@@ -268,21 +267,20 @@ public enum PNJType
 // avec un panneau placeholder en attendant (voir PNJWindowUI.cs).
 public enum PNJTabID
 {
-    Boutique,
-    CraftEquipement,     // Forgeron
-    Upgrade,             // Forgeron
-    Pari,                // Forgeron
-    Cuisiner,            // Cuisinier
-    Fusion,              // Cordonnier
-    Bricoler,            // Bricoleur
-    Gemmes,              // Bijoutier
-    CraftCasque,         // Tailleur
-    Identification,      // Antiquaire
-    CraftIntermediaire,  // Station de Craft
+    Boutique            = 0,
+    CraftEquipement     = 1,   // Forgeron
+    Upgrade             = 2,   // Forgeron
+    Pari                = 3,   // Forgeron
+    Cuisiner            = 4,   // Cuisinier
+    Fusion              = 5,   // Cordonnier
+    Bricoler            = 6,   // Bricoleur
+    Gemmes              = 7,   // Bijoutier
+    CraftCasque         = 8,   // Tailleur
+    Identification      = 9,   // Antiquaire
+    CraftIntermediaire  = 10,  // Station de Craft
 
-    // Ajoutés après coup — TOUJOURS en fin d'enum (ordinal safety).
-    CraftGantsBottes,    // Cordonnier — craft de base, distinct de Fusion
-    CraftBijoux,         // Bijoutier — craft de base, distinct de Gemmes
+    CraftGantsBottes    = 11,  // Cordonnier — craft de base, distinct de Fusion
+    CraftBijoux         = 12,  // Bijoutier — craft de base, distinct de Gemmes
 }
 
 // ── PNJ ayant une Boutique (ShopUI) — modèle composable §13.2 ────────────────
@@ -329,7 +327,7 @@ public class ShopEntry
 // ── Faction — GDD v3.5 §3.4 ───────────────────────────────────
 public enum FactionType
 {
-    None,       // PNJ neutre — accessible à tous
-    Solthars,   // PNJ Solthars — hostile aux Umbrans
-    Umbrans,    // PNJ Umbrans — hostile aux Solthars
+    None     = 0,   // PNJ neutre — accessible à tous
+    Solthars = 1,   // PNJ Solthars — hostile aux Umbrans
+    Umbrans  = 2,   // PNJ Umbrans — hostile aux Solthars
 }

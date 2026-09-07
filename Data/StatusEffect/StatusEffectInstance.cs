@@ -65,7 +65,13 @@ public class DebuffInstance : StatusEffectInstance
 
             case DebuffType.ManaDrain:
                 // Drain de mana progressif sur la durée, reversé au lanceur (§3.1.1.1)
-                float drain = DebuffData.manaDrainPerSecond * deltaTime;
+                // Percent : ratio du MaxMana du LANCEUR (pas de la cible) — même principe que
+                // HpDrain (2026-09-07) : évite la disproportion sur les gros pools cible, scale
+                // avec la vraie puissance du lanceur. 0 si source null.
+                float drainRate = DebuffData.manaDrainModifier == ModifierType.Percent
+                    ? (source != null ? source.MaxMana * DebuffData.manaDrainPerSecond : 0f)
+                    : DebuffData.manaDrainPerSecond;
+                float drain = drainRate * deltaTime;
                 if (drain > 0f)
                 {
                     target.SpendMana(drain);
@@ -74,10 +80,20 @@ public class DebuffInstance : StatusEffectInstance
                 break;
 
             case DebuffType.HpDrain:
-                // Vol de vie progressif — dégâts réels sur la cible (respecte défense/
-                // résistances, peut tuer, même pipeline que le DrainHP côté skill), reversés
+                // Vol de vie progressif — dégâts VRAIS sur la cible (TakeDamage n'applique
+                // aucune mitigation de défense/résistance elle-même — c'est CombatSystem qui
+                // le fait en amont pour les dégâts de skill/DoT ; ici on l'appelle directement
+                // avec le montant brut, donc ignore défense/résistances), peut tuer, reversés
                 // en soin identique au lanceur.
-                float hpDrain = DebuffData.hpDrainPerSecond * deltaTime;
+                // Percent : ratio du MaxHP du LANCEUR (pas de la cible) — décision explicite
+                // Florian (2026-09-07) : évite la disproportion sur les boss à gros pool HP
+                // (la cible n'entre plus dans le calcul) et scale naturellement avec la vraie
+                // puissance du lanceur à tout niveau (un tank plus tanky drain/soigne plus, un
+                // DPS avec peu de HP drain/soigne moins). 0 si source null (pas de base de calcul).
+                float hpDrainRate = DebuffData.hpDrainModifier == ModifierType.Percent
+                    ? (source != null ? source.MaxHP * DebuffData.hpDrainPerSecond : 0f)
+                    : DebuffData.hpDrainPerSecond;
+                float hpDrain = hpDrainRate * deltaTime;
                 if (hpDrain > 0f)
                 {
                     target.TakeDamage(hpDrain, ElementType.Neutral, source);

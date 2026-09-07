@@ -28,11 +28,11 @@ using UnityEngine;
 
 public enum ResourceType
 {
-    CraftMaterial,  // Matériaux de craft (bois, minerai, tissu...)
-    CookIngredient, // Ingrédients de cuisine
-    MobDrop,        // Drop exclusif de mob (os, écailles, fourrure...)
-    Collectible,    // Ramassable dans le monde via node 3D
-    Other,          // Ressource générique
+    CraftMaterial  = 0,  // Matériaux de craft (bois, minerai, tissu...)
+    CookIngredient = 1,  // Ingrédients de cuisine
+    MobDrop        = 2,  // Drop exclusif de mob (os, écailles, fourrure...)
+    Collectible    = 3,  // Ramassable dans le monde via node 3D
+    Other          = 4,  // Ressource générique
 }
 
 [CreateAssetMenu(fileName = "res_", menuName = "AetherTree/Inventaire/ResourceData")]

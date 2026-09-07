@@ -417,6 +417,7 @@ public class ShopUI : MonoBehaviour
             case SpiritData sd:     return new InventoryItem(new SpiritInstance(sd));
             case ConsumableData cd: return new InventoryItem(cd.CreateInstance());
             case ResourceData rd:   return new InventoryItem(rd.CreateInstance());
+            case TalismanData td:   return new InventoryItem(td.CreateInstance());
             case SkillData:             return null;
             case PermanentSkillData:    return null; // géré dans BuyEntry
             case PassiveSkillData:      return null; // géré dans BuyEntry
@@ -440,11 +441,13 @@ public class ShopUI : MonoBehaviour
             case GlovesData gd:     return gd.icon;
             case BootsData bd:      return bd.icon;
             case JewelryData jd:    return jd.icon;
+            case SpiritData sprd:   return sprd.icon;
             case ConsumableData cd: return cd.icon;
             case ResourceData rd:   return rd.icon;
             case SkillData sd:      return sd.icon;
             case PermanentSkillData pd: return pd.icon;
             case PassiveSkillData psd:  return psd.icon;
+            case TalismanData td:   return td.icon;
             default:                return null;
         }
     }

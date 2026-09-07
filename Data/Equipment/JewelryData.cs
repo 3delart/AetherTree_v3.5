@@ -74,7 +74,7 @@ public class JewelryData : EquipmentDataBase
 }
 
 // ── Type de bijou ─────────────────────────────────────────────
-public enum JewelrySlot { Ring, Necklace, Bracelet }
+public enum JewelrySlot { Ring = 0, Necklace = 1, Bracelet = 2 }
 
 // =============================================================
 // GemSlotInstance — état d'un slot gemme sur un bijou

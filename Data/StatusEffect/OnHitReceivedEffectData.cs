@@ -28,12 +28,12 @@ using UnityEngine;
 
 public enum OnHitReceivedEffectType
 {
-    DamageReductionOnHit,
-    ReflectPercent,
-    Thorns,
-    CounterDebuff,
-    HealOnHit,
-    CounterBuff,
+    DamageReductionOnHit = 0,
+    ReflectPercent       = 1,
+    Thorns               = 2,
+    CounterDebuff        = 3,
+    HealOnHit            = 4,
+    CounterBuff          = 5,
 }
 
 [CreateAssetMenu(fileName = "NewOnHitReceived", menuName = "AetherTree/StatusEffects/OnHitReceivedEffectData")]

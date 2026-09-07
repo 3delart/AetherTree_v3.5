@@ -522,7 +522,10 @@ public class PNJ : Entity
         {
             _agent?.ResetPath();
             LookAt(_combatTarget.transform);
-            if (TryUseSecondarySkill(_combatTarget)) return;
+            // Skill secondaire bloqué si Taunt actif — force l'attaque de base uniquement sur
+            // la source du taunt (§3.1.1.1), même schéma que Mob.HandleAttack.
+            bool tauntedNow = statusEffects != null && statusEffects.isTaunted;
+            if (!tauntedNow && TryUseSecondarySkill(_combatTarget)) return;
             if (_attackTimer <= 0f && data.basicAttackSkill != null)
             {
                 if (!isDead && !_combatTarget.isDead)
@@ -582,6 +585,14 @@ public class PNJ : Entity
     private Entity FindClosestEnemy()
     {
         if (data == null) return null;
+
+        // Taunt (§3.1.1.1) force le ciblage sur la source du debuff, peu importe la proximité
+        // normale — même schéma que Mob.GetClosestEnemy().
+        if (statusEffects != null && statusEffects.isTaunted)
+        {
+            Entity tauntSource = statusEffects.GetDebuffSource(DebuffType.Taunt);
+            if (tauntSource != null && !tauntSource.isDead) return tauntSource;
+        }
 
         Collider[] hits    = Physics.OverlapSphere(transform.position, data.aggroRadius);
         Entity     closest = null;
