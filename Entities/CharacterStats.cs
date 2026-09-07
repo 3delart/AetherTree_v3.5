@@ -268,16 +268,31 @@ public class CharacterStats
                 // Points élémentaires cumulés au niveau actuel (0 si Esprit Neutre — GDD §5.6)
                 elementalPoints[spirit.Element] += spirit.TotalElementalPoints;
 
+                // Esprit Neutre — gain CONTINU (2026-09-07) : même formule palier que les points
+                // élémentaires, répartie sur 4 stats génériques (pas de spécialisation). Distinct
+                // des paliers (CritMultiplier/AllDefense/proc) plus bas — jamais la même chose.
+                if (spirit.Element == ElementType.Neutral)
+                {
+                    float neutralAttack = spirit.data.GetNeutralBonusAttackAtLevel(spirit.level);
+                    accAttackMin += neutralAttack;
+                    accAttackMax += neutralAttack;
+                    accBonusHP   += spirit.data.GetNeutralBonusHPAtLevel(spirit.level);
+                    accCritChance += spirit.data.GetNeutralCritChanceAtLevel(spirit.level);
+                    float neutralResistAll = spirit.data.GetNeutralResistAllAtLevel(spirit.level);
+                    foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
+                        accResist[e] += neutralResistAll;
+                }
+
                 // Bonus passifs de base de l esprit (actifs dès l équipement)
                 AccumulateStatBonuses(spirit.Bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
 
-                // Bonus de paliers Esprit Neutre débloqués jusqu au niveau actuel
-                for (int mileLvl = 1; mileLvl <= spirit.level; mileLvl++)
-                {
-                    var milestone = spirit.data.GetMilestone(mileLvl);
-                    if (milestone != null)
-                        AccumulateStatBonuses(milestone.bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
-                }
+                // Bonus de paliers Esprit Neutre débloqués jusqu au niveau actuel — table
+                // PARTAGÉE (SpiritMilestoneTable.neutralMilestones, 2026-09-07), pas par-asset.
+                var neutralTable = spirit.data.sharedElementalMilestones;
+                if (spirit.Element == ElementType.Neutral && neutralTable?.neutralMilestones != null)
+                    foreach (var milestone in neutralTable.neutralMilestones)
+                        if (milestone.level <= spirit.level)
+                            AccumulateStatBonuses(milestone.bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
 
                 // Bonus de paliers élémentaires — table PARTAGÉE entre les 7 esprits élémentaires
                 // (SpiritMilestoneTable), toujours ciblés sur l'élément propre de CET esprit.
@@ -596,6 +611,7 @@ public class CharacterStats
         StatType.ManaCostReductionFire, StatType.ManaCostReductionWater, StatType.ManaCostReductionEarth,
         StatType.ManaCostReductionNature, StatType.ManaCostReductionLightning,
         StatType.ManaCostReductionDarkness, StatType.ManaCostReductionLight, StatType.ManaCostReductionAll,
+        StatType.CooldownReduction,
     };
 
     private void AccumulateStatBonuses(
@@ -701,6 +717,10 @@ public class CharacterStats
                 foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
                     manaCostReduction[e] += b.value;
                 return;
+
+            // Réduction de cooldown globale — s'ajoute directement au champ existant (déjà
+            // alimenté par StatPoints élémentaire et le passif Robe), toujours additive.
+            case StatType.CooldownReduction: cooldownReduction += b.value; return;
 
             // Points élémentaires — inchangé, toujours additifs (spec §A)
             case StatType.PointsFire:      elementalPoints[ElementType.Fire]      += b.value; return;

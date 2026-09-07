@@ -817,12 +817,8 @@ public class CharacterPanelUI : MonoBehaviour
             foreach (var s in p.equippedSpiritInstances)
             {
                 ReadAtkList(s?.Bonuses, acc);
-                if (s?.data != null)
-                    for (int lv = 1; lv <= s.level; lv++)
-                    {
-                        var ms = s.data.GetMilestone(lv);
-                        if (ms != null) ReadAtkList(ms.bonuses, acc);
-                    }
+                foreach (var bonusList in GetActiveNeutralMilestoneBonuses(s))
+                    ReadAtkList(bonusList, acc);
             }
         ReadAtkList(p.equippedWeaponInstance?.equippedRune?.bonuses, acc);
         ReadAtkList(p.equippedArmorInstance?.equippedRune?.bonuses,  acc);
@@ -872,12 +868,8 @@ public class CharacterPanelUI : MonoBehaviour
             foreach (var s in p.equippedSpiritInstances)
             {
                 ReadDefList(s?.Bonuses, acc);
-                if (s?.data != null)
-                    for (int lv = 1; lv <= s.level; lv++)
-                    {
-                        var ms = s.data.GetMilestone(lv);
-                        if (ms != null) ReadDefList(ms.bonuses, acc);
-                    }
+                foreach (var bonusList in GetActiveNeutralMilestoneBonuses(s))
+                    ReadDefList(bonusList, acc);
             }
         ReadDefList(p.equippedWeaponInstance?.equippedRune?.bonuses, acc);
         ReadDefList(p.equippedArmorInstance?.equippedRune?.bonuses,  acc);
@@ -990,16 +982,25 @@ public class CharacterPanelUI : MonoBehaviour
             foreach (var s in p.equippedSpiritInstances)
             {
                 all.Add(s?.Bonuses);
-                if (s?.data != null)
-                    for (int lv = 1; lv <= s.level; lv++)
-                    {
-                        var ms = s.data.GetMilestone(lv);
-                        if (ms != null) all.Add(ms.bonuses);
-                    }
+                foreach (var bonusList in GetActiveNeutralMilestoneBonuses(s))
+                    all.Add(bonusList);
             }
         all.Add(p.equippedWeaponInstance?.equippedRune?.bonuses);
         all.Add(p.equippedArmorInstance?.equippedRune?.bonuses);
         return all;
+    }
+
+    /// <summary>Bonus StatBonus des paliers Esprit Neutre débloqués jusqu'au niveau actuel —
+    /// table PARTAGÉE (SpiritMilestoneTable.neutralMilestones, 2026-09-07), plus de per-asset
+    /// GetMilestone(). Liste vide si pas un Esprit Neutre ou pas de table assignée.</summary>
+    private static IEnumerable<List<StatBonus>> GetActiveNeutralMilestoneBonuses(SpiritInstance s)
+    {
+        var table = s?.data?.sharedElementalMilestones;
+        if (s == null || s.Element != ElementType.Neutral || table?.neutralMilestones == null)
+            yield break;
+        foreach (var m in table.neutralMilestones)
+            if (m.level <= s.level)
+                yield return m.bonuses;
     }
 
     private static float GetBaseResist(GlovesInstance gl, BootsInstance bo, ElementType e)

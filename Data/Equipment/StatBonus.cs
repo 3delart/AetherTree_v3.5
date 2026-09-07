@@ -150,6 +150,11 @@ public enum StatType
     [InspectorName("Réduction coût mana Ténèbres (ratio 0.05 = -5%)")] ManaCostReductionDarkness,
     [InspectorName("Réduction coût mana Lumière (ratio 0.05 = -5%)")]  ManaCostReductionLight,
     [InspectorName("Réduction coût mana TOUS (ratio 0.05 = -5%)")]     ManaCostReductionAll,
+
+    // Ajouté après coup — TOUJOURS en fin d'enum (ordinal safety). Réduction de cooldown
+    // globale — toujours additive, s'ajoute à CharacterStats.cooldownReduction (déjà alimenté
+    // par StatPoints élémentaire et le passif Robe). Source ajoutée : paliers SpiritData.
+    [InspectorName("Réduction Cooldown (ratio 0.05 = -5%)")] CooldownReduction,
 }
 
 // =============================================================

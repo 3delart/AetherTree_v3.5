@@ -28,13 +28,20 @@ using System.Collections.Generic;
 //   Tier supérieur = repart à level 1 (pas de transfert — futur "Spirit Fusion" éventuel,
 //   voir mémoire project_aethertree_spirit_system).
 //
-// Esprit Neutre (GDD §5.8) :
-//   Équipé à la place d'un esprit élémentaire.
-//   N'apporte aucun point élémentaire.
-//   Bonus via config.bonuses : BonusAttack%, CritChance, MaxHP.
+// Esprit Neutre (GDD §5.8, table finale 2026-09-07) :
+//   Équipé à la place d'un esprit élémentaire — se spécialise pas, mix de plusieurs stats
+//   génériques au lieu de dégâts d'un seul élément. Justification lore : pas une force
+//   élémentaire externe comme les 7 autres, mais l'esprit du joueur lui-même — modeste mais
+//   jamais contré par une résistance ennemie (contrairement aux dégâts élémentaires).
+//   Gain par NIVEAU (GetNeutralXAtLevel) — liste éditable ligne par ligne (level → valeur),
+//   voir sharedElementalMilestones.neutralStatGains (2026-09-07, plus de courbe/formule
+//   automatique, plus de constantes codées en dur) : Attaque / HP / CritChance / Resist ALL,
+//   n'importe quel niveau, n'importe quelle valeur.
+//   Paliers (SpiritMilestone.bonuses, DISTINCTS du continu) : CritMultiplier, AllDefense.
+//   Procs : voir SpiritMilestoneTable.elementProcs (element=Neutral), buff ou debuff au choix.
 //
-// Points élémentaires (esprits non-Neutre uniquement) — formule universelle, voir
-// GetPointsAtLevel : 1 à 10 pts/niveau par bande de 10 niveaux, 550 points cumulés à 100.
+// Points élémentaires (esprits non-Neutre uniquement) — voir GetTotalPointsAtLevel, liste
+// éditable ligne par ligne sur sharedElementalMilestones.elementalPointGains (2026-09-07).
 //
 // Paliers élémentaires (2026-09-06, table finale Florian) — TOUJOURS liés au SEUL élément
 // de l'esprit, jamais les autres. TOUT (4 stats + proc) vit dans UNE SEULE SpiritMilestoneTable
@@ -51,8 +58,9 @@ using System.Collections.Generic;
 //   Lv90  : +6% dégâts de l'élément
 //   Lv100 : -8% pénétration + 5% proc debuff
 //   (Common s'arrête à Lv50, Intermediate à Lv70 — seuls les paliers ≤ maxLevel comptent.)
-// Esprit Neutre : paliers séparés via SpiritMilestone.bonuses (StatBonus, BonusAttack/
-// CritChance/BonusHP), voir plus bas dans ce fichier.
+// Esprit Neutre (2026-09-07) : paliers dans la MÊME table partagée, liste séparée
+// (SpiritMilestoneTable.neutralMilestones, StatBonus CritMultiplier/AllDefense + proc
+// dealt/received) — voir SpiritMilestoneTable.cs pour la classe SpiritMilestone.
 // =============================================================
 
 [CreateAssetMenu(fileName = "spr_", menuName = "AetherTree/Inventaire/Equipement/SpiritData")]
@@ -83,34 +91,23 @@ public class SpiritData : EquipmentDataBase
              "70 (Intermediate), 100 (Advanced).")]
     public int maxLevel = 50;
 
-    // ── Paliers de bonus — Esprit NEUTRE uniquement ────────────
-    // Esprits élémentaires : voir sharedElementalMilestones ci-dessous — les 4 stats ET le
-    // proc sont TOUS dans cette table partagée (2026-09-06, demande Florian) plutôt que
-    // dupliqués sur 21 assets ; seul l'élément CIBLE lu diffère par esprit.
-    [ShowIf(nameof(element), ElementType.Neutral, Header = "Paliers de bonus (Esprit Neutre — BonusAttack/CritChance/BonusHP)")]
-    [Tooltip("Bonus débloqués à certains niveaux, cumulatifs (chaque palier atteint s'additionne\n" +
-             "aux précédents). Esprit Neutre uniquement — recommandé : BonusAttack, CritChance, BonusHP.")]
-    public List<SpiritMilestone> milestones = new List<SpiritMilestone>();
+    [Tooltip("Niveau de départ d'un NOUVEL esprit de ce tier (défaut 1, tier Common). Permet à\n" +
+             "un tier supérieur de démarrer avec une avance au lieu de repartir de zéro — ex:\n" +
+             "l'Esprit Intermédiaire (maxLevel 70) peut commencer à 40 plutôt qu'à 1. Différent\n" +
+             "de la 'Spirit Fusion' (transfert du niveau EXACT d'un esprit existant, pas encore\n" +
+             "implémenté) — ici c'est un point de départ FIXE par asset, pas dynamique.")]
+    public int startingLevel = 1;
 
-    // ── Paliers de bonus — Esprits ÉLÉMENTAIRES uniquement ─────
-    [ShowIf(nameof(element), ElementType.Fire, ElementType.Water, ElementType.Lightning, ElementType.Earth, ElementType.Nature, ElementType.Darkness, ElementType.Light, Header = "Paliers élémentaires (table finale 2026-09-06)")]
-    [Tooltip("Table PARTAGÉE entre les 7 esprits élémentaires — TOUT y est (4 stats + proc par\n" +
-             "élément), un seul asset SpiritMilestoneTable à créer/éditer pour affecter les 21\n" +
-             "SpiritData élémentaires (7 éléments × 3 tiers) d'un coup. Les 4 stats visent\n" +
-             "toujours l'élément CIBLE (= data.element de cet asset) ; le proc va chercher dans\n" +
-             "SpiritElementalMilestone.procs l'entrée dont l'élément correspond à data.element.")]
+    // ── Paliers de bonus — TOUS les esprits (Neutre + élémentaires) ─────
+    // Une seule table partagée (2026-09-07, demande Florian) — toute la config Spirit au même
+    // endroit. Élémentaires : lit `milestones`/`procRates`/`elementDebuffs` (ciblés sur
+    // data.element). Neutre : lit `neutralMilestones` (StatBonus + proc dealt/received,
+    // structure différente — pas d'élément à cibler).
+    [Tooltip("Table PARTAGÉE entre TOUS les esprits — 1 seul asset SpiritMilestoneTable à\n" +
+             "créer/éditer pour affecter les 21 SpiritData élémentaires ET l'Esprit Neutre d'un coup.")]
     public SpiritMilestoneTable sharedElementalMilestones;
 
     // ── Utilitaires ───────────────────────────────────────────
-
-    /// <summary>Points élémentaires apportés AU niveau N (pas cumulé — voir
-    /// GetTotalPointsAtLevel pour le cumul). Retourne 0 si element == Neutral (Esprit Neutre).
-    /// Formule universelle : palier = floor((N-1)/10)+1, gain = palier points (2026-09-06).</summary>
-    public int GetPointsAtLevel(int level)
-    {
-        if (element == ElementType.Neutral) return 0;
-        return (level - 1) / 10 + 1;
-    }
 
     /// <summary>XP requis pour passer du niveau N au niveau N+1 — formule GDD §5.8 :
     /// 100 + (palier×20)×N, où palier = floor((N-1)/10)+1 (1 pour N=1-10, 2 pour N=11-20, etc.).
@@ -122,38 +119,52 @@ public class SpiritData : EquipmentDataBase
         return 100 + (palier * 20) * level;
     }
 
-    /// <summary>Points élémentaires cumulés de niveau 1 à N.</summary>
+    /// <summary>Points élémentaires cumulés de niveau 1 à N — somme des lignes
+    /// SpiritMilestoneTable.elementalPointGains (liste éditable, 2026-09-07). 0 si
+    /// element == Neutral ou si sharedElementalMilestones n'est pas assignée.</summary>
     public int GetTotalPointsAtLevel(int level)
     {
-        int total = 0;
-        for (int i = 1; i <= Mathf.Min(level, maxLevel); i++)
-            total += GetPointsAtLevel(i);
-        return total;
+        if (element == ElementType.Neutral || sharedElementalMilestones == null) return 0;
+        return Mathf.RoundToInt(sharedElementalMilestones.GetElementalPointsAt(Mathf.Min(level, maxLevel)));
     }
 
-    /// <summary>Retourne les bonus du palier Neutre atteint à ce niveau (null si aucun).
-    /// Esprit Neutre uniquement — voir sharedElementalMilestones pour les esprits élémentaires.</summary>
-    public SpiritMilestone GetMilestone(int level)
-    {
-        if (milestones == null) return null;
-        foreach (var m in milestones)
-            if (m.level == level) return m;
-        return null;
-    }
+    // ── Esprit Neutre — gain par niveau (2026-09-07) ───────────
+    // Réparti sur 4 stats génériques (le Neutre ne se spécialise pas), distinct des paliers
+    // (CritMultiplier/AllDefense/proc, voir SpiritMilestone) pour ne jamais donner la même
+    // chose. Valeurs éditées ligne par ligne sur sharedElementalMilestones.neutralStatGains.
+    public float GetNeutralBonusAttackAtLevel(int level)
+        => element == ElementType.Neutral && sharedElementalMilestones != null
+            ? sharedElementalMilestones.GetNeutralAttackAt(Mathf.Min(level, maxLevel)) : 0f;
+
+    public float GetNeutralBonusHPAtLevel(int level)
+        => element == ElementType.Neutral && sharedElementalMilestones != null
+            ? sharedElementalMilestones.GetNeutralHPAt(Mathf.Min(level, maxLevel)) : 0f;
+
+    public float GetNeutralCritChanceAtLevel(int level)
+        => element == ElementType.Neutral && sharedElementalMilestones != null
+            ? sharedElementalMilestones.GetNeutralCritChanceAt(Mathf.Min(level, maxLevel)) : 0f;
+
+    public float GetNeutralResistAllAtLevel(int level)
+        => element == ElementType.Neutral && sharedElementalMilestones != null
+            ? sharedElementalMilestones.GetNeutralResistAllAt(Mathf.Min(level, maxLevel)) : 0f;
 }
 
 // =============================================================
 // SpiritMilestone — Bonus débloqué à un palier de niveau, ESPRIT NEUTRE UNIQUEMENT
-// (esprits élémentaires : voir SpiritMilestoneTable/SpiritElementalMilestone plus bas)
+// Utilisé par SpiritMilestoneTable.neutralMilestones (Data/Equipment/SpiritMilestoneTable.cs)
+// — reste défini ici pour rester proche de GetNeutral*AtLevel ci-dessus. Esprits élémentaires :
+// voir SpiritElementalMilestone dans SpiritMilestoneTable.cs. Procs (Neutre ET élémentaires) :
+// voir SpiritMilestoneTable.elementProcs (mécanisme unifié, 2026-09-07) — plus de proc ici.
 // =============================================================
 [System.Serializable]
 public class SpiritMilestone
 {
-    [Tooltip("Niveau auquel ce palier est débloqué (ex: 10, 20, 30, 40, 50).")]
+    [Tooltip("Niveau auquel ce palier est débloqué (ex: 10, 20, 30, 40, 50, 60, 70, 80, 90, 100).")]
     public int level;
 
     [Tooltip("Bonus débloqués à ce palier — cumulatifs avec tous les paliers déjà atteints.\n" +
-             "Esprit Neutre : BonusAttack, CritChance, BonusHP.")]
+             "Distinct du gain continu (Attaque/HP/CritChance/ResistAll) — recommandé ici :\n" +
+             "CritMultiplier, AllDefense (table finale 2026-09-07).")]
     public List<StatBonus> bonuses = new List<StatBonus>();
 }
 
@@ -172,7 +183,7 @@ public class SpiritInstance
     public SpiritInstance(SpiritData source)
     {
         data      = source;
-        level     = 1;
+        level     = source != null ? Mathf.Clamp(source.startingLevel, 1, source.maxLevel) : 1;
         currentXP = 0;
     }
 
