@@ -629,9 +629,16 @@ public class TooltipSystem : MonoBehaviour
     {
         if (entry == null || tooltipPanel == null) return;
         ShowOnly(statusEffectPanel);
+        // Nom réel de l'effet (entry.data.effectName), pas entry.key — key est une clé
+        // technique unique par instance depuis 2026-09-07 (ex: "Dot_dbf_fire_burn"), jamais
+        // destinée à l'affichage. Repli sur entry.key si data n'est exceptionnellement pas
+        // renseignée (ne devrait plus arriver, GetActiveEffectsForUI la remplit toujours).
         string color = entry.isDebuff ? "#FF4444" : "#44FF88";
+        string displayName = entry.data != null
+            ? entry.data.effectName.Get(LocalizationManager.CurrentLanguage)
+            : entry.key;
         SetIcon(seIcon, entry.icon);
-        SetText(seNameText,     $"<color={color}>{entry.key}</color>");
+        SetText(seNameText,     $"<color={color}>{displayName}</color>");
         SetText(seTypeText,     entry.isDebuff ? "Debuff" : "Buff");
         SetText(seDurationText, entry.totalDuration > 0f
             ? $"Durée : {entry.remainingTime:F1}s / {entry.totalDuration:F1}s" : "");

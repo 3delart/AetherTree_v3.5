@@ -1230,26 +1230,37 @@ public class StatusEffectSystem : MonoBehaviour
     {
         var list = new List<StatusEffectUIEntry>();
 
-        // 1 entrée UI par INSTANCE, pas par type — 2 Stats actifs = 2 icônes distinctes,
-        // chacune avec son propre temps restant.
+        // 1 entrée UI par INSTANCE, pas par type — 2 Stats/Dot actifs = 2 icônes distinctes,
+        // chacune avec son propre temps restant. `key` doit donc être unique PAR INSTANCE, pas
+        // par type — StatusEffectUI/PlayerInfosPanel/TargetPanel indexent toutes les 3 leur
+        // dictionnaire d'icônes par `key` (voir leur `_activeIcons[entry.key]`), donc 2
+        // instances du même type avec `key = type.ToString()` collisionnaient sur la même
+        // entrée : la 2e n'affichait jamais d'icône (bug trouvé 2026-09-07, en aval du fix
+        // qui permet à Stats/Dot d'avoir plusieurs instances actives). Deux instances du même
+        // type ont TOUJOURS des `data` (assets) différents par construction (même asset =
+        // refresh, jamais 2 entrées) — `data.effectID` suffit donc à désambiguïser. `data` est
+        // aussi renseignée maintenant (jamais fait avant) pour que TooltipSystem affiche le
+        // vrai nom/description de l'effet au lieu du type brut ("Dot", "Stats"...).
         foreach (var (type, instance) in AllDebuffInstances())
             list.Add(new StatusEffectUIEntry
             {
-                key           = type.ToString(),
+                key           = $"{type}_{instance.data.effectID}",
                 icon          = instance.data.icon,
                 remainingTime = instance.remainingTime,
                 totalDuration = instance.data.duration,
-                isDebuff      = true
+                isDebuff      = true,
+                data          = instance.data
             });
 
         foreach (var (type, instance) in AllBuffInstances())
             list.Add(new StatusEffectUIEntry
             {
-                key           = type.ToString(),
+                key           = $"{type}_{instance.data.effectID}",
                 icon          = instance.data.icon,
                 remainingTime = instance.remainingTime,
                 totalDuration = instance.data.duration,
-                isDebuff      = false
+                isDebuff      = false,
+                data          = instance.data
             });
 
         return list;
