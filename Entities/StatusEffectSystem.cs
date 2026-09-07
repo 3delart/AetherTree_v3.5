@@ -41,11 +41,48 @@ using System.Collections.Generic;
 public class StatusEffectSystem : MonoBehaviour
 {
     // ── Effets actifs ─────────────────────────────────────────
-    private Dictionary<DebuffType, DebuffInstance> _activeDebuffs
-        = new Dictionary<DebuffType, DebuffInstance>();
+    // Dictionary<Type, List<Instance>> plutôt que Dictionary<Type, Instance> — la plupart des
+    // types n'ont jamais qu'une instance (StackableDebuffTypes/StackableBuffTypes vides pour
+    // eux), mais Stats/Dot sont des buckets génériques réutilisés par plusieurs effets
+    // DIFFÉRENTS (ex: debuff "-Précision" et debuff "-Résistance" sont tous les deux
+    // DebuffType.Stats) qui doivent pouvoir coexister au lieu de s'écraser. Voir
+    // docs/superpowers/specs/2026-09-07-stackable-status-effects-design.md.
+    private Dictionary<DebuffType, List<DebuffInstance>> _activeDebuffs
+        = new Dictionary<DebuffType, List<DebuffInstance>>();
 
-    private Dictionary<BuffType, BuffInstance> _activeBuffs
-        = new Dictionary<BuffType, BuffInstance>();
+    private Dictionary<BuffType, List<BuffInstance>> _activeBuffs
+        = new Dictionary<BuffType, List<BuffInstance>>();
+
+    /// <summary>Types dont PLUSIEURS instances peuvent être actives simultanément (buckets
+    /// génériques réutilisés par plusieurs effets différents). Tout le reste (Stun, Fear,
+    /// Slow...) reste strictement 1 instance active à la fois — même comportement qu'avant
+    /// ce changement.</summary>
+    private static readonly HashSet<DebuffType> StackableDebuffTypes = new HashSet<DebuffType>
+    {
+        DebuffType.Stats, DebuffType.Dot,
+    };
+    private static readonly HashSet<BuffType> StackableBuffTypes = new HashSet<BuffType>
+    {
+        BuffType.Stats,
+    };
+
+    /// <summary>Aplatit _activeDebuffs en paires (type, instance) — une par instance, pas une
+    /// par type. Pour les types non-stackable, équivalent à itérer l'ancien dictionnaire à
+    /// plat (liste ≤1). Snapshot-le dans une List&lt;&gt; avant d'itérer si le corps de boucle
+    /// peut muter _activeDebuffs (voir Update()).</summary>
+    private IEnumerable<(DebuffType Type, DebuffInstance Instance)> AllDebuffInstances()
+    {
+        foreach (var kvp in _activeDebuffs)
+            foreach (var instance in kvp.Value)
+                yield return (kvp.Key, instance);
+    }
+
+    private IEnumerable<(BuffType Type, BuffInstance Instance)> AllBuffInstances()
+    {
+        foreach (var kvp in _activeBuffs)
+            foreach (var instance in kvp.Value)
+                yield return (kvp.Key, instance);
+    }
 
     // ── Debug Inspector ───────────────────────────────────────
     [Header("Debug — Effets actifs (lecture seule)")]
@@ -97,8 +134,12 @@ public class StatusEffectSystem : MonoBehaviour
     /// <summary>Source (caster) du debuff actif de ce type, ou null si absent/inconnu — utilisé
     /// par Fear pour fuir dans la direction opposée à qui a lancé le debuff (fallback aléatoire
     /// si null, voir PlayerController.HandleMovement).</summary>
+    /// <summary>Pour un type stackable avec plusieurs instances actives, retourne la source de
+    /// la PREMIÈRE de la liste (choix arbitraire, documenté — aucun appelant externe ne
+    /// l'utilise pour un type stackable aujourd'hui : Mob.cs et PlayerController.cs
+    /// n'appellent ceci que pour Taunt/Fear, non-stackable, liste toujours ≤1).</summary>
     public Entity GetDebuffSource(DebuffType type)
-        => _activeDebuffs.TryGetValue(type, out var instance) ? instance.source : null;
+        => _activeDebuffs.TryGetValue(type, out var list) && list.Count > 0 ? list[0].source : null;
 
 #pragma warning disable CS0618 // Blinded — obsolète (utiliser Stats+Precision), gardé pour compat assets existants
     /// <summary>Blinded — réduit la précision.</summary>
@@ -183,31 +224,31 @@ public class StatusEffectSystem : MonoBehaviour
         // rend le dictionnaire live libre d'être muté pendant le Tick() ; les instances
         // restantes de la copie no-op proprement ensuite (DebuffInstance.Tick vérifie déjà
         // target.isDead en tête).
-        var expiredDebuffs = new List<DebuffType>();
-        foreach (var kvp in new List<KeyValuePair<DebuffType, DebuffInstance>>(_activeDebuffs))
+        var expiredDebuffs = new List<(DebuffType Type, DebuffInstance Instance)>();
+        foreach (var (type, instance) in new List<(DebuffType, DebuffInstance)>(AllDebuffInstances()))
         {
-            kvp.Value.Tick(_entity, Time.deltaTime);
-            if (kvp.Value.IsExpired) expiredDebuffs.Add(kvp.Key);
+            instance.Tick(_entity, Time.deltaTime);
+            if (instance.IsExpired) expiredDebuffs.Add((type, instance));
         }
-        foreach (var t in expiredDebuffs) ExpireDebuff(t);
+        foreach (var (type, instance) in expiredDebuffs) ExpireDebuffInstance(type, instance);
 
         // Tick buffs (Regeneration via BuffInstance.Tick) — même précaution, voir ci-dessus.
-        var expiredBuffs = new List<BuffType>();
-        foreach (var kvp in new List<KeyValuePair<BuffType, BuffInstance>>(_activeBuffs))
+        var expiredBuffs = new List<(BuffType Type, BuffInstance Instance)>();
+        foreach (var (type, instance) in new List<(BuffType, BuffInstance)>(AllBuffInstances()))
         {
-            kvp.Value.Tick(_entity, Time.deltaTime);
-            if (kvp.Value.IsExpired) expiredBuffs.Add(kvp.Key);
+            instance.Tick(_entity, Time.deltaTime);
+            if (instance.IsExpired) expiredBuffs.Add((type, instance));
         }
-        foreach (var t in expiredBuffs) ExpireBuff(t);
+        foreach (var (type, instance) in expiredBuffs) ExpireBuffInstance(type, instance);
 
-        // Refresh debug lists
+        // Refresh debug lists — 1 ligne par INSTANCE, pas par type (2 Stats actifs = 2 lignes).
         _debugDebuffs.Clear();
-        foreach (var kvp in _activeDebuffs)
-            _debugDebuffs.Add($"{kvp.Key} — {kvp.Value.remainingTime:F1}s");
+        foreach (var (type, instance) in AllDebuffInstances())
+            _debugDebuffs.Add($"{type} — {instance.remainingTime:F1}s");
 
         _debugBuffs.Clear();
-        foreach (var kvp in _activeBuffs)
-            _debugBuffs.Add($"{kvp.Key} — {kvp.Value.remainingTime:F1}s");
+        foreach (var (type, instance) in AllBuffInstances())
+            _debugBuffs.Add($"{type} — {instance.remainingTime:F1}s");
     }
 
     // =========================================================
@@ -223,21 +264,56 @@ public class StatusEffectSystem : MonoBehaviour
         if (resistance > 0f && Random.value < resistance)
             return false;
 
-        // Refresh si déjà actif — GDD v3.5 §3.1.1.4 : le plus récent remplace l'ancien.
-        // Source aussi mise à jour (pas juste la durée) — sinon un 2e caster qui relance le
-        // même debuff (ex: Fear) laisse GetDebuffSource() pointer vers le PREMIER caster,
-        // périmé (ex: fuite dans la mauvaise direction).
-        if (_activeDebuffs.TryGetValue(debuff.debuffType, out var existing))
+        // Types NON stackable (Stun, Fear, Slow...) — GDD v3.5 §3.1.1.4 : le plus récent
+        // remplace l'ancien, une seule instance possible, jamais plus. `data` AUSSI remplacée
+        // (pas juste la durée) — sinon Refresh() relit data.duration de L'ANCIEN debuff, jamais
+        // celui du nouveau : un Stun_Lv2 (2s) recast sur une cible qui a déjà Stun_Lv1 (1s)
+        // actif refresh silencieusement à 1s, ignorant Lv2 (bug trouvé 2026-09-07, en
+        // prévision du système de debuffs "à paliers texte" — ex: Stun_Lv1=1s, Lv2=2s, Lv3=3s,
+        // plusieurs DebuffData distinctes partageant le même DebuffType). Source aussi mise à
+        // jour — sinon un 2e caster qui relance le même debuff (ex: Fear) laisse
+        // GetDebuffSource() pointer vers le PREMIER caster, périmé (fuite dans la mauvaise
+        // direction).
+        if (!StackableDebuffTypes.Contains(debuff.debuffType))
         {
-            existing.Refresh();
-            existing.source = source;
+            if (_activeDebuffs.TryGetValue(debuff.debuffType, out var existingList) && existingList.Count > 0)
+            {
+                var existing = existingList[0];
+                existing.data = debuff;
+                existing.Refresh();
+                existing.source = source;
+                return true;
+            }
+
+            DebuffInstance newInstance = (DebuffInstance)debuff.CreateInstance(source);
+            _activeDebuffs[debuff.debuffType] = new List<DebuffInstance> { newInstance };
+            OnApplyDebuff(newInstance);
             return true;
         }
 
-        // Nouvelle application
-        DebuffInstance instance = (DebuffInstance)debuff.CreateInstance(source);
-        _activeDebuffs[debuff.debuffType] = instance;
-        OnApplyDebuff(instance);
+        // Types STACKABLE (Stats, Dot) — plusieurs effets différents partagent le même
+        // DebuffType (ex: "-Précision" et "-Résistance" sont tous les deux Stats). Recast du
+        // MÊME asset = refresh normal ; asset différent = coexiste en plus, ne remplace rien.
+        if (_activeDebuffs.TryGetValue(debuff.debuffType, out var list))
+        {
+            var sameAsset = list.Find(i => i.data == debuff);
+            if (sameAsset != null)
+            {
+                sameAsset.data = debuff;
+                sameAsset.Refresh();
+                sameAsset.source = source;
+                return true;
+            }
+        }
+        else
+        {
+            list = new List<DebuffInstance>();
+            _activeDebuffs[debuff.debuffType] = list;
+        }
+
+        DebuffInstance stackedInstance = (DebuffInstance)debuff.CreateInstance(source);
+        list.Add(stackedInstance);
+        OnApplyDebuff(stackedInstance);
 
         return true;
     }
@@ -250,17 +326,48 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (buff == null || _entity.isDead) return;
 
-        // Refresh si déjà actif.
-        if (_activeBuffs.TryGetValue(buff.buffType, out var existing))
+        // Types NON stackable — même correction que TryApplyDebuff : `data` remplacée avant
+        // Refresh() pour qu'un Buff_Lv2 recast sur un Buff_Lv1 actif prenne bien la durée (et
+        // toute autre valeur) du Lv2, pas un refresh silencieux vers l'ancienne.
+        if (!StackableBuffTypes.Contains(buff.buffType))
         {
-            existing.Refresh();
-            existing.source = source; // Revive : re-cast met à jour QUI recevra le crédit/log au déclenchement
+            if (_activeBuffs.TryGetValue(buff.buffType, out var existingList) && existingList.Count > 0)
+            {
+                var existing = existingList[0];
+                existing.data = buff;
+                existing.Refresh();
+                existing.source = source; // Revive : re-cast met à jour QUI recevra le crédit/log au déclenchement
+                return;
+            }
+
+            BuffInstance newInstance = (BuffInstance)buff.CreateInstance(source);
+            _activeBuffs[buff.buffType] = new List<BuffInstance> { newInstance };
+            OnApplyBuff(newInstance);
             return;
         }
 
-        BuffInstance instance = (BuffInstance)buff.CreateInstance(source);
-        _activeBuffs[buff.buffType] = instance;
-        OnApplyBuff(instance);
+        // Types STACKABLE (Stats) — même principe que TryApplyDebuff : même asset = refresh,
+        // asset différent = coexiste.
+        if (_activeBuffs.TryGetValue(buff.buffType, out var list))
+        {
+            var sameAsset = list.Find(i => i.data == buff);
+            if (sameAsset != null)
+            {
+                sameAsset.data = buff;
+                sameAsset.Refresh();
+                sameAsset.source = source;
+                return;
+            }
+        }
+        else
+        {
+            list = new List<BuffInstance>();
+            _activeBuffs[buff.buffType] = list;
+        }
+
+        BuffInstance stackedInstance = (BuffInstance)buff.CreateInstance(source);
+        list.Add(stackedInstance);
+        OnApplyBuff(stackedInstance);
     }
 
     /// <summary>Applique/rafraîchit un buff avec une durée EXPLICITE, ignorant BuffData.duration
@@ -272,16 +379,27 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (buff == null || _entity.isDead || remainingSeconds <= 0f) return;
 
-        if (_activeBuffs.TryGetValue(buff.buffType, out var existing))
+        // Talismans sont toujours BuffType.Stats (stackable) — même règle "même asset = refresh,
+        // asset différent = coexiste" que ApplyBuff, mais durée explicite au lieu de buff.duration.
+        if (_activeBuffs.TryGetValue(buff.buffType, out var list))
         {
-            existing.remainingTime = remainingSeconds;
-            existing.source = source;
-            return;
+            var sameAsset = list.Find(i => i.data == buff);
+            if (sameAsset != null)
+            {
+                sameAsset.remainingTime = remainingSeconds;
+                sameAsset.source = source;
+                return;
+            }
+        }
+        else
+        {
+            list = new List<BuffInstance>();
+            _activeBuffs[buff.buffType] = list;
         }
 
         BuffInstance instance = (BuffInstance)buff.CreateInstance(source);
         instance.remainingTime = remainingSeconds;
-        _activeBuffs[buff.buffType] = instance;
+        list.Add(instance);
         OnApplyBuff(instance);
     }
 
@@ -436,10 +554,10 @@ public class StatusEffectSystem : MonoBehaviour
         var flatSum    = new Dictionary<StatModifierType, float>();
         var percentSum = new Dictionary<StatModifierType, float>();
 
-        foreach (var kvp in _activeDebuffs)
+        foreach (var (type, instance) in AllDebuffInstances())
         {
-            var d = kvp.Value.DebuffData;
-            switch (kvp.Key)
+            var d = instance.DebuffData;
+            switch (type)
             {
                 case DebuffType.Slow:
                     slowMultiplier = Mathf.Min(slowMultiplier, d.slowMultiplier);
@@ -488,15 +606,15 @@ public class StatusEffectSystem : MonoBehaviour
 
         // Barrier/DefenseUp/DodgeUp/PrecisionUp/AttackUp/Haste/CritChanceUp/CritDamageUp
         // retirés (2026) — voir accumulateurs ci-dessus, jamais réécrits, sans effet.
-        foreach (var kvp in _activeBuffs)
+        foreach (var (type, instance) in AllBuffInstances())
         {
-            if (kvp.Key == BuffType.Stats)
+            if (type == BuffType.Stats)
             {
-                var b = kvp.Value.BuffData;
+                var b = instance.BuffData;
                 AccumulateStatLine(flatSum, percentSum, b.buffStatType,
                     b.buffModifier == ModifierType.Percent, b.buffStatValue);
             }
-            AccumulateBonusStatsLines(flatSum, percentSum, kvp.Value.BuffData.bonusStats, sign: 1f);
+            AccumulateBonusStatsLines(flatSum, percentSum, instance.BuffData.bonusStats, sign: 1f);
         }
 
         // ── Application finale — une fois par stat ─────────────
@@ -823,30 +941,41 @@ public class StatusEffectSystem : MonoBehaviour
     /// seul jet global) — 4 debuffs à 50% ≠ "50% de tout enlever d'un coup" (§3.1.1.2).</summary>
     private void RemoveDebuffsByChance(float chance)
     {
-        var types = new List<DebuffType>(_activeDebuffs.Keys);
-        foreach (DebuffType t in types)
+        // 1 jet par INSTANCE active, pas par type — 2 debuffs Stats actifs = 2 jets
+        // indépendants (fidèle au commentaire ci-dessus, qui ne faisait aucune différence
+        // avant que Stats/Dot puissent avoir plus d'une instance).
+        var snapshot = new List<(DebuffType Type, DebuffInstance Instance)>(AllDebuffInstances());
+        foreach (var (type, instance) in snapshot)
             if (Random.value < chance)
-                ExpireDebuff(t);
+                ExpireDebuffInstance(type, instance);
     }
 
     /// <summary>Dispel — même principe que RemoveDebuffsByChance, mais sur les buffs actifs de
     /// LA CIBLE sur qui ce debuff Dispel a été appliqué (§3.1.1.3).</summary>
     private void RemoveBuffsByChance(float chance)
     {
-        var types = new List<BuffType>(_activeBuffs.Keys);
-        foreach (BuffType t in types)
+        var snapshot = new List<(BuffType Type, BuffInstance Instance)>(AllBuffInstances());
+        foreach (var (type, instance) in snapshot)
             if (Random.value < chance)
-                ExpireBuff(t);
+                ExpireBuffInstance(type, instance);
     }
 
     // =========================================================
     // EXPIRATION DEBUFF
     // =========================================================
 
-    private void ExpireDebuff(DebuffType type)
+    /// <summary>Expire UNE instance précise (nécessaire pour les types stackable, où plusieurs
+    /// instances du même type peuvent coexister — retirer "le type" retirerait tout au lieu
+    /// d'une seule). Le switch(type) de flags reste correct tel quel : les types à flag ne sont
+    /// jamais dans StackableDebuffTypes, donc leur liste ne contient jamais qu'un seul élément
+    /// — le clear inconditionnel du flag est donc toujours sûr, peu importe qu'on l'appelle
+    /// "par type" ou "par instance".</summary>
+    private void ExpireDebuffInstance(DebuffType type, DebuffInstance instance)
     {
-        if (!_activeDebuffs.TryGetValue(type, out var expiring)) return;
-        var expiringBonusStats = expiring.DebuffData.bonusStats;
+        if (!_activeDebuffs.TryGetValue(type, out var list) || !list.Remove(instance)) return;
+        if (list.Count == 0) _activeDebuffs.Remove(type);
+
+        var expiringBonusStats = instance.DebuffData.bonusStats;
 
         // ── Flags booléens — retirés manuellement ────────────
         switch (type)
@@ -870,10 +999,6 @@ public class StatusEffectSystem : MonoBehaviour
 #pragma warning restore CS0618
             case DebuffType.Mark:       isMarked      = false; break;
         }
-
-        // ⚠ Remove AVANT RecalculateAndReapply — sinon l'effet expiré est encore
-        // dans le dict et ses valeurs sont ré-appliquées à tort.
-        _activeDebuffs.Remove(type);
 
         // ── Valeurs numériques — recalcul propre ──────────────
         // Tout effet qui touche des stats ou des multiplicateurs numériques
@@ -905,6 +1030,17 @@ public class StatusEffectSystem : MonoBehaviour
             RecalculateAndReapply();
     }
 
+    /// <summary>Convenience pour les appelants qui ne connaissent que le TYPE (OnTakeDamage →
+    /// Sleep, AbsorbWithShield → Shield...) — tous des types NON stackable, où la liste ne
+    /// contient jamais qu'un seul élément. Pour un type stackable appelé sans instance précise,
+    /// expire la PREMIÈRE instance trouvée (aucun site à jour de ce plan ne fait ça — filet de
+    /// sécurité documenté, pas un vrai chemin d'usage attendu).</summary>
+    private void ExpireDebuff(DebuffType type)
+    {
+        if (_activeDebuffs.TryGetValue(type, out var list) && list.Count > 0)
+            ExpireDebuffInstance(type, list[0]);
+    }
+
     // =========================================================
     // EXPIRATION BUFF
     // =========================================================
@@ -923,9 +1059,9 @@ public class StatusEffectSystem : MonoBehaviour
     /// Retourne false si aucun Revive actif (mort normale, pas de résurrection).</summary>
     public bool TryConsumeRevive(out float delay, out float hpPercent, out float manaPercent)
     {
-        if (_activeBuffs.TryGetValue(BuffType.Revive, out var instance))
+        if (_activeBuffs.TryGetValue(BuffType.Revive, out var list) && list.Count > 0)
         {
-            var d = instance.BuffData;
+            var d = list[0].BuffData;
             delay = d.reviveDelay;
             hpPercent = d.reviveHPPercent;
             manaPercent = d.reviveManaPercent;
@@ -943,17 +1079,24 @@ public class StatusEffectSystem : MonoBehaviour
     /// cohérents, exactement comme une expiration naturelle.</summary>
     public void ClearAllEffects()
     {
-        var debuffKeys = new List<DebuffType>(_activeDebuffs.Keys);
-        foreach (var t in debuffKeys) ExpireDebuff(t);
+        // Snapshot-et-expire TOUTES les instances aplaties, pas juste les clés de type — sinon
+        // un 2e Stats/Dot actif (2e élément de la liste) survivrait à la mort de l'entité.
+        var debuffSnapshot = new List<(DebuffType Type, DebuffInstance Instance)>(AllDebuffInstances());
+        foreach (var (type, instance) in debuffSnapshot) ExpireDebuffInstance(type, instance);
 
-        var buffKeys = new List<BuffType>(_activeBuffs.Keys);
-        foreach (var t in buffKeys) ExpireBuff(t);
+        var buffSnapshot = new List<(BuffType Type, BuffInstance Instance)>(AllBuffInstances());
+        foreach (var (type, instance) in buffSnapshot) ExpireBuffInstance(type, instance);
     }
 
-    private void ExpireBuff(BuffType type)
+    /// <summary>Équivalent buff de ExpireDebuffInstance — voir son commentaire pour le
+    /// raisonnement complet (flag-clear inconditionnel toujours sûr car les types à flag
+    /// Invincible/Stealth ne sont jamais dans StackableBuffTypes).</summary>
+    private void ExpireBuffInstance(BuffType type, BuffInstance instance)
     {
-        if (!_activeBuffs.TryGetValue(type, out var expiring)) return;
-        var expiringBonusStats = expiring.BuffData.bonusStats;
+        if (!_activeBuffs.TryGetValue(type, out var list) || !list.Remove(instance)) return;
+        if (list.Count == 0) _activeBuffs.Remove(type);
+
+        var expiringBonusStats = instance.BuffData.bonusStats;
 
         // ── Flags booléens — retirés manuellement ────────────
         switch (type)
@@ -962,24 +1105,29 @@ public class StatusEffectSystem : MonoBehaviour
             case BuffType.Stealth:    isStealthed  = false; break;
         }
 
-        // ⚠ Remove AVANT RecalculateAndReapply — même raison que pour les debuffs.
-        _activeBuffs.Remove(type);
-
         // ── Valeurs numériques — recalcul propre ──────────────
         switch (type)
         {
             case BuffType.Stats:
                 RecalculateAndReapply();
-                return; // déjà fait — voir même remarque que ExpireDebuff
+                return; // déjà fait — voir même remarque que ExpireDebuffInstance
             // Purified, Heal : instantanés — pas d'expiration
             // Regeneration, Shield, Invincible, Stealth : pas de stat numérique à recalculer
         }
 
         // bonusStats peut être posé sur N'IMPORTE QUEL buffType (Heal, Shield, Talisman...),
         // pas seulement Stats — sans ce filet, ses bonus resteraient appliqués POUR TOUJOURS
-        // après expiration (voir même remarque que ExpireDebuff ci-dessus).
+        // après expiration (voir même remarque que ExpireDebuffInstance ci-dessus).
         if (expiringBonusStats != null && expiringBonusStats.Count > 0)
             RecalculateAndReapply();
+    }
+
+    /// <summary>Convenience type-only — voir ExpireDebuff (équivalent debuff) pour le
+    /// raisonnement complet.</summary>
+    private void ExpireBuff(BuffType type)
+    {
+        if (_activeBuffs.TryGetValue(type, out var list) && list.Count > 0)
+            ExpireBuffInstance(type, list[0]);
     }
 
     // =========================================================
@@ -991,8 +1139,9 @@ public class StatusEffectSystem : MonoBehaviour
     /// </summary>
     public float AbsorbWithShield(float incomingDamage)
     {
-        if (_activeBuffs.TryGetValue(BuffType.Shield, out var shield))
+        if (_activeBuffs.TryGetValue(BuffType.Shield, out var list) && list.Count > 0)
         {
+            var shield = list[0];
             incomingDamage = shield.AbsorbDamage(incomingDamage);
             if (shield.remainingShield <= 0f) ExpireBuff(BuffType.Shield);
         }
@@ -1024,8 +1173,8 @@ public class StatusEffectSystem : MonoBehaviour
     // ACCESSEURS — lus par CombatSystem
     // =========================================================
 
-    public bool HasDebuff(DebuffType type) => _activeDebuffs.ContainsKey(type);
-    public bool HasBuff(BuffType type)     => _activeBuffs.ContainsKey(type);
+    public bool HasDebuff(DebuffType type) => _activeDebuffs.TryGetValue(type, out var l) && l.Count > 0;
+    public bool HasBuff(BuffType type)     => _activeBuffs.TryGetValue(type, out var l) && l.Count > 0;
 
     public float GetBuffDefenseBonus()      => buffDefenseBonus;
     public float GetBuffDodgeBonus()        => buffDodgeBonus;
@@ -1067,23 +1216,25 @@ public class StatusEffectSystem : MonoBehaviour
     {
         var list = new List<StatusEffectUIEntry>();
 
-        foreach (var kvp in _activeDebuffs)
+        // 1 entrée UI par INSTANCE, pas par type — 2 Stats actifs = 2 icônes distinctes,
+        // chacune avec son propre temps restant.
+        foreach (var (type, instance) in AllDebuffInstances())
             list.Add(new StatusEffectUIEntry
             {
-                key           = kvp.Key.ToString(),
-                icon          = kvp.Value.data.icon,
-                remainingTime = kvp.Value.remainingTime,
-                totalDuration = kvp.Value.data.duration,
+                key           = type.ToString(),
+                icon          = instance.data.icon,
+                remainingTime = instance.remainingTime,
+                totalDuration = instance.data.duration,
                 isDebuff      = true
             });
 
-        foreach (var kvp in _activeBuffs)
+        foreach (var (type, instance) in AllBuffInstances())
             list.Add(new StatusEffectUIEntry
             {
-                key           = kvp.Key.ToString(),
-                icon          = kvp.Value.data.icon,
-                remainingTime = kvp.Value.remainingTime,
-                totalDuration = kvp.Value.data.duration,
+                key           = type.ToString(),
+                icon          = instance.data.icon,
+                remainingTime = instance.remainingTime,
+                totalDuration = instance.data.duration,
                 isDebuff      = false
             });
 
