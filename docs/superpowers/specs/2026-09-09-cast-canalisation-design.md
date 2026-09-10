@@ -80,6 +80,19 @@ pour des conditions calculées (voir `IsNeutral`/`IsCombo` juste en dessous dans
 fichier). Vérifier `Utils/ShowIfAttribute.cs` au moment de l'implémentation pour confirmer la
 signature exacte disponible.
 
+Nouveau warning dans `OnValidate()` (même bloc `#if UNITY_EDITOR` que le warning MultiHit
+existant, `SkillData.cs:259-289`) — évite qu'un designer configure un skill avec `castTime > 0`
+ET `executionType != Normal` sans s'en rendre compte (combinaison non gérée, voir note dans
+la section SkillBar ci-dessous — Combo prendrait la main en silence, castTime ignoré) :
+
+```csharp
+if (castTime > 0f && executionType != SkillExecutionType.Normal)
+    Debug.LogWarning($"[SkillData:{name}] castTime > 0 avec executionType = {executionType} — " +
+                      "combinaison non gérée, la canalisation sera ignorée (Combo/MultiHit " +
+                      "prennent la main). Remets executionType à Normal si ce skill doit " +
+                      "canaliser.", this);
+```
+
 ### 2. `SkillBar.cs` — nouvel état de canalisation
 
 Nouveaux champs runtime (même zone que les champs MultiHit/Combo existants) :
@@ -95,23 +108,51 @@ private Vector3   _channelStartPos   = Vector3.zero;
 public bool IsChanneling => _isChanneling;
 ```
 
-`TryUseSlot()` — après la vérification de portée (ligne ~344, avant le bloc Combo existant),
-nouveau branchement :
-
-```csharp
-if (skill.castTime > 0f)
-{
-    StartChannel(skill, slot, target);
-    return true;
-}
-```
-
 Le lock total (équivalent `_multiHitLockTimer`) doit aussi bloquer `TryUseSlot()` dès l'entrée
 de la méthode, même bloc que le check `_multiHitLockTimer > 0f` existant (ligne 240) :
 
 ```csharp
 if (_multiHitLockTimer > 0f || _isChanneling) return false;
 ```
+
+⚠ **Bug évité — ne PAS brancher `castTime` uniquement dans `TryUseSlot()`.** Un skill ciblé
+hors de portée passe par `StartApproach()` puis, une fois à portée, `CheckApproach()`
+(`SkillBar.cs:445-482`) appelle `ExecuteSkill()` **directement** — ce second point d'appel
+contournerait entièrement la canalisation (résolution instantanée dès l'arrivée à portée au
+lieu de démarrer le channel). Les DEUX call sites (`TryUseSlot` après le bloc Combo, ET
+`CheckApproach`) doivent passer par un dispatcher commun :
+
+```csharp
+private void LaunchSkill(SkillData skill, int slot, Entity target)
+{
+    if (skill.castTime > 0f) StartChannel(skill, slot, target);
+    else                     ExecuteSkill(skill, slot, target);
+}
+```
+
+Remplacer dans `TryUseSlot()` (fin de méthode) :
+```csharp
+// ── Combo séquentiel (Méthode 2) ─────────────────────
+if (TryAdvanceCombo(skill, slot, target)) return true;
+
+LaunchSkill(skill, slot, target);   // était : ExecuteSkill(skill, slot, target);
+return true;
+```
+
+Et dans `CheckApproach()` :
+```csharp
+if (dist <= range)
+{
+    if (_agent != null) _agent.ResetPath();
+    LaunchSkill(_pendingSkill, _pendingSlot, _pendingTarget);   // était : ExecuteSkill(...)
+    CancelApproach();
+}
+```
+
+Note : un skill `castTime > 0` avec `executionType = ComboSequence` fait passer
+`TryAdvanceCombo()` en premier (inchangé) — dans ce cas de données mal configurées, Combo
+prend la main et `castTime` est silencieusement ignoré. Voir warning `OnValidate()` proposé
+plus bas pour éviter ce piège de configuration.
 
 Nouvelles méthodes :
 
@@ -149,12 +190,16 @@ private void ResolveChannel()
 {
     if (!_isChanneling) return;   // garde-fou si déjà interrompu entre-temps
 
-    SkillData skill = _channelSkill;
-    int       slot  = _channelSlot;
+    // ⚠ Capturer target AVANT EndChannelState() — celle-ci met _channelTarget à null,
+    // et Execute() a besoin de la vraie cible. Bug trouvé en relecture : appeler
+    // SkillSystem.Execute APRÈS EndChannelState() résout toujours sur une cible null.
+    SkillData skill  = _channelSkill;
+    int       slot   = _channelSlot;
+    Entity    target = _channelTarget;
 
     EndChannelState();
 
-    SkillSystem.Instance?.Execute(skill, _player, _channelTarget);
+    SkillSystem.Instance?.Execute(skill, _player, target);
     _cooldownTimers[slot] = skill.cooldown;
     if (slot >= 1) _gcdTimer = GCD_DURATION;
 }
@@ -207,6 +252,16 @@ if (_isChanneling)
     }
 }
 ```
+
+**Question ouverte, pas tranchée par ce document** : que se passe-t-il si `_channelTarget`
+meurt EN COURS de canalisation (tué par autre chose) ? `DispatchByTargetType` gère déjà ce cas
+sans crash (`target == null || target.isDead` → `LogMissingTarget`, aucun effet appliqué) —
+donc au pire la canalisation va au bout, ne fait rien, CD/GCD posés quand même (mana déjà
+dépensé au clic). Comportement "fizzle silencieux" acceptable en v1, ou faut-il aussi
+interrompre la canalisation dès que la cible meurt (poll `_channelTarget?.isDead` dans le même
+bloc `Update()`) ? Uniquement pertinent pour les canalisations avec cible (`TargetType.Target`/
+`AoE_Target`/`Dash_Target`/`LineTarget`) — Self/AoE_Self/GroundTarget/Direction/Skillshot/Cone
+n'ont pas de `_channelTarget`. À trancher avec Florian avant l'implémentation.
 
 ### 3. Combo — interruption CC de la fenêtre d'attente
 
@@ -302,13 +357,50 @@ résolution" déjà posée par A (et déjà généralisée à Normal dans ce doc
 actuellement résolution = clic = même frame) s'appliquera sans changement de règle — seul le
 moment de la résolution bouge, pas la logique qui en dépend.
 
+## Annexe — mécanisme chantier B (référence, PAS une spec complète)
+
+Capturé ici pour mémoire, à ré-explorer en vrai brainstorm quand B sera attaqué — ne pas
+implémenter depuis cette annexe seule.
+
+**Mécanisme : Unity Animation Event.** Dans la fenêtre Animation (pas Animator) d'un clip, on
+pose un marqueur sur la timeline à la frame exacte d'impact visuel, avec un nom de fonction
+(string). Unity appelle automatiquement cette fonction PENDANT la lecture du clip, à la frame
+posée — aucun polling, l'Animator déclenche lui-même. La fonction doit être publique, sur un
+component du même GameObject que l'Animator (ou un enfant) — `PlayerAnimatorController` est le
+point naturel (déjà porteur de la référence Animator).
+
+**Inversion de dépendance** — c'est le cœur du chantier B : aujourd'hui, clic → calcul immédiat
+→ l'anim joue en parallèle (juste visuel). Avec B : clic → l'anim joue → c'est l'ANIM qui
+déclenche le calcul (Animation Event), pas le clic. Damage devient piloté par l'animation, plus
+par l'input.
+
+**Implications par type de skill** (aucune ne doit être implémentée dans ce chantier A) :
+- **Normal** (castTime 0) — 1 event sur `attackAnimation`. Nécessite de retarder l'appel à
+  `SkillSystem.Execute()` (aujourd'hui synchrone dans `ExecuteSkill()`) jusqu'à ce que l'event
+  tombe.
+- **MultiHit** — autant d'events que de `hitSteps`, un par frame d'impact du clip ; il faut un
+  index pour savoir quel `HitStep` résoudre à chaque déclenchement de l'event (remplace
+  `WaitForSeconds(step.delay)` dans `ExecuteMultiHit`).
+- **Combo** — chaque step a déjà son propre `SkillData`/clip → même traitement qu'un Normal,
+  1 event par step.
+- **Canalisation** — déjà couvert par le point d'extension ci-dessus (1 event sur
+  `channelAnimation`, remplace `onComplete` de la bar par l'event).
+
+**Garde-fou indispensable** — si un clip oublie son event, le skill ne doit jamais rester
+bloqué en attente indéfiniment : prévoir un timeout de sécurité (ex: résoudre quand même après
+`attackAnimation.length`/`castTime` si aucun event n'est tombé), même esprit que le warning
+`OnValidate()` déjà en place pour le mismatch MultiHit/durée d'anim.
+
 ## Fichiers touchés
 
 - `Data/Skills/SkillData.cs` — nouveau champ `channelAnimation` (+ éventuel helper
-  `HasCastTime` selon les capacités de `ShowIfAttribute`).
-- `Data/Skills/SkillBar.cs` — nouveaux champs canalisation, branchement dans `TryUseSlot()`,
-  nouvelles méthodes `StartChannel`/`ResolveChannel`/`InterruptChannel`/`EndChannelState`,
-  nouveau bloc de poll dans `Update()`, ajout du check CC dans le bloc combo existant.
+  `HasCastTime` selon les capacités de `ShowIfAttribute`), nouveau warning `OnValidate()`
+  (castTime>0 + executionType≠Normal).
+- `Data/Skills/SkillBar.cs` — nouveaux champs canalisation, nouveau dispatcher `LaunchSkill()`
+  utilisé par `TryUseSlot()` ET `CheckApproach()` (remplace les 2 appels directs à
+  `ExecuteSkill()`), nouvelles méthodes `StartChannel`/`ResolveChannel`/`InterruptChannel`/
+  `EndChannelState`, nouveau bloc de poll dans `Update()`, ajout du check CC dans le bloc
+  combo existant.
 - `World/PlayerAnimatorController.cs` — nouvelles méthodes `PlayChannel`/`CancelChannel`.
 
 Aucun changement dans `SkillSystem.cs`, `StatusEffectSystem.cs`, `ProgressBarUI.cs`,
@@ -336,3 +428,11 @@ Pas de framework de test automatisé — vérification manuelle Play Mode par Fl
    (CD + reset) si un hard CC atterrit pendant la fenêtre d'attente.
 9. Vérifier qu'un MultiHit existant n'est PAS interrompu par un CC en plein milieu de sa
    séquence (comportement inchangé, confirmé volontairement).
+10. **Régression approche** : skill de canalisation avec `targetType = Target`, lancé hors de
+    portée → le joueur doit APPROCHER puis DÉMARRER la canalisation en arrivant à portée (pas
+    résoudre instantanément à l'arrivée — c'était le bug de `CheckApproach()` trouvé en
+    relecture).
+11. Vérifier que la résolution s'applique bien sur la BONNE cible (pas null) — c'était le 2e
+    bug trouvé en relecture (`EndChannelState()` appelé avant la lecture de `_channelTarget`).
+12. Créer volontairement un skill `castTime > 0` avec `executionType = MultiHit` (mauvaise
+    config) → vérifier que le warning `OnValidate()` apparaît dans la Console.
