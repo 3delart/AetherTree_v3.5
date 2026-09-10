@@ -89,6 +89,17 @@ public class SkillBar : MonoBehaviour
     private float     _comboTimer   = 0f;
     private SkillData _comboSkill   = null;
 
+    // ── Canalisation (castTime > 0) ────────────────────────────
+    private const float CHANNEL_CANCEL_MOVE_THRESHOLD = 0.3f;   // même seuil que ResourceNode
+
+    private bool      _isChanneling      = false;
+    private SkillData _channelSkill      = null;
+    private int       _channelSlot       = -1;
+    private Entity    _channelTarget     = null;
+    private Vector3   _channelStartPos   = Vector3.zero;
+
+    public bool IsChanneling => _isChanneling;
+
     private void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
@@ -124,6 +135,28 @@ public class SkillBar : MonoBehaviour
                 Debug.Log($"[SKILLBAR] MultiHit terminé — cooldown {_cooldownTimers[_multiHitCooldownSlot]:F2}s démarré sur slot {_multiHitCooldownSlot}.");
                 _multiHitCooldownSlot  = -1;
                 _multiHitCooldownSkill = null;
+            }
+        }
+
+        // ── Poll canalisation (CC / Silence / mouvement / cible morte) ──
+        if (_isChanneling)
+        {
+            var fx = _player.statusEffects;
+            bool hardCC = fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed
+                                       || fx.isKnockedBack || fx.isFeared || fx.isSilenced);
+            if (hardCC)
+            {
+                InterruptChannel(voluntary: false, reason: "CC");
+            }
+            else if (_channelTarget != null && _channelTarget.isDead)
+            {
+                InterruptChannel(voluntary: true, reason: "cible morte");
+            }
+            else
+            {
+                float moved = Vector3.Distance(_player.transform.position, _channelStartPos);
+                if (moved > CHANNEL_CANCEL_MOVE_THRESHOLD)
+                    InterruptChannel(voluntary: true, reason: "mouvement");
             }
         }
 
@@ -236,8 +269,8 @@ public class SkillBar : MonoBehaviour
         }
 
         // ── Vérification GCD & locks ──────────────────────────
-        // MultiHit en cours → tous les slots bloqués sans exception
-        if (_multiHitLockTimer > 0f)
+        // MultiHit ou canalisation en cours → tous les slots bloqués sans exception
+        if (_multiHitLockTimer > 0f || _isChanneling)
         {
             return false;
         }
@@ -359,6 +392,86 @@ public class SkillBar : MonoBehaviour
         _comboSlot  = -1;
         _comboTimer = 0f;
         _comboSkill = null;
+    }
+
+    // ── Canalisation ──────────────────────────────────────────
+
+    private void StartChannel(SkillData skill, int slot, Entity target)
+    {
+        // Combat/AFK/Stealth doivent réagir au LANCEMENT, pas à la résolution — voir Tâche 2
+        // (faille Stealth trouvée en relecture, confirmée par Florian).
+        _player.BeginSkillUse(skill);
+
+        _player.SpendMana(GetEffectiveManaCost(skill));
+        if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
+        if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
+
+        _isChanneling    = true;
+        _channelSkill    = skill;
+        _channelSlot     = slot;
+        _channelTarget   = target;
+        _channelStartPos = _player.transform.position;
+
+        _player.AnimatorController?.PlayChannel(skill.channelAnimation);
+
+        // POINT D'EXTENSION CHANTIER B (calage sur frame d'impact, hors scope de ce plan) :
+        // le déclencheur de ResolveChannel() est ICI, et seulement ici. Le jour où B est
+        // spécifié, onComplete sera remplacé par un Animation Event posé sur channelAnimation
+        // au lieu du timer de la bar — aucun autre code de cette méthode/classe n'aura besoin
+        // de changer. Ne jamais coupler ResolveChannel() à autre chose que cet appelant.
+        ProgressBarUI.Instance?.StartProgress(
+            label:        skill.skillName.Get(LocalizationManager.CurrentLanguage),
+            duration:     skill.castTime,
+            onComplete:   ResolveChannel,
+            onCancel:     null,   // annulation gérée explicitement par InterruptChannel
+            type:         ProgressBarUI.BarType.Cast,
+            followTarget: _player.transform
+        );
+    }
+
+    private void ResolveChannel()
+    {
+        if (!_isChanneling) return;   // garde-fou si déjà interrompu entre-temps
+
+        // Capturer AVANT EndChannelState() — celle-ci met _channelTarget à null, et Execute()
+        // a besoin de la vraie cible.
+        SkillData skill  = _channelSkill;
+        int       slot   = _channelSlot;
+        Entity    target = _channelTarget;
+
+        EndChannelState();
+
+        SkillSystem.Instance?.Execute(skill, _player, target);
+        _cooldownTimers[slot] = skill.cooldown;
+        if (slot >= 1) _gcdTimer = GCD_DURATION;
+    }
+
+    /// <summary>voluntary = true (mouvement OU cible morte — ni un choix punitif du joueur ni
+    /// un CC gagné par l'adversaire, CD moitié) | false (CC/Silence subi, CD complet).</summary>
+    private void InterruptChannel(bool voluntary, string reason)
+    {
+        if (!_isChanneling) return;
+
+        SkillData skill = _channelSkill;
+        int       slot  = _channelSlot;
+
+        EndChannelState();
+
+        ProgressBarUI.Instance?.Cancel();
+        _player.AnimatorController?.CancelChannel();
+
+        _cooldownTimers[slot] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
+        if (slot >= 1) _gcdTimer = GCD_DURATION;
+
+        Debug.Log($"[SKILLBAR] Canalisation interrompue ({reason}) — CD {_cooldownTimers[slot]:F2}s.");
+    }
+
+    private void EndChannelState()
+    {
+        _isChanneling  = false;
+        _channelSkill  = null;
+        _channelSlot   = -1;
+        _channelTarget = null;
     }
 
     // ── Exécution combo step ──────────────────────────────────
