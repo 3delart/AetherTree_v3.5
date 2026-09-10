@@ -515,6 +515,20 @@ bloqué en attente indéfiniment : prévoir un timeout de sécurité (ex: résou
 `attackAnimation.length`/`castTime` si aucun event n'est tombé), même esprit que le warning
 `OnValidate()` déjà en place pour le mismatch MultiHit/durée d'anim.
 
+**Précédent direct à réutiliser pour B — trouvé en relisant `SkillSystem.Execute()` en entier
+pendant l'audit de ce chantier A.** `Execute()` bundle en un seul call : `player.UseSkill()`
+(déjà splitté par ce plan A — voir `BeginSkillUse`), `GameEventBus.Publish(SkillUsedEvent)`,
+le dispatch des dégâts (`DispatchByTargetType`/`ExecuteMultiHit`), ET le VFX/Son d'impact. Pour
+A, tout ça reste correctement groupé à la résolution (un skill interrompu n'a rien "utilisé"
+ni "touché" — `SkillUsedEvent`/VFX/Son ne doivent PAS se déclencher plus tôt). Mais le jour où
+B retarde la résolution d'un skill instant (castTime 0) jusqu'à un Animation Event, `Execute()`
+aura le MÊME besoin de split que `Player.UseSkill()` vient d'avoir dans ce plan : une partie
+"lancement" (rien d'identifié pour l'instant côté `Execute()` lui-même — mais si un besoin
+similaire à Stealth/combat apparaît un jour au niveau skill plutôt que joueur, c'est ici qu'il
+faudra le splitter) vs une partie "résolution" (dégâts, `SkillUsedEvent`, VFX/Son — qui
+resteront après l'event). Pas d'action à ce stade, juste le repérage pour éviter de re-découvrir
+le même problème en relisant `Execute()` depuis zéro au moment de spécifier B.
+
 ## Fichiers touchés
 
 - `Data/Skills/SkillData.cs` — nouveau champ `channelAnimation`, nouveau helper
