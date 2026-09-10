@@ -318,11 +318,24 @@ private void ResolveInstant()
 
     SkillSystem.Instance?.ResolveExecute(skill, _player, target);
 
+    // Ce hit appartient-il à un Combo en cours sur ce slot ? Si oui, la suite (fenêtre
+    // suivante, ou fin de combo + CD) est gérée par AdvanceComboAfterHit — voir section Combo
+    // ci-dessous. Le CD n'est PAS posé ici dans ce cas (seul le DERNIER step d'un combo pose
+    // le CD, comportement déjà existant, inchangé).
+    if (IsComboActive && slot == _comboSlot)
+    {
+        AdvanceComboAfterHit(slot, skill);
+        return;
+    }
+
     _cooldownTimers[slot] = skill.cooldown;
     if (slot >= 1)
     {
         _gcdTimer = GCD_DURATION;
-        TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+        float autoAttackDelay = skill.attackAnimation != null
+            ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
+            : GCD_DURATION;
+        TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
     }
 }
 ```
@@ -330,6 +343,113 @@ private void ResolveInstant()
 Remarque : le raycast GroundTarget est repris tel quel du modèle déjà établi dans
 `StartChannel()` (chantier A) — capturé au LANCEMENT, pas à la résolution, même raisonnement
 (aim-then-resolve, cohérent avec mana/HP/gold dépensés au clic).
+
+#### Combo — `TryAdvanceCombo()` refondu, la fenêtre s'ouvre APRÈS résolution, pas au clic
+
+⚠ **Trouvé en relisant "la boucle" pour chaque type (relecture demandée par Florian) : absent
+du premier jet de ce document.** `TryAdvanceCombo()` appelait `SkillSystem.Execute()`
+directement, sans jamais passer par le nouveau mécanisme d'attente — contredisait la décision
+"même traitement qu'un Normal, 1 event par step". Corrigé ci-dessous.
+
+Conséquence du passage à l'event : la fenêtre combo (`_comboTimer`, le temps pour enchaîner le
+step suivant) doit s'ouvrir APRÈS que le coup courant ait résolu, pas au clic qui le lance —
+sinon la fenêtre pourrait expirer pendant que l'anim du coup en cours joue encore, coupant le
+combo avant même que le coup ait atterri. `TryAdvanceCombo()` ne fait donc plus QUE lancer le
+hit (via le même mécanisme que `StartInstant`) ; toute la bookkeeping combo (fenêtre suivante,
+icône, ou fin+CD) se déplace dans une nouvelle méthode appelée depuis `ResolveInstant()`.
+
+```csharp
+private bool TryAdvanceCombo(SkillData skill, int slot, Entity target)
+{
+    if (skill.executionType != SkillExecutionType.ComboSequence) return false;
+    if (skill.comboSteps == null || skill.comboSteps.Count == 0) return false;
+
+    if (_comboSlot == -1)
+    {
+        // Premier appui — lance le skill PARENT (step 0) comme un hit en attente
+        _comboSkill = skill;
+        _comboSlot  = slot;
+        _comboStep  = 1; // prochain step une fois CE hit résolu
+
+        LaunchComboHit(skill, slot, target);
+        Debug.Log($"[SKILLBAR] Combo démarré — step 0 (parent), en attente de résolution.");
+        return true;
+    }
+
+    if (_comboSlot != slot)
+    {
+        // Appui sur un autre slot pendant un combo — ignore
+        return false;
+    }
+
+    // Délai minimum entre deux steps pas encore écoulé — ignore l'appui (inchangé)
+    if (_comboStepCooldown > 0f) return true;
+
+    int stepIndex = _comboStep - 1;
+    SkillData stepSkill = _comboSkill.comboSteps[stepIndex];
+    if (stepSkill == null) { ResetCombo(); return true; }
+
+    LaunchComboHit(stepSkill, slot, target);
+    return true;
+}
+
+/// <summary>Lance un coup de combo (parent ou step) exactement comme StartInstant — mêmes
+/// champs _pendingHit*, même mécanisme d'attente/event/timeout. ResolveInstant() détecte
+/// après coup qu'un combo est actif sur ce slot (IsComboActive && slot == _comboSlot) et
+/// route vers AdvanceComboAfterHit() au lieu de poser le CD directement.</summary>
+private void LaunchComboHit(SkillData skill, int slot, Entity target)
+{
+    _player.SpendMana(GetEffectiveManaCost(skill));
+    _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+    EngageAndFaceTarget(skill, slot, target);
+
+    _pendingHitSlot    = slot;
+    _pendingHitSkill   = skill;
+    _pendingHitTarget  = skill.targetType == TargetType.GroundTarget ? null : target;
+    _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+
+    if (_pendingHitTimeout <= 0f) ResolveInstant();
+}
+
+/// <summary>Bookkeeping combo APRÈS résolution d'un coup — fenêtre suivante (icône + timer)
+/// ou fin de combo (CD + reset). `resolvedSkill` = le SkillData du coup qui vient de résoudre
+/// (parent au step 0, sinon le step lui-même) — utilisé pour la durée d'auto-attack-delay,
+/// même raisonnement que Task 4/6 du chantier A (anim du DERNIER coup, pas du parent).</summary>
+private void AdvanceComboAfterHit(int slot, SkillData resolvedSkill)
+{
+    _comboStep++;
+    _comboStepCooldown = _comboSkill.comboStepInterval;
+
+    if (_comboStep > _comboSkill.comboSteps.Count)
+    {
+        Debug.Log($"[SKILLBAR] Combo terminé sur slot {slot}.");
+        _cooldownTimers[slot] = _comboSkill.cooldown;
+        if (slot >= 1)
+        {
+            _gcdTimer = GCD_DURATION;
+            float autoAttackDelay = resolvedSkill.attackAnimation != null
+                ? Mathf.Max(GCD_DURATION, resolvedSkill.attackAnimation.length)
+                : GCD_DURATION;
+            TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
+        }
+        ResetCombo();
+        SkillBarUI.Instance?.RefreshSlot(slot);
+    }
+    else
+    {
+        _comboTimer = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
+        SkillBarUI.Instance?.RefreshSlotWithSkill(slot, _comboSkill.comboSteps[_comboStep - 1]);
+        Debug.Log($"[SKILLBAR] Combo step {_comboStep}/{_comboSkill.comboSteps.Count} — fenêtre {_comboTimer}s");
+    }
+}
+```
+
+Vérifié : `IsComboActive` (`_comboSlot >= 0`) reste vrai pendant TOUTE la durée du combo (bloque
+`TickAutoAttack`, comme déjà en place) ; `IsPendingHit` n'est vrai que pendant la brève fenêtre
+"anim en cours, event pas encore tombé" de CHAQUE coup individuel — donc `TryUseSlot()` ne
+bloque les AUTRES slots que le temps du coup en cours, pas pendant toute la fenêtre d'attente
+entre deux appuis (comportement déjà existant "aucun lock sur les autres slots" pendant la
+fenêtre, préservé).
 
 #### `StartMultiHit()` / résolution par index
 
@@ -380,7 +500,12 @@ private void ResolveMultiHitIndex(int index)
         if (slot >= 1)
         {
             _gcdTimer = GCD_DURATION;
-            TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+            // Même raisonnement que ResolveInstant/AdvanceComboAfterHit — durée basée sur
+            // l'anim si elle dépasse le GCD.
+            float autoAttackDelay = skill.attackAnimation != null
+                ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
+                : GCD_DURATION;
+            TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
         }
     }
     else if (_pendingMultiTimeout <= 0f)
@@ -445,6 +570,17 @@ Détail exact (quelle valeur pour "total" — probablement `_pendingHitSkill.att
 capturée au lancement) à affiner à l'implémentation, même principe que les branchements déjà
 écrits pour Canalisation/Combo.
 
+#### Pas de poll CC pendant `_pendingHitSlot`/`_pendingMultiSlot` — confirmé volontaire
+
+Contrairement à la Canalisation (poll CC/Silence/mouvement/cible morte à chaque frame,
+chantier A), rien n'interrompt un hit en attente de résolution (Normal/MultiHit/Combo-step).
+Une fois l'anim lancée, elle va au bout (résolution par event ou timeout) même si le joueur se
+fait Stun/Freeze/etc. juste après avoir cliqué. Ce n'est PAS un oubli — ça préserve la décision
+déjà prise avant même le chantier A : `castTime == 0` = non-interruptible, "déjà acté" au clic,
+même dans tous les MMO/action games. B déplace SEULEMENT le moment de résolution vers la vraie
+frame d'impact ; ça ne réintroduit pas d'interruptibilité sur ces types. Seule la Canalisation
+(`castTime > 0`, un VRAI délai voulu comme tel) reste interruptible — logique inchangée par B.
+
 ## Fichiers touchés
 
 - `World/PlayerAnimatorController.cs` — nouvelle méthode `OnSkillHitFrame(int hitIndex = 0)`.
@@ -456,8 +592,11 @@ capturée au lancement) à affiner à l'implémentation, même principe que les 
 - `Data/Skills/SkillBar.cs` — nouveaux champs `_pendingHit*`/`_pendingMulti*`, nouvelles
   méthodes `StartInstant`/`ResolveInstant`/`StartMultiHit`/`ResolveMultiHitIndex`/
   `OnAnimationHitEvent`, `LaunchSkill()` à 3 voies, verrou étendu dans `TryUseSlot()`, tick des
-  2 timeouts dans `Update()`, overlay CD étendu. `ExecuteSkill()` devient obsolète (à retirer
-  après vérification).
+  2 timeouts dans `Update()`, overlay CD étendu. `TryAdvanceCombo()` refondu (lance via le
+  nouveau `LaunchComboHit()` au lieu d'exécuter directement), nouvelles méthodes
+  `LaunchComboHit()`/`AdvanceComboAfterHit()` (la bookkeeping fenêtre/fin, extraite de
+  l'ancien `TryAdvanceCombo()`, déplacée après résolution). `ExecuteSkill()` devient obsolète
+  (à retirer après vérification).
 
 Aucun changement de `SkillData.cs` (aucun nouveau champ — les Animation Events vivent sur les
 clips, pas dans les assets de skill), aucun changement d'enum, aucun risque de casse de
@@ -477,7 +616,10 @@ fois les Animation Events effectivement posés sur au moins un clip de test par 
    quand même à la fin du clip (garde-fou), pas de blocage permanent de la skillbar.
 5. MultiHit : chaque coup (base + hitSteps) résout à SA propre frame d'event, dans l'ordre.
    Tenter d'appuyer sur un autre slot pendant la séquence → bloqué (verrou actif).
-6. Combo : chaque step résout à la frame d'event de SON PROPRE clip (pas celui du parent).
+6. Combo : chaque step résout à la frame d'event de SON PROPRE clip (pas celui du parent). La
+   fenêtre pour enchaîner le step suivant ne s'ouvre QU'APRÈS la résolution du coup courant
+   (pas au clic) — vérifier qu'on ne peut pas "rater" la fenêtre pendant que l'anim du coup en
+   cours joue encore. Le CD ne se pose que sur le DERNIER step, comme avant B.
 7. Canalisation : toujours fonctionnelle exactement comme testé au chantier A (aucun changement
    de ce côté, le point d'extension n'a pas encore été branché sur un vrai event — reste sur le
    timer `ProgressBarUI` pour l'instant, sauf si Florian veut aussi le basculer dans ce chantier).
@@ -488,3 +630,7 @@ fois les Animation Events effectivement posés sur au moins un clip de test par 
 10. Vérifier qu'aucun skill castTime 0 existant sans Animation Event posé ne se comporte
     différemment d'avant B (résolution après `attackAnimation.length`, invisible si l'event est
     correctement placé bien avant la fin du clip).
+11. Se faire Stun/Freeze juste après avoir cliqué un skill Normal (pendant que son anim joue,
+    avant que l'event tombe) → vérifier que le coup résout quand même normalement (non-
+    interruptible, comportement voulu — voir section dédiée plus haut), contrairement à une
+    Canalisation qui, elle, serait interrompue dans le même cas.
