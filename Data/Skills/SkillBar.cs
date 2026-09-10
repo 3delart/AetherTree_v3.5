@@ -641,7 +641,13 @@ public class SkillBar : MonoBehaviour
         if (dist <= range)
         {
             if (_agent != null) _agent.ResetPath();
-            LaunchSkill(_pendingSkill, _pendingSlot, _pendingTarget);
+            // TryAdvanceCombo AVANT LaunchSkill — même pattern que TryUseSlot(). Sans ce check,
+            // un combo (ComboSequence) lancé hors de portée sautait toute la logique combo à
+            // l'arrivée (jamais entré dans _comboSlot == -1) et s'exécutait comme un skill
+            // normal, CD posé immédiatement au lieu d'ouvrir la fenêtre pour le step suivant —
+            // bug pré-existant, pas lié à la canalisation.
+            if (!TryAdvanceCombo(_pendingSkill, _pendingSlot, _pendingTarget))
+                LaunchSkill(_pendingSkill, _pendingSlot, _pendingTarget);
             CancelApproach();
         }
         else
