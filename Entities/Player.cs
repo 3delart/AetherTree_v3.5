@@ -1126,6 +1126,9 @@ public class Player : Entity
 
         if (countsForAffinity)
         {
+            // Écart de niveau avec la cible — anti farm d'un mob hors de portée (trop faible ou
+            // trop fort) pour faire bouger l'affinité gratuitement. Pas de cible/PNJ (pas de
+            // niveau comparable) → pas de restriction, voir ElementalSystem.RegisterCast.
             int? targetLevel = target is Mob targetMob ? targetMob.mobLevel : (int?)null;
 
             if (!skill.IsNeutral)
@@ -1135,6 +1138,10 @@ public class Player : Entity
                 elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic, targetLevel: targetLevel);
         }
 
+        // RequestRecalculate() (pas juste stats.RecalculateStats()) — sinon le pass équipement
+        // tourne seul, SANS jamais relancer ReapplyActiveModifiers() après : un buff actif sur
+        // n'importe quelle stat se faisait effacer dès le skill suivant (attaque de base
+        // incluse), car son contenu n'était jamais réappliqué par-dessus le recalcul équipement.
         RequestRecalculate();
         RefreshTitle();
     }
