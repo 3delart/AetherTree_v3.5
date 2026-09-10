@@ -251,9 +251,10 @@ if (_multiHitLockTimer > 0f || _isChanneling || IsPendingHit || IsPendingMultiHi
     return false;
 }
 ```
-(`_multiHitLockTimer` reste tel quel comme ancien mécanisme pour Mob/PNJ — hors scope B, mais
-le champ continue d'exister et de bloquer côté joueur si jamais réutilisé ailleurs ; en
-pratique, côté joueur, c'est `IsPendingMultiHit` qui prend le relais désormais.)
+(`_multiHitLockTimer`/`LockForMultiHit()` restent tels quels — toujours utilisés par l'ancien
+`SkillSystem.Execute()` pour Mob/PNJ ET pour un passif qui déclencherait un skill MultiHit
+(hors scope B, ce chemin reste sur `Execute()` inchangé). En pratique, côté joueur via la
+SkillBar, c'est `IsPendingMultiHit` qui prend le relais désormais.)
 
 #### `LaunchSkill()` — nouveau branchement à 3 voies
 
