@@ -163,11 +163,17 @@ public class SkillBar : MonoBehaviour
         // ── Timer combo séquentiel ────────────────────────────
         if (_comboSlot >= 0 && _comboTimer > 0f)
         {
+            var fx = _player.statusEffects;
+            bool hardCC = fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed
+                                       || fx.isKnockedBack || fx.isFeared);
+            // Silence volontairement EXCLU ici — un combo castTime 0 n'est pas une
+            // canalisation ; Silence bloque déjà les NOUVEAUX lancements via TryUseSlot,
+            // mais n'a jamais interrompu une fenêtre d'attente ouverte avant ce plan.
+
             _comboTimer -= Time.deltaTime;
-            if (_comboTimer <= 0f)
+            if (_comboTimer <= 0f || hardCC)
             {
-                // Fenêtre expirée — CD déclenché + reset
-                Debug.Log($"[SKILLBAR] Combo expiré sur slot {_comboSlot} — CD déclenché.");
+                Debug.Log($"[SKILLBAR] Combo {(hardCC ? "interrompu (CC)" : "expiré")} sur slot {_comboSlot} — CD déclenché.");
                 _cooldownTimers[_comboSlot] = _comboSkill != null ? _comboSkill.cooldown : 1f;
                 ResetCombo();
             }
