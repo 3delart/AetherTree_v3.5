@@ -201,6 +201,13 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
     public float comboWindowDuration = 2f;
 
+    [Tooltip("ComboSequence uniquement — délai minimum en secondes entre deux steps.\n" +
+             "Empêche de spammer tous les steps du combo en moins d'une seconde.\n" +
+             "0 = pas de délai minimum. Réglable par combo (ex: 0.5s pour un combo rapide,\n" +
+             "2s pour un combo lent/lourd).")]
+    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
+    public float comboStepInterval = 0f;
+
     // ── ⑩ Visuel & Son ────────────────────────────────────────
     [Header("⑩ Visuel & Son")]
     public Sprite     icon;

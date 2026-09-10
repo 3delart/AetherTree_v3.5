@@ -84,10 +84,14 @@ public class SkillBar : MonoBehaviour
     // _comboSlot    : slot SkillBar qui porte le combo en cours (-1 = aucun)
     // _comboTimer   : temps restant avant expiration de la fenêtre
     // _comboSkill   : le SkillData racine du combo (pour accéder aux comboSteps)
-    private int       _comboStep    = 0;
-    private int       _comboSlot    = -1;
-    private float     _comboTimer   = 0f;
-    private SkillData _comboSkill   = null;
+    private int       _comboStep         = 0;
+    private int       _comboSlot         = -1;
+    private float     _comboTimer        = 0f;
+    private SkillData _comboSkill        = null;
+    // Délai minimum entre deux steps (SkillData.comboStepInterval) — empêche de spammer tout
+    // le combo en < 1s. Tant que > 0, un appui sur le combo est ignoré (fenêtre _comboTimer
+    // continue de tourner normalement, seul le step suivant attend).
+    private float     _comboStepCooldown = 0f;
 
     // ── Canalisation (castTime > 0) ────────────────────────────
     private const float CHANNEL_CANCEL_MOVE_THRESHOLD = 0.3f;   // même seuil que ResourceNode
@@ -165,6 +169,9 @@ public class SkillBar : MonoBehaviour
                     InterruptChannel(voluntary: true, reason: "mouvement");
             }
         }
+
+        if (_comboStepCooldown > 0f)
+            _comboStepCooldown -= Time.deltaTime;
 
         // ── Timer combo séquentiel ────────────────────────────
         if (_comboSlot >= 0 && _comboTimer > 0f)
@@ -400,10 +407,11 @@ public class SkillBar : MonoBehaviour
     {
         // Refresh AVANT de remettre _comboSlot à -1
         if (_comboSlot >= 0) SkillBarUI.Instance?.RefreshSlot(_comboSlot);
-        _comboStep  = 0;
-        _comboSlot  = -1;
-        _comboTimer = 0f;
-        _comboSkill = null;
+        _comboStep         = 0;
+        _comboSlot         = -1;
+        _comboTimer        = 0f;
+        _comboSkill        = null;
+        _comboStepCooldown = 0f;
     }
 
     // ── Canalisation ──────────────────────────────────────────
@@ -550,7 +558,8 @@ public class SkillBar : MonoBehaviour
             if (target != null) TargetingSystem.Instance?.EngageFromSkill(target);
 
             // Ouvre la fenêtre combo — aucun lock sur les autres slots
-            _comboTimer = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
+            _comboTimer        = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
+            _comboStepCooldown = _comboSkill.comboStepInterval;
 
             // Icône → montre le prochain step
             SkillBarUI.Instance?.RefreshSlotWithSkill(slot, _comboSkill.comboSteps[0]);
@@ -563,6 +572,10 @@ public class SkillBar : MonoBehaviour
             // Appui sur un autre slot pendant un combo — ignore
             return false;
         }
+
+        // Délai minimum entre deux steps pas encore écoulé — ignore l'appui (input consommé,
+        // la fenêtre _comboTimer continue de tourner normalement, rien d'autre ne se passe).
+        if (_comboStepCooldown > 0f) return true;
 
         // Steps suivants — comboSteps[_comboStep - 1]
         int stepIndex = _comboStep - 1;
@@ -596,7 +609,8 @@ public class SkillBar : MonoBehaviour
         else
         {
             // Ouvre la fenêtre pour le prochain step — aucun lock sur les autres slots
-            _comboTimer = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
+            _comboTimer        = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
+            _comboStepCooldown = _comboSkill.comboStepInterval;
 
             SkillBarUI.Instance?.RefreshSlotWithSkill(slot, _comboSkill.comboSteps[_comboStep - 1]);
             Debug.Log($"[SKILLBAR] Combo step {_comboStep}/{_comboSkill.comboSteps.Count} — fenêtre {_comboTimer}s");
