@@ -56,6 +56,7 @@ coroutine, barre world-space qui suit une cible (`followTarget`), `onComplete`/`
 | Interrupt CC → pénalité | **CD complet.** Le joueur ne l'a pas choisi. |
 | Mouvement pendant la canalisation | **Annule** (comme `ResourceNode` — poll de la distance parcourue depuis le début, `Update()`), PAS un root dur. Donne au joueur une porte de sortie défensive volontaire (bouger pour esquiver plutôt que d'être forcé à tout encaisser). |
 | Mouvement → pénalité | **CD à moitié** (`skill.cooldown * 0.5f`) — distinction volontaire vs subie : t'as choisi de fuir (pénalité allégée, encourage à s'en servir), vs tu t'es fait CC (pénalité pleine, punition du CC adverse). |
+| Cible meurt en cours de canalisation | **Interrompt aussi** (poll `_channelTarget.isDead`), classé dans le même bucket que mouvement → **CD moitié**. Ni un choix du joueur ni un CC gagné par l'adversaire — plein CD serait punitif sans raison de gameplay. Surtout pertinent pour AoE_Target (la zone perd son centre). Ne concerne que Target/AoE_Target/Dash_Target/LineTarget — sans effet sur GroundTarget (majorité des skills de canalisation prévus). |
 | Taunt pendant la canalisation | **N'interrompt PAS** — Taunt force juste la cible du slot 0, ne désactive pas le joueur (différent d'un vrai hard CC). S'applique normalement une fois le lock de canalisation levé (fin normale ou interrupt par autre chose) — aucun code spécifique nécessaire, `TryUseSlot()` gère déjà Taunt pour les actions suivantes. |
 | Portée (Mob/PNJ) | **Joueur uniquement** pour ce chantier — `SkillBar` est Player-only (Mob/PNJ castent via un autre chemin, pas de progress bar). Canalisation Mob/PNJ = phase future, hors scope. |
 | Conflit avec Harvest/Craft (ProgressBarUI singleton) | `StartProgress` annule silencieusement la barre précédente — comportement déjà existant, cohérent (impossible de récolter/crafter ET canaliser un skill combat en même temps de toute façon). |
@@ -204,8 +205,9 @@ private void ResolveChannel()
     if (slot >= 1) _gcdTimer = GCD_DURATION;
 }
 
-/// <summary>voluntary = true (mouvement, CD moitié) | false (CC/Silence subi, CD complet).</summary>
-private void InterruptChannel(bool voluntary)
+/// <summary>voluntary = true (mouvement OU cible morte — ni un choix punitif du joueur ni un
+/// CC gagné par l'adversaire, CD moitié) | false (CC/Silence subi, CD complet).</summary>
+private void InterruptChannel(bool voluntary, string reason)
 {
     if (!_isChanneling) return;
 
@@ -220,7 +222,7 @@ private void InterruptChannel(bool voluntary)
     _cooldownTimers[slot] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
     if (slot >= 1) _gcdTimer = GCD_DURATION;
 
-    Debug.Log($"[SKILLBAR] Canalisation interrompue ({(voluntary ? "mouvement" : "CC")}) — CD {_cooldownTimers[slot]:F2}s.");
+    Debug.Log($"[SKILLBAR] Canalisation interrompue ({reason}) — CD {_cooldownTimers[slot]:F2}s.");
 }
 
 private void EndChannelState()
@@ -242,26 +244,26 @@ if (_isChanneling)
                                || fx.isKnockedBack || fx.isFeared || fx.isSilenced);
     if (hardCC)
     {
-        InterruptChannel(voluntary: false);
+        InterruptChannel(voluntary: false, reason: "CC");
+    }
+    else if (_channelTarget != null && _channelTarget.isDead)
+    {
+        // Ni un choix du joueur ni un CC gagné par l'adversaire — bucket "volontaire"
+        // (CD moitié). Uniquement pertinent pour les canalisations avec cible (Target/
+        // AoE_Target/Dash_Target/LineTarget) — Self/AoE_Self/GroundTarget/Direction/
+        // Skillshot/Cone n'ont pas de _channelTarget, ce check ne les affecte jamais.
+        // Surtout utile pour AoE_Target : la zone tape autour de la cible, plus de
+        // centre = plus aucune raison d'aller au bout des secondes restantes.
+        InterruptChannel(voluntary: true, reason: "cible morte");
     }
     else
     {
         float moved = Vector3.Distance(_player.transform.position, _channelStartPos);
         if (moved > CANCEL_MOVE_THRESHOLD)   // même seuil que ResourceNode (0.3f) — constante à partager ou dupliquer
-            InterruptChannel(voluntary: true);
+            InterruptChannel(voluntary: true, reason: "mouvement");
     }
 }
 ```
-
-**Question ouverte, pas tranchée par ce document** : que se passe-t-il si `_channelTarget`
-meurt EN COURS de canalisation (tué par autre chose) ? `DispatchByTargetType` gère déjà ce cas
-sans crash (`target == null || target.isDead` → `LogMissingTarget`, aucun effet appliqué) —
-donc au pire la canalisation va au bout, ne fait rien, CD/GCD posés quand même (mana déjà
-dépensé au clic). Comportement "fizzle silencieux" acceptable en v1, ou faut-il aussi
-interrompre la canalisation dès que la cible meurt (poll `_channelTarget?.isDead` dans le même
-bloc `Update()`) ? Uniquement pertinent pour les canalisations avec cible (`TargetType.Target`/
-`AoE_Target`/`Dash_Target`/`LineTarget`) — Self/AoE_Self/GroundTarget/Direction/Skillshot/Cone
-n'ont pas de `_channelTarget`. À trancher avec Florian avant l'implémentation.
 
 ### 3. Combo — interruption CC de la fenêtre d'attente
 
@@ -422,6 +424,9 @@ Pas de framework de test automatisé — vérification manuelle Play Mode par Fl
    disparaît, aucun effet appliqué, CD complet posé.
 6. Relancer, bouger pendant la canalisation → vérifier : même annulation, mais CD à MOITIÉ
    du CD normal.
+6bis. Relancer un skill `castTime > 0` avec `targetType = Target` ou `AoE_Target`, tuer la
+   cible en cours de canalisation → vérifier : interrupt immédiat, anim coupée, CD à MOITIÉ
+   (même bucket que le mouvement).
 7. Relancer avec Taunt actif (pas de CC) → vérifier : la canalisation va au bout normalement,
    Taunt ne l'interrompt pas.
 8. Vérifier qu'un Combo (ComboSequence existant) en attente d'un step suivant est bien cassé
