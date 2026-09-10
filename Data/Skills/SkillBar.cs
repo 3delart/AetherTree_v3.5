@@ -142,11 +142,11 @@ public class SkillBar : MonoBehaviour
         if (_isChanneling)
         {
             var fx = _player.statusEffects;
-            bool hardCC = fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed
-                                       || fx.isKnockedBack || fx.isFeared || fx.isSilenced);
+            bool hardCC = _player.isDead || (fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed
+                                       || fx.isKnockedBack || fx.isFeared || fx.isSilenced));
             if (hardCC)
             {
-                InterruptChannel(voluntary: false, reason: "CC");
+                InterruptChannel(voluntary: false, reason: _player.isDead ? "mort" : "CC");
             }
             else if (_channelTarget != null && _channelTarget.isDead)
             {
@@ -402,6 +402,10 @@ public class SkillBar : MonoBehaviour
         // (faille Stealth trouvée en relecture, confirmée par Florian).
         _player.BeginSkillUse(skill);
 
+        // Engage/orientation vers la cible au LANCEMENT, même principe "lancement pas
+        // résolution" que BeginSkillUse ci-dessus (relecture Tâche 4, fix round 1).
+        EngageAndFaceTarget(skill, target, slot);
+
         _player.SpendMana(GetEffectiveManaCost(skill));
         if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
@@ -412,7 +416,22 @@ public class SkillBar : MonoBehaviour
         _channelTarget   = target;
         _channelStartPos = _player.transform.position;
 
+        // Résidu de vélocité NavMeshAgent (ex: hand-off depuis CheckApproach) qui pourrait
+        // sinon déclencher immédiatement le poll d'annulation par mouvement dans Update().
+        _agent?.ResetPath();
+
         _player.AnimatorController?.PlayChannel(skill.channelAnimation);
+
+        // GroundTarget : raycast au LANCEMENT (aim-then-channel), pas à la résolution — le point
+        // est locké quand le joueur commet à la canalisation, cohérent avec mana/HP/gold dépensés
+        // au clic. ResolveChannel() n'a besoin d'aucun changement : _groundTargetPoint sera déjà
+        // posé quand SkillSystem.Execute() le consomme.
+        if (skill.targetType == TargetType.GroundTarget)
+        {
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
+                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
+        }
 
         // POINT D'EXTENSION CHANTIER B (calage sur frame d'impact, hors scope de ce plan) :
         // le déclencheur de ResolveChannel() est ICI, et seulement ici. Le jour où B est
@@ -423,7 +442,7 @@ public class SkillBar : MonoBehaviour
             label:        skill.skillName.Get(LocalizationManager.CurrentLanguage),
             duration:     skill.castTime,
             onComplete:   ResolveChannel,
-            onCancel:     null,   // annulation gérée explicitement par InterruptChannel
+            onCancel:     () => InterruptChannel(voluntary: true, reason: "bar volée"),
             type:         ProgressBarUI.BarType.Cast,
             followTarget: _player.transform
         );
@@ -603,6 +622,31 @@ public class SkillBar : MonoBehaviour
         return skill.manaCost * (1f - reduction);
     }
 
+    // ── Engage + orientation vers la cible ─────────────────────
+    // Extrait d'ExecuteSkill() (fix round 1, Tâche 4) — partagé avec StartChannel() pour que
+    // les skills canalisés engagent/s'orientent au LANCEMENT plutôt qu'à la résolution.
+    private void EngageAndFaceTarget(SkillData skill, Entity target, int slot)
+    {
+        if (target != null
+            && skill.targetType != TargetType.Self
+            && skill.targetType != TargetType.AoE_Self
+            && skill.targetType != TargetType.GroundTarget
+            && skill.targetType != TargetType.Direction
+            && skill.targetType != TargetType.Skillshot
+            && skill.targetType != TargetType.Cone
+            && skill.effectType != SkillEffectType.Buff
+            && skill.effectType != SkillEffectType.Debuff)
+        {
+            if (slot == 0) TargetingSystem.Instance?.Engage(target);
+            else           TargetingSystem.Instance?.EngageFromSkill(target);
+
+            Vector3 faceDir = target.transform.position - _player.transform.position;
+            faceDir.y = 0f;
+            if (faceDir.sqrMagnitude > 0.001f)
+                _player.transform.rotation = Quaternion.LookRotation(faceDir);
+        }
+    }
+
     // ── Exécution ─────────────────────────────────────────────
     private void ExecuteSkill(SkillData skill, int slot, Entity target)
     {
@@ -654,28 +698,7 @@ public class SkillBar : MonoBehaviour
         // LineTarget — un buff n'est jamais hostile (ex: buffer un PNJ allié ne doit pas
         // déclencher l'auto-attaque dessus ensuite), et on peut débuff une cible sans pour
         // autant l'agresser (l'auto-attaque doit rester un choix explicite du joueur).
-        if (target != null
-            && skill.targetType != TargetType.Self
-            && skill.targetType != TargetType.AoE_Self
-            && skill.targetType != TargetType.GroundTarget
-            && skill.targetType != TargetType.Direction
-            && skill.targetType != TargetType.Skillshot
-            && skill.targetType != TargetType.Cone
-            && skill.effectType != SkillEffectType.Buff
-            && skill.effectType != SkillEffectType.Debuff)
-        {
-            if (slot == 0) TargetingSystem.Instance?.Engage(target);
-            else           TargetingSystem.Instance?.EngageFromSkill(target);
-
-            // Snap immédiat vers la cible — sinon l'anim (auto-attaque ou skill)
-            // peut jouer dans le mauvais sens si le perso n'était pas déjà orienté
-            // dessus (même pattern que Mob.LookAt/ResourceNode : rotation instantanée,
-            // pas de lissage, l'action doit partir orientée dès la 1ère frame).
-            Vector3 faceDir = target.transform.position - _player.transform.position;
-            faceDir.y = 0f;
-            if (faceDir.sqrMagnitude > 0.001f)
-                _player.transform.rotation = Quaternion.LookRotation(faceDir);
-        }
+        EngageAndFaceTarget(skill, target, slot);
 
         // GroundTarget — passe par TargetingSystem.TryExecuteSkill pour
         // le raycast sol au moment du cast (lancer rapide, position curseur).
