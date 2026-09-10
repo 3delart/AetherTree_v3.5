@@ -70,31 +70,35 @@ public class PlayerAnimatorController : MonoBehaviour
         _animator.SetBool(InCombatParam, _player != null && _player.CombatActive);
     }
 
-    /// <summary>
-    /// Joue l'animation d'un skill — échange le clip du state "Attack" réutilisable
-    /// puis relance ce state depuis le début. Appelé par Player.UseSkill().
-    /// Ne fait rien si le skill n'a pas d'attackAnimation assignée (ex: buff pur) ou si
-    /// le Controller n'est pas encore prêt.
-    /// </summary>
-    public void PlayAttack(AnimationClip clip)
+    private void PlayOverrideClip(AnimationClip clip)
     {
         if (clip == null || _overrideController == null || attackPlaceholderClip == null) return;
 
         // Indexation par référence au clip D'ORIGINE (attackPlaceholderClip), pas par nom
         // de state — voir le commentaire sur le champ ci-dessus.
         _overrideController[attackPlaceholderClip] = clip;
+
+        // Reset du trigger CancelAction avant de rejouer le state Attack — sinon un
+        // trigger posé par CancelChannel() qui n'a jamais trouvé de transition à
+        // consommer (ex: l'Animator était déjà revenu en locomotion) resterait en
+        // attente et se déclencherait au prochain re-entré dans Attack, coupant net
+        // un skill qui n'a rien à voir avec l'interrupt précédent.
+        _animator.ResetTrigger(CancelActionTrigger);
         _animator.Play(AttackState, 0, 0f);
     }
+
+    /// <summary>
+    /// Joue l'animation d'un skill — échange le clip du state "Attack" réutilisable
+    /// puis relance ce state depuis le début. Appelé par Player.UseSkill().
+    /// Ne fait rien si le skill n'a pas d'attackAnimation assignée (ex: buff pur) ou si
+    /// le Controller n'est pas encore prêt.
+    /// </summary>
+    public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip);
 
     /// <summary>Joue l'animation de canalisation d'un skill (castTime > 0) — même mécanisme
     /// d'échange que PlayAttack (override du state "Attack" réutilisable). Appelé par
     /// SkillBar.StartChannel().</summary>
-    public void PlayChannel(AnimationClip clip)
-    {
-        if (clip == null || _overrideController == null || attackPlaceholderClip == null) return;
-        _overrideController[attackPlaceholderClip] = clip;
-        _animator.Play(AttackState, 0, 0f);
-    }
+    public void PlayChannel(AnimationClip clip) => PlayOverrideClip(clip);
 
     /// <summary>Coupe net l'anim de canalisation en cours — déclenche le trigger qui force le
     /// retour à la locomotion, ne laisse jamais le clip jouer jusqu'au bout après un interrupt.

@@ -419,7 +419,7 @@ public class SkillBar : MonoBehaviour
 
         // Engage/orientation vers la cible au LANCEMENT, même principe "lancement pas
         // résolution" que BeginSkillUse ci-dessus (relecture Tâche 4, fix round 1).
-        EngageAndFaceTarget(skill, target, slot);
+        EngageAndFaceTarget(skill, slot, target);
 
         _player.SpendMana(GetEffectiveManaCost(skill));
         if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
@@ -428,7 +428,12 @@ public class SkillBar : MonoBehaviour
         _isChanneling    = true;
         _channelSkill    = skill;
         _channelSlot     = slot;
-        _channelTarget   = target;
+        // GroundTarget n'a jamais de vraie cible Entity (targetType.GroundTarget = zone au sol,
+        // pas une entité) — même si TryUseSlot a assigné `target` depuis la sélection courante,
+        // on le null ici : évite qu'un skill de zone résolve avec une cible non-pertinente
+        // (mauvaise position de VFX dans SkillSystem.Execute) et évite un faux-positif du poll
+        // d'interrupt "cible morte" si cette entité non-pertinente meurt pendant la canalisation.
+        _channelTarget   = skill.targetType == TargetType.GroundTarget ? null : target;
         _channelStartPos = _player.transform.position;
 
         // Résidu de vélocité NavMeshAgent (ex: hand-off depuis CheckApproach) qui pourrait
@@ -640,7 +645,26 @@ public class SkillBar : MonoBehaviour
     // ── Engage + orientation vers la cible ─────────────────────
     // Extrait d'ExecuteSkill() (fix round 1, Tâche 4) — partagé avec StartChannel() pour que
     // les skills canalisés engagent/s'orientent au LANCEMENT plutôt qu'à la résolution.
-    private void EngageAndFaceTarget(SkillData skill, Entity target, int slot)
+    /// <summary>
+    /// Engage la cible dans TargetingSystem — uniquement pour les skills qui ciblent une
+    /// Entity. Slot 0 (auto-attaque) et slots ≥ 1 (skills) n'ont PAS le même besoin ici :
+    ///  - Slot 0 : appelle Engage() SEUL (jamais Select()). Engage() ne touche jamais
+    ///    selectedTarget/TargetPanel, donc le rappeler à chaque tic est sans danger pour la
+    ///    sélection orange en cours — et c'est OBLIGATOIRE : l'attaque de base peut aussi
+    ///    partir d'un appui clavier sans être passée par le flow 2-clics de TargetingSystem,
+    ///    auquel cas engagedTarget/autoAttacking ne seraient jamais posés.
+    ///  - Slots ≥ 1 : EngageFromSkill() complet (Select + Engage) — un vrai skill doit aussi
+    ///    ramener le TargetPanel sur sa cible.
+    /// Buff/Debuff n'engagent JAMAIS le combat, même sur Target/AoE_Target/Dash_Target/
+    /// LineTarget — un buff n'est jamais hostile, et on peut débuff une cible sans pour
+    /// autant l'agresser (l'auto-attaque doit rester un choix explicite du joueur).
+    /// Snap immédiat vers la cible — sinon l'anim (auto-attaque ou skill) peut jouer dans le
+    /// mauvais sens si le perso n'était pas déjà orienté dessus (rotation instantanée, pas de
+    /// lissage, l'action doit partir orientée dès la 1ère frame). Appelé au clic (ExecuteSkill)
+    /// pour un skill instant, ou au LANCEMENT d'une canalisation (StartChannel) — jamais à la
+    /// résolution, l'engagement/l'orientation doivent être immédiats dans les deux cas.
+    /// </summary>
+    private void EngageAndFaceTarget(SkillData skill, int slot, Entity target)
     {
         if (target != null
             && skill.targetType != TargetType.Self
@@ -695,25 +719,9 @@ public class SkillBar : MonoBehaviour
         if (slot >= 1)
             _gcdTimer = GCD_DURATION;
 
-        // Engage la cible dans TargetingSystem — uniquement pour les skills qui
-        // ciblent une Entity. Slot 0 (auto-attaque) et slots ≥ 1 (skills) n'ont PAS
-        // le même besoin ici :
-        //  - Slot 0 : appelle Engage() SEUL (jamais Select()). Engage() ne touche
-        //    jamais selectedTarget/TargetPanel (voir TargetingSystem.Engage), donc
-        //    le rappeler à chaque tic est sans danger pour la sélection orange en
-        //    cours — et c'est OBLIGATOIRE : l'attaque de base peut aussi partir
-        //    d'un appui clavier (slot 1, SkillBar.Update → GetSkillSlotPressed)
-        //    sans être passée par le flow 2-clics de TargetingSystem, auquel cas
-        //    engagedTarget/autoAttacking ne seraient jamais posés — un seul coup
-        //    partirait puis plus rien, TickAutoAttack() ne prenant jamais le relais
-        //    (son 1er garde-fou est `!autoAttacking || engagedTarget == null`).
-        //  - Slots ≥ 1 : EngageFromSkill() complet (Select + Engage) — un vrai
-        //    skill doit aussi ramener le TargetPanel sur sa cible.
-        // Buff/Debuff n'engagent JAMAIS le combat, même sur Target/AoE_Target/Dash_Target/
-        // LineTarget — un buff n'est jamais hostile (ex: buffer un PNJ allié ne doit pas
-        // déclencher l'auto-attaque dessus ensuite), et on peut débuff une cible sans pour
-        // autant l'agresser (l'auto-attaque doit rester un choix explicite du joueur).
-        EngageAndFaceTarget(skill, target, slot);
+        // Engage la cible + oriente le caster — voir EngageAndFaceTarget() pour le détail
+        // slot 0 vs slots ≥ 1 / exclusion Buff-Debuff.
+        EngageAndFaceTarget(skill, slot, target);
 
         // GroundTarget — passe par TargetingSystem.TryExecuteSkill pour
         // le raycast sol au moment du cast (lancer rapide, position curseur).

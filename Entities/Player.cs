@@ -1090,16 +1090,19 @@ public class Player : Entity
     {
         if (skill == null) return;
 
-        // castTime 0 : comportement inchangé, tout arrive ici au même instant qu'avant.
-        // castTime > 0 : BeginSkillUse() déjà appelé par SkillBar.StartChannel() au clic —
-        // combat/AFK/Stealth ne doivent pas attendre la résolution. PlayAttack ignorée ici :
-        // PlayChannel() a déjà joué l'anim de canalisation au lancement, la rejouer
-        // écraserait le clip en cours (ou son retour à la locomotion) à la résolution.
+        // BeginSkillUse() toujours appelée ici, inconditionnellement — idempotente (revérifie
+        // juste un état déjà posé, sans effet si déjà fait). Nécessaire : SkillBar.StartChannel()
+        // l'appelle déjà au lancement pour le chemin normal d'une canalisation, MAIS d'autres
+        // chemins existants (steps de combo dans SkillBar.TryAdvanceCombo, skillToCast d'un
+        // effet passif dans PassiveSkillSystem) appellent SkillSystem.Execute() directement
+        // sans jamais passer par StartChannel — un skill castTime>0 lancé par l'un de ces
+        // chemins perdrait silencieusement combat-entry/AFK-clear/Stealth-break sans cet appel
+        // inconditionnel. PlayAttack reste conditionnelle : pour une canalisation, PlayChannel()
+        // a déjà joué l'anim au lancement, la rejouer ici écraserait le clip en cours (ou son
+        // retour à la locomotion) à la résolution.
+        BeginSkillUse(skill);
         if (skill.castTime <= 0f)
-        {
-            BeginSkillUse(skill);
             animatorController?.PlayAttack(skill.attackAnimation);
-        }
 
         bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
 

@@ -298,9 +298,13 @@ public class SkillData : ScriptableObject
         // pourquoi son skill ne canalise pas.
         if (castTime > 0f && executionType != SkillExecutionType.Normal)
             Debug.LogWarning($"[SkillData:{name}] castTime > 0 avec executionType = {executionType} — " +
-                              "combinaison non gérée, la canalisation sera ignorée (Combo/MultiHit " +
-                              "prennent la main). Remets executionType à Normal si ce skill doit " +
-                              "canaliser.", this);
+                              "combinaison non recommandée. Avec ComboSequence, le combo prend la " +
+                              "main et castTime est totalement ignoré (le skill ne canalise jamais). " +
+                              "Avec MultiHit, le skill canalise normalement puis exécute sa séquence " +
+                              "de hits à la résolution, MAIS la convention de cooldown différé du " +
+                              "MultiHit n'est pas respectée dans ce cas (le CD de canalisation prend " +
+                              "le dessus). Remets executionType à Normal si ce skill doit canaliser " +
+                              "proprement.", this);
     }
 #endif
 }
