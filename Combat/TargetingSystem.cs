@@ -364,6 +364,14 @@ public class TargetingSystem : MonoBehaviour
         TargetPanel.Instance?.Show(entity);
     }
 
+    /// <summary>Repousse le prochain tick d'auto-attaque d'au moins `seconds` — appelé par
+    /// SkillBar à chaque usage de skill actif (mêmes points que le GCD), pour empêcher
+    /// l'auto-attaque de se déclencher dans la même frame/juste après un skill (retard
+    /// insuffisant avec une simple marge sur Engage() — voir historique). Mathf.Max : ne
+    /// raccourcit jamais un délai déjà plus long.</summary>
+    public void DelayAutoAttack(float seconds)
+        => autoAttackTimer = Mathf.Max(autoAttackTimer, seconds);
+
     public void Engage(Entity entity)
     {
         if (entity == null) return;

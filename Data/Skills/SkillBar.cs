@@ -482,7 +482,11 @@ public class SkillBar : MonoBehaviour
 
         SkillSystem.Instance?.Execute(skill, _player, target);
         _cooldownTimers[slot] = skill.cooldown;
-        if (slot >= 1) _gcdTimer = GCD_DURATION;
+        if (slot >= 1)
+        {
+            _gcdTimer = GCD_DURATION;
+            TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+        }
     }
 
     /// <summary>voluntary = true (mouvement OU cible morte — ni un choix punitif du joueur ni
@@ -500,7 +504,11 @@ public class SkillBar : MonoBehaviour
         _player.AnimatorController?.CancelChannel();
 
         _cooldownTimers[slot] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
-        if (slot >= 1) _gcdTimer = GCD_DURATION;
+        if (slot >= 1)
+        {
+            _gcdTimer = GCD_DURATION;
+            TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+        }
 
         Debug.Log($"[SKILLBAR] Canalisation interrompue ({reason}) — CD {_cooldownTimers[slot]:F2}s.");
     }
@@ -566,7 +574,11 @@ public class SkillBar : MonoBehaviour
             // Dernier step complété — CD sur le slot + reset
             Debug.Log($"[SKILLBAR] Combo terminé sur slot {slot}.");
             _cooldownTimers[slot] = _comboSkill.cooldown;
-            if (slot >= 1) _gcdTimer = GCD_DURATION;
+            if (slot >= 1)
+            {
+                _gcdTimer = GCD_DURATION;
+                TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+            }
             ResetCombo();
             SkillBarUI.Instance?.RefreshSlot(slot);
         }
@@ -716,8 +728,14 @@ public class SkillBar : MonoBehaviour
         // ── GCD §8.7 ──────────────────────────────────────────
         // Un actif ou l'ultime (slots 1-9) déclenche le GCD global sur tous les slots 1-9.
         // Le slot 0 (BasicAttack) ne déclenche PAS de GCD — son CD vient de skill.cooldown.
+        // Repousse aussi le prochain tick d'auto-attaque (TargetingSystem) — sinon elle peut
+        // se déclencher dans la même frame/juste après le skill (Engage()/EngageFromSkill
+        // remet son propre timer à un état qui ne suffit pas à l'empêcher, voir historique).
         if (slot >= 1)
+        {
             _gcdTimer = GCD_DURATION;
+            TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+        }
 
         // Engage la cible + oriente le caster — voir EngageAndFaceTarget() pour le détail
         // slot 0 vs slots ≥ 1 / exclusion Buff-Debuff.
