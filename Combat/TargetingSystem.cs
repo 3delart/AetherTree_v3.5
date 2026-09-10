@@ -122,7 +122,7 @@ public class TargetingSystem : MonoBehaviour
         {
             return;
         }
-        if (SkillBar.Instance != null && (SkillBar.Instance.IsApproachingSkill || SkillBar.Instance.IsChanneling || SkillBar.Instance.IsComboActive))
+        if (SkillBar.Instance != null && (SkillBar.Instance.IsApproachingSkill || SkillBar.Instance.IsChanneling || SkillBar.Instance.IsComboActive || SkillBar.Instance.IsPendingHit || SkillBar.Instance.IsPendingMultiHit))
         {
             return;
         }
@@ -149,7 +149,7 @@ public class TargetingSystem : MonoBehaviour
                 return;
             }
             // À portée — l'auto-attaque ne touche jamais au TargetPanel/à la sélection,
-            // même à l'arrivée : seul un vrai skill (slot ≥ 1, voir SkillBar.ExecuteSkill)
+            // même à l'arrivée : seul un vrai skill (slot ≥ 1, voir SkillBar.LaunchSkill)
             // justifie de reprendre la main dessus.
             if (_agent != null && _agent.hasPath) _agent.ResetPath();
         }

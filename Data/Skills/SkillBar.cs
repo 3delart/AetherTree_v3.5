@@ -53,12 +53,6 @@ public class SkillBar : MonoBehaviour
     // Durée = somme des delays du hitSteps. Alimenté par LockForMultiHit().
     private float _multiHitLockTimer = 0f;
 
-    // Cooldown du skill MultiHit — posé à la FIN du lock (skill.cooldown mesuré depuis
-    // la fin de l'exécution, pas depuis le cast) plutôt qu'immédiatement dans ExecuteSkill().
-    // Sinon un CD de 6s sur un skill qui dure 5s ne laisse qu'1s de vrai temps mort.
-    private int       _multiHitCooldownSlot  = -1;
-    private SkillData _multiHitCooldownSkill = null;
-
     // Bloque le déplacement joueur pendant un MultiHit (immobile le temps du combo).
     // ComboSequence n'utilise PAS ce lock — on peut se déplacer entre deux sorts du combo.
     public bool IsMultiHitLocked => _multiHitLockTimer > 0f;
@@ -80,7 +74,10 @@ public class SkillBar : MonoBehaviour
 
     // ── Combo séquentiel (Méthode 2) ──────────────────────────
     // Un seul combo actif à la fois — le slot qui a initié le combo.
-    // _comboStep    : index du prochain step à exécuter (0 = pas de combo actif)
+    // _comboStep    : index du prochain step à exécuter (0 = parent en attente de résolution
+    //                 OU pas de combo actif — voir _comboSlot pour distinguer les deux ; il
+    //                 existe une brève fenêtre entre le lancement du parent et sa résolution où
+    //                 un combo EST actif avec _comboStep == 0)
     // _comboSlot    : slot SkillBar qui porte le combo en cours (-1 = aucun)
     // _comboTimer   : temps restant avant expiration de la fenêtre
     // _comboSkill   : le SkillData racine du combo (pour accéder aux comboSteps)
@@ -156,14 +153,6 @@ public class SkillBar : MonoBehaviour
         if (_multiHitLockTimer > 0f)
         {
             _multiHitLockTimer -= Time.deltaTime;
-            if (_multiHitLockTimer <= 0f && _multiHitCooldownSlot >= 0)
-            {
-                // Le MultiHit vient de finir — le cooldown démarre maintenant, pas au cast.
-                _cooldownTimers[_multiHitCooldownSlot] = _multiHitCooldownSkill != null ? _multiHitCooldownSkill.cooldown : 0f;
-                Debug.Log($"[SKILLBAR] MultiHit terminé — cooldown {_cooldownTimers[_multiHitCooldownSlot]:F2}s démarré sur slot {_multiHitCooldownSlot}.");
-                _multiHitCooldownSlot  = -1;
-                _multiHitCooldownSkill = null;
-            }
         }
 
         // ── Poll canalisation (CC / Silence / mouvement / cible morte) ──
@@ -204,7 +193,15 @@ public class SkillBar : MonoBehaviour
             _comboStepCooldown -= Time.deltaTime;
 
         // ── Timer combo séquentiel ────────────────────────────
-        if (_comboSlot >= 0 && _comboTimer > 0f)
+        // Gelé tant que le coup courant de CE combo est en attente de résolution (chantier B)
+        // — sinon un appui fait juste avant l'expiration voit son combo expirer/reset PENDANT
+        // que son propre coup joue encore, et ResolveInstant() repost un CD non pertinent
+        // par-dessus quand le coup résout (le combo n'est plus "actif" à ce moment-là). Un CC
+        // dur qui atterrit pendant ce même coup ne doit pas non plus interrompre un combo dont
+        // le coup en cours va de toute façon résoudre (même règle de non-interruptibilité que
+        // Normal/MultiHit une fois lancés).
+        bool comboHitPending = IsPendingHit && _pendingHitSlot == _comboSlot;
+        if (_comboSlot >= 0 && _comboTimer > 0f && !comboHitPending)
         {
             var fx = _player.statusEffects;
             bool hardCC = fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed
@@ -564,7 +561,16 @@ public class SkillBar : MonoBehaviour
     private void ResolveMultiHitIndex(int index)
     {
         if (_pendingMultiSlot == -1) return;
-        if (index != _pendingMultiNextIndex) return;   // mauvais index (event hors séquence) — ignore
+        if (index != _pendingMultiNextIndex)
+        {
+            // Event mal numéroté sur le clip (Animation window) — le plus probable étant un
+            // hitIndex qui démarre à 1 au lieu de 0. Averti explicitement car sinon ce cas est
+            // un no-op parfaitement silencieux : la séquence ne progresse plus jusqu'au
+            // timeout, qui résout alors tous les coups restants d'un coup, sans que rien
+            // n'explique pourquoi dans la Console.
+            Debug.LogWarning($"[SKILLBAR] Animation Event MultiHit reçu avec hitIndex={index}, attendu={_pendingMultiNextIndex} — event mal numéroté sur le clip ?");
+            return;
+        }
 
         SkillSystem.Instance?.ResolveMultiHitStep(_pendingMultiSkill, _player, _pendingMultiTarget, index);
         _pendingMultiNextIndex++;
@@ -752,6 +758,13 @@ public class SkillBar : MonoBehaviour
         // Délai minimum entre deux steps pas encore écoulé — ignore l'appui (inchangé)
         if (_comboStepCooldown > 0f) return true;
 
+        // Garde-fou : _comboStep peut valoir 0 entre le lancement du parent et sa résolution
+        // (fenêtre active mais aucun comboSteps[] encore "next") — un appui qui arriverait ici
+        // dans cette fenêtre ne doit pas indexer comboSteps[-1]. Ne devrait normalement jamais
+        // arriver (TryUseSlot bloque tout nouveau lancement tant qu'un hit est en attente),
+        // mais la méthode doit rester sûre sans dépendre d'un verrou posé ailleurs.
+        if (_comboStep < 1) return true;
+
         int stepIndex = _comboStep - 1;
         SkillData stepSkill = _comboSkill.comboSteps[stepIndex];
         if (stepSkill == null) { ResetCombo(); return true; }
@@ -868,6 +881,13 @@ public class SkillBar : MonoBehaviour
 
         if (dist <= range)
         {
+            // Un hit en attente de résolution (Normal/MultiHit/Combo-step, chantier B) doit
+            // résoudre avant qu'on livre l'approche — sinon LaunchSkill()/TryAdvanceCombo()
+            // écraseraient silencieusement _pendingHit*/_pendingMulti* d'un autre skill encore
+            // en vol. On NE cancel PAS l'approche : elle réessaiera à la frame suivante une
+            // fois le hit en cours résolu.
+            if (IsPendingHit || IsPendingMultiHit) return;
+
             if (_agent != null) _agent.ResetPath();
             // TryAdvanceCombo AVANT LaunchSkill — même pattern que TryUseSlot(). Sans ce check,
             // un combo (ComboSequence) lancé hors de portée sautait toute la logique combo à

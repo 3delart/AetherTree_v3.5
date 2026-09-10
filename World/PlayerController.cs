@@ -60,7 +60,7 @@ public class PlayerController : MonoBehaviour
 
         // MultiHit en cours — immobile le temps du combo (ComboSequence exclu,
         // on peut se déplacer entre deux sorts d'un ComboSequence).
-        if (SkillBar.Instance != null && SkillBar.Instance.IsMultiHitLocked)
+        if (SkillBar.Instance != null && (SkillBar.Instance.IsMultiHitLocked || SkillBar.Instance.IsPendingMultiHit))
         {
             if (_agent.hasPath) _agent.ResetPath();
             return;
