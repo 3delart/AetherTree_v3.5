@@ -577,7 +577,12 @@ public class SkillBar : MonoBehaviour
             if (slot >= 1)
             {
                 _gcdTimer = GCD_DURATION;
-                TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+                // Durée basée sur l'anim du DERNIER step (celle qui vient de jouer), pas celle
+                // du parent — même raison que dans ExecuteSkill.
+                float autoAttackDelay = stepSkill.attackAnimation != null
+                    ? Mathf.Max(GCD_DURATION, stepSkill.attackAnimation.length)
+                    : GCD_DURATION;
+                TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
             }
             ResetCombo();
             SkillBarUI.Instance?.RefreshSlot(slot);
@@ -731,10 +736,16 @@ public class SkillBar : MonoBehaviour
         // Repousse aussi le prochain tick d'auto-attaque (TargetingSystem) — sinon elle peut
         // se déclencher dans la même frame/juste après le skill (Engage()/EngageFromSkill
         // remet son propre timer à un état qui ne suffit pas à l'empêcher, voir historique).
+        // Durée = la plus longue entre le GCD et l'anim qui vient d'être lancée (PlayAttack,
+        // via player.UseSkill plus haut) — sinon une anim de skill > 1s se ferait couper par
+        // l'auto-attaque avant sa fin.
         if (slot >= 1)
         {
             _gcdTimer = GCD_DURATION;
-            TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+            float autoAttackDelay = skill.attackAnimation != null
+                ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
+                : GCD_DURATION;
+            TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
         }
 
         // Engage la cible + oriente le caster — voir EngageAndFaceTarget() pour le détail
