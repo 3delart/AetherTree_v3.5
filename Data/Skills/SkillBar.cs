@@ -103,6 +103,23 @@ public class SkillBar : MonoBehaviour
     private Vector3   _channelStartPos   = Vector3.zero;
     private float     _channelStartTime  = 0f;   // Time.time au lancement — pour l'overlay CD de la SkillBarUI
 
+    // ── Attente de résolution (Normal / step de Combo castTime 0) — chantier B ────────────
+    private int       _pendingHitSlot    = -1;
+    private SkillData _pendingHitSkill   = null;
+    private Entity    _pendingHitTarget  = null;
+    private float     _pendingHitTimeout = 0f;
+
+    public bool IsPendingHit => _pendingHitSlot >= 0;
+
+    // ── Attente de résolution (MultiHit — séquence d'index) — chantier B ──────────────────
+    private int       _pendingMultiSlot      = -1;
+    private SkillData _pendingMultiSkill     = null;
+    private Entity    _pendingMultiTarget    = null;
+    private int       _pendingMultiNextIndex = 0;
+    private float     _pendingMultiTimeout   = 0f;
+
+    public bool IsPendingMultiHit => _pendingMultiSlot >= 0;
+
     public bool IsChanneling => _isChanneling;
 
     /// <summary>True pendant la fenêtre d'attente d'un ComboSequence (entre deux appuis) —
@@ -169,6 +186,18 @@ public class SkillBar : MonoBehaviour
                 if (moved > CHANNEL_CANCEL_MOVE_THRESHOLD)
                     InterruptChannel(voluntary: true, reason: "mouvement");
             }
+        }
+
+        // ── Attente de résolution (chantier B) ─────────────────
+        if (_pendingHitSlot != -1)
+        {
+            _pendingHitTimeout -= Time.deltaTime;
+            if (_pendingHitTimeout <= 0f) ResolveInstant();
+        }
+        if (_pendingMultiSlot != -1)
+        {
+            _pendingMultiTimeout -= Time.deltaTime;
+            if (_pendingMultiTimeout <= 0f) ResolveMultiHitIndex(_pendingMultiNextIndex);
         }
 
         if (_comboStepCooldown > 0f)
@@ -289,8 +318,11 @@ public class SkillBar : MonoBehaviour
         }
 
         // ── Vérification GCD & locks ──────────────────────────
-        // MultiHit ou canalisation en cours → tous les slots bloqués sans exception
-        if (_multiHitLockTimer > 0f || _isChanneling)
+        // MultiHit, canalisation, ou hit en attente de résolution (chantier B) → tous les
+        // slots bloqués sans exception. Nécessaire : tous les skills partagent le MÊME state
+        // Animator "Attack" — lancer un 2e skill pendant que le 1er attend encore son event
+        // écraserait le clip en cours, et l'event du 1er ne tomberait jamais.
+        if (_multiHitLockTimer > 0f || _isChanneling || IsPendingHit || IsPendingMultiHit)
         {
             return false;
         }
@@ -422,8 +454,139 @@ public class SkillBar : MonoBehaviour
     // directement depuis un autre endroit, sinon castTime > 0 serait contourné.
     private void LaunchSkill(SkillData skill, int slot, Entity target)
     {
-        if (skill.castTime > 0f) StartChannel(skill, slot, target);
-        else                     ExecuteSkill(skill, slot, target);
+        if (skill.castTime > 0f)
+            StartChannel(skill, slot, target);
+        else if (skill.executionType == SkillExecutionType.MultiHit
+                 && skill.hitSteps != null && skill.hitSteps.Count > 0)
+            StartMultiHit(skill, slot, target);
+        else
+            StartInstant(skill, slot, target);
+    }
+
+    // ── Normal / Combo-step (chantier B) ───────────────────────
+    private void StartInstant(SkillData skill, int slot, Entity target)
+    {
+        _player.BeginSkillUse(skill);
+        EngageAndFaceTarget(skill, slot, target);
+
+        _player.SpendMana(GetEffectiveManaCost(skill));
+        if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
+        if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
+
+        _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+
+        if (skill.targetType == TargetType.GroundTarget)
+        {
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
+                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
+        }
+
+        _pendingHitSlot    = slot;
+        _pendingHitSkill   = skill;
+        // GroundTarget n'a jamais de vraie cible Entity — même correction que StartChannel()
+        // (chantier A) : sinon ResolveExecute()/le placement VFX utiliserait la position d'une
+        // entité non-pertinente au lieu du point au sol.
+        _pendingHitTarget  = skill.targetType == TargetType.GroundTarget ? null : target;
+        _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+
+        if (_pendingHitTimeout <= 0f)
+            ResolveInstant();   // pas d'anim → rien à attendre, résout tout de suite
+    }
+
+    private void ResolveInstant()
+    {
+        if (_pendingHitSlot == -1) return;   // déjà résolu (event ET timeout se sont chevauchés)
+
+        SkillData skill  = _pendingHitSkill;
+        int       slot   = _pendingHitSlot;
+        Entity    target = _pendingHitTarget;
+
+        _pendingHitSlot    = -1;
+        _pendingHitSkill   = null;
+        _pendingHitTarget  = null;
+        _pendingHitTimeout = 0f;
+
+        SkillSystem.Instance?.ResolveExecute(skill, _player, target);
+
+        _cooldownTimers[slot] = skill.cooldown;
+        if (slot >= 1)
+        {
+            _gcdTimer = GCD_DURATION;
+            float autoAttackDelay = skill.attackAnimation != null
+                ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
+                : GCD_DURATION;
+            TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
+        }
+    }
+
+    // ── MultiHit (chantier B) ──────────────────────────────────
+    private void StartMultiHit(SkillData skill, int slot, Entity target)
+    {
+        _player.BeginSkillUse(skill);
+        EngageAndFaceTarget(skill, slot, target);
+
+        _player.SpendMana(GetEffectiveManaCost(skill));
+        if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
+        if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
+
+        _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+
+        if (skill.targetType == TargetType.GroundTarget)
+        {
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
+                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
+        }
+
+        _pendingMultiSlot      = slot;
+        _pendingMultiSkill     = skill;
+        // GroundTarget n'a jamais de vraie cible Entity — même raison que StartInstant() :
+        // sinon ResolveMultiHitStep()/le placement VFX par step utiliserait la position d'une
+        // entité non-pertinente au lieu du point au sol (raycasté juste au-dessus).
+        _pendingMultiTarget    = skill.targetType == TargetType.GroundTarget ? null : target;
+        _pendingMultiNextIndex = 0;
+        _pendingMultiTimeout   = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+
+        if (_pendingMultiTimeout <= 0f)
+            ResolveMultiHitIndex(0);   // pas d'anim → résout tout enchaîné immédiatement
+    }
+
+    private void ResolveMultiHitIndex(int index)
+    {
+        if (_pendingMultiSlot == -1) return;
+        if (index != _pendingMultiNextIndex) return;   // mauvais index (event hors séquence) — ignore
+
+        SkillSystem.Instance?.ResolveMultiHitStep(_pendingMultiSkill, _player, _pendingMultiTarget, index);
+        _pendingMultiNextIndex++;
+
+        int totalHits = 1 + (_pendingMultiSkill.hitSteps?.Count ?? 0);   // 1 (base) + N hitSteps
+        if (_pendingMultiNextIndex >= totalHits)
+        {
+            int slot = _pendingMultiSlot;
+            SkillData skill = _pendingMultiSkill;
+
+            _pendingMultiSlot    = -1;
+            _pendingMultiSkill   = null;
+            _pendingMultiTarget  = null;
+            _pendingMultiTimeout = 0f;
+
+            _cooldownTimers[slot] = skill.cooldown;
+            if (slot >= 1)
+            {
+                _gcdTimer = GCD_DURATION;
+                float autoAttackDelay = skill.attackAnimation != null
+                    ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
+                    : GCD_DURATION;
+                TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
+            }
+        }
+        else if (_pendingMultiTimeout <= 0f)
+        {
+            // Pas d'anim du tout — enchaîne immédiatement le hit suivant plutôt que d'attendre
+            // un event qui ne viendra jamais.
+            ResolveMultiHitIndex(_pendingMultiNextIndex);
+        }
     }
 
     private void StartChannel(SkillData skill, int slot, Entity target)
