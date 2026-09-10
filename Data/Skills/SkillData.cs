@@ -214,6 +214,12 @@ public class SkillData : ScriptableObject
              "ce champ part du côté visuel, pas gameplay.")]
     public AnimationClip attackAnimation;
 
+    [Tooltip("Animation jouée PENDANT la canalisation (castTime > 0) — boucle ou étirée sur\n" +
+             "castTime secondes. Distincte de attackAnimation (jouée sur les skills castTime 0).\n" +
+             "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
+    [ShowIf(nameof(HasCastTime))]
+    public AnimationClip channelAnimation;
+
     // ── Helpers ───────────────────────────────────────────────
 
     /// <summary>True si le skill n'a aucun élément — pas de dégâts élémentaires.</summary>
@@ -221,6 +227,12 @@ public class SkillData : ScriptableObject
 
     /// <summary>True si le skill a 2 éléments ou plus (combo élémentaire).</summary>
     public bool IsCombo => elements != null && elements.Count >= 2;
+
+    /// <summary>True si ce skill a un temps de canalisation — condition calculée pour ShowIf,
+    /// même pattern que IsNeutral/IsCombo. ShowIfAttribute (Utils/ShowIfAttribute.cs) ne
+    /// compare QUE par égalité sur une liste de valeurs discrètes — pas d'opérateur
+    /// d'inégalité disponible sur un float, ce helper bool est la seule voie.</summary>
+    public bool HasCastTime => castTime > 0f;
 
     /// <summary>Élément principal du skill. Neutral si aucun élément défini.</summary>
     public ElementType PrimaryElement => IsNeutral ? ElementType.Neutral : elements[0];
@@ -286,6 +298,16 @@ public class SkillData : ScriptableObject
                                   $"des hitSteps, ou raccourcis/retime l'animation.", this);
             }
         }
+
+        // Une canalisation (castTime > 0) combinée à MultiHit/ComboSequence n'est pas gérée —
+        // TryAdvanceCombo() (SkillBar) prend la main avant le dispatch castTime, castTime est
+        // silencieusement ignoré. Avertit plutôt que de laisser un designer se demander
+        // pourquoi son skill ne canalise pas.
+        if (castTime > 0f && executionType != SkillExecutionType.Normal)
+            Debug.LogWarning($"[SkillData:{name}] castTime > 0 avec executionType = {executionType} — " +
+                              "combinaison non gérée, la canalisation sera ignorée (Combo/MultiHit " +
+                              "prennent la main). Remets executionType à Normal si ce skill doit " +
+                              "canaliser.", this);
     }
 #endif
 }
