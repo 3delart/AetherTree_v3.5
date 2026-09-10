@@ -93,7 +93,17 @@ if (castTime > 0f && executionType != SkillExecutionType.Normal)
                       "canaliser.", this);
 ```
 
-### 2. `SkillBar.cs` — nouvel état de canalisation
+### 2. `Entities/Player.cs` — accesseur public manquant
+
+`animatorController` (`Entities/Player.cs:193`) est **privé** — `SkillBar` ne peut pas y
+accéder tel quel. Ajouter une propriété en lecture seule, même convention que les autres
+accesseurs publics déjà présents sur `Player` (`IsAFK`, etc.) :
+
+```csharp
+public PlayerAnimatorController AnimatorController => animatorController;
+```
+
+### 3. `SkillBar.cs` — nouvel état de canalisation
 
 Nouveaux champs runtime (même zone que les champs MultiHit/Combo existants) :
 
@@ -169,7 +179,7 @@ private void StartChannel(SkillData skill, int slot, Entity target)
     _channelTarget   = target;
     _channelStartPos = _player.transform.position;
 
-    _player.animatorController?.PlayChannel(skill.channelAnimation);
+    _player.AnimatorController?.PlayChannel(skill.channelAnimation);
 
     // POINT D'EXTENSION CHANTIER B (voir section dédiée plus bas) : le déclencheur de
     // ResolveChannel() est ICI, et seulement ici. Chantier B remplacera onComplete par un
@@ -216,7 +226,7 @@ private void InterruptChannel(bool voluntary, string reason)
     EndChannelState();
 
     ProgressBarUI.Instance?.Cancel();
-    _player.animatorController?.CancelChannel();
+    _player.AnimatorController?.CancelChannel();
 
     _cooldownTimers[slot] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
     if (slot >= 1) _gcdTimer = GCD_DURATION;
@@ -264,7 +274,7 @@ if (_isChanneling)
 }
 ```
 
-### 3. Combo — interruption CC de la fenêtre d'attente
+### 4. Combo — interruption CC de la fenêtre d'attente
 
 Dans le bloc `_comboSlot >= 0 && _comboTimer > 0f` existant (`SkillBar.Update()`, ligne
 131-141), ajouter le check CC AVANT le check d'expiration du timer — même conséquence
@@ -291,7 +301,7 @@ if (_comboSlot >= 0 && _comboTimer > 0f)
 }
 ```
 
-### 4. `PlayerAnimatorController.cs` — coupure nette de l'anim de canalisation
+### 5. `PlayerAnimatorController.cs` — coupure nette de l'anim de canalisation
 
 Réutilise le mécanisme `AnimatorOverrideController` déjà en place pour `PlayAttack()`
 (échange du clip du state "Attack" réutilisable) pour `PlayChannel()`.
@@ -407,6 +417,8 @@ bloqué en attente indéfiniment : prévoir un timeout de sécurité (ex: résou
 
 - `Data/Skills/SkillData.cs` — nouveau champ `channelAnimation`, nouveau helper
   `HasCastTime`, nouveau warning `OnValidate()` (castTime>0 + executionType≠Normal).
+- `Entities/Player.cs` — nouvelle propriété publique `AnimatorController` (le champ existant
+  `animatorController` est privé, `SkillBar` ne peut pas y accéder sans ça).
 - `Data/Skills/SkillBar.cs` — nouveaux champs canalisation, nouveau dispatcher `LaunchSkill()`
   utilisé par `TryUseSlot()` ET `CheckApproach()` (remplace les 2 appels directs à
   `ExecuteSkill()`), nouvelles méthodes `StartChannel`/`ResolveChannel`/`InterruptChannel`/
@@ -414,7 +426,7 @@ bloqué en attente indéfiniment : prévoir un timeout de sécurité (ex: résou
   combo existant.
 - `World/PlayerAnimatorController.cs` — nouvelles méthodes `PlayChannel`/`CancelChannel` +
   constante `CancelActionTrigger`. Nécessite aussi un ajout côté Editor (paramètre Trigger +
-  transition Any State dans l'Animator Controller, voir section 4).
+  transition Any State dans l'Animator Controller, voir section 5).
 
 Aucun changement dans `SkillSystem.cs`, `StatusEffectSystem.cs`, `ProgressBarUI.cs`,
 `ResourceNode.cs` — tous réutilisés tels quels.
