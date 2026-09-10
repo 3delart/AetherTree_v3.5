@@ -22,9 +22,10 @@ using UnityEngine.AI;
 [RequireComponent(typeof(Animator))]
 public class PlayerAnimatorController : MonoBehaviour
 {
-    private const string SpeedParam    = "Speed";
-    private const string InCombatParam = "InCombat";
-    private const string AttackState   = "Attack";
+    private const string SpeedParam       = "Speed";
+    private const string InCombatParam    = "InCombat";
+    private const string AttackState      = "Attack";
+    private const string CancelActionTrigger = "CancelAction";
 
     [Header("Attack (override)")]
     [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"Attack\" dans le\n" +
@@ -83,5 +84,24 @@ public class PlayerAnimatorController : MonoBehaviour
         // de state — voir le commentaire sur le champ ci-dessus.
         _overrideController[attackPlaceholderClip] = clip;
         _animator.Play(AttackState, 0, 0f);
+    }
+
+    /// <summary>Joue l'animation de canalisation d'un skill (castTime > 0) — même mécanisme
+    /// d'échange que PlayAttack (override du state "Attack" réutilisable). Appelé par
+    /// SkillBar.StartChannel().</summary>
+    public void PlayChannel(AnimationClip clip)
+    {
+        if (clip == null || _overrideController == null || attackPlaceholderClip == null) return;
+        _overrideController[attackPlaceholderClip] = clip;
+        _animator.Play(AttackState, 0, 0f);
+    }
+
+    /// <summary>Coupe net l'anim de canalisation en cours — déclenche le trigger qui force le
+    /// retour à la locomotion, ne laisse jamais le clip jouer jusqu'au bout après un interrupt.
+    /// Appelé par SkillBar.InterruptChannel().</summary>
+    public void CancelChannel()
+    {
+        if (_animator == null) return;
+        _animator.SetTrigger(CancelActionTrigger);
     }
 }
