@@ -368,6 +368,12 @@ public class TargetingSystem : MonoBehaviour
     {
         if (entity == null) return;
 
+        // Nouvelle cible seulement si elle change vraiment, ou si on n'auto-attaquait pas
+        // encore — sinon un skill actif utilisé sur la cible DÉJÀ engagée rappelle Engage()
+        // (via EngageFromSkill) et remettait le timer à 0 à chaque fois, déclenchant une
+        // attaque de base gratuite la frame suivante en plus des dégâts du skill.
+        bool isNewEngagement = engagedTarget != entity || !autoAttacking;
+
         if (engagedOutline != null)
             engagedOutline.OutlineColor = colorSelected;
 
@@ -378,8 +384,8 @@ public class TargetingSystem : MonoBehaviour
         engagedOutline.OutlineWidth = 4f;
         engagedOutline.enabled      = true;
 
-        autoAttacking   = true;
-        autoAttackTimer = 0f;
+        autoAttacking = true;
+        if (isNewEngagement) autoAttackTimer = 0f;
     }
 
     public void EngageFromSkill(Entity entity)
