@@ -394,12 +394,14 @@ public class TargetingSystem : MonoBehaviour
 
         autoAttacking = true;
         if (isNewEngagement)
-            // Pas 0f pile : si un skill vient d'engager cette cible (EngageFromSkill), l'ordre
-            // d'exécution Update() entre SkillBar et TargetingSystem n'est pas garanti par
-            // Unity — TickAutoAttack peut tourner APRÈS dans la même frame et voir le timer
-            // déjà à 0, déclenchant une attaque de base gratuite au même instant que les
-            // dégâts du skill. Marge courte (imperceptible) pour survivre à cette frame.
-            autoAttackTimer = 0.15f;
+            // Mathf.Max, PAS une assignation directe : ExecuteSkill() appelle DelayAutoAttack()
+            // (délai = GCD ou durée d'anim, potentiellement > 1s) AVANT EngageAndFaceTarget()
+            // → Engage() dans le même appel — une assignation directe ici écrasait ce délai
+            // plus long avec 0.15f à chaque fois, annulant le fix (bug vécu, retrouvé par
+            // Florian). 0.15f reste le plancher minimal pour un Engage() SANS DelayAutoAttack
+            // préalable (clic direct sur une nouvelle cible, ex: same-frame Update() entre
+            // SkillBar et TargetingSystem, ordre non garanti par Unity).
+            autoAttackTimer = Mathf.Max(autoAttackTimer, 0.15f);
     }
 
     public void EngageFromSkill(Entity entity)
