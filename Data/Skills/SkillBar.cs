@@ -725,7 +725,7 @@ public class SkillBar : MonoBehaviour
             // Premier appui — lance le skill PARENT (step 0) comme un hit en attente
             _comboSkill = skill;
             _comboSlot  = slot;
-            _comboStep  = 1; // prochain step une fois CE hit résolu
+            _comboStep  = 0; // AdvanceComboAfterHit() le portera à 1 quand CE hit (parent) résout
 
             LaunchComboHit(skill, slot, target);
             Debug.Log($"[SKILLBAR] Combo démarré — step 0 (parent), en attente de résolution.");
