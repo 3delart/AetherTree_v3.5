@@ -191,6 +191,7 @@ public class Player : Entity
     private ActivityCounter activityCounter;
     private ElementalSystem elementalSystem;
     private PlayerAnimatorController animatorController;
+    public PlayerAnimatorController AnimatorController => animatorController;
     private WeaponVisual             weaponVisual;
 
     // =========================================================
@@ -1053,13 +1054,18 @@ public class Player : Entity
     // SKILLS — usage
     // =========================================================
 
-    public void UseSkill(SkillData skill, Entity target = null)
+    /// <summary>Effets qui doivent réagir au LANCEMENT d'un skill, pas à sa résolution —
+    /// entrée en combat, clear AFK, Stealth-break. Appelée directement par UseSkill() pour les
+    /// skills instants (castTime 0, même frame qu'avant), et par SkillBar.StartChannel() pour
+    /// une canalisation (castTime > 0) — sinon un joueur furtif pourrait canaliser, annuler
+    /// volontairement, et rester invisible tout du long. Une fois cassé, le Stealth reste cassé
+    /// même si la canalisation est ensuite interrompue — pas de logique d'annulation ici.</summary>
+    public void BeginSkillUse(SkillData skill)
     {
         if (skill == null) return;
 
         lastSkillUsed = skill;
         RegisterCombatAction();
-        animatorController?.PlayAttack(skill.attackAnimation);
 
         bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
 
@@ -1078,6 +1084,28 @@ public class Player : Entity
         // révèle pas) — décision explicite Florian, même distinction que countsForAffinity.
         if (countsForAffinity && statusEffects != null && statusEffects.isStealthed)
             statusEffects.RemoveBuff(BuffType.Stealth);
+    }
+
+    public void UseSkill(SkillData skill, Entity target = null)
+    {
+        if (skill == null) return;
+
+        // castTime 0 : comportement inchangé, tout arrive ici au même instant qu'avant.
+        // castTime > 0 : BeginSkillUse() déjà appelé par SkillBar.StartChannel() au clic —
+        // combat/AFK/Stealth ne doivent pas attendre la résolution. PlayAttack ignorée ici :
+        // PlayChannel() a déjà joué l'anim de canalisation au lancement, la rejouer
+        // écraserait le clip en cours (ou son retour à la locomotion) à la résolution.
+        if (skill.castTime <= 0f)
+        {
+            BeginSkillUse(skill);
+            animatorController?.PlayAttack(skill.attackAnimation);
+        }
+
+        bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
+
+        // Buff/Debuff ne comptent PAS pour la fenêtre d'affinité — voir BeginSkillUse.
+        bool countsForAffinity = skill.effectType != SkillEffectType.Buff
+                               && skill.effectType != SkillEffectType.Debuff;
 
         if (countsForAffinity)
         {
