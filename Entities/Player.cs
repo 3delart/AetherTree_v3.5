@@ -1104,6 +1104,20 @@ public class Player : Entity
         if (skill.castTime <= 0f)
             animatorController?.PlayAttack(skill.attackAnimation);
 
+        ResolveSkillUse(skill, target);
+    }
+
+    /// <summary>Bookkeeping qui doit réagir à la RÉSOLUTION d'un skill (affinité élémentaire,
+    /// recalcul stats, titre) — jamais BeginSkillUse ni PlayAttack ici, les deux sont déjà
+    /// gérés au LANCEMENT par SkillBar (StartInstant/StartMultiHit/StartChannel/LaunchComboHit)
+    /// pour tout ce qui passe par le nouveau flux événementiel (chantier B). Appeler PlayAttack
+    /// ici referait démarrer l'anim "Attack" PAR-DESSUS elle-même juste après son propre
+    /// impact — même famille de bug que celui trouvé et corrigé sur la Canalisation au
+    /// chantier A.</summary>
+    public void ResolveSkillUse(SkillData skill, Entity target)
+    {
+        if (skill == null) return;
+
         bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
 
         // Buff/Debuff ne comptent PAS pour la fenêtre d'affinité — voir BeginSkillUse.
@@ -1112,9 +1126,6 @@ public class Player : Entity
 
         if (countsForAffinity)
         {
-            // Écart de niveau avec la cible — anti farm d'un mob hors de portée (trop faible ou
-            // trop fort) pour faire bouger l'affinité gratuitement. Pas de cible/PNJ (pas de
-            // niveau comparable) → pas de restriction, voir ElementalSystem.RegisterCast.
             int? targetLevel = target is Mob targetMob ? targetMob.mobLevel : (int?)null;
 
             if (!skill.IsNeutral)
@@ -1124,10 +1135,6 @@ public class Player : Entity
                 elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic, targetLevel: targetLevel);
         }
 
-        // RequestRecalculate() (pas juste stats.RecalculateStats()) — sinon le pass équipement
-        // tourne seul, SANS jamais relancer ReapplyActiveModifiers() après : un buff actif sur
-        // n'importe quelle stat se faisait effacer dès le skill suivant (attaque de base
-        // incluse), car son contenu n'était jamais réappliqué par-dessus le recalcul équipement.
         RequestRecalculate();
         RefreshTitle();
     }
