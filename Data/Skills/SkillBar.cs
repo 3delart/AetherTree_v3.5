@@ -557,7 +557,7 @@ public class SkillBar : MonoBehaviour
 
             _player.SpendMana(GetEffectiveManaCost(skill));
             SkillSystem.Instance?.Execute(skill, _player, target);
-            if (target != null) TargetingSystem.Instance?.EngageFromSkill(target);
+            EngageAndFaceTarget(skill, slot, target);
 
             // Ouvre la fenêtre combo — aucun lock sur les autres slots
             _comboTimer        = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
@@ -586,7 +586,7 @@ public class SkillBar : MonoBehaviour
 
         _player.SpendMana(GetEffectiveManaCost(stepSkill));
         SkillSystem.Instance?.Execute(stepSkill, _player, target);
-        if (target != null) TargetingSystem.Instance?.EngageFromSkill(target);
+        EngageAndFaceTarget(stepSkill, slot, target);
 
         _comboStep++;
 
