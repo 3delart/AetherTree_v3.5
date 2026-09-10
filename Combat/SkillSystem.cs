@@ -143,6 +143,108 @@ public class SkillSystem : MonoBehaviour
             AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
     }
 
+    /// <summary>Résout un skill DÉJÀ lancé par SkillBar (mana/anim/BeginSkillUse déjà faits au
+    /// lancement) — dispatch des dégâts/effets, event, VFX/Son, bookkeeping élémentaire.
+    /// JAMAIS d'appel à player.UseSkill()/BeginSkillUse()/PlayAttack ici, seulement
+    /// player.ResolveSkillUse() — sinon l'anim redémarrerait par-dessus elle-même juste après
+    /// son propre impact. DEUXIÈME écart volontaire avec Execute() : la branche MultiHit
+    /// d'Execute() (dispatch + StartCoroutine(ExecuteMultiHit)) est ENTIÈREMENT absente ici —
+    /// ResolveExecute() ne gère jamais un skill MultiHit, ce cas passe par
+    /// ResolveMultiHitStep() ci-dessous à la place, appelée directement par SkillBar au bon
+    /// index. Utilisée pour Normal/Combo-step côté joueur (chantier B) ; Mob/PNJ/passifs
+    /// restent sur Execute() (inchangée, ci-dessus, MultiHit inclus).</summary>
+    public void ResolveExecute(SkillData skill, Entity caster, Entity target)
+    {
+        if (skill == null || caster == null || caster.isDead) return;
+
+        if (caster.entityType == EntityType.Player && caster is Player player)
+        {
+            player.ResolveSkillUse(skill, target);
+
+            GameEventBus.Publish(new SkillUsedEvent
+            {
+                skill          = skill,
+                target         = target,
+                caster         = player,
+                primaryElement = skill.PrimaryElement,
+                isCombo        = skill.elements != null && skill.elements.Count >= 2,
+                locationID     = player.currentZoneID,
+                isInParty      = false,
+            });
+        }
+
+        if (target is Mob mobTarget && caster is Player attackerPlayer)
+            mobTarget.RegisterLastSkill(attackerPlayer, skill);
+
+        DispatchByTargetType(skill, caster, target);
+
+        if (skill.vfxPrefab != null)
+        {
+            Vector3 vfxPos = target != null
+                ? target.transform.position
+                : _groundTargetPoint ?? caster.transform.position;
+            Instantiate(skill.vfxPrefab, vfxPos, Quaternion.identity);
+        }
+        if (skill.soundEffect != null)
+            AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+    }
+
+    /// <summary>Résout UN hit précis d'un skill MultiHit (joueur uniquement, chantier B) —
+    /// hitIndex 0 = coup de base (dispatch standard, comme un skill à un seul coup), hitIndex
+    /// 1..N = hitSteps[hitIndex - 1] (même calcul que le corps de boucle d'ExecuteMultiHit,
+    /// un step résolu à la demande au lieu d'un foreach avec WaitForSeconds).</summary>
+    public void ResolveMultiHitStep(SkillData skill, Entity caster, Entity target, int hitIndex)
+    {
+        if (skill == null || caster == null || caster.isDead) return;
+
+        if (hitIndex == 0)
+        {
+            ResolveExecute(skill, caster, target);
+            return;
+        }
+
+        if (target == null || target.isDead) return;
+
+        int stepIndex = hitIndex - 1;
+        if (skill.hitSteps == null || stepIndex < 0 || stepIndex >= skill.hitSteps.Count) return;
+        HitStep step = skill.hitSteps[stepIndex];
+
+        float dmg = CalculateDamageForStep(step, skill, caster, target, out bool stepCrit);
+
+        if (target is Mob mobStep && caster is Player p)
+            mobStep.RegisterLastSkill(p, skill);
+
+        target.TakeDamage(dmg, step.element, caster);
+        ApplyOnHitDealtEffects(caster, target, dmg);
+
+        if (caster.entityType == EntityType.Player && caster is Player playerStep)
+        {
+            GameEventBus.Publish(new DamageDealtEvent
+            {
+                amount   = dmg,
+                element  = step.element,
+                source   = playerStep,
+                target   = target,
+                isCrit   = stepCrit,
+                isOneHit = target.isDead && dmg >= target.MaxHP,
+            });
+        }
+
+        Color textColor = caster.entityType == EntityType.Player ? Color.cyan : Color.red;
+        FloatingText.Spawn(Mathf.RoundToInt(dmg).ToString(), target.transform.position, textColor);
+
+        if (step.statusEffects != null)
+            foreach (var entry in step.statusEffects)
+                ApplyStatusEffectEntry(entry, caster, target);
+
+        GameObject vfx   = step.vfxPrefab  ?? skill.vfxPrefab;
+        AudioClip  sound = step.soundEffect ?? skill.soundEffect;
+        if (vfx   != null) Instantiate(vfx, target.transform.position, Quaternion.identity);
+        if (sound != null) AudioSource.PlayClipAtPoint(sound, caster.transform.position);
+
+        CheckKill(target);
+    }
+
     // =========================================================
     // DISPATCH PAR TARGET TYPE
     // =========================================================
