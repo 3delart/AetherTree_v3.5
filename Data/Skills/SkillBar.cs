@@ -816,6 +816,12 @@ public class SkillBar : MonoBehaviour
         if (_isChanneling && slot == _channelSlot && _channelSkill != null)
             return Mathf.Max(0f, _channelSkill.castTime - (Time.time - _channelStartTime));
 
+        // Délai minimum entre deux steps d'un combo (comboStepInterval) — même trou que la
+        // canalisation : _cooldownTimers reste à 0 tant que le combo n'est pas fini/expiré,
+        // donc sans ça le slot a l'air "dispo" alors que le prochain step ne l'est pas encore.
+        if (IsComboActive && slot == _comboSlot && _comboStepCooldown > 0f)
+            return _comboStepCooldown;
+
         // Slot 0 : CD individuel seulement (pas de GCD global sur la basic).
         // Slots 1-9 : max entre le CD individuel et le GCD restant.
         float individual = Mathf.Max(0f, _cooldownTimers[slot]);
@@ -829,6 +835,9 @@ public class SkillBar : MonoBehaviour
         if (slot < 0 || slot >= 10 || _slots[slot] == null) return 0f;
         if (_isChanneling && slot == _channelSlot && _channelSkill != null)
             return _channelSkill.castTime;
+
+        if (IsComboActive && slot == _comboSlot && _comboStepCooldown > 0f && _comboSkill != null)
+            return _comboSkill.comboStepInterval;
 
         // Slots 1-9 : si le GCD est plus long que le CD individuel, on base sur GCD_DURATION.
         // Slot 0 : toujours le cooldown de la BasicAttack équipée.
