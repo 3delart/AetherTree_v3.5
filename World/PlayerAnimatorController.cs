@@ -108,4 +108,14 @@ public class PlayerAnimatorController : MonoBehaviour
         if (_animator == null) return;
         _animator.SetTrigger(CancelActionTrigger);
     }
+
+    /// <summary>Appelé par Unity depuis un Animation Event posé sur le clip en cours de
+    /// lecture (state "Attack"). hitIndex : 0 par défaut (skills à un seul coup — Normal,
+    /// chaque step de Combo), ou l'index du hit pour un MultiHit (0 = coup de base, 1..N =
+    /// hitSteps). Relais pur — toute la logique de résolution vit dans SkillBar, qui possède
+    /// déjà tout l'état de lancement (slot, skill, target, verrous).</summary>
+    public void OnSkillHitFrame(int hitIndex = 0)
+    {
+        SkillBar.Instance?.OnAnimationHitEvent(hitIndex);
+    }
 }
