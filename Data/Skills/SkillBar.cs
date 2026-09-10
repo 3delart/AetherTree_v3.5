@@ -598,6 +598,17 @@ public class SkillBar : MonoBehaviour
         }
     }
 
+    /// <summary>Reçoit l'Animation Event relayé par PlayerAnimatorController.OnSkillHitFrame.
+    /// hitIndex ignoré pour un hit simple (Normal/Combo-step) — un seul en attente possible à
+    /// la fois. Pour un MultiHit, route vers l'index précis.</summary>
+    public void OnAnimationHitEvent(int hitIndex)
+    {
+        if (IsPendingHit)      { ResolveInstant(); return; }
+        if (IsPendingMultiHit) { ResolveMultiHitIndex(hitIndex); return; }
+        // Aucun hit en attente — event reçu hors contexte (anim jouée sans skill en attente,
+        // ou déjà résolu par le timeout juste avant). Ignoré silencieusement, pas une erreur.
+    }
+
     private void StartChannel(SkillData skill, int slot, Entity target)
     {
         // Combat/AFK/Stealth doivent réagir au LANCEMENT, pas à la résolution — voir Tâche 2
@@ -926,64 +937,6 @@ public class SkillBar : MonoBehaviour
         }
     }
 
-    // ── Exécution ─────────────────────────────────────────────
-    private void ExecuteSkill(SkillData skill, int slot, Entity target)
-    {
-        _player.SpendMana(GetEffectiveManaCost(skill));
-        if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
-        if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
-        // NOTE : Ne PAS appeler player.UseSkill() ici.
-        // SkillSystem.Execute() → player.UseSkill() s'en charge.
-        // Double appel = RegisterCast() élémentaire × 2 → affinité doublée.
-
-        // MultiHit avec hitSteps : le cooldown démarre à la FIN de l'exécution (posé dans
-        // Update() quand _multiHitLockTimer expire, voir LockForMultiHit()), pas ici au cast —
-        // sinon un CD de 6s sur un skill qui dure 5s ne laisse qu'1s de vrai temps mort.
-        // Repli sur le comportement immédiat si le skill est mal configuré (pas de hitSteps),
-        // pour ne jamais laisser un skill sans cooldown du tout.
-        bool deferToMultiHitEnd = skill.executionType == SkillExecutionType.MultiHit
-                                && skill.hitSteps != null && skill.hitSteps.Count > 0;
-        if (deferToMultiHitEnd)
-        {
-            _multiHitCooldownSlot  = slot;
-            _multiHitCooldownSkill = skill;
-        }
-        else
-        {
-            _cooldownTimers[slot] = skill.cooldown;
-        }
-
-        // ── GCD §8.7 ──────────────────────────────────────────
-        // Un actif ou l'ultime (slots 1-9) déclenche le GCD global sur tous les slots 1-9.
-        // Le slot 0 (BasicAttack) ne déclenche PAS de GCD — son CD vient de skill.cooldown.
-        // Repousse aussi le prochain tick d'auto-attaque (TargetingSystem) — sinon elle peut
-        // se déclencher dans la même frame/juste après le skill (Engage()/EngageFromSkill
-        // remet son propre timer à un état qui ne suffit pas à l'empêcher, voir historique).
-        // Durée = la plus longue entre le GCD et l'anim qui vient d'être lancée (PlayAttack,
-        // via player.UseSkill plus haut) — sinon une anim de skill > 1s se ferait couper par
-        // l'auto-attaque avant sa fin.
-        if (slot >= 1)
-        {
-            _gcdTimer = GCD_DURATION;
-            float autoAttackDelay = skill.attackAnimation != null
-                ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
-                : GCD_DURATION;
-            TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
-        }
-
-        // Engage la cible + oriente le caster — voir EngageAndFaceTarget() pour le détail
-        // slot 0 vs slots ≥ 1 / exclusion Buff-Debuff.
-        EngageAndFaceTarget(skill, slot, target);
-
-        // GroundTarget — passe par TargetingSystem.TryExecuteSkill pour
-        // le raycast sol au moment du cast (lancer rapide, position curseur).
-        // Tous les autres targetTypes passent directement par SkillSystem.Execute.
-        if (skill.targetType == TargetType.GroundTarget)
-            TargetingSystem.Instance?.TryExecuteSkill(skill);
-        else
-            SkillSystem.Instance?.Execute(skill, _player, target);
-    }
-
     // ── Portée par défaut selon arme ──────────────────────────
     private float GetDefaultRange()
     {
@@ -1017,6 +970,13 @@ public class SkillBar : MonoBehaviour
         if (IsComboActive && slot == _comboSlot && _comboStepCooldown > 0f)
             return _comboStepCooldown;
 
+        // Hit en attente de résolution (Normal/MultiHit/Combo-step, chantier B) — même trou :
+        // _cooldownTimers reste à 0 tant que l'event/timeout n'est pas tombé.
+        if (_pendingHitSlot == slot)
+            return Mathf.Max(0f, _pendingHitTimeout);
+        if (_pendingMultiSlot == slot)
+            return Mathf.Max(0f, _pendingMultiTimeout);
+
         // Slot 0 : CD individuel seulement (pas de GCD global sur la basic).
         // Slots 1-9 : max entre le CD individuel et le GCD restant.
         float individual = Mathf.Max(0f, _cooldownTimers[slot]);
@@ -1033,6 +993,11 @@ public class SkillBar : MonoBehaviour
 
         if (IsComboActive && slot == _comboSlot && _comboStepCooldown > 0f && _comboSkill != null)
             return _comboSkill.comboStepInterval;
+
+        if (_pendingHitSlot == slot && _pendingHitSkill != null && _pendingHitSkill.attackAnimation != null)
+            return _pendingHitSkill.attackAnimation.length;
+        if (_pendingMultiSlot == slot && _pendingMultiSkill != null && _pendingMultiSkill.attackAnimation != null)
+            return _pendingMultiSkill.attackAnimation.length;
 
         // Slots 1-9 : si le GCD est plus long que le CD individuel, on base sur GCD_DURATION.
         // Slot 0 : toujours le cooldown de la BasicAttack équipée.
