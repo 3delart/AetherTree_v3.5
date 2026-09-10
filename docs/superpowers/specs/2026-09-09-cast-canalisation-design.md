@@ -69,17 +69,16 @@ coroutine, barre world-space qui suit une cible (`followTarget`), `onComplete`/`
 [Tooltip("Animation jouée PENDANT la canalisation (castTime > 0) — boucle ou étirée sur\n" +
          "castTime secondes. Distincte de attackAnimation (jouée sur les skills castTime 0).\n" +
          "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
-[ShowIf(nameof(castTime), 0f, Invert = true)]  // voir note ShowIf ci-dessous
+[ShowIf(nameof(HasCastTime))]
 public AnimationClip channelAnimation;
-```
 
-Note : `ShowIfAttribute` actuel compare par égalité à des valeurs discrètes (enum), pas par
-inégalité sur un float. Si l'attribut ne supporte pas ce cas, condition de visibilité la plus
-simple à implémenter : `[ShowIf(nameof(HasCastTime))]` avec un helper
-`public bool HasCastTime => castTime > 0f;` — pattern déjà utilisé ailleurs dans le codebase
-pour des conditions calculées (voir `IsNeutral`/`IsCombo` juste en dessous dans le même
-fichier). Vérifier `Utils/ShowIfAttribute.cs` au moment de l'implémentation pour confirmer la
-signature exacte disponible.
+/// <summary>True si ce skill a un temps de canalisation — condition calculée pour ShowIf,
+/// même pattern que IsNeutral/IsCombo ci-dessous. ShowIfAttribute (Utils/ShowIfAttribute.cs)
+/// ne compare QUE par égalité sur une liste de valeurs discrètes (params object[] values) —
+/// pas d'opérateur d'inégalité disponible sur un float, confirmé en lisant le fichier —
+/// ce helper bool est donc la seule voie, pas une option parmi d'autres.</summary>
+public bool HasCastTime => castTime > 0f;
+```
 
 Nouveau warning dans `OnValidate()` (même bloc `#if UNITY_EDITOR` que le warning MultiHit
 existant, `SkillData.cs:259-289`) — évite qu'un designer configure un skill avec `castTime > 0`
@@ -295,9 +294,21 @@ if (_comboSlot >= 0 && _comboTimer > 0f)
 ### 4. `PlayerAnimatorController.cs` — coupure nette de l'anim de canalisation
 
 Réutilise le mécanisme `AnimatorOverrideController` déjà en place pour `PlayAttack()`
-(échange du clip du state "Attack" réutilisable). Deux nouvelles méthodes :
+(échange du clip du state "Attack" réutilisable) pour `PlayChannel()`.
+
+Pour `CancelChannel()` — vérifié dans `PlayerAnimatorController.cs` : AUCUN nom de state de
+locomotion n'existe en dur dans le code. `Speed`/`InCombat` pilotent un blend tree en continu
+(`Update()` les pousse à chaque frame quel que soit le state actif) — le graphe Animator gère
+lui-même les transitions vers/depuis la locomotion, jamais un `_animator.Play("NomDeState")`
+explicite dans le code actuel. Deviner un nom de state serait fragile (renommage du state dans
+l'Editor = code cassé silencieusement). Solution robuste, zéro nom à connaître côté code : un
+**Trigger Animator**, même pattern que `IsMoving` déjà utilisé sur le Spirit Companion cette
+session — transition "Any State → locomotion" dans le Controller, **Has Exit Time décoché**,
+condition = ce trigger. Le code se contente de le déclencher, le graphe fait le reste.
 
 ```csharp
+private const string CancelActionTrigger = "CancelAction";   // nouveau paramètre Trigger, à créer dans l'Animator Controller (Editor)
+
 public void PlayChannel(AnimationClip clip)
 {
     if (clip == null || _overrideController == null || attackPlaceholderClip == null) return;
@@ -305,21 +316,20 @@ public void PlayChannel(AnimationClip clip)
     _animator.Play(AttackState, 0, 0f);
 }
 
-/// <summary>Coupe net l'anim de canalisation en cours — force un retour immédiat à la
-/// locomotion normale, ne laisse jamais le clip jouer jusqu'au bout après un interrupt.</summary>
+/// <summary>Coupe net l'anim de canalisation en cours — déclenche le trigger qui force le
+/// retour à la locomotion, ne laisse jamais le clip jouer jusqu'au bout après un interrupt.</summary>
 public void CancelChannel()
 {
     if (_animator == null) return;
-    _animator.Play(LocomotionState, 0, 0f);   // ⚠ nom exact du state à confirmer dans l'Animator Controller — voir note
+    _animator.SetTrigger(CancelActionTrigger);
 }
 ```
 
-⚠ **Point à vérifier à l'implémentation** : le nom exact du state de locomotion de base
-(Idle/Move piloté par `SpeedParam`+`InCombatParam`) n'a pas été confirmé dans ce document —
-`PlayerAnimatorController.cs` ne l'expose pas sous forme de constante nommée comme
-`AttackState`. Florian doit confirmer le nom du state dans l'Animator Controller (Editor)
-avant d'écrire `CancelChannel()`, ou ajouter une constante `LocomotionState` si elle n'existe
-pas déjà à cet endroit du fichier.
+**Travail Editor requis (Florian, avant/pendant l'implémentation)** : dans l'Animator
+Controller du joueur, ajouter un paramètre **Trigger** nommé `CancelAction`, puis une
+transition **"Any State" → (state/blend tree de locomotion)**, **Has Exit Time décoché**,
+condition = `CancelAction`. Aucun nom de state à communiquer au code — le trigger fonctionne
+indépendamment du state actuellement actif.
 
 ### Aeris/HP costs
 
@@ -395,15 +405,16 @@ bloqué en attente indéfiniment : prévoir un timeout de sécurité (ex: résou
 
 ## Fichiers touchés
 
-- `Data/Skills/SkillData.cs` — nouveau champ `channelAnimation` (+ éventuel helper
-  `HasCastTime` selon les capacités de `ShowIfAttribute`), nouveau warning `OnValidate()`
-  (castTime>0 + executionType≠Normal).
+- `Data/Skills/SkillData.cs` — nouveau champ `channelAnimation`, nouveau helper
+  `HasCastTime`, nouveau warning `OnValidate()` (castTime>0 + executionType≠Normal).
 - `Data/Skills/SkillBar.cs` — nouveaux champs canalisation, nouveau dispatcher `LaunchSkill()`
   utilisé par `TryUseSlot()` ET `CheckApproach()` (remplace les 2 appels directs à
   `ExecuteSkill()`), nouvelles méthodes `StartChannel`/`ResolveChannel`/`InterruptChannel`/
   `EndChannelState`, nouveau bloc de poll dans `Update()`, ajout du check CC dans le bloc
   combo existant.
-- `World/PlayerAnimatorController.cs` — nouvelles méthodes `PlayChannel`/`CancelChannel`.
+- `World/PlayerAnimatorController.cs` — nouvelles méthodes `PlayChannel`/`CancelChannel` +
+  constante `CancelActionTrigger`. Nécessite aussi un ajout côté Editor (paramètre Trigger +
+  transition Any State dans l'Animator Controller, voir section 4).
 
 Aucun changement dans `SkillSystem.cs`, `StatusEffectSystem.cs`, `ProgressBarUI.cs`,
 `ResourceNode.cs` — tous réutilisés tels quels.
