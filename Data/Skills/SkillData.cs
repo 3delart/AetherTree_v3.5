@@ -217,7 +217,6 @@ public class SkillData : ScriptableObject
     [Tooltip("Animation jouée PENDANT la canalisation (castTime > 0) — boucle ou étirée sur\n" +
              "castTime secondes. Distincte de attackAnimation (jouée sur les skills castTime 0).\n" +
              "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
-    [ShowIf(nameof(HasCastTime))]
     public AnimationClip channelAnimation;
 
     // ── Helpers ───────────────────────────────────────────────
@@ -227,12 +226,6 @@ public class SkillData : ScriptableObject
 
     /// <summary>True si le skill a 2 éléments ou plus (combo élémentaire).</summary>
     public bool IsCombo => elements != null && elements.Count >= 2;
-
-    /// <summary>True si ce skill a un temps de canalisation — condition calculée pour ShowIf,
-    /// même pattern que IsNeutral/IsCombo. ShowIfAttribute (Utils/ShowIfAttribute.cs) ne
-    /// compare QUE par égalité sur une liste de valeurs discrètes — pas d'opérateur
-    /// d'inégalité disponible sur un float, ce helper bool est la seule voie.</summary>
-    public bool HasCastTime => castTime > 0f;
 
     /// <summary>Élément principal du skill. Neutral si aucun élément défini.</summary>
     public ElementType PrimaryElement => IsNeutral ? ElementType.Neutral : elements[0];
