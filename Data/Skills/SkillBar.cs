@@ -509,6 +509,15 @@ public class SkillBar : MonoBehaviour
 
         SkillSystem.Instance?.ResolveExecute(skill, _player, target);
 
+        // Ce hit appartient-il à un Combo en cours sur ce slot ? Si oui, la suite (fenêtre
+        // suivante, ou fin de combo + CD) est gérée par AdvanceComboAfterHit. Le CD n'est PAS
+        // posé ici dans ce cas (seul le DERNIER step d'un combo pose le CD, inchangé).
+        if (IsComboActive && slot == _comboSlot)
+        {
+            AdvanceComboAfterHit(slot, skill);
+            return;
+        }
+
         _cooldownTimers[slot] = skill.cooldown;
         if (slot >= 1)
         {
@@ -713,22 +722,13 @@ public class SkillBar : MonoBehaviour
 
         if (_comboSlot == -1)
         {
-            // Premier appui — exécute le skill PARENT (step 0)
+            // Premier appui — lance le skill PARENT (step 0) comme un hit en attente
             _comboSkill = skill;
             _comboSlot  = slot;
-            _comboStep  = 1; // prochain appui = comboSteps[0]
+            _comboStep  = 1; // prochain step une fois CE hit résolu
 
-            _player.SpendMana(GetEffectiveManaCost(skill));
-            SkillSystem.Instance?.Execute(skill, _player, target);
-            EngageAndFaceTarget(skill, slot, target);
-
-            // Ouvre la fenêtre combo — aucun lock sur les autres slots
-            _comboTimer        = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
-            _comboStepCooldown = _comboSkill.comboStepInterval;
-
-            // Icône → montre le prochain step
-            SkillBarUI.Instance?.RefreshSlotWithSkill(slot, _comboSkill.comboSteps[0]);
-            Debug.Log($"[SKILLBAR] Combo démarré — step 0 (parent), fenêtre {_comboTimer}s");
+            LaunchComboHit(skill, slot, target);
+            Debug.Log($"[SKILLBAR] Combo démarré — step 0 (parent), en attente de résolution.");
             return true;
         }
 
@@ -738,33 +738,70 @@ public class SkillBar : MonoBehaviour
             return false;
         }
 
-        // Délai minimum entre deux steps pas encore écoulé — ignore l'appui (input consommé,
-        // la fenêtre _comboTimer continue de tourner normalement, rien d'autre ne se passe).
+        // Délai minimum entre deux steps pas encore écoulé — ignore l'appui (inchangé)
         if (_comboStepCooldown > 0f) return true;
 
-        // Steps suivants — comboSteps[_comboStep - 1]
         int stepIndex = _comboStep - 1;
         SkillData stepSkill = _comboSkill.comboSteps[stepIndex];
         if (stepSkill == null) { ResetCombo(); return true; }
 
-        _player.SpendMana(GetEffectiveManaCost(stepSkill));
-        SkillSystem.Instance?.Execute(stepSkill, _player, target);
-        EngageAndFaceTarget(stepSkill, slot, target);
+        LaunchComboHit(stepSkill, slot, target);
+        return true;
+    }
 
+    /// <summary>Lance un coup de combo (parent ou step) exactement comme StartInstant — mêmes
+    /// champs _pendingHit*, même mécanisme d'attente/event/timeout, MÊME appel à
+    /// BeginSkillUse() (sinon aucun combo ne déclencherait plus combat-entry/AFK-clear/
+    /// Stealth-break ni ne mettrait à jour lastSkillUsed — régression sur une mécanique déjà
+    /// en jeu, pas un détail : aujourd'hui chaque step passe par SkillSystem.Execute() →
+    /// player.UseSkill() → BeginSkillUse(), et ResolveSkillUse (Tâche 2) ne l'appelle plus).
+    /// ResolveInstant() détecte après coup qu'un combo est actif sur ce slot
+    /// (IsComboActive && slot == _comboSlot) et route vers AdvanceComboAfterHit() au lieu de
+    /// poser le CD directement.</summary>
+    private void LaunchComboHit(SkillData skill, int slot, Entity target)
+    {
+        _player.BeginSkillUse(skill);
+        _player.SpendMana(GetEffectiveManaCost(skill));
+        _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+        EngageAndFaceTarget(skill, slot, target);
+
+        // GroundTarget par cohérence avec StartInstant()/StartMultiHit() (Tâche 4) — aucun
+        // skill de combo existant n'utilise GroundTarget aujourd'hui, mais rien n'empêche
+        // d'en configurer un plus tard : sans ce bloc, un tel step résoudrait ses effets sur
+        // la position du caster au lieu du point visé.
+        if (skill.targetType == TargetType.GroundTarget)
+        {
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
+                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
+        }
+
+        _pendingHitSlot    = slot;
+        _pendingHitSkill   = skill;
+        _pendingHitTarget  = skill.targetType == TargetType.GroundTarget ? null : target;
+        _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+
+        if (_pendingHitTimeout <= 0f) ResolveInstant();
+    }
+
+    /// <summary>Bookkeeping combo APRÈS résolution d'un coup — fenêtre suivante (icône +
+    /// timer) ou fin de combo (CD + reset). `resolvedSkill` = le SkillData du coup qui vient
+    /// de résoudre (parent au step 0, sinon le step lui-même) — utilisé pour la durée
+    /// d'auto-attack-delay (anim du DERNIER coup, pas du parent).</summary>
+    private void AdvanceComboAfterHit(int slot, SkillData resolvedSkill)
+    {
         _comboStep++;
+        _comboStepCooldown = _comboSkill.comboStepInterval;
 
         if (_comboStep > _comboSkill.comboSteps.Count)
         {
-            // Dernier step complété — CD sur le slot + reset
             Debug.Log($"[SKILLBAR] Combo terminé sur slot {slot}.");
             _cooldownTimers[slot] = _comboSkill.cooldown;
             if (slot >= 1)
             {
                 _gcdTimer = GCD_DURATION;
-                // Durée basée sur l'anim du DERNIER step (celle qui vient de jouer), pas celle
-                // du parent — même raison que dans ExecuteSkill.
-                float autoAttackDelay = stepSkill.attackAnimation != null
-                    ? Mathf.Max(GCD_DURATION, stepSkill.attackAnimation.length)
+                float autoAttackDelay = resolvedSkill.attackAnimation != null
+                    ? Mathf.Max(GCD_DURATION, resolvedSkill.attackAnimation.length)
                     : GCD_DURATION;
                 TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
             }
@@ -773,15 +810,10 @@ public class SkillBar : MonoBehaviour
         }
         else
         {
-            // Ouvre la fenêtre pour le prochain step — aucun lock sur les autres slots
-            _comboTimer        = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
-            _comboStepCooldown = _comboSkill.comboStepInterval;
-
+            _comboTimer = _comboSkill.comboWindowDuration > 0f ? _comboSkill.comboWindowDuration : 2f;
             SkillBarUI.Instance?.RefreshSlotWithSkill(slot, _comboSkill.comboSteps[_comboStep - 1]);
             Debug.Log($"[SKILLBAR] Combo step {_comboStep}/{_comboSkill.comboSteps.Count} — fenêtre {_comboTimer}s");
         }
-
-        return true;
     }
 
     // ── Auto-approche ─────────────────────────────────────────
