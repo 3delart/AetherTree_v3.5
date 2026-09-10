@@ -130,6 +130,11 @@ private void StartChannel(SkillData skill, int slot, Entity target)
 
     _player.animatorController?.PlayChannel(skill.channelAnimation);
 
+    // POINT D'EXTENSION CHANTIER B (voir section dédiée plus bas) : le déclencheur de
+    // ResolveChannel() est ICI, et seulement ici. Chantier B remplacera onComplete par un
+    // Animation Event posé sur channelAnimation (résolution calée sur la vraie frame
+    // d'impact) au lieu du timer de la bar — aucun autre code de ce fichier n'a besoin de
+    // changer. Ne pas coupler ResolveChannel() à autre chose que cet unique appelant.
     ProgressBarUI.Instance?.StartProgress(
         label:        skill.skillName.Get(LocalizationManager.CurrentLanguage),
         duration:     skill.castTime,
@@ -264,6 +269,38 @@ pas déjà à cet endroit du fichier.
 `StartChannel()` dépense mana/HP/gold au clic, à l'identique de `ExecuteSkill()` aujourd'hui
 — reste inchangé pour l'instant, aucune raison de le déplacer à la résolution (contrairement
 au CD/GCD) : Florian a explicitement confirmé "mana dépensé au lancement du skill".
+
+## Point d'extension — chantier B (calage sur frame d'impact)
+
+Ce chantier A ne construit RIEN de chantier B par avance (pas de stub vide, pas de méthode
+`OnHitFrame()` sans logique — on a déjà nettoyé ce type de dette ce matin avec `castTime`,
+`BarType.Cast` et `SkillSpecialEffect.Interrupt`, pas de raison d'en recréer). Ce qui compte,
+c'est que l'architecture d'A n'ait qu'UN SEUL endroit à modifier quand B arrivera, sans
+toucher au reste (mana/CD/GCD/lock/interrupt).
+
+**Ce point unique existe déjà** : `onComplete: ResolveChannel` dans `StartChannel()`
+(section 2 ci-dessus). Aujourd'hui c'est `ProgressBarUI` (timer, bar à 100%) qui appelle
+`ResolveChannel()`. Le jour où B est spécifié, il suffira de :
+1. Ajouter un Animation Event sur `channelAnimation`, posé sur la vraie frame d'impact.
+2. Faire appeler `ResolveChannel()` par cet event (callback sur `PlayerAnimatorController`,
+   qui relaie à `SkillBar`) au lieu du `onComplete` de la bar.
+3. Garder `ProgressBarUI.StartProgress` tel quel pour le visuel (la bar continue de remplir
+   sur `castTime`, purement cosmétique) — SAUF si B décide que la bar doit littéralement finir
+   à la frame d'impact plutôt qu'à `castTime` pile, auquel cas `duration` changerait aussi,
+   décision à prendre dans la spec B, pas ici.
+
+`ResolveChannel()`/`InterruptChannel()`/`EndChannelState()` restent inchangées dans tous les
+cas — elles ne savent pas QUI les a appelées, seulement QUAND agir. C'est cette séparation qui
+évite le rework : ne jamais fusionner la logique de résolution (CD/GCD/dégâts) avec le
+déclencheur qui décide du "quand".
+
+Même raisonnement s'appliquera à Normal/MultiHit/Combo quand B les couvrira — ils ne sont PAS
+touchés par A (hors service pour Combo, voir section 3), donc aucun risque de rework induit
+par A sur ces trois-là. Seule anticipation utile à noter : si B retarde un jour la résolution
+d'un skill Normal (castTime 0) à un Animation Event plutôt qu'au clic, la règle "CD/GCD à la
+résolution" déjà posée par A (et déjà généralisée à Normal dans ce document, même si
+actuellement résolution = clic = même frame) s'appliquera sans changement de règle — seul le
+moment de la résolution bouge, pas la logique qui en dépend.
 
 ## Fichiers touchés
 
