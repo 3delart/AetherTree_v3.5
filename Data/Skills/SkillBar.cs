@@ -379,7 +379,7 @@ public class SkillBar : MonoBehaviour
         // ── Combo séquentiel (Méthode 2) ─────────────────────
         if (TryAdvanceCombo(skill, slot, target)) return true;
 
-        ExecuteSkill(skill, slot, target);
+        LaunchSkill(skill, slot, target);
         return true;
     }
 
@@ -395,6 +395,15 @@ public class SkillBar : MonoBehaviour
     }
 
     // ── Canalisation ──────────────────────────────────────────
+
+    // ── Dispatch castTime 0 vs canalisation — UNIQUE point d'entrée pour lancer un skill ──
+    // Utilisé par TryUseSlot() ET CheckApproach() — ne jamais appeler ExecuteSkill()
+    // directement depuis un autre endroit, sinon castTime > 0 serait contourné.
+    private void LaunchSkill(SkillData skill, int slot, Entity target)
+    {
+        if (skill.castTime > 0f) StartChannel(skill, slot, target);
+        else                     ExecuteSkill(skill, slot, target);
+    }
 
     private void StartChannel(SkillData skill, int slot, Entity target)
     {
@@ -604,7 +613,7 @@ public class SkillBar : MonoBehaviour
         if (dist <= range)
         {
             if (_agent != null) _agent.ResetPath();
-            ExecuteSkill(_pendingSkill, _pendingSlot, _pendingTarget);
+            LaunchSkill(_pendingSkill, _pendingSlot, _pendingTarget);
             CancelApproach();
         }
         else
