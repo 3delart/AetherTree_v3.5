@@ -101,6 +101,7 @@ public class SkillBar : MonoBehaviour
     private int       _channelSlot       = -1;
     private Entity    _channelTarget     = null;
     private Vector3   _channelStartPos   = Vector3.zero;
+    private float     _channelStartTime  = 0f;   // Time.time au lancement — pour l'overlay CD de la SkillBarUI
 
     public bool IsChanneling => _isChanneling;
 
@@ -449,6 +450,7 @@ public class SkillBar : MonoBehaviour
         // d'interrupt "cible morte" si cette entité non-pertinente meurt pendant la canalisation.
         _channelTarget   = skill.targetType == TargetType.GroundTarget ? null : target;
         _channelStartPos = _player.transform.position;
+        _channelStartTime = Time.time;
 
         // Résidu de vélocité NavMeshAgent (ex: hand-off depuis CheckApproach) qui pourrait
         // sinon déclencher immédiatement le poll d'annulation par mouvement dans Update().
@@ -805,6 +807,15 @@ public class SkillBar : MonoBehaviour
     public float GetCooldownRemaining(int slot)
     {
         if (slot < 0 || slot >= 10) return 0f;
+        // Canalisation en cours sur ce slot — _cooldownTimers reste à 0 jusqu'à la résolution
+        // (CD posé à la fin, pas au clic, voir StartChannel/ResolveChannel), donc sans ce
+        // branchement l'overlay CD de la SkillBarUI resterait invisible pendant tout le cast
+        // alors que le slot (et toute la barre) est verrouillé. Compte le temps ÉCOULÉ, pas
+        // restant — SkillSlotUI.SetCooldown attend "temps restant avant utilisable", ici
+        // c'est castTime - temps déjà passé dans la canalisation.
+        if (_isChanneling && slot == _channelSlot && _channelSkill != null)
+            return Mathf.Max(0f, _channelSkill.castTime - (Time.time - _channelStartTime));
+
         // Slot 0 : CD individuel seulement (pas de GCD global sur la basic).
         // Slots 1-9 : max entre le CD individuel et le GCD restant.
         float individual = Mathf.Max(0f, _cooldownTimers[slot]);
@@ -816,6 +827,9 @@ public class SkillBar : MonoBehaviour
     public float GetCooldownTotal(int slot)
     {
         if (slot < 0 || slot >= 10 || _slots[slot] == null) return 0f;
+        if (_isChanneling && slot == _channelSlot && _channelSkill != null)
+            return _channelSkill.castTime;
+
         // Slots 1-9 : si le GCD est plus long que le CD individuel, on base sur GCD_DURATION.
         // Slot 0 : toujours le cooldown de la BasicAttack équipée.
         if (slot >= 1 && _gcdTimer > _cooldownTimers[slot])
