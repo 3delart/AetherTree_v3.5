@@ -100,6 +100,12 @@ public class SkillBar : MonoBehaviour
 
     public bool IsChanneling => _isChanneling;
 
+    /// <summary>True pendant la fenêtre d'attente d'un ComboSequence (entre deux appuis) —
+    /// utilisé par TargetingSystem.TickAutoAttack pour ne pas laisser l'auto-attaque se
+    /// déclencher pendant qu'un combo attend son prochain step, même pattern que
+    /// IsApproachingSkill/IsChanneling.</summary>
+    public bool IsComboActive => _comboSlot >= 0;
+
     private void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
