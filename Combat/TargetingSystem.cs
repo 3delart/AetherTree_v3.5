@@ -385,7 +385,13 @@ public class TargetingSystem : MonoBehaviour
         engagedOutline.enabled      = true;
 
         autoAttacking = true;
-        if (isNewEngagement) autoAttackTimer = 0f;
+        if (isNewEngagement)
+            // Pas 0f pile : si un skill vient d'engager cette cible (EngageFromSkill), l'ordre
+            // d'exécution Update() entre SkillBar et TargetingSystem n'est pas garanti par
+            // Unity — TickAutoAttack peut tourner APRÈS dans la même frame et voir le timer
+            // déjà à 0, déclenchant une attaque de base gratuite au même instant que les
+            // dégâts du skill. Marge courte (imperceptible) pour survivre à cette frame.
+            autoAttackTimer = 0.15f;
     }
 
     public void EngageFromSkill(Entity entity)
