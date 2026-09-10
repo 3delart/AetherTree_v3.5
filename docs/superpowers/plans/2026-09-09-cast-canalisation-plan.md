@@ -54,11 +54,10 @@ Play Mode uniquement (dernière tâche de ce plan).
 **Interfaces:**
 - Consumes: rien de nouveau — s'appuie sur `castTime` (existe déjà, ligne 72) et
   `executionType`/`SkillExecutionType` (existent déjà).
-- Produces : `public AnimationClip channelAnimation` (champ), `public bool HasCastTime`
-  (propriété, `=> castTime > 0f`) — consommés par la Tâche 4 (`SkillBar.StartChannel`) et
-  potentiellement par `SkillBarUI` plus tard (hors scope ici).
+- Produces : `public AnimationClip channelAnimation` (champ, pas de `[ShowIf]` dessus — voir
+  Step 1) — consommé par la Tâche 4 (`SkillBar.StartChannel`).
 
-- [ ] **Step 1 : Ajouter le champ `channelAnimation` et le helper `HasCastTime`**
+- [ ] **Step 1 : Ajouter le champ `channelAnimation`**
 
 Dans `Data/Skills/SkillData.cs`, le champ `attackAnimation` se trouve dans la section
 `⑩ Visuel & Son` :
@@ -74,20 +73,14 @@ Juste après cette ligne, ajouter :
     [Tooltip("Animation jouée PENDANT la canalisation (castTime > 0) — boucle ou étirée sur\n" +
              "castTime secondes. Distincte de attackAnimation (jouée sur les skills castTime 0).\n" +
              "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
-    [ShowIf(nameof(HasCastTime))]
     public AnimationClip channelAnimation;
 ```
 
-Puis, dans la section `── Helpers ───` du même fichier (juste après `IsCombo`/avant
-`PrimaryElement`, ou à tout endroit du bloc Helpers), ajouter :
-
-```csharp
-    /// <summary>True si ce skill a un temps de canalisation — condition calculée pour ShowIf,
-    /// même pattern que IsNeutral/IsCombo. ShowIfAttribute (Utils/ShowIfAttribute.cs) ne
-    /// compare QUE par égalité sur une liste de valeurs discrètes — pas d'opérateur
-    /// d'inégalité disponible sur un float, ce helper bool est la seule voie.</summary>
-    public bool HasCastTime => castTime > 0f;
-```
+Pas de `[ShowIf]` sur ce champ — `Editor/ShowIfPropertyDrawer.cs:130-131` ne résout que des
+champs réellement sérialisés (`FindProperty`), jamais une propriété C# calculée comme
+`castTime > 0f` aurait été ; ça fail-open silencieusement (le champ resterait affiché tout le
+temps, `ShowIf` sans effet). Le tooltip seul suffit — `channelAnimation` reste visible en
+permanence dans l'Inspector.
 
 - [ ] **Step 2 : Ajouter le warning `OnValidate()`**
 
@@ -431,7 +424,7 @@ EOF
 - Modify: `Data/Skills/SkillBar.cs`
 
 **Interfaces:**
-- Consumes: `skill.castTime`/`skill.channelAnimation`/`HasCastTime` (Tâche 1),
+- Consumes: `skill.castTime`/`skill.channelAnimation` (Tâche 1),
   `_player.AnimatorController`/`_player.BeginSkillUse(SkillData)` (Tâche 2),
   `.PlayChannel()`/`.CancelChannel()` (Tâche 3),
   `_player.statusEffects` (`isStunned`/`isShocked`/`isFreezed`/`isKnockedBack`/`isFeared`/

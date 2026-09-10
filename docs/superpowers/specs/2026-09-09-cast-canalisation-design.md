@@ -69,16 +69,23 @@ coroutine, barre world-space qui suit une cible (`followTarget`), `onComplete`/`
 [Tooltip("Animation jouée PENDANT la canalisation (castTime > 0) — boucle ou étirée sur\n" +
          "castTime secondes. Distincte de attackAnimation (jouée sur les skills castTime 0).\n" +
          "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
-[ShowIf(nameof(HasCastTime))]
 public AnimationClip channelAnimation;
-
-/// <summary>True si ce skill a un temps de canalisation — condition calculée pour ShowIf,
-/// même pattern que IsNeutral/IsCombo ci-dessous. ShowIfAttribute (Utils/ShowIfAttribute.cs)
-/// ne compare QUE par égalité sur une liste de valeurs discrètes (params object[] values) —
-/// pas d'opérateur d'inégalité disponible sur un float, confirmé en lisant le fichier —
-/// ce helper bool est donc la seule voie, pas une option parmi d'autres.</summary>
-public bool HasCastTime => castTime > 0f;
 ```
+
+**Correction post-Task 1 (trouvée par le task reviewer, pas par moi — erreur de ma part dans
+cette section du spec)** : la version précédente de ce bloc portait `[ShowIf(nameof(HasCastTime))]`
+avec un helper `public bool HasCastTime => castTime > 0f;`. Vérifié dans
+`Editor/ShowIfPropertyDrawer.cs:130-131` (`MatchesAny`) : `FindProperty(siblingPath)` ne résout
+QUE des champs réellement sérialisés par Unity — jamais une propriété C# calculée. Pour
+`HasCastTime`, `FindProperty` retourne toujours `null`, et le drawer fail-open sur `null`
+(`return true`, "n'échoue pas silencieusement en masquant tout") — `channelAnimation` aurait
+donc été visible en permanence dans l'Inspector, `ShowIf` totalement sans effet. Pas un bug de
+compilation (aucune erreur), juste un défaut UX silencieux. Mon inférence "pattern déjà utilisé
+pour IsNeutral/IsCombo" était fausse — ces deux helpers ne sont JAMAIS utilisés comme cible
+d'un `ShowIf` ailleurs dans le codebase, ils servent à autre chose. Fix : retirer le `[ShowIf]`
+(inefficace) ET `HasCastTime` (deviendrait un stub mort une fois le `ShowIf` retiré, exactement
+le genre de dette déjà nettoyée cette session) — le tooltip seul suffit, `channelAnimation`
+reste visible tout le temps dans l'Inspector, sans condition.
 
 Nouveau warning dans `OnValidate()` (même bloc `#if UNITY_EDITOR` que le warning MultiHit
 existant, `SkillData.cs:259-289`) — évite qu'un designer configure un skill avec `castTime > 0`
