@@ -93,7 +93,7 @@ if (castTime > 0f && executionType != SkillExecutionType.Normal)
                       "canaliser.", this);
 ```
 
-### 2. `Entities/Player.cs` — accesseur public manquant
+### 2. `Entities/Player.cs` — accesseur public + split de `UseSkill()`
 
 `animatorController` (`Entities/Player.cs:193`) est **privé** — `SkillBar` ne peut pas y
 accéder tel quel. Ajouter une propriété en lecture seule, même convention que les autres
@@ -102,6 +102,104 @@ accesseurs publics déjà présents sur `Player` (`IsAFK`, etc.) :
 ```csharp
 public PlayerAnimatorController AnimatorController => animatorController;
 ```
+
+**Bug + question de design trouvés en relecture complète de `Player.UseSkill()`
+(`Entities/Player.cs:1056-1102`)** — cette méthode est appelée en tout premier par
+`SkillSystem.Execute()`, donc aujourd'hui à CHAQUE résolution de skill (instant = au clic,
+canalisation = à `ResolveChannel()` d'après ce plan). Elle fait bien plus que jouer l'anim :
+
+```
+lastSkillUsed = skill
+RegisterCombatAction()        → CombatActive = true (entrée en combat)
+PlayAttack(attackAnimation)   → joue l'anim "Attack"
+RegisterRealSkillUse()        → clear l'AFK
+Stealth-break (si countsForAffinity && isStealthed)
+RegisterCast() élémentaire    → fait bouger l'affinité (RÉSOLUTION uniquement, correct)
+```
+
+Pour une canalisation, si tout ça n'arrive qu'à `ResolveChannel()` (fin), deux problèmes :
+1. **Bug** : `PlayAttack(skill.attackAnimation)` se redéclenche PAR-DESSUS l'anim de
+   canalisation qui vient de finir, si le designer a rempli `attackAnimation` par habitude
+   sur un skill castTime > 0 (rien ne l'en empêche aujourd'hui).
+2. **Faille de gameplay confirmée par Florian** : entrée en combat et Stealth-break
+   n'arriveraient qu'en cas de résolution réussie — un joueur furtif pourrait lancer une
+   canalisation, l'annuler volontairement (mouvement, zéro risque), et rester invisible tout
+   du long. **Décision : lancer une canalisation casse l'invisibilité immédiatement**, comme
+   `RegisterCombatAction()`/AFK-clear — ces trois-là doivent se déclencher au LANCEMENT, pas
+   à la résolution. Seul `RegisterCast()` élémentaire reste correctement gardé à la
+   résolution (un skill interrompu n'a pas vraiment "joué" son élément).
+
+Fix : split `UseSkill()` en deux méthodes. `BeginSkillUse()` porte tout ce qui doit arriver
+IMMÉDIATEMENT (combat/AFK/Stealth) — appelée par `StartChannel()` (Tâche canalisation) pour
+les canalisations, et par `UseSkill()` elle-même pour les skills instants (comportement
+inchangé, même frame qu'aujourd'hui). `UseSkill()` garde l'anim (désormais conditionnelle) et
+le bookkeeping élémentaire, qui doivent rester au moment de la résolution dans les deux cas :
+
+```csharp
+public void BeginSkillUse(SkillData skill)
+{
+    if (skill == null) return;
+
+    lastSkillUsed = skill;
+    RegisterCombatAction();
+
+    bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
+    // AFK — voir RegisterRealSkillUse() : seul un VRAI skill (pas l'attaque de base) casse
+    // l'AFK, volontairement (spammer juste l'attaque de base en restant immobile reste AFK).
+    if (!isBasic) RegisterRealSkillUse();
+
+    // Buff/Debuff ne comptent PAS pour la fenêtre d'affinité — un soin/buff tagué Eau ne
+    // "joue" pas de l'eau au sens combat. Stealth — casse UNIQUEMENT sur dégâts infligés
+    // (Damage/Other), pas sur un Buff/Debuff seul — décision explicite Florian.
+    bool countsForAffinity = skill.effectType != SkillEffectType.Buff
+                           && skill.effectType != SkillEffectType.Debuff;
+    if (countsForAffinity && statusEffects != null && statusEffects.isStealthed)
+        statusEffects.RemoveBuff(BuffType.Stealth);
+}
+
+public void UseSkill(SkillData skill, Entity target = null)
+{
+    if (skill == null) return;
+
+    // castTime 0 : comportement inchangé, tout arrive ici au même instant qu'avant.
+    // castTime > 0 : BeginSkillUse() déjà appelé par SkillBar.StartChannel() au clic — combat/
+    // AFK/Stealth ne doivent pas attendre la résolution. PlayAttack ignoré ici : PlayChannel()
+    // a déjà joué l'anim de canalisation au lancement, la rejouer casserait le clip en cours.
+    if (skill.castTime <= 0f)
+    {
+        BeginSkillUse(skill);
+        animatorController?.PlayAttack(skill.attackAnimation);
+    }
+
+    bool isBasic = skill.skillType == SkillType.BasicAttack || skill.HasTag(SkillTag.BasicAttack);
+    bool countsForAffinity = skill.effectType != SkillEffectType.Buff
+                           && skill.effectType != SkillEffectType.Debuff;
+
+    if (countsForAffinity)
+    {
+        // Écart de niveau avec la cible — anti farm d'un mob hors de portée pour faire bouger
+        // l'affinité gratuitement. Pas de cible/PNJ → pas de restriction, voir
+        // ElementalSystem.RegisterCast.
+        int? targetLevel = target is Mob targetMob ? targetMob.mobLevel : (int?)null;
+
+        if (!skill.IsNeutral)
+            foreach (var element in skill.elements)
+                elementalSystem.RegisterCast(element, isBasicAttack: isBasic, targetLevel: targetLevel);
+        else
+            elementalSystem.RegisterCast(ElementType.Neutral, isBasicAttack: isBasic, targetLevel: targetLevel);
+    }
+
+    // RequestRecalculate() (pas juste stats.RecalculateStats()) — sinon le pass équipement
+    // tourne seul, SANS jamais relancer ReapplyActiveModifiers() après.
+    RequestRecalculate();
+    RefreshTitle();
+}
+```
+
+`StartChannel()` (voir plus bas) appelle `_player.BeginSkillUse(skill)` dès le lancement,
+avant même de dépenser mana/HP/gold. Pas besoin d'annuler/défaire quoi que ce soit en cas
+d'interrupt — une fois cassé, le Stealth reste cassé (le joueur a été vu tenter l'action),
+même convention que les autres jeux (annuler un cast ne restaure jamais la furtivité).
 
 ### 3. `SkillBar.cs` — nouvel état de canalisation
 
@@ -169,6 +267,10 @@ Nouvelles méthodes :
 ```csharp
 private void StartChannel(SkillData skill, int slot, Entity target)
 {
+    // Combat/AFK/Stealth doivent réagir au LANCEMENT, pas à la résolution — voir section
+    // Entities/Player.cs ci-dessus (faille Stealth trouvée en relecture, confirmée par Florian).
+    _player.BeginSkillUse(skill);
+
     _player.SpendMana(GetEffectiveManaCost(skill));
     if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
     if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
@@ -418,7 +520,10 @@ bloqué en attente indéfiniment : prévoir un timeout de sécurité (ex: résou
 - `Data/Skills/SkillData.cs` — nouveau champ `channelAnimation`, nouveau helper
   `HasCastTime`, nouveau warning `OnValidate()` (castTime>0 + executionType≠Normal).
 - `Entities/Player.cs` — nouvelle propriété publique `AnimatorController` (le champ existant
-  `animatorController` est privé, `SkillBar` ne peut pas y accéder sans ça).
+  `animatorController` est privé, `SkillBar` ne peut pas y accéder sans ça) ; `UseSkill()`
+  splitté en `BeginSkillUse()` (combat/AFK/Stealth, immédiat) + `UseSkill()` allégé (anim
+  conditionnelle + bookkeeping élémentaire, résolution) — bug PlayAttack + faille Stealth
+  trouvés en relecture.
 - `Data/Skills/SkillBar.cs` — nouveaux champs canalisation, nouveau dispatcher `LaunchSkill()`
   utilisé par `TryUseSlot()` ET `CheckApproach()` (remplace les 2 appels directs à
   `ExecuteSkill()`), nouvelles méthodes `StartChannel`/`ResolveChannel`/`InterruptChannel`/
@@ -464,3 +569,8 @@ Pas de framework de test automatisé — vérification manuelle Play Mode par Fl
     bug trouvé en relecture (`EndChannelState()` appelé avant la lecture de `_channelTarget`).
 12. Créer volontairement un skill `castTime > 0` avec `executionType = MultiHit` (mauvaise
     config) → vérifier que le warning `OnValidate()` apparaît dans la Console.
+13. Se rendre furtif (Stealth actif), lancer une canalisation castTime > 0 dégâts → vérifier :
+    Stealth cassé IMMÉDIATEMENT au clic (pas d'attendre la fin), et reste cassé même si la
+    canalisation est ensuite annulée volontairement (mouvement).
+14. Vérifier qu'un skill castTime 0 EXISTANT casse toujours le Stealth exactement comme avant
+    ce plan (non-régression du split `BeginSkillUse`/`UseSkill`).
