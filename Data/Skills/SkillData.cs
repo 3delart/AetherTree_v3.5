@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 using System.Collections.Generic;
 
 // =============================================================
@@ -215,10 +216,54 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
     public float comboStepInterval = 0f;
 
+    // ── ⑨Bis Zone à impact différé ─────────────────────────────
+    [Tooltip("Transforme la résolution de ce skill en zone au sol à impact différé — au lieu de\n" +
+             "résoudre les dégâts immédiatement au point de résolution existant (fin d'anim / fin\n" +
+             "de canalisation), une zone se plante à cet endroit et les dégâts n'appliquent qu'après\n" +
+             "impactDelay secondes, à qui se trouve RÉELLEMENT dans la zone à ce moment (permet une\n" +
+             "vraie fenêtre d'esquive). Non supporté avec MultiHit/ComboSequence — la vraie garde\n" +
+             "contre un step de combo est côté code (SkillBar.ResolveInstant), pas ce warning seul.")]
+    [ShowIf(nameof(targetType), TargetType.Target, TargetType.GroundTarget, TargetType.AoE_Target,
+        AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
+        Header = "⑨Bis Zone à impact différé")]
+    public bool hasDelayedImpact = false;
+
+    [Tooltip("Délai en secondes entre le plantage de la zone (résolution existante) et le premier\n" +
+             "tick de dégâts.")]
+    [ShowIf(nameof(hasDelayedImpact), true)]
+    public float impactDelay = 1f;
+
+    [Tooltip("Durée pendant laquelle la zone reste active APRÈS le premier tick (impactDelay).\n" +
+             "0 = un seul tick, la zone disparaît ensuite (impact différé simple — ex: comète).\n" +
+             "> 0 = zone persistante qui retick toutes les zoneTickInterval secondes pendant cette\n" +
+             "durée (ex: zone de lave, pluie de glace).")]
+    [ShowIf(nameof(hasDelayedImpact), true)]
+    public float zoneDuration = 0f;
+
+    [Tooltip("Fréquence des ticks de dégâts pendant zoneDuration. Ignoré si zoneDuration = 0.")]
+    [ShowIf(nameof(hasDelayedImpact), true)]
+    public float zoneTickInterval = 1f;
+
     // ── ⑩ Visuel & Son ────────────────────────────────────────
     [Header("⑩ Visuel & Son")]
     public Sprite     icon;
-    public GameObject vfxPrefab;
+
+    [Tooltip("VFX qui reste sur le caster, spawné au LANCEMENT (pentacle aux pieds, glow aux\n" +
+             "mains...). Optionnel — vide = pas de VFX de cast.")]
+    public GameObject vfxCast;
+
+    [Tooltip("VFX de zone/avertissement — spawné quand la zone se plante au sol (point de\n" +
+             "résolution existant), reste affiché jusqu'à la détonation. Actif uniquement si\n" +
+             "hasDelayedImpact = true.")]
+    [ShowIf(nameof(hasDelayedImpact), true)]
+    public GameObject vfxZoneMarker;
+
+    [Tooltip("VFX joué exactement au moment où les dégâts s'appliquent réellement — immédiat pour\n" +
+             "un skill sans délai (comportement historique de vfxPrefab), ou à chaque détonation\n" +
+             "pour une zone à impact différé.")]
+    [FormerlySerializedAs("vfxPrefab")]
+    public GameObject vfxImpact;
+
     public AudioClip  soundEffect;
 
     [Tooltip("Animation jouée par le caster à l'exécution du skill (PlayerAnimatorController.PlayAttack).\n" +
@@ -319,6 +364,17 @@ public class SkillData : ScriptableObject
                               "MultiHit n'est pas respectée dans ce cas (le CD de canalisation prend " +
                               "le dessus). Remets executionType à Normal si ce skill doit canaliser " +
                               "proprement.", this);
+
+        // hasDelayedImpact + MultiHit/ComboSequence sur CE skill LUI-MÊME est détectable ici —
+        // mais un step de combo (comboSteps[i] d'un AUTRE SkillData) a lui-même
+        // executionType = Normal, donc invisible à ce check. La vraie garde contre ce cas
+        // précis vit dans SkillBar.ResolveInstant() (garde combo évaluée avant tout
+        // branchement zone différée) — ce warning reste utile pour la saisie directe sur un
+        // skill MultiHit/ComboSequence, pas comme protection complète.
+        if (hasDelayedImpact && executionType != SkillExecutionType.Normal)
+            Debug.LogWarning($"[SkillData:{name}] hasDelayedImpact = true avec executionType = " +
+                              $"{executionType} — combinaison non gérée, la zone différée ne " +
+                              "fonctionne qu'avec executionType = Normal (instant ou canalisé).", this);
     }
 #endif
 }
