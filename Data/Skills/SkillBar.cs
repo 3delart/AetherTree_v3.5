@@ -487,6 +487,9 @@ public class SkillBar : MonoBehaviour
 
         _player.AnimatorController?.PlayAttack(skill.attackAnimation);
 
+        if (skill.vfxCast != null)
+            Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
+
         if (skill.targetType == TargetType.GroundTarget)
         {
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
@@ -520,16 +523,23 @@ public class SkillBar : MonoBehaviour
         _pendingHitTarget  = null;
         _pendingHitTimeout = 0f;
 
-        SkillSystem.Instance?.ResolveExecute(skill, _player, target);
-
-        // Ce hit appartient-il à un Combo en cours sur ce slot ? Si oui, la suite (fenêtre
-        // suivante, ou fin de combo + CD) est gérée par AdvanceComboAfterHit. Le CD n'est PAS
-        // posé ici dans ce cas (seul le DERNIER step d'un combo pose le CD, inchangé).
+        // Combo step : TOUJOURS résolution immédiate, JAMAIS de zone différée — évalué en
+        // PREMIER, avant tout branchement hasDelayedImpact. C'est la vraie protection contre
+        // un step de combo configuré avec hasDelayedImpact = true (le warning OnValidate seul
+        // ne peut pas détecter ce cas — voir Tâche 1). La suite (fenêtre suivante, ou fin de
+        // combo + CD) est gérée par AdvanceComboAfterHit ; le CD n'est PAS posé ici dans ce cas
+        // (seul le DERNIER step d'un combo pose le CD, inchangé).
         if (IsComboActive && slot == _comboSlot)
         {
+            SkillSystem.Instance?.ResolveExecute(skill, _player, target);
             AdvanceComboAfterHit(slot, skill);
             return;
         }
+
+        if (skill.hasDelayedImpact)
+            SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);
+        else
+            SkillSystem.Instance?.ResolveExecute(skill, _player, target);
 
         _cooldownTimers[slot] = skill.cooldown;
         if (slot >= 1)
@@ -553,6 +563,9 @@ public class SkillBar : MonoBehaviour
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
 
         _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+
+        if (skill.vfxCast != null)
+            Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
 
         if (skill.targetType == TargetType.GroundTarget)
         {
@@ -664,6 +677,9 @@ public class SkillBar : MonoBehaviour
 
         _player.AnimatorController?.PlayChannel(skill.channelAnimation);
 
+        if (skill.vfxCast != null)
+            Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
+
         // GroundTarget : raycast au LANCEMENT (aim-then-channel), pas à la résolution — le point
         // est locké quand le joueur commet à la canalisation, cohérent avec mana/HP/gold dépensés
         // au clic. ResolveChannel() n'a besoin d'aucun changement : _groundTargetPoint sera déjà
@@ -694,15 +710,19 @@ public class SkillBar : MonoBehaviour
     {
         if (!_isChanneling) return;   // garde-fou si déjà interrompu entre-temps
 
-        // Capturer AVANT EndChannelState() — celle-ci met _channelTarget à null, et Execute()
-        // a besoin de la vraie cible.
+        // Capturer AVANT EndChannelState() — celle-ci met _channelTarget à null, et
+        // Execute()/PlantDelayedZone() ont besoin de la vraie cible.
         SkillData skill  = _channelSkill;
         int       slot   = _channelSlot;
         Entity    target = _channelTarget;
 
         EndChannelState();
 
-        SkillSystem.Instance?.Execute(skill, _player, target);
+        if (skill.hasDelayedImpact)
+            SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);
+        else
+            SkillSystem.Instance?.Execute(skill, _player, target);
+
         _cooldownTimers[slot] = skill.cooldown;
         if (slot >= 1)
         {
@@ -804,6 +824,10 @@ public class SkillBar : MonoBehaviour
         _player.BeginSkillUse(skill);
         _player.SpendMana(GetEffectiveManaCost(skill));
         _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+
+        if (skill.vfxCast != null)
+            Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
+
         EngageAndFaceTarget(skill, slot, target);
 
         // GroundTarget par cohérence avec StartInstant()/StartMultiHit() (Tâche 4) — aucun
