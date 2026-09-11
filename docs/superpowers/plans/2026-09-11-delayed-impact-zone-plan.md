@@ -800,8 +800,11 @@ Pas de framework de test automatisé sur ce projet. Cette checklist nécessite d
 Florian crée au moins 2-3 assets `SkillData` de test avec `hasDelayedImpact = true` (geste
 Editor Unity, pas automatisable par un agent) :
 - Un skill `targetType = Target`, `hasDelayedImpact = true`, `zoneDuration = 0`,
-  `impactDelay ≈ 2s` (simule la comète).
-- Un skill `targetType = GroundTarget`, mêmes réglages.
+  `impactDelay ≈ 2s`, **`aoeRadius > 0` (ex: 2-3)** (simule la comète). ⚠ `aoeRadius` vaut 0 par
+  défaut et n'est jamais utilisé par un skill `Target` normal — pour une zone différée il
+  redevient la taille réelle de la zone (`Physics.OverlapSphere`), l'oublier donne une zone de
+  rayon 0 qui semble "rater" au moindre mouvement de la cible.
+- Un skill `targetType = GroundTarget`, mêmes réglages (`aoeRadius > 0` aussi).
 - Un skill `zoneDuration > 0` (ex: 5s), `zoneTickInterval = 1` (simule une zone de lave).
 
 - [ ] **Step 1 : Esquive réelle sur `targetType = Target`**
@@ -845,5 +848,12 @@ existant (`comboSteps[i]`) avec `hasDelayedImpact = true` activé sur SON asset 
 combo → vérifier qu'il résout bien immédiatement (comportement combo normal), sans planter de
 zone, malgré le champ activé sur l'asset (confirme la garde côté code dans
 `ResolveInstant()`).
+
+- [ ] **Step 7 : Garde-fou `zoneTickInterval` trop bas**
+
+Sur le skill de test "zone persistante" (Step 3), régler temporairement `zoneTickInterval = 0`
+(ou une valeur négative) → vérifier que le jeu NE part PAS en boucle infinie de dégâts/VFX à
+chaque frame — le clamp défensif dans `DelayedZoneRoutine()` doit forcer un intervalle minimum
+(0.05s) quoi qu'il arrive. Remettre `zoneTickInterval` à une valeur normale après ce test.
 
 Si tous les points ci-dessus passent, le chantier C est complet et fonctionnel pour le joueur.
