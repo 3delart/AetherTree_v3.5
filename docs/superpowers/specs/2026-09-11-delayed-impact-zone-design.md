@@ -112,6 +112,19 @@ if (hasDelayedImpact && executionType != SkillExecutionType.Normal)
                       "qu'avec executionType = Normal (instant ou canalisé).", this);
 ```
 
+⚠ **Ce check ne suffit PAS à couvrir le cas d'un step de Combo.** Un step de combo
+(`comboSteps[i]`) est structurellement lui-même `executionType = Normal` (vérifié sur les
+assets réels, ex: `skl_test_combo_step2.asset`) — le champ `hasDelayedImpact` serait donc
+visible et activable sur un step sans déclencher ce warning, alors que ce mécanisme n'a pas de
+sens combiné à un combo (interaction avec `AdvanceComboAfterHit`/fenêtre/CD de fin de combo non
+définie). `OnValidate()` ne peut pas fiablement détecter "suis-je référencé dans le
+`comboSteps` d'un AUTRE `SkillData`" sans un scan d'assets coûteux — la protection réelle vit
+donc côté CODE, pas côté validation d'Inspector : voir la garde explicite dans "Flux de
+résolution" et "Emplacement du code" ci-dessous, qui empêche structurellement un step de combo
+de emprunter la branche zone différée, quelle que soit la valeur de `hasDelayedImpact` sur son
+asset. Le warning `OnValidate()` reste utile comme garde-fou de saisie (executionType
+MultiHit/ComboSequence au niveau du skill LUI-MÊME), mais pas comme protection complète.
+
 ## Flux de résolution
 
 ### Sans `hasDelayedImpact` (comportement actuel, inchangé)
@@ -124,52 +137,96 @@ spawne au lancement (`StartInstant()`/`StartChannel()`), indépendamment de tout
 
 ### Avec `hasDelayedImpact = true`
 
-1. **Lancement** (`StartInstant()` ou `StartChannel()`, inchangé) : mana/HP/gold dépensés,
-   `vfxCast` spawné si défini (à la position du caster). Pour une canalisation, le joueur reste
-   immobile pendant `castTime` comme aujourd'hui.
-2. **Point de résolution existant** (fin d'anim pour instant, fin de canalisation) : au lieu
-   d'appeler `ResolveExecute()`/`Execute()` pour calculer les dégâts, `SkillBar` appelle une
-   nouvelle méthode `SkillSystem.PlantDelayedZone(skill, caster, target)`. CD/GCD sont posés
-   **ici, à ce moment précis**, exactement comme le ferait la résolution normale — ce chantier
-   ne touche PAS au timing CD/GCD/coûts, seulement à quand les DÉGÂTS s'appliquent.
+1. **Lancement** (`StartInstant()`, `StartChannel()`, `StartMultiHit()`, `LaunchComboHit()`) :
+   mana/HP/gold dépensés comme aujourd'hui, PLUS un appel neuf — `vfxCast` spawné si défini, à
+   la position du caster. **Ce câblage n'existe nulle part aujourd'hui** (vérifié dans le vrai
+   code : aucune de ces 4 méthodes ne spawne de VFX actuellement) — c'est un ajout dans chacune
+   des 4, pas une extension d'un mécanisme existant. Pas de restriction `[ShowIf]` sur
+   `executionType` pour `vfxCast`, donc les 4 méthodes de lancement sont concernées, pas
+   seulement `StartInstant`/`StartChannel`. Pour une canalisation, le joueur reste immobile
+   pendant `castTime` comme aujourd'hui — inchangé.
+2. **Point de résolution existant** (fin d'anim pour instant, fin de canalisation) : dans
+   `ResolveInstant()`, la garde combo existante (`if (IsComboActive && slot == _comboSlot) {
+   ResolveExecute(...); AdvanceComboAfterHit(...); return; }`) **doit rester évaluée EN
+   PREMIER, avant tout branchement sur `hasDelayedImpact`** — un step de combo résout TOUJOURS
+   immédiatement via `ResolveExecute()`, jamais via `PlantDelayedZone()`, quelle que soit la
+   valeur de `hasDelayedImpact` sur son propre asset (c'est la vraie protection contre le trou
+   décrit plus haut — le check `OnValidate()` seul ne suffit pas). Ce n'est QU'APRÈS ce premier
+   check (donc uniquement pour un Normal hors-combo) que le nouveau branchement s'applique :
+   `if (skill.hasDelayedImpact) PlantDelayedZone(skill, _player, target); else
+   ResolveExecute(skill, _player, target);`. Dans les deux méthodes (`ResolveInstant()` ET
+   `ResolveChannel()`), CD/GCD/`DelayAutoAttack` restent postés **immédiatement après ce
+   branchement, inchangés** — la zone différée ne retarde que les dégâts, jamais le CD.
 3. **`PlantDelayedZone()`** : résout la position fixe de la zone —
-   - `targetType = GroundTarget` → `_groundTargetPoint` (déjà existant, utilisé tel quel).
+   - `targetType = GroundTarget` → lit `_groundTargetPoint`, **PUIS le remet à `null`**
+     immédiatement après lecture — même consommation que `ExecuteGroundTarget()` fait déjà
+     (`SkillSystem.cs:461-462`). Sans ce reset, un skill sans rapport lancé plus tard (ex: un
+     `TeleportSelf`, qui lit aussi `_groundTargetPoint` dans `ApplySpecialEffect`) hériterait
+     silencieusement de la position périmée de la zone.
    - `targetType = Target`/`AoE_Target` → position ACTUELLE de `target.transform.position` à
      cet instant, capturée en `Vector3` (pas une référence à l'entité — si la cible bouge
      ensuite, la zone ne la suit pas, c'est ce qui permet l'esquive).
    Spawne `vfxZoneMarker` à cette position (si défini), puis démarre une coroutine
-   (`StartCoroutine`, même pattern que `ExecuteMultiHit` existant dans le même fichier).
-4. **Après `impactDelay` secondes** : premier tick — `DetonateDelayedZone()` fait
-   `Physics.OverlapSphere(position, skill.aoeRadius)`, filtre chaque collider trouvé via
+   (`StartCoroutine`, même pattern que `ExecuteMultiHit` existant dans le même fichier — capture
+   toutes ses données en variables locales, donc plusieurs zones différées peuvent coexister en
+   parallèle sans se marcher dessus, aucun état à slot unique nécessaire).
+4. **Après `impactDelay` secondes** : premier tick — `DetonateDelayedZone()` vérifie d'abord
+   `if (caster == null || caster.isDead) yield break;` (même garde que les coroutines longues
+   existantes du fichier, ex: `DashToTarget`/`DashInDirection` — le caster peut mourir entre le
+   plantage et la détonation, la zone ne doit pas planter/mal se comporter dans ce cas), puis
+   fait `Physics.OverlapSphere(position, skill.aoeRadius)`, filtre chaque collider trouvé via
    `PassesAoeFilter(skill.aoeFaction, caster, entity)` (méthode déjà existante, réutilisée telle
    quelle — même logique que `ExecuteGroundTarget`/`ExecuteAoETarget`), puis pour chaque entité
    qui passe le filtre : `ApplyEffectType()`, `ApplyStatusEffects()`, `CheckKill()` — les mêmes
    appels que le reste du fichier fait déjà pour toute résolution AoE. Spawne `vfxImpact` à la
    position de la zone.
 5. **Si `zoneDuration > 0`** : au lieu de s'arrêter après le premier tick, la coroutine continue
-   — attend `zoneTickInterval` secondes, refait un tick identique (nouveau
-   `Physics.OverlapSphere` + dégâts à qui est présent À CE MOMENT), répète jusqu'à ce que
-   `zoneDuration` total se soit écoulé depuis le premier tick. `vfxZoneMarker` reste affiché
-   pendant toute la durée ; `vfxImpact` rejoue à chaque tick. Si `zoneDuration = 0`,
-   `vfxZoneMarker` est détruit après le tick unique et la zone disparaît.
+   — attend `zoneTickInterval` secondes, revérifie la garde `caster == null || caster.isDead`,
+   refait un tick identique (nouveau `Physics.OverlapSphere` + dégâts à qui est présent À CE
+   MOMENT), répète jusqu'à ce que `zoneDuration` total se soit écoulé depuis le premier tick.
+   `vfxZoneMarker` reste affiché pendant toute la durée ; `vfxImpact` rejoue à chaque tick. Si
+   `zoneDuration = 0`, `vfxZoneMarker` est détruit après le tick unique et la zone disparaît.
 
 Chaque tick est un check INDÉPENDANT — une entité qui entre dans la zone entre deux ticks se
 fait toucher au tick suivant ; une entité qui sort n'est plus touchée au tick d'après. Aucun
 état de "déjà touché" n'est conservé entre les ticks (contrairement à un DoT classique qui, une
 fois appliqué, tourne indépendamment de la position de la cible).
 
+**Limite acceptée, non traitée ici** : `SkillSystem` est un singleton "souple" lié au
+GameObject du Player dans la scène courante (pas de `DontDestroyOnLoad`, vérifié dans
+`SkillSystem.Awake()`) — un changement de scène ou la destruction du Player tue toute coroutine
+en cours, y compris une détonation de zone en attente (même risque déjà accepté aujourd'hui par
+`ExecuteMultiHit()`, qui utilise le même mécanisme). Pour un `zoneDuration` long (zone de lave
+qui dure plusieurs secondes), la fenêtre de risque est plus grande que pour un `ExecuteMultiHit`
+classique, mais reste le même type de risque, pas un nouveau — aucune protection supplémentaire
+n'est ajoutée dans ce chantier (changement de scène en combat déjà hors scope du jeu actuel).
+
 ## Emplacement du code
 
-- **`Data/Skills/SkillBar.cs`** — `ResolveInstant()` et `ResolveChannel()` : ajout d'un
-  branchement `if (skill.hasDelayedImpact) SkillSystem.Instance?.PlantDelayedZone(skill,
-  _player, target); else <comportement existant inchangé>` juste avant l'appel actuel à
-  `ResolveExecute()`/`Execute()`. CD/GCD/`DelayAutoAttack` restent posés dans le même bloc,
-  inchangés, indépendamment de cette branche.
-- **`Combat/SkillSystem.cs`** — nouvelles méthodes `PlantDelayedZone(SkillData, Entity, Entity)`
-  et une coroutine privée (ex: `DelayedZoneRoutine`) qui fait le(s) tick(s) de détonation en
-  réutilisant `PassesAoeFilter`/`ApplyEffectType`/`ApplyStatusEffects`/`CheckKill` déjà présents
-  dans ce fichier. Renommage `vfxPrefab` → `vfxImpact` partout où le champ est lu.
-- **`Data/Skills/SkillData.cs`** — nouveaux champs ci-dessus + avertissement `OnValidate()`.
+- **`Data/Skills/SkillBar.cs`** :
+  - `StartInstant()`, `StartChannel()`, `StartMultiHit()`, `LaunchComboHit()` — ajout du spawn
+    `vfxCast` (à la position du caster), nouveau dans chacune des 4 méthodes.
+  - `ResolveInstant()` — la garde combo existante (`IsComboActive && slot == _comboSlot`) reste
+    évaluée EN PREMIER, avant tout branchement zone différée (voir "Flux de résolution" point 2
+    pour l'ordre exact). Le branchement `if (skill.hasDelayedImpact)
+    SkillSystem.Instance?.PlantDelayedZone(skill, _player, target); else
+    SkillSystem.Instance?.ResolveExecute(skill, _player, target);` remplace l'appel actuel à
+    `ResolveExecute()`, uniquement pour le cas non-combo. CD/GCD/`DelayAutoAttack` restent
+    postés juste après, inchangés dans les deux branches.
+  - `ResolveChannel()` — même branchement, remplace l'appel actuel à `Execute()`. Pas de cas
+    combo à gérer ici (une canalisation ne peut pas être un step de combo, déjà incompatible
+    par ailleurs).
+- **`Combat/SkillSystem.cs`** :
+  - Nouvelles méthodes `PlantDelayedZone(SkillData, Entity, Entity)` (reset
+    `_groundTargetPoint` si `GroundTarget`, capture position, spawn `vfxZoneMarker`,
+    `StartCoroutine`) et une coroutine privée (ex: `DelayedZoneRoutine`) avec la garde
+    `caster == null || caster.isDead` à chaque tick, qui réutilise
+    `PassesAoeFilter`/`ApplyEffectType`/`ApplyStatusEffects`/`CheckKill` déjà présents dans ce
+    fichier.
+  - Renommage `vfxPrefab` → `vfxImpact` aux lignes où le champ est lu (135, 140, 181, 186, 240,
+    365 — `HitStep.vfxPrefab` reste inchangé, champ distinct, non concerné).
+- **`Data/Skills/SkillData.cs`** — nouveaux champs ci-dessus + avertissement `OnValidate()`
+  (protection partielle, voir note dans la section précédente — la vraie garde est côté code).
 
 ## Vérification
 
