@@ -223,11 +223,13 @@ Dans `Combat/SkillSystem.cs`, juste après la fin de `DelayedZoneRoutine()` (apr
     /// <summary>Déplace un point virtuel de `origin` à `destination` à la vitesse
     /// `skill.projectileSpeed` (fallback 10), balaie un SphereCastAll (rayon `skill.aoeRadius`,
     /// fallback 0.5) entre la position du tick précédent et la position du tick courant à CHAQUE
-    /// FRAME — ne peut jamais sauter une cible même à vitesse élevée, contrairement à un simple
-    /// OverlapSphere sur la position instantanée. Une entité ne peut être touchée qu'une seule
-    /// fois par cast (HashSet). vfxImpact/soundEffect joués par entité touchée (même précédent
-    /// que ResolveMultiHitStep) — seul le VFX de TRAJET (effet qui suivrait le déplacement
-    /// lui-même) reste hors scope, chantier VFX séparé à venir.</summary>
+    /// FRAME — ne peut jamais sauter une cible même à vitesse élevée. Un OverlapSphere initial à
+    /// `origin` précède la boucle (un SphereCastAll ne détecte pas un chevauchement déjà présent
+    /// à son point de départ — sinon une entité collée au caster au lancement ne serait jamais
+    /// touchée). Une entité ne peut être touchée qu'une seule fois par cast (HashSet).
+    /// vfxImpact/soundEffect joués par entité touchée (même précédent que ResolveMultiHitStep) —
+    /// seul le VFX de TRAJET (effet qui suivrait le déplacement lui-même) reste hors scope,
+    /// chantier VFX séparé à venir.</summary>
     private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination)
     {
         float totalDistance = Vector3.Distance(origin, destination);
@@ -238,6 +240,30 @@ Dans `Combat/SkillSystem.cs`, juste après la fin de `DelayedZoneRoutine()` (apr
         Vector3 dir  = (destination - origin) / totalDistance;
 
         HashSet<Entity> alreadyHit = new HashSet<Entity>();
+
+        // Pass initiale à l'origine — un SphereCastAll ne détecte JAMAIS un collider déjà en
+        // chevauchement à son point de départ (limitation connue de la physique Unity, même
+        // raison pour laquelle DashInDirection utilise OverlapSphere et non un SphereCast). Sans
+        // ce pass, une entité collée au caster au moment du lancement (ex: un ennemi au
+        // corps-à-corps quand le joueur lance la trajectoire) pourrait n'être JAMAIS touchée.
+        foreach (Collider col in Physics.OverlapSphere(origin, radius))
+        {
+            Entity entity = col.GetComponentInParent<Entity>();
+            if (entity == null || entity.isDead) continue;
+            if (alreadyHit.Contains(entity)) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+
+            alreadyHit.Add(entity);
+            ApplyEffectType(skill, caster, entity);
+            ApplyStatusEffects(skill, caster, entity);
+            CheckKill(entity);
+
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+        }
+
         Vector3 previousPos = origin;
         float   traveled    = 0f;
 
@@ -407,8 +433,11 @@ placée SUR le chemin (pas seulement à l'arrivée) prend des dégâts.
 
 - [ ] **Step 3: Tester Direction**
 
-Lancer le skill Direction+isTrajectory sans cible. Vérifier que la hitbox voyage en ligne droite
-dans la direction où le PERSONNAGE fait face (pas la souris/caméra — `_skillDirection` n'est
+Marcher d'abord dans une direction précise et bien visible (le joueur ne pivote JAMAIS vers la
+souris en mode Direction — `EngageAndFaceTarget()` l'exclut explicitement, voir
+`SkillBar.cs:980-990` — donc `caster.transform.forward` = dernière direction de marche, pas le
+regard caméra). Puis lancer le skill Direction+isTrajectory sans cible. Vérifier que la hitbox
+voyage en ligne droite dans CETTE direction (pas la souris/caméra — `_skillDirection` n'est
 jamais posé par le flow joueur actuel, voir Global Constraints) sur une distance cohérente avec
 `range`, et touche les entités sur le chemin.
 
@@ -447,7 +476,21 @@ touche 2+ entités espacées sur le chemin — vérifier que le VFX/son joue à 
 position de l'entité touchée (pas une seule fois pour tout le cast, pas au point de départ/
 d'arrivée).
 
-- [ ] **Step 10: Rapporter les résultats**
+- [ ] **Step 10: Vérifier une cible au corps-à-corps (point blank)**
+
+Lancer une trajectoire alors qu'une entité est déjà collée au caster au moment du lancement
+(ex: un ennemi au corps-à-corps) — elle DOIT être touchée dès le premier instant. Vérifie le
+pass `OverlapSphere` initial de `TrajectoryRoutine()` (Task 2, Step 1) : un `SphereCastAll` seul
+ne détecte pas un chevauchement déjà présent à son point de départ, cette entité serait
+autrement ratée en permanence.
+
+- [ ] **Step 11: Vérifier la mort du caster en cours de trajet**
+
+Si possible à déclencher manuellement (prendre des dégâts pendant qu'une trajectoire lente
+voyage) — la coroutine doit s'arrêter proprement (`break` sur `caster.isDead`), aucune erreur
+Console.
+
+- [ ] **Step 12: Rapporter les résultats**
 
 Florian confirme si tous les points ci-dessus passent, ou signale les écarts observés pour
 investigation.

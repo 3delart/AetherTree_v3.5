@@ -51,8 +51,15 @@ Un seul nouveau champ, juste après le bloc `hasDelayedImpact`/`impactDelay`/`zo
 `zoneTickInterval` du chantier C :
 
 ```csharp
-[ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Direction)]
-public bool isTrajectory;
+[Tooltip("Transforme la résolution de ce skill en hitbox mobile qui voyage du caster vers " +
+         "une destination (au lieu de résoudre les dégâts au point de résolution existant, " +
+         "une trajectoire est parcourue et touche tout ce qui se trouve sur son passage). " +
+         "Distinct de hasDelayedImpact (zone FIXE une fois plantée) — mutuellement exclusif. " +
+         "GroundTarget : voyage vers le point cliqué au sol. Direction : voyage en ligne " +
+         "droite sur une distance = range.")]
+[ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Direction,
+    Header = "⑨Ter Trajectoire mobile")]
+public bool isTrajectory = false;
 ```
 
 `ShowIfAttribute` prend `params object[] values` — le constructeur combine nativement plusieurs
@@ -158,6 +165,30 @@ private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 or
     Vector3 dir  = (destination - origin) / totalDistance;
 
     HashSet<Entity> alreadyHit = new HashSet<Entity>();
+
+    // Pass initiale à l'origine — un SphereCastAll ne détecte JAMAIS un collider déjà en
+    // chevauchement à son point de départ (limitation connue de la physique Unity, même raison
+    // pour laquelle DashInDirection utilise OverlapSphere et non un SphereCast). Sans ce pass,
+    // une entité collée au caster au moment du lancement (ex: un ennemi au corps-à-corps quand
+    // le joueur lance la trajectoire) pourrait n'être JAMAIS touchée.
+    foreach (Collider col in Physics.OverlapSphere(origin, radius))
+    {
+        Entity entity = col.GetComponentInParent<Entity>();
+        if (entity == null || entity.isDead) continue;
+        if (alreadyHit.Contains(entity)) continue;
+        if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+
+        alreadyHit.Add(entity);
+        ApplyEffectType(skill, caster, entity);
+        ApplyStatusEffects(skill, caster, entity);
+        CheckKill(entity);
+
+        if (skill.vfxImpact != null)
+            Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+        if (skill.soundEffect != null)
+            AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+    }
+
     Vector3 previousPos = origin;
     float   traveled    = 0f;
 
@@ -290,9 +321,11 @@ un en mode `GroundTarget`, un en mode `Direction`. Points à vérifier :
 1. **GroundTarget** : cliquer un point au sol, la hitbox doit voyager du joueur vers ce point à
    la vitesse de `projectileSpeed` et infliger des dégâts à toute entité traversée en chemin
    (pas seulement à l'arrivée).
-2. **Direction** : lancer sans cible, la hitbox doit voyager en ligne droite dans la direction où
-   le PERSONNAGE fait face (`caster.transform.forward` — pas la souris/caméra, voir note sur
-   `_skillDirection` plus haut) sur une distance `range`, mêmes dégâts en chemin.
+2. **Direction** : marcher d'abord dans une direction précise (le joueur ne pivote jamais vers
+   la souris en mode Direction, `EngageAndFaceTarget()` l'exclut explicitement), puis lancer
+   sans cible — la hitbox doit voyager en ligne droite dans la direction où le PERSONNAGE fait
+   face (`caster.transform.forward` — pas la souris/caméra, voir note sur `_skillDirection` plus
+   haut) sur une distance `range`, mêmes dégâts en chemin.
 3. **Esquive réelle** : une cible qui se déplace hors du chemin APRÈS le lancement mais AVANT
    que la hitbox n'atteigne sa position ne doit PAS être touchée.
 4. **Pas de double-hit** : une cible qui reste immobile pile sur le trajet ne doit recevoir
@@ -303,3 +336,13 @@ un en mode `GroundTarget`, un en mode `Direction`. Points à vérifier :
    cochés en même temps → vérifier l'avertissement dans la Console à la sélection de l'asset.
 7. **Deux trajectoires simultanées** : relancer un 2ᵉ skill à trajectoire avant que le 1ᵉʳ
    n'arrive à destination — les deux doivent progresser indépendamment sans se perturber.
+8. **VFX/son par entité** : configurer `vfxImpact`/`soundEffect` sur un skill de test, toucher
+   2+ entités espacées sur le chemin — le VFX/son doit jouer à CHAQUE hit, à la position de
+   l'entité touchée, pas une seule fois pour tout le cast.
+9. **Cible au corps-à-corps (point blank)** : lancer une trajectoire alors qu'une entité est
+   déjà collée au caster au moment du clic/de la résolution — elle DOIT être touchée dès le
+   premier instant (vérifie le pass `OverlapSphere` initial, un `SphereCastAll` seul ne détecte
+   pas un chevauchement déjà présent à son point de départ).
+10. **Mort du caster en cours de trajet** : si possible à déclencher manuellement (dégâts reçus
+    pendant que la trajectoire voyage) — la coroutine doit s'arrêter proprement, aucune erreur
+    Console.
