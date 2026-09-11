@@ -51,23 +51,23 @@ Un seul nouveau champ, juste après le bloc `hasDelayedImpact`/`impactDelay`/`zo
 `zoneTickInterval` du chantier C :
 
 ```csharp
-[ShowIf(nameof(targetType), TargetType.GroundTarget, AndField = nameof(targetType), AndValue = TargetType.Direction)]
+[ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Direction)]
 public bool isTrajectory;
 ```
 
-*(Le pattern exact de `[ShowIf]` pour "l'un OU l'autre de deux valeurs" doit être vérifié contre
-l'implémentation réelle de l'attribut avant d'écrire le plan — si l'attribut ne supporte qu'un
-ET logique entre deux champs et pas un OU entre deux valeurs du même champ, la tâche
-d'implémentation utilisera deux `[ShowIf]` successifs ou une condition custom, à trancher au
-moment du plan après lecture du fichier d'attribut réel.)*
+`ShowIfAttribute` prend `params object[] values` — le constructeur combine nativement plusieurs
+valeurs du MÊME champ en OU (voir `Utils/ShowIfAttribute.cs`, déjà utilisé ainsi par exemple pour
+`[ShowIf(nameof(action), DialogueAction.AcceptQuest, DialogueAction.TurnInQuest)]`). Pas besoin
+d'`AndField`/`AndValue` (réservé à combiner deux champs DIFFÉRENTS en ET).
 
 Aucun autre champ numérique n'est ajouté : la vitesse réutilise `projectileSpeed` (fallback
-10 unités/sec si `<= 0`, cohérent avec les fallbacks déjà utilisés par `ExecuteDirection`/
-`ExecuteSkillshot`), le rayon de la hitbox réutilise `aoeRadius` (fallback 0.5, même valeur que
-`ExecuteDirection`), la portée max en mode `Direction` réutilise `range` (fallback 10, même
-valeur que `ExecuteDirection`).
+10 unités/sec si `<= 0` — arbitraire mais cohérent avec les autres fallbacks du fichier,
+`projectileSpeed` n'ayant aucun fallback préexistant ailleurs), le rayon de la hitbox réutilise
+`aoeRadius` (fallback 0.5, même valeur que `ExecuteDirection`), la portée max en mode
+`Direction` réutilise `range` (fallback 10, même valeur que `ExecuteDirection` — `ExecuteSkillshot`
+utilise des fallbacks différents, 15/0.25, non pertinents ici).
 
-`OnValidate()` gagne deux nouveaux avertissements, suivant l'idiome déjà en place dans le
+`OnValidate()` gagne trois nouveaux avertissements, suivant l'idiome déjà en place dans le
 fichier (`Debug.LogWarning` préfixé du nom du skill) :
 - `isTrajectory == true` et `hasDelayedImpact == true` simultanément → avertissement
   d'incompatibilité, aucune valeur n'est modifiée automatiquement (pas de writeback, cohérent
@@ -75,6 +75,15 @@ fichier (`Debug.LogWarning` préfixé du nom du skill) :
 - `isTrajectory == true` et `targetType` différent de `GroundTarget`/`Direction` → avertissement
   de configuration incohérente (même idiome que le warning `targetType`-drift ajouté au
   chantier C pour `hasDelayedImpact`).
+- `isTrajectory == true` et `executionType != SkillExecutionType.Normal` → avertissement,
+  symétrique du warning déjà existant pour `hasDelayedImpact && executionType != Normal`. Sans
+  lui, un skill `isTrajectory` configuré en MultiHit/ComboSequence n'a aucun avertissement alors
+  que `StartTrajectory()` n'est jamais atteinte depuis le dispatch MultiHit/ComboSequence normal
+  (silencieusement ignorée) — sauf un cas particulier déjà présent pour `hasDelayedImpact` et
+  non corrigé dans ce chantier (`LaunchSkill()` teste `castTime > 0` AVANT `executionType`, donc
+  un skill MultiHit avec `castTime > 0` passe par `StartChannel()`/`ResolveChannel()`, où
+  `isTrajectory` EST atteint et `hitSteps` est silencieusement ignoré — comportement préexistant
+  identique pour `hasDelayedImpact`, non spécifique à ce chantier, pas corrigé ici).
 
 ## `Combat/SkillSystem.cs`
 
@@ -119,6 +128,13 @@ public void StartTrajectory(SkillData skill, Entity caster)
     }
     else // TargetType.Direction
     {
+        // _skillDirection n'est en réalité JAMAIS posé par le flow joueur actuel —
+        // SetSkillDirection() n'a qu'un seul appelant dans tout le projet
+        // (TargetingSystem.TryExecuteSkill(), lui-même sans appelant, code mort). Le fallback
+        // caster.transform.forward est donc TOUJOURS celui utilisé en pratique aujourd'hui —
+        // comportement déjà identique pour ExecuteDirection()/ExecuteSkillshot()/ExecuteCone(),
+        // pas une régression introduite ici. La direction résolue est celle où le PERSONNAGE
+        // fait face, pas la souris/le regard caméra.
         Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
         _skillDirection = null;
         float range = skill.range > 0f ? skill.range : 10f;
@@ -147,8 +163,11 @@ private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 or
 
     while (traveled < totalDistance)
     {
-        // Même garde que DelayedZoneRoutine/DashToTarget/DashInDirection — le caster peut
-        // mourir en cours de trajet.
+        // Garde caster mort en cours de trajet — même effet que le `break` de
+        // DelayedZoneRoutine (rien à nettoyer après, pas de marker/VFX créé par cette coroutine).
+        // DashToTarget/DashInDirection utilisent `yield break` (pas `break`) car ILS ont du
+        // nettoyage post-boucle à sauter — pas le cas ici, comparaison à ces deux-là non
+        // pertinente.
         if (caster == null || caster.isDead) break;
 
         traveled += speed * Time.deltaTime;
@@ -169,6 +188,16 @@ private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 or
                 ApplyEffectType(skill, caster, entity);
                 ApplyStatusEffects(skill, caster, entity);
                 CheckKill(entity);
+
+                // Un vfxImpact/soundEffect PAR entité touchée — même précédent que
+                // ResolveMultiHitStep() (une trajectoire est une séquence de hits distincts,
+                // potentiellement à des positions/moments différents, pas une zone unique comme
+                // DelayedZoneRoutine qui joue un seul vfx/son par tick peu importe combien
+                // d'entités touchées).
+                if (skill.vfxImpact != null)
+                    Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+                if (skill.soundEffect != null)
+                    AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
             }
         }
 
@@ -178,9 +207,10 @@ private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 or
 }
 ```
 
-Pas de VFX/son dans cette coroutine pour l'instant (scope explicitement limité à la plomberie
-logique — le chantier VFX à venir ajoutera un `vfxTrajectory` ou équivalent qui suivra
-`currentPos` à chaque frame).
+`vfxImpact`/`soundEffect` sont donc bien joués (contrairement à une version antérieure de cette
+spec qui prévoyait de ne rien jouer du tout) — seul le VFX de TRAJET (un effet qui suivrait
+`currentPos` à chaque frame pour visualiser le déplacement lui-même) reste hors scope, réservé
+au chantier VFX à venir.
 
 ## `Data/Skills/SkillBar.cs`
 
@@ -238,15 +268,19 @@ cas, inchangés — même principe "launch vs resolution" que chantiers A/B/C : 
 
 ## Fichiers touchés
 
-- `Data/Skills/SkillData.cs` — champ `isTrajectory`, 2 nouveaux avertissements `OnValidate()`.
+- `Data/Skills/SkillData.cs` — champ `isTrajectory`, 3 nouveaux avertissements `OnValidate()`.
 - `Combat/SkillSystem.cs` — `StartTrajectory()` + `TrajectoryRoutine()` (nouvelles méthodes,
   aucune méthode existante modifiée).
 - `Data/Skills/SkillBar.cs` — branchement `isTrajectory` ajouté dans `ResolveInstant()` et
   `ResolveChannel()`, juste après le branchement `hasDelayedImpact` existant.
 
-Aucun changement dans `TargetingSystem.cs` — `_groundTargetPoint`/`_skillDirection` sont déjà
-posés par le flow existant (clic au sol / direction souris), consommés de la même façon que les
-mécaniques statiques déjà en place.
+Aucun changement dans `TargetingSystem.cs`. `_groundTargetPoint` est bien posé par le flow
+existant (clic au sol, voir `StartInstant()`/`StartChannel()`), consommé de la même façon que
+les mécaniques statiques déjà en place. `_skillDirection`, en revanche, n'est **jamais** posé
+par le flow joueur réel aujourd'hui (voir note dans `StartTrajectory()` ci-dessus) — mode
+`Direction` retombe donc systématiquement sur `caster.transform.forward`, comportement déjà
+partagé avec `ExecuteDirection()`/`ExecuteSkillshot()`/`ExecuteCone()` existants, pas une
+régression de ce chantier.
 
 ## Vérification (manuelle, Play Mode, geste Florian)
 
@@ -256,8 +290,9 @@ un en mode `GroundTarget`, un en mode `Direction`. Points à vérifier :
 1. **GroundTarget** : cliquer un point au sol, la hitbox doit voyager du joueur vers ce point à
    la vitesse de `projectileSpeed` et infliger des dégâts à toute entité traversée en chemin
    (pas seulement à l'arrivée).
-2. **Direction** : lancer sans cible, la hitbox doit voyager en ligne droite dans la direction
-   du regard/souris sur une distance `range`, mêmes dégâts en chemin.
+2. **Direction** : lancer sans cible, la hitbox doit voyager en ligne droite dans la direction où
+   le PERSONNAGE fait face (`caster.transform.forward` — pas la souris/caméra, voir note sur
+   `_skillDirection` plus haut) sur une distance `range`, mêmes dégâts en chemin.
 3. **Esquive réelle** : une cible qui se déplace hors du chemin APRÈS le lancement mais AVANT
    que la hitbox n'atteigne sa position ne doit PAS être touchée.
 4. **Pas de double-hit** : une cible qui reste immobile pile sur le trajet ne doit recevoir
