@@ -132,12 +132,12 @@ public class SkillSystem : MonoBehaviour
         }
 
         // ── VFX & Son ────────────────────────────────────────
-        if (skill.vfxPrefab != null)
+        if (skill.vfxImpact != null)
         {
             Vector3 vfxPos = target != null
                 ? target.transform.position
                 : _groundTargetPoint ?? caster.transform.position;
-            Instantiate(skill.vfxPrefab, vfxPos, Quaternion.identity);
+            Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
         }
         if (skill.soundEffect != null)
             AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
@@ -178,15 +178,108 @@ public class SkillSystem : MonoBehaviour
 
         DispatchByTargetType(skill, caster, target);
 
-        if (skill.vfxPrefab != null)
+        if (skill.vfxImpact != null)
         {
             Vector3 vfxPos = target != null
                 ? target.transform.position
                 : _groundTargetPoint ?? caster.transform.position;
-            Instantiate(skill.vfxPrefab, vfxPos, Quaternion.identity);
+            Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
         }
         if (skill.soundEffect != null)
             AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+    }
+
+    /// <summary>Résout un skill `hasDelayedImpact` DÉJÀ lancé par SkillBar (mana/anim/
+    /// BeginSkillUse déjà faits au lancement) — fait le bookkeeping de résolution immédiatement
+    /// (comme ResolveExecute), mais reporte le DISPATCH DES DÉGÂTS à une coroutine différée qui
+    /// détone après `skill.impactDelay` secondes, à qui se trouve réellement dans la zone à ce
+    /// moment (pas la cible figée au clic). Position capturée en Vector3 pur — ni le caster ni
+    /// la cible n'influencent la zone une fois plantée.</summary>
+    public void PlantDelayedZone(SkillData skill, Entity caster, Entity target)
+    {
+        if (skill == null || caster == null || caster.isDead) return;
+
+        if (caster.entityType == EntityType.Player && caster is Player player)
+        {
+            player.ResolveSkillUse(skill, target);
+
+            GameEventBus.Publish(new SkillUsedEvent
+            {
+                skill          = skill,
+                target         = target,
+                caster         = player,
+                primaryElement = skill.PrimaryElement,
+                isCombo        = skill.elements != null && skill.elements.Count >= 2,
+                locationID     = player.currentZoneID,
+                isInParty      = false,
+            });
+        }
+
+        if (target is Mob mobTarget && caster is Player attackerPlayer)
+            mobTarget.RegisterLastSkill(attackerPlayer, skill);
+
+        Vector3 position;
+        if (skill.targetType == TargetType.GroundTarget)
+        {
+            // Même consommation que ExecuteGroundTarget() — sans ce reset, un skill sans
+            // rapport lancé plus tard (ex: TeleportSelf) hériterait de cette position périmée.
+            position = _groundTargetPoint ?? caster.transform.position;
+            _groundTargetPoint = null;
+        }
+        else
+        {
+            position = target != null ? target.transform.position : caster.transform.position;
+        }
+
+        GameObject marker = skill.vfxZoneMarker != null
+            ? Instantiate(skill.vfxZoneMarker, position, Quaternion.identity)
+            : null;
+
+        StartCoroutine(DelayedZoneRoutine(skill, caster, position, marker));
+    }
+
+    /// <summary>Tick(s) de détonation d'une zone plantée par PlantDelayedZone(). Un seul tick si
+    /// `zoneDuration == 0` (impact différé simple), sinon retick toutes les
+    /// `zoneTickInterval` secondes pendant `zoneDuration` (zone persistante type lave). Chaque
+    /// tick réutilise EXACTEMENT la logique de ExecuteGroundTarget()/ExecuteAoETarget() — même
+    /// OverlapSphere + PassesAoeFilter + ApplyEffectType/ApplyStatusEffects/CheckKill.</summary>
+    private IEnumerator DelayedZoneRoutine(SkillData skill, Entity caster, Vector3 position, GameObject marker)
+    {
+        yield return new WaitForSeconds(skill.impactDelay);
+
+        float remaining = skill.zoneDuration;
+        while (true)
+        {
+            // Même garde que les autres coroutines longues du fichier (DashToTarget/
+            // DashInDirection) — le caster peut mourir entre le plantage et la détonation.
+            // `break` (pas `yield break`) pour que le nettoyage du marker en fin de méthode
+            // s'exécute quand même.
+            if (caster == null || caster.isDead) break;
+
+            Collider[] hits = Physics.OverlapSphere(position, skill.aoeRadius);
+            foreach (Collider col in hits)
+            {
+                Entity entity = col.GetComponentInParent<Entity>();
+                if (entity == null || entity.isDead) continue;
+                if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+
+                ApplyEffectType(skill, caster, entity);
+                ApplyStatusEffects(skill, caster, entity);
+                CheckKill(entity);
+            }
+
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, position, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, position);
+
+            if (remaining <= 0f) break;
+
+            yield return new WaitForSeconds(skill.zoneTickInterval);
+            remaining -= skill.zoneTickInterval;
+        }
+
+        if (marker != null) Destroy(marker);
     }
 
     /// <summary>Résout UN hit précis d'un skill MultiHit (joueur uniquement, chantier B) —
@@ -237,7 +330,7 @@ public class SkillSystem : MonoBehaviour
             foreach (var entry in step.statusEffects)
                 ApplyStatusEffectEntry(entry, caster, target);
 
-        GameObject vfx   = step.vfxPrefab  ?? skill.vfxPrefab;
+        GameObject vfx   = step.vfxPrefab  ?? skill.vfxImpact;
         AudioClip  sound = step.soundEffect ?? skill.soundEffect;
         if (vfx   != null) Instantiate(vfx, target.transform.position, Quaternion.identity);
         if (sound != null) AudioSource.PlayClipAtPoint(sound, caster.transform.position);
@@ -362,7 +455,7 @@ public class SkillSystem : MonoBehaviour
                 foreach (var entry in step.statusEffects)
                     ApplyStatusEffectEntry(entry, caster, target);
 
-            GameObject vfx   = step.vfxPrefab  ?? skill.vfxPrefab;
+            GameObject vfx   = step.vfxPrefab  ?? skill.vfxImpact;
             AudioClip  sound = step.soundEffect ?? skill.soundEffect;
             if (vfx   != null) Instantiate(vfx, target.transform.position, Quaternion.identity);
             if (sound != null) AudioSource.PlayClipAtPoint(sound, caster.transform.position);
