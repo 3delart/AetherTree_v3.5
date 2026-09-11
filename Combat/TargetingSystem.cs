@@ -122,7 +122,7 @@ public class TargetingSystem : MonoBehaviour
         {
             return;
         }
-        if (SkillBar.Instance != null && (SkillBar.Instance.IsApproachingSkill || SkillBar.Instance.IsChanneling || SkillBar.Instance.IsComboActive || SkillBar.Instance.IsPendingHit || SkillBar.Instance.IsPendingMultiHit))
+        if (SkillBar.Instance != null && (SkillBar.Instance.IsApproachingSkill || SkillBar.Instance.IsChanneling || SkillBar.Instance.IsComboActive || SkillBar.Instance.IsAnimLocked))
         {
             return;
         }

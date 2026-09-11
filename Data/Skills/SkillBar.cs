@@ -117,6 +117,15 @@ public class SkillBar : MonoBehaviour
 
     public bool IsPendingMultiHit => _pendingMultiSlot >= 0;
 
+    // ── Verrou pleine durée d'anim (Normal/MultiHit/Combo-step) ────────────────────────────
+    // Distinct de IsPendingHit/IsPendingMultiHit : ceux-ci retombent dès la RÉSOLUTION (event/
+    // timeout, potentiellement avant la fin du clip si l'event est placé en milieu d'anim).
+    // Florian veut qu'un skill reste bloquant (verrou SkillBar + mouvement) jusqu'à la fin
+    // RÉELLE de l'anim, pas juste jusqu'à la résolution des dégâts — donc un timer séparé,
+    // posé à la durée du clip au lancement, indépendant du moment où le hit résout.
+    private float _animLockTimer = 0f;
+    public bool IsAnimLocked => _animLockTimer > 0f;
+
     public bool IsChanneling => _isChanneling;
 
     /// <summary>True pendant la fenêtre d'attente d'un ComboSequence (entre deux appuis) —
@@ -188,6 +197,9 @@ public class SkillBar : MonoBehaviour
             _pendingMultiTimeout -= Time.deltaTime;
             if (_pendingMultiTimeout <= 0f) ResolveMultiHitIndex(_pendingMultiNextIndex);
         }
+
+        if (_animLockTimer > 0f)
+            _animLockTimer -= Time.deltaTime;
 
         if (_comboStepCooldown > 0f)
             _comboStepCooldown -= Time.deltaTime;
@@ -315,11 +327,14 @@ public class SkillBar : MonoBehaviour
         }
 
         // ── Vérification GCD & locks ──────────────────────────
-        // MultiHit, canalisation, ou hit en attente de résolution (chantier B) → tous les
-        // slots bloqués sans exception. Nécessaire : tous les skills partagent le MÊME state
-        // Animator "Attack" — lancer un 2e skill pendant que le 1er attend encore son event
-        // écraserait le clip en cours, et l'event du 1er ne tomberait jamais.
-        if (_multiHitLockTimer > 0f || _isChanneling || IsPendingHit || IsPendingMultiHit)
+        // MultiHit, canalisation, ou anim d'un skill en cours (chantier B) → tous les slots
+        // bloqués sans exception. IsAnimLocked (pas IsPendingHit/IsPendingMultiHit) : Florian
+        // veut qu'aucun nouveau skill ne puisse se lancer avant que l'anim COMPLÈTE du
+        // précédent soit terminée, pas juste sa résolution (qui peut tomber en milieu de
+        // clip selon où l'Animation Event est placé) — sinon un 2e skill écraserait le clip
+        // en cours en plein follow-through, et l'event du 1er (s'il n'était pas encore tombé)
+        // ne se déclencherait jamais.
+        if (_multiHitLockTimer > 0f || _isChanneling || IsAnimLocked)
         {
             return false;
         }
@@ -486,6 +501,7 @@ public class SkillBar : MonoBehaviour
         // entité non-pertinente au lieu du point au sol.
         _pendingHitTarget  = skill.targetType == TargetType.GroundTarget ? null : target;
         _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+        _animLockTimer     = _pendingHitTimeout;
 
         if (_pendingHitTimeout <= 0f)
             ResolveInstant();   // pas d'anim → rien à attendre, résout tout de suite
@@ -553,6 +569,7 @@ public class SkillBar : MonoBehaviour
         _pendingMultiTarget    = skill.targetType == TargetType.GroundTarget ? null : target;
         _pendingMultiNextIndex = 0;
         _pendingMultiTimeout   = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+        _animLockTimer         = _pendingMultiTimeout;
 
         if (_pendingMultiTimeout <= 0f)
             ResolveMultiHitIndex(0);   // pas d'anim → résout tout enchaîné immédiatement
@@ -804,6 +821,7 @@ public class SkillBar : MonoBehaviour
         _pendingHitSkill   = skill;
         _pendingHitTarget  = skill.targetType == TargetType.GroundTarget ? null : target;
         _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+        _animLockTimer     = _pendingHitTimeout;
 
         if (_pendingHitTimeout <= 0f) ResolveInstant();
     }
@@ -881,12 +899,12 @@ public class SkillBar : MonoBehaviour
 
         if (dist <= range)
         {
-            // Un hit en attente de résolution (Normal/MultiHit/Combo-step, chantier B) doit
-            // résoudre avant qu'on livre l'approche — sinon LaunchSkill()/TryAdvanceCombo()
+            // L'anim COMPLÈTE d'un skill en cours (Normal/MultiHit/Combo-step, chantier B) doit
+            // se terminer avant qu'on livre l'approche — sinon LaunchSkill()/TryAdvanceCombo()
             // écraseraient silencieusement _pendingHit*/_pendingMulti* d'un autre skill encore
             // en vol. On NE cancel PAS l'approche : elle réessaiera à la frame suivante une
-            // fois le hit en cours résolu.
-            if (IsPendingHit || IsPendingMultiHit) return;
+            // fois l'anim en cours terminée.
+            if (IsAnimLocked) return;
 
             if (_agent != null) _agent.ResetPath();
             // TryAdvanceCombo AVANT LaunchSkill — même pattern que TryUseSlot(). Sans ce check,

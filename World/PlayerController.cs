@@ -58,9 +58,13 @@ public class PlayerController : MonoBehaviour
         // Stun, Freeze, Root ou Knockback (mini-stun) — bloque le mouvement
         if (fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed || fx.isRooted || fx.isKnockedBack)) return;
 
-        // MultiHit en cours — immobile le temps du combo (ComboSequence exclu,
-        // on peut se déplacer entre deux sorts d'un ComboSequence).
-        if (SkillBar.Instance != null && (SkillBar.Instance.IsMultiHitLocked || SkillBar.Instance.IsPendingMultiHit))
+        // Skill en cours (Normal, Combo-step ou MultiHit) — immobile jusqu'à la fin RÉELLE de
+        // l'anim (IsAnimLocked), pas juste jusqu'à la résolution des dégâts (qui peut tomber en
+        // milieu de clip selon où l'Animation Event est placé) — IsMultiHitLocked reste utile à
+        // part pour le cas passif→MultiHit qui passe encore par l'ancien SkillSystem.Execute().
+        // Canalisation volontairement exclue : le mouvement l'annule, comportement voulu (CD
+        // moitié).
+        if (SkillBar.Instance != null && (SkillBar.Instance.IsMultiHitLocked || SkillBar.Instance.IsAnimLocked))
         {
             if (_agent.hasPath) _agent.ResetPath();
             return;

@@ -60,6 +60,13 @@ public class SkillData : ScriptableObject
     [Tooltip("Types d'armes compatibles — vide = universel")]
     public List<WeaponType> compatibleWeapons = new List<WeaponType>();
 
+    [Tooltip("Skills équivalents pour d'autres variantes d'arme de la même famille — même compétence " +
+             "conceptuelle, stats/anim propres à chaque arme. Vide = pas de variante (skill universel ou " +
+             "exclusif). Rempli au fur et à mesure — évite de devoir reprendre tous les skills plus tard " +
+             "quand le système de déblocage de variante sera implémenté (pas prévu pour le prototype).\n" +
+             "Le lien part TOUJOURS du skill de base vers ses variantes — pas besoin de lien retour.")]
+    public List<SkillVariantLink> weaponVariantLinks = new List<SkillVariantLink>();
+
     // ── ③ Effet principal ─────────────────────────────────────
     [Header("③ Effet principal")]
     [Tooltip("Effet principal du skill.\n" +
@@ -448,4 +455,19 @@ public class HitStep
     /// <summary>Multiplicateur élémentaire effectif — 0 si élément Neutral.</summary>
     public float EffectiveElementalMultiplier
         => element == ElementType.Neutral ? 0f : elementalMultiplier;
+}
+
+// =============================================================
+// SKILL VARIANT LINK — lien vers l'équivalent d'un skill pour une
+// autre variante d'arme de la même famille (ex: skl_massue_frappe1
+// → { Hammer, skl_marteau_frappe1 }). Système de déblocage pas
+// encore implémenté (pas prévu pour le prototype) — ce champ existe
+// pour être rempli au fur et à mesure et éviter une reprise de tous
+// les skills plus tard.
+// =============================================================
+[System.Serializable]
+public class SkillVariantLink
+{
+    public WeaponType weaponType;
+    public SkillData  skill;
 }
