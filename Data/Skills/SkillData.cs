@@ -230,6 +230,7 @@ public class SkillData : ScriptableObject
 
     [Tooltip("Délai en secondes entre le plantage de la zone (résolution existante) et le premier\n" +
              "tick de dégâts.")]
+    [Min(0f)]
     [ShowIf(nameof(hasDelayedImpact), true)]
     public float impactDelay = 1f;
 
@@ -237,10 +238,13 @@ public class SkillData : ScriptableObject
              "0 = un seul tick, la zone disparaît ensuite (impact différé simple — ex: comète).\n" +
              "> 0 = zone persistante qui retick toutes les zoneTickInterval secondes pendant cette\n" +
              "durée (ex: zone de lave, pluie de glace).")]
+    [Min(0f)]
     [ShowIf(nameof(hasDelayedImpact), true)]
     public float zoneDuration = 0f;
 
-    [Tooltip("Fréquence des ticks de dégâts pendant zoneDuration. Ignoré si zoneDuration = 0.")]
+    [Tooltip("Fréquence des ticks de dégâts pendant zoneDuration. Ignoré si zoneDuration = 0.\n" +
+             "Plancher réel appliqué au runtime : 0.05s (voir SkillSystem.DelayedZoneRoutine).")]
+    [Min(0.05f)]
     [ShowIf(nameof(hasDelayedImpact), true)]
     public float zoneTickInterval = 1f;
 
@@ -248,8 +252,9 @@ public class SkillData : ScriptableObject
     [Header("⑩ Visuel & Son")]
     public Sprite     icon;
 
-    [Tooltip("VFX qui reste sur le caster, spawné au LANCEMENT (pentacle aux pieds, glow aux\n" +
-             "mains...). Optionnel — vide = pas de VFX de cast.")]
+    [Tooltip("VFX spawné à la position du caster AU LANCEMENT (pentacle aux pieds, glow aux\n" +
+             "mains...) — ne suit PAS le caster ensuite s'il bouge (viendra avec le chantier VFX).\n" +
+             "Optionnel — vide = pas de VFX de cast.")]
     public GameObject vfxCast;
 
     [Tooltip("VFX de zone/avertissement — spawné quand la zone se plante au sol (point de\n" +
@@ -375,6 +380,32 @@ public class SkillData : ScriptableObject
             Debug.LogWarning($"[SkillData:{name}] hasDelayedImpact = true avec executionType = " +
                               $"{executionType} — combinaison non gérée, la zone différée ne " +
                               "fonctionne qu'avec executionType = Normal (instant ou canalisé).", this);
+
+        // [ShowIf] masque hasDelayedImpact hors Target/GroundTarget/AoE_Target dans l'Inspector,
+        // mais ne le RESET jamais si targetType change après coup (ShowIf n'a aucun writeback) —
+        // le champ reste true, invisible, et PlantDelayedZone() tourne quand même au runtime,
+        // repliant silencieusement le skill sur une sphère centrée sur le caster.
+        if (hasDelayedImpact
+            && targetType != TargetType.Target
+            && targetType != TargetType.GroundTarget
+            && targetType != TargetType.AoE_Target)
+            Debug.LogWarning($"[SkillData:{name}] hasDelayedImpact = true avec targetType = " +
+                              $"{targetType} — non supporté (le champ est masqué dans l'Inspector " +
+                              "mais reste actif). La zone se plantera quand même, centrée sur le " +
+                              "caster. Décoche hasDelayedImpact ou remets targetType sur Target/" +
+                              "GroundTarget/AoE_Target.", this);
+
+        // hasDelayedImpact réutilise aoeRadius pour la taille de la zone (Physics.OverlapSphere) —
+        // mais aoeRadius vaut 0 par défaut et n'est jamais lu par le chemin normal d'un skill
+        // targetType = Target (ExecuteOnTarget ne s'en sert pas). Sans avertissement, le cas
+        // d'usage principal du chantier (comète sur Target) plante une zone de rayon 0 — touche
+        // uniquement une cible parfaitement immobile, "rate" au moindre mouvement, sans qu'on
+        // comprenne pourquoi.
+        if (hasDelayedImpact && aoeRadius <= 0f)
+            Debug.LogWarning($"[SkillData:{name}] hasDelayedImpact = true avec aoeRadius = 0 — " +
+                              "la zone différée réutilise aoeRadius pour sa taille (contrairement " +
+                              "à un skill Target normal, qui l'ignore). Règle aoeRadius > 0, sinon " +
+                              "la zone ne touche qu'une cible parfaitement immobile au point exact.", this);
     }
 #endif
 }

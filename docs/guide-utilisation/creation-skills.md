@@ -34,7 +34,7 @@
 | `skillName` / `description` | Textes affichés au joueur (fr/en). |
 | `tags` | Liste de `SkillTag` (Stun, DoT, Mobilite, Combo…) — informatif, utilisé pour le filtrage `SkillLibraryUI` et par `UnlockManager`. |
 | `skillType` | `BasicAttack` (slot 0 uniquement) / `Active` (slots 1-8) / `Ultimate` (slot 9). |
-| `icon`, `vfxPrefab`, `soundEffect` | Visuel/son du skill (ou du coup de base pour un MultiHit — chaque `HitStep` peut avoir les siens, sinon hérite de ceux-ci). |
+| `icon`, `vfxImpact`, `soundEffect` | Visuel/son du skill (ou du coup de base pour un MultiHit — chaque `HitStep` peut avoir les siens, sinon hérite de ceux-ci). |
 
 ### ③ Effet principal
 
@@ -183,7 +183,7 @@ Une seule activation, plusieurs coups enchaînés sur la même animation.
 1. Assigne `attackAnimation`.
 2. Remplis `hitSteps` — une entrée par coup supplémentaire (au-delà du coup de base), chacune
    avec ses propres `damageMultiplier`, ratios, `element`, `statusEffects`, et
-   `vfxPrefab`/`soundEffect` optionnels (vide = hérite du skill parent).
+   `vfxImpact`/`soundEffect` optionnels (vide = hérite du skill parent).
 3. Pose **1 Animation Event par coup, coup de base INCLUS** :
    - hitIndex **0** = coup de base (utilise les stats du `SkillData` parent, pas un `HitStep`).
    - hitIndex **1..N** = `hitSteps[0]`, `hitSteps[1]`, ... dans l'ordre.

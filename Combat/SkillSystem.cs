@@ -247,6 +247,12 @@ public class SkillSystem : MonoBehaviour
     {
         yield return new WaitForSeconds(skill.impactDelay);
 
+        // Clamp défensif — un zoneTickInterval <= 0 (mauvaise saisie, ou valeur posée par script/
+        // API en contournant le [Min] de l'Inspector) ferait tourner cette boucle indéfiniment,
+        // un OverlapSphere + dégâts + VFX à CHAQUE FRAME jusqu'à la mort du caster. 0.05s = 20
+        // ticks/seconde max, largement suffisant pour tout usage gameplay réel.
+        float tickInterval = Mathf.Max(0.05f, skill.zoneTickInterval);
+
         float remaining = skill.zoneDuration;
         while (true)
         {
@@ -275,8 +281,8 @@ public class SkillSystem : MonoBehaviour
 
             if (remaining <= 0f) break;
 
-            yield return new WaitForSeconds(skill.zoneTickInterval);
-            remaining -= skill.zoneTickInterval;
+            yield return new WaitForSeconds(tickInterval);
+            remaining -= tickInterval;
         }
 
         if (marker != null) Destroy(marker);
