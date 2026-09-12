@@ -125,6 +125,13 @@ public class SkillSystem : MonoBehaviour
             ? target.transform.position
             : _groundTargetPoint ?? caster.transform.position;
 
+        // Dash_Target/Dash_Direction résolvent leurs dégâts en coroutine, ~0.25-0.3s APRÈS ce
+        // point (le temps du dash) — DashToTarget()/DashInDirection() jouent maintenant
+        // vfxImpact/soundEffect elles-mêmes, au moment RÉEL du coup, pour ne pas les jouer trop
+        // tôt ici (trouvé lors de l'audit VFX du 2026-09-12).
+        bool isDash = skill.targetType == TargetType.Dash_Target
+                   || skill.targetType == TargetType.Dash_Direction;
+
         // ── Dispatch selon executionType ─────────────────────
         if (skill.executionType == SkillExecutionType.MultiHit
             && skill.hitSteps != null && skill.hitSteps.Count > 0)
@@ -140,10 +147,13 @@ public class SkillSystem : MonoBehaviour
         }
 
         // ── VFX & Son ────────────────────────────────────────
-        if (skill.vfxImpact != null)
-            Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
-        if (skill.soundEffect != null)
-            AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+        if (!isDash)
+        {
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+        }
     }
 
     /// <summary>Résout un skill DÉJÀ lancé par SkillBar (mana/anim/BeginSkillUse déjà faits au
@@ -184,12 +194,20 @@ public class SkillSystem : MonoBehaviour
             ? target.transform.position
             : _groundTargetPoint ?? caster.transform.position;
 
+        // Dash_Target/Dash_Direction jouent leur propre vfxImpact/soundEffect en coroutine —
+        // même raison que Execute() ci-dessus.
+        bool isDash = skill.targetType == TargetType.Dash_Target
+                   || skill.targetType == TargetType.Dash_Direction;
+
         DispatchByTargetType(skill, caster, target);
 
-        if (skill.vfxImpact != null)
-            Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
-        if (skill.soundEffect != null)
-            AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+        if (!isDash)
+        {
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+        }
     }
 
     /// <summary>Résout un skill `hasDelayedImpact` DÉJÀ lancé par SkillBar (mana/anim/
@@ -944,6 +962,15 @@ public class SkillSystem : MonoBehaviour
                 ApplyEffectType(skill, caster, target);
                 ApplyStatusEffects(skill, caster, target);
                 CheckKill(target);
+
+                // vfxImpact/soundEffect joués ICI, au moment RÉEL du coup — Execute()/
+                // ResolveExecute() ne les jouent plus pour Dash_Target (voir leur propre
+                // commentaire), sinon ils partaient immédiatement au clic, ~0.3s avant l'arrivée
+                // du dash (trouvé lors de l'audit VFX du 2026-09-12).
+                if (skill.vfxImpact != null)
+                    Instantiate(skill.vfxImpact, target.transform.position, Quaternion.identity);
+                if (skill.soundEffect != null)
+                    AudioSource.PlayClipAtPoint(skill.soundEffect, target.transform.position);
             }
         }
     }
@@ -996,6 +1023,13 @@ public class SkillSystem : MonoBehaviour
                 ApplyEffectType(skill, caster, entity);
                 ApplyStatusEffects(skill, caster, entity);
                 CheckKill(entity);
+
+                // vfxImpact/soundEffect joués ICI, par entité touchée, au moment RÉEL du coup —
+                // même raison que DashToTarget ci-dessus.
+                if (skill.vfxImpact != null)
+                    Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+                if (skill.soundEffect != null)
+                    AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
             }
 
             elapsed += Time.deltaTime;

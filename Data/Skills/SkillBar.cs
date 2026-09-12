@@ -103,6 +103,10 @@ public class SkillBar : MonoBehaviour
     private Entity    _channelTarget     = null;
     private Vector3   _channelStartPos   = Vector3.zero;
     private float     _channelStartTime  = 0f;   // Time.time au lancement — pour l'overlay CD de la SkillBarUI
+    // Référence gardée pour pouvoir le détruire si la canalisation est interrompue avant son
+    // terme (trouvé lors de l'audit VFX du 2026-09-12 — sans ça, le VFX de cast reste affiché
+    // pour toute sa durée configurée même si la canalisation est coupée bien avant).
+    private GameObject _channelVfxCast    = null;
 
     // ── Attente de résolution (Normal / step de Combo castTime 0) — chantier B ────────────
     private int       _pendingHitSlot    = -1;
@@ -705,8 +709,9 @@ public class SkillBar : MonoBehaviour
 
         _player.AnimatorController?.PlayChannel(skill.channelAnimation);
 
-        if (skill.vfxCast != null)
-            Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
+        _channelVfxCast = skill.vfxCast != null
+            ? Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity)
+            : null;
 
         // GroundTarget : le point est locké au clic (TryUseSlot()/CheckApproach(), avant cet
         // appel), pas re-raycasté ici — aim-then-channel, cohérent avec mana/HP/gold dépensés
@@ -785,6 +790,15 @@ public class SkillBar : MonoBehaviour
         _channelSkill  = null;
         _channelSlot   = -1;
         _channelTarget = null;
+
+        // Appelée aussi bien par ResolveChannel() (fin normale) que InterruptChannel() (coupée
+        // avant terme) — dans les deux cas, la canalisation est terminée, le VFX de cast n'a
+        // plus de raison de rester affiché plus longtemps que la canalisation elle-même.
+        if (_channelVfxCast != null)
+        {
+            Destroy(_channelVfxCast);
+            _channelVfxCast = null;
+        }
     }
 
     // ── Exécution combo step ──────────────────────────────────
