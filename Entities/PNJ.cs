@@ -529,7 +529,14 @@ public class PNJ : Entity
             if (_attackTimer <= 0f && data.basicAttackSkill != null)
             {
                 if (!isDead && !_combatTarget.isDead)
-                    _skillSystem.Execute(data.basicAttackSkill, this, _combatTarget);
+                {
+                    if (data.basicAttackSkill.hasDelayedImpact)
+                        _skillSystem.PlantDelayedZone(data.basicAttackSkill, this, _combatTarget);
+                    else if (data.basicAttackSkill.isTrajectory)
+                        _skillSystem.StartTrajectory(data.basicAttackSkill, this);
+                    else
+                        _skillSystem.Execute(data.basicAttackSkill, this, _combatTarget);
+                }
                 _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             }
         }
@@ -568,7 +575,12 @@ public class PNJ : Entity
             if (skill.manaCost > 0f) SpendMana(skill.manaCost);
 
             LookAt(target.transform);
-            _skillSystem.Execute(skill, this, target);
+            if (skill.hasDelayedImpact)
+                _skillSystem.PlantDelayedZone(skill, this, target);
+            else if (skill.isTrajectory)
+                _skillSystem.StartTrajectory(skill, this);
+            else
+                _skillSystem.Execute(skill, this, target);
             _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
             _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             return true;
