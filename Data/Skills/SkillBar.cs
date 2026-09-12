@@ -538,6 +538,8 @@ public class SkillBar : MonoBehaviour
 
         if (skill.hasDelayedImpact)
             SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);
+        else if (skill.isTrajectory)
+            SkillSystem.Instance?.StartTrajectory(skill, _player);
         else
             SkillSystem.Instance?.ResolveExecute(skill, _player, target);
 
@@ -720,6 +722,8 @@ public class SkillBar : MonoBehaviour
 
         if (skill.hasDelayedImpact)
             SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);
+        else if (skill.isTrajectory)
+            SkillSystem.Instance?.StartTrajectory(skill, _player);
         else
             SkillSystem.Instance?.Execute(skill, _player, target);
 
