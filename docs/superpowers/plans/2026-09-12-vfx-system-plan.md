@@ -1020,7 +1020,11 @@ Dot/Burn existant).
 - [ ] **Step 2: Tester le VFX de trajet — GroundTarget**
 
 Lancer `skl_test_trajectory_storm`. Le VFX doit voyager du joueur vers le point cliqué, orienté
-dans le sens du déplacement (pas statique), disparaître exactement à l'arrivée/résolution.
+dans le sens du déplacement (pas statique), disparaître exactement à l'arrivée/résolution. Note
+(trouvée en review finale) : pour une trajectoire en ligne droite, l'orientation reste CONSTANTE
+pendant tout le trajet (elle ne "tourne" jamais en vol, c'est mathématiquement normal — la
+direction ne change pas sur une ligne droite) — ne pas confondre ça avec un bug ; le calcul par
+frame est une garantie pour de futures trajectoires courbes, pas un no-op à corriger.
 
 - [ ] **Step 3: Tester la mort du caster en cours de route**
 
@@ -1047,6 +1051,15 @@ marche sur une Entity non-Player.
 
 Relancer le même buff/debuff (même asset) pendant qu'il est déjà actif sur la cible — un seul
 VFX doit rester visible, pas un second qui se superpose.
+
+- [ ] **Step 7bis: Tester le recast d'un asset DIFFÉRENT du même type non-stackable (trouvé en
+      review finale)**
+
+Configurer 2 `DebuffData` différents partageant le même `DebuffType` non-stackable (ex: deux
+variantes de Stun), chacun avec son propre `statusVfx`. Appliquer le premier, puis pendant qu'il
+est actif, appliquer le second (asset différent, même type) — le VFX du PREMIER doit disparaître
+et celui du SECOND doit apparaître (pas les deux en même temps, pas l'ancien qui reste). Corrigé
+lors de la review finale — vérifier que le fix tient en jeu.
 
 - [ ] **Step 8: Tester le stacking**
 
