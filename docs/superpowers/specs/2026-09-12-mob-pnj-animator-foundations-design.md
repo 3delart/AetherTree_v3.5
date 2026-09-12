@@ -283,6 +283,12 @@ private void ResolvePendingHit(int hitIndex)
     Entity    target = _pendingTarget;
     bool      isMulti = _pendingIsMulti;
 
+    if (isMulti && hitIndex != _pendingMultiNextIndex)
+    {
+        Debug.LogWarning($"[MOB] Animation Event MultiHit reçu avec hitIndex={hitIndex}, attendu={_pendingMultiNextIndex} — event mal numéroté sur le clip ?");
+        return;
+    }
+
     if (isMulti)
     {
         _skillSystem?.ResolveMultiHitStep(skill, this, target, hitIndex);
@@ -401,20 +407,28 @@ protected override void Update()
   strictement identique à avant ce sous-chantier (résolution instantanée).
 - **Event Animation posé mais jamais reçu** (oubli d'authoring) : le timeout `Update()` résout
   quand même à la fin du clip — même garde-fou que le Player, pas de blocage permanent de l'IA.
-- **MultiHit — event mal numéroté** : `ResolvePendingHit(hitIndex)` ne vérifie pas que
-  `hitIndex` correspond exactement à `_pendingMultiNextIndex` avant de résoudre (contrairement à
-  `SkillBar.ResolveMultiHitIndex` qui rejette un index hors séquence) — accepté comme
-  simplification volontaire pour ce sous-chantier : Mob/PNJ n'ont qu'un seul clip d'attaque par
-  skill, et la garde de ré-entrée (`IsPendingHit`, voir Décisions) empêche désormais tout
-  second appel à `StartPendingHit` tant qu'un pending est en vol — un vrai verrou anti-index
-  hors séquence (équivalent `SkillBar.ResolveMultiHitIndex`) serait sur-ingénierie tant qu'aucun
-  symptôme réel n'a été observé sur un simple oubli/décalage d'authoring d'events.
+- **MultiHit — event mal numéroté** : **corrigé, trouvé en task-review du code réel (pas
+  seulement en vérification du plan).** La garde de ré-entrée (`IsPendingHit`) empêche un
+  second appel à `StartPendingHit` tant qu'un pending est en vol, mais ne protège PAS contre un
+  event mal numéroté À L'INTÉRIEUR d'une séquence déjà active — ex: 3 Animation Events sur un
+  clip MultiHit dont l'argument `int` a été laissé à sa valeur par défaut (0) sur les 3 au lieu
+  d'être explicitement mis à 0/1/2 dans la fenêtre Animation de Unity (piège d'authoring
+  fréquent) résolvait silencieusement le coup de base 3 fois au lieu des 3 hitSteps distincts —
+  mauvais total de dégâts, aucun log d'erreur. `ResolvePendingHit(hitIndex)` vérifie désormais
+  `hitIndex == _pendingMultiNextIndex` avant de résoudre quoi que ce soit (rejette et log un
+  `Debug.LogWarning` sinon) — même garde que `SkillBar.ResolveMultiHitIndex` côté Player.
 - **Re-déclenchement pendant qu'un pending-hit est en vol** : voir Décisions ci-dessus ("Garde
   de ré-entrée") — un vrai bug trouvé en vérification indépendante du plan (mana vidée, anim
   jamais avancée), corrigé par `IsPendingHit` consommé explicitement dans `TryUseSkill()`/
   `TryUseSecondarySkill()` ET dans le bloc d'attaque de base.
 - **MultiHit sans `attackAnimation`** : voir Décisions ci-dessus — route directement vers
   `SkillSystem.Execute()` (préserve `HitStep.delay`), n'entre jamais dans le pending-hit.
+- **Leash/désengagement pendant l'anim d'attaque** : trouvé en task-review — un Mob qui rentre
+  au spawn (`FullReset()`) ou un PNJ qui lâche sa cible (leash dans `HandleCombatAI()`) en plein
+  milieu de l'anim de son attaque ne doit pas voir ce coup résoudre plus tard sur une cible
+  désormais hors combat. `FullReset()` (Mob) et le bloc leash de `HandleCombatAI()` (PNJ)
+  nettoient désormais `_pendingSkill`/`_pendingTarget`/`_pendingTimeout`/`_pendingIsMulti`, même
+  pattern que le nettoyage déjà prévu dans `PNJ.Die()`.
 - **Mort pendant l'anim d'attaque** : voir table des décisions ci-dessus — no-op propre pour
   `Mob` via les gardes déjà existantes de `SkillSystem` + `this.enabled = false`. Pour `PNJ`,
   nettoyage EXPLICITE requis dans `Die()` (voir ci-dessus et Décisions) — sans lui, un pending

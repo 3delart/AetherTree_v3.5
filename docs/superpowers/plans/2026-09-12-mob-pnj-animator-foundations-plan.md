@@ -549,7 +549,10 @@ voir Step 8. `attackTimer` reste posé ici, inchangé.)
     /// <summary>Résout le hit en attente — branchement à 3 voies identique à avant ce
     /// sous-chantier (hasDelayedImpact / isTrajectory / dispatch standard), sauf routage
     /// MultiHit par index. Pose le cooldown du skill secondaire APRÈS résolution (pas au
-    /// déclenchement).</summary>
+    /// déclenchement). Rejette un hitIndex hors séquence (event mal numéroté sur le clip —
+    /// piège trouvé en task-review : Unity met souvent l'argument int par défaut à 0 sur
+    /// CHAQUE event d'un clip MultiHit si on oublie de le changer, ce qui résoudrait le coup
+    /// de base plusieurs fois au lieu des hitSteps distincts, silencieusement).</summary>
     private void ResolvePendingHit(int hitIndex)
     {
         if (_pendingSkill == null) return;
@@ -557,6 +560,12 @@ voir Step 8. `attackTimer` reste posé ici, inchangé.)
         SkillData skill   = _pendingSkill;
         Entity    target  = _pendingTarget;
         bool      isMulti = _pendingIsMulti;
+
+        if (isMulti && hitIndex != _pendingMultiNextIndex)
+        {
+            Debug.LogWarning($"[MOB] Animation Event MultiHit reçu avec hitIndex={hitIndex}, attendu={_pendingMultiNextIndex} — event mal numéroté sur le clip ?");
+            return;
+        }
 
         if (isMulti)
         {
@@ -586,6 +595,27 @@ voir Step 8. `attackTimer` reste posé ici, inchangé.)
         if (data.skills != null && data.skills.Contains(skill))
             _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
     }
+```
+
+- [ ] **Step 8bis: Nettoyer le pending-hit dans `FullReset()`**
+
+Trouver (dans `FullReset()`) :
+```csharp
+        currentState      = MobState.Patrol;
+        _skillCooldowns.Clear();
+```
+Remplacer par :
+```csharp
+        currentState      = MobState.Patrol;
+        _skillCooldowns.Clear();
+
+        // Un Mob qui rentre au spawn (leash) en plein milieu de l'anim de son attaque ne doit
+        // pas voir ce coup résoudre plus tard sur une cible désormais hors combat — trouvé en
+        // task-review.
+        _pendingSkill   = null;
+        _pendingTarget  = null;
+        _pendingTimeout = 0f;
+        _pendingIsMulti = false;
 ```
 
 - [ ] **Step 9: Vérifier la compilation**
@@ -734,6 +764,37 @@ Remplacer par :
             }
 ```
 
+- [ ] **Step 5bis: Nettoyer le pending-hit quand le leash se déclenche dans `HandleCombatAI()`**
+
+Trouver, tout en haut de `HandleCombatAI()` (avant le bloc de la Step 5) :
+```csharp
+        if (data.leashRadius > 0f &&
+            Vector3.Distance(transform.position, _spawnPos) > data.leashRadius)
+        {
+            // Trop loin du spawn — lâche la cible et rentre
+            _combatTarget = null;
+            ReturnToSpawn();
+            return;
+        }
+```
+Remplacer par :
+```csharp
+        if (data.leashRadius > 0f &&
+            Vector3.Distance(transform.position, _spawnPos) > data.leashRadius)
+        {
+            // Trop loin du spawn — lâche la cible et rentre. Un pending-hit en vol ne doit pas
+            // résoudre plus tard sur une cible désormais hors combat — trouvé en task-review
+            // (même bug que Mob.FullReset()).
+            _combatTarget   = null;
+            _pendingSkill   = null;
+            _pendingTarget  = null;
+            _pendingTimeout = 0f;
+            _pendingIsMulti = false;
+            ReturnToSpawn();
+            return;
+        }
+```
+
 - [ ] **Step 6: Nettoyer le pending-hit dans `Die()`**
 
 Trouver :
@@ -854,7 +915,9 @@ conserver très précisément toute ligne qui n'est ni l'appel `PlantDelayedZone
 
     /// <summary>Résout le hit en attente — même branchement à 3 voies qu'avant ce
     /// sous-chantier, sauf routage MultiHit par index. Pose le cooldown du skill secondaire
-    /// APRÈS résolution.</summary>
+    /// APRÈS résolution. Rejette un hitIndex hors séquence (event mal numéroté sur le clip —
+    /// piège trouvé en task-review sur Mob.cs : Unity met souvent l'argument int par défaut à
+    /// 0 sur chaque event d'un clip MultiHit si on oublie de le changer).</summary>
     private void ResolvePendingHit(int hitIndex)
     {
         if (_pendingSkill == null) return;
@@ -862,6 +925,12 @@ conserver très précisément toute ligne qui n'est ni l'appel `PlantDelayedZone
         SkillData skill   = _pendingSkill;
         Entity    target  = _pendingTarget;
         bool      isMulti = _pendingIsMulti;
+
+        if (isMulti && hitIndex != _pendingMultiNextIndex)
+        {
+            Debug.LogWarning($"[PNJ] Animation Event MultiHit reçu avec hitIndex={hitIndex}, attendu={_pendingMultiNextIndex} — event mal numéroté sur le clip ?");
+            return;
+        }
 
         if (isMulti)
         {
