@@ -58,14 +58,23 @@ Un seul nouveau champ, juste après le bloc `hasDelayedImpact`/`impactDelay`/`zo
          "GroundTarget : voyage vers le point cliqué au sol. Direction : voyage en ligne " +
          "droite sur une distance = range.")]
 [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Direction,
+    AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
     Header = "⑨Ter Trajectoire mobile")]
 public bool isTrajectory = false;
 ```
 
-`ShowIfAttribute` prend `params object[] values` — le constructeur combine nativement plusieurs
-valeurs du MÊME champ en OU (voir `Utils/ShowIfAttribute.cs`, déjà utilisé ainsi par exemple pour
-`[ShowIf(nameof(action), DialogueAction.AcceptQuest, DialogueAction.TurnInQuest)]`). Pas besoin
-d'`AndField`/`AndValue` (réservé à combiner deux champs DIFFÉRENTS en ET).
+`AndField`/`AndValue` (trouvé en review finale — ajouté pour matcher `hasDelayedImpact`, qui a
+exactement ce même garde-fou) : masque `isTrajectory` dans l'Inspector dès que `executionType`
+n'est pas `Normal`, cohérent avec le fait que la trajectoire ne fonctionne QUE sur un skill
+Normal (instant/canalisé). Sans ça, la case restait visible/cochable sur un skill MultiHit/
+ComboSequence — le designer ne l'aurait appris qu'après coup, via le warning Console #3.
+
+`ShowIfAttribute` prend `params object[] values` pour la condition principale — le constructeur
+combine nativement plusieurs valeurs du MÊME champ (`targetType`) en OU (voir
+`Utils/ShowIfAttribute.cs`, déjà utilisé ainsi par exemple pour `[ShowIf(nameof(action),
+DialogueAction.AcceptQuest, DialogueAction.TurnInQuest)]`). `AndField`/`AndValue` est le moyen
+séparé de combiner un DEUXIÈME champ différent (`executionType`) en ET — les deux mécanismes sont
+utilisés ensemble ici, exactement comme le fait déjà `hasDelayedImpact`.
 
 Aucun autre champ numérique n'est ajouté : la vitesse réutilise `projectileSpeed` (fallback
 10 unités/sec si `<= 0` — arbitraire mais cohérent avec les autres fallbacks du fichier,
@@ -78,7 +87,10 @@ utilise des fallbacks différents, 15/0.25, non pertinents ici).
 fichier (`Debug.LogWarning` préfixé du nom du skill) :
 - `isTrajectory == true` et `hasDelayedImpact == true` simultanément → avertissement
   d'incompatibilité, aucune valeur n'est modifiée automatiquement (pas de writeback, cohérent
-  avec le reste du fichier).
+  avec le reste du fichier). Le message précise lequel des deux l'emporte en pratique :
+  `hasDelayedImpact` est testé EN PREMIER dans `SkillBar.ResolveInstant()`/`ResolveChannel()`,
+  donc `isTrajectory` est silencieusement ignoré tant que les deux sont cochés — le warning ne se
+  contente pas de dire "décoche l'un des deux", il diagnostique le symptôme observé.
 - `isTrajectory == true` et `targetType` différent de `GroundTarget`/`Direction` → avertissement
   de configuration incohérente (même idiome que le warning `targetType`-drift ajouté au
   chantier C pour `hasDelayedImpact`).
@@ -276,13 +288,27 @@ cas, inchangés — même principe "launch vs resolution" que chantiers A/B/C : 
 
 ## Cas limites
 
-- **Origine == destination** (`GroundTarget` cliqué sur la position du caster, ou `Direction`
-  avec `range <= 0`) : la coroutine se termine immédiatement (`yield break`) sans toucher
-  personne. Comportement assumé, pas un bug — au designer de configurer un `range`/une cible
-  cohérente.
+- **Origine == destination** (`GroundTarget` cliqué sur la position du caster ou hors portée du
+  raycast de lancement — cible manquée, `range <= 0` en `Direction`) : la coroutine se termine
+  immédiatement (`yield break`) sans toucher personne. Comportement assumé côté DÉGÂTS, pas un
+  bug — au designer de configurer un `range`/une cible cohérente. CEPENDANT (trouvé en review
+  finale) : sans feedback, un skill qui rate ainsi consomme mana/CD/GCD en silence totale, ce qui
+  se lit comme un bouton cassé — `TrajectoryRoutine()` joue donc `vfxImpact`/`soundEffect` une
+  fois à `destination` quand AUCUNE entité n'a été touchée au moment où la coroutine se termine
+  (ce cas dégénéré inclus), sauf si c'est la mort du caster qui a interrompu la boucle (voir
+  point suivant — pas de feedback dans ce cas, le caster n'est plus là pour le voir).
 - **Caster meurt en cours de trajet** : la boucle s'arrête (`break`) au tick suivant, aucune
-  détection supplémentaire après la mort. Pas de nettoyage à faire (pas de marker/VFX créé par
-  cette coroutine dans ce chantier).
+  détection supplémentaire après la mort, AUCUN feedback de miss (voir point précédent — distinct
+  d'un vrai miss, le caster est mort avant la résolution). Pas de nettoyage à faire (pas de
+  marker/VFX créé par cette coroutine dans ce chantier).
+- **`PassiveSkillSystem.skillToCast` ignore `isTrajectory`** (trouvé en review finale) :
+  `PassiveSkillSystem.cs` appelle `SkillSystem.Execute()` directement (pas
+  `ResolveInstant()`/`ResolveChannel()`), qui ne teste jamais `isTrajectory` — un skill passif
+  configuré avec `isTrajectory = true` se résout comme un skill instantané classique
+  (`DispatchByTargetType`), pas comme une trajectoire. Même classe de trou que le cas combo-step
+  déjà documenté pour `hasDelayedImpact` (chantier C) — pas corrigé dans ce chantier, scope
+  Player/SkillBar uniquement. `OnValidate()` ne peut pas le détecter (référence inter-assets,
+  `PassiveSkillData` → `SkillData`).
 - **Deux trajectoires simultanées** (le joueur relance un 2ᵉ skill à trajectoire avant que la
   1ʳᵉ ait fini) : coexistent sans conflit, toute la coroutine capture ses données en variables
   locales (`origin`, `destination`, `alreadyHit`), aucun champ à slot unique utilisé.
