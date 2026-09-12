@@ -550,6 +550,17 @@ public class Mob : Entity
     {
         currentState = MobState.Return;
         agent.SetDestination(spawnPos);
+
+        // Un pending-hit en vol ne doit pas résoudre plus tard sur une cible désormais hors
+        // combat — FullReset() (appelé seulement à l'ARRIVÉE au spawn, secondes plus tard) est
+        // trop tardif pour ça, le timeout du pending a déjà quasi toujours résolu entre-temps.
+        // GoReturn() est appelé au moment RÉEL du désengagement (leash dépassé, cible perdue),
+        // donc c'est ici que le nettoyage doit avoir lieu (trouvé en review finale — parité
+        // avec le nettoyage déjà posé au même moment côté PNJ.HandleCombatAI()).
+        _pendingSkill   = null;
+        _pendingTarget  = null;
+        _pendingTimeout = 0f;
+        _pendingIsMulti = false;
     }
 
     private void BeginChase()

@@ -172,8 +172,10 @@ public class SkillSystem : MonoBehaviour
     /// ResolveMultiHitStep() ci-dessous à la place, appelée directement par SkillBar (joueur)
     /// ou Mob.cs/PNJ.cs (chantier fondations Animator Mob/PNJ) au bon index. Utilisée pour
     /// Normal/Combo-step côté joueur (chantier B) ET pour Normal côté Mob/PNJ (leur pending-hit
-    /// interne, même principe) ; seuls les skills de passif restent sur Execute() (inchangée,
-    /// ci-dessus, MultiHit inclus) sans jamais passer par ce chemin.</summary>
+    /// interne, même principe). Execute() (inchangée, ci-dessus, MultiHit inclus) reste
+    /// utilisée par : les skills de passif (jamais via SkillBar/pending-hit), la Canalisation
+    /// joueur (SkillBar.ResolveChannel()), et le détour volontaire MultiHit-sans-attackAnimation
+    /// de Mob.cs/PNJ.cs (StartPendingHit() — préserve HitStep.delay, voir ces fichiers).</summary>
     public void ResolveExecute(SkillData skill, Entity caster, Entity target)
     {
         if (skill == null || caster == null || caster.isDead) return;
