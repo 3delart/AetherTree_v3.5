@@ -268,6 +268,13 @@ public class SkillData : ScriptableObject
              "Optionnel — vide = pas de VFX de cast.")]
     public GameObject vfxCast;
 
+    [Tooltip("VFX qui suit la hitbox pendant tout le déplacement d'un skill isTrajectory — suit " +
+             "la position ET s'oriente selon la direction de déplacement. Actif uniquement si " +
+             "isTrajectory = true. Distinct de vfxCast (spawné au lancement, ne suit pas) et de " +
+             "vfxImpact (joué au moment du hit, ponctuel).")]
+    [ShowIf(nameof(isTrajectory), true)]
+    public GameObject vfxTrajectory;
+
     [Tooltip("VFX de zone/avertissement — spawné quand la zone se plante au sol (point de\n" +
              "résolution existant), reste affiché jusqu'à la détonation. Actif uniquement si\n" +
              "hasDelayedImpact = true.")]
