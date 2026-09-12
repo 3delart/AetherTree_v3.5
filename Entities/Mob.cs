@@ -51,6 +51,19 @@ public class Mob : Entity
     public bool IsDashing { get; set; } = false;
     // Cooldown individuel par skill — clé = SkillData, valeur = temps restant
     private Dictionary<SkillData, float> _skillCooldowns = new Dictionary<SkillData, float>();
+
+    // ── Attente de résolution (hit-frame-sync — un seul hit en vol à la fois, un Mob n'agit
+    // jamais en parallèle sur deux skills) — sous-chantier 1, voir docs/superpowers/specs/
+    // 2026-09-12-mob-pnj-animator-foundations-design.md ─────────────────────────────────
+    private SkillData _pendingSkill   = null;
+    private Entity    _pendingTarget  = null;
+    private float     _pendingTimeout = 0f;
+    private bool      _pendingIsMulti = false;
+    private int       _pendingMultiNextIndex = 0;
+
+    public bool IsPendingHit => _pendingSkill != null;
+
+    private MobAnimatorController _animatorController;
     private System.Action onDeathCallback;
 
     // Patrouille
@@ -71,8 +84,9 @@ public class Mob : Entity
     protected override void Awake()
     {
         base.Awake();
-        agent           = GetComponent<NavMeshAgent>();
-        _skillSystem    = GetComponent<SkillSystem>();
+        agent               = GetComponent<NavMeshAgent>();
+        _skillSystem        = GetComponent<SkillSystem>();
+        _animatorController = GetComponent<MobAnimatorController>();
         spawnPos = transform.position;
         ApplyData();
     }
@@ -135,6 +149,16 @@ public class Mob : Entity
         if (isDead || data == null) return;
 
         attackTimer -= Time.deltaTime;
+
+        // Timeout de secours (event d'impact jamais reçu) — tick AVANT tout early-return CC :
+        // un coup déjà lancé va au bout, non-interruptible, même principe que le Player
+        // (chantier B hit-frame-sync).
+        if (_pendingSkill != null)
+        {
+            _pendingTimeout -= Time.deltaTime;
+            if (_pendingTimeout <= 0f)
+                ResolvePendingHit(_pendingIsMulti ? _pendingMultiNextIndex : 0);
+        }
 
         // Slow × Haste — multiplicatifs
         if (statusEffects != null && data != null)
@@ -352,20 +376,18 @@ public class Mob : Entity
         bool tauntedInAttack = statusEffects != null && statusEffects.isTaunted;
         if (!tauntedInAttack && TryUseSkill(target)) return;
 
-        // Attaque de base
-        if (attackTimer <= 0f)
+        // Attaque de base — bloquée tant qu'un pending-hit est en vol (StartPendingHit ci-
+        // dessous) : sans cette garde, une fois le CD déplacé à la résolution (Step 7), plus
+        // rien n'empêcherait ce bloc de se redéclencher à CHAQUE frame pendant l'anim (trouvé
+        // en vérification indépendante du plan — voir Global Constraints).
+        if (attackTimer <= 0f && !IsPendingHit)
         {
             attackTimer = data.attackCooldown;
 
             // Double vérification avant de lancer l'attaque
             if (!isDead && !target.isDead && data.basicAttackSkill != null)
             {
-                if (data.basicAttackSkill.hasDelayedImpact)
-                    _skillSystem?.PlantDelayedZone(data.basicAttackSkill, this, target);
-                else if (data.basicAttackSkill.isTrajectory)
-                    _skillSystem?.StartTrajectory(data.basicAttackSkill, this);
-                else
-                    _skillSystem?.Execute(data.basicAttackSkill, this, target);
+                StartPendingHit(data.basicAttackSkill, target);
             }
             else if (data.basicAttackSkill == null)
                 Debug.LogWarning($"[MOB] {data.mobName} n'a pas de basicAttackSkill — assigne un SkillData dans MobData.");
@@ -383,6 +405,11 @@ public class Mob : Entity
     /// </summary>
     private bool TryUseSkill(Entity target)
     {
+        // Un pending-hit est déjà en vol (secondaire OU attaque de base) — ne rien redéclencher
+        // tant qu'il n'est pas résolu (event ou timeout). Retourne true pour que HandleAttack()/
+        // HandleChase() traitent ce tick comme "occupé" (mêmes early-return qu'un vrai skill
+        // lancé) plutôt que de tomber sur l'attaque de base.
+        if (IsPendingHit) return true;
         if (data.skills == null || data.skills.Count == 0) return false;
 
         // Tick des cooldowns
@@ -405,18 +432,92 @@ public class Mob : Entity
             if (skill.manaCost > 0f) SpendMana(skill.manaCost);
 
             LookAt(target.transform);
-            if (skill.hasDelayedImpact)
-                _skillSystem?.PlantDelayedZone(skill, this, target);
-            else if (skill.isTrajectory)
-                _skillSystem?.StartTrajectory(skill, this);
-            else
-                _skillSystem?.Execute(skill, this, target);
-            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
+            StartPendingHit(skill, target);
             attackTimer = data.attackCooldown;
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>Déclenche l'anim d'attaque et pose l'état pending — la résolution réelle
+    /// (dégâts/effets/zone/trajectoire) n'arrive qu'à l'event d'impact ou au timeout de
+    /// secours, jamais ici. Sans attackAnimation assignée, résout immédiatement (comportement
+    /// identique à avant ce sous-chantier). Un MultiHit SANS attackAnimation reste sur l'ancien
+    /// chemin Execute()/ExecuteMultiHit (respecte HitStep.delay via coroutine) — il n'y a pas de
+    /// frame d'impact à attendre, entrer dans le pending-hit ferait perdre ce délai entre coups
+    /// (trouvé en vérification indépendante du plan).</summary>
+    private void StartPendingHit(SkillData skill, Entity target)
+    {
+        bool isMulti = skill.executionType == SkillExecutionType.MultiHit
+                       && skill.hitSteps != null && skill.hitSteps.Count > 0;
+
+        if (isMulti && skill.attackAnimation == null)
+        {
+            _skillSystem?.Execute(skill, this, target);
+            if (data.skills != null && data.skills.Contains(skill))
+                _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
+            return;
+        }
+
+        _animatorController?.PlayAttack(skill.attackAnimation);
+
+        _pendingSkill   = skill;
+        _pendingTarget  = target;
+        _pendingIsMulti = isMulti;
+        _pendingMultiNextIndex = 0;
+        _pendingTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+
+        if (_pendingTimeout <= 0f)
+            ResolvePendingHit(0);
+    }
+
+    /// <summary>Reçoit l'Animation Event relayé par MobAnimatorController.OnSkillHitFrame.</summary>
+    public void OnAnimationHitEvent(int hitIndex = 0)
+    {
+        if (_pendingSkill == null) return;   // event hors contexte, ignoré silencieusement
+        ResolvePendingHit(hitIndex);
+    }
+
+    /// <summary>Résout le hit en attente — branchement à 3 voies identique à avant ce
+    /// sous-chantier (hasDelayedImpact / isTrajectory / dispatch standard), sauf routage
+    /// MultiHit par index. Pose le cooldown du skill secondaire APRÈS résolution (pas au
+    /// déclenchement).</summary>
+    private void ResolvePendingHit(int hitIndex)
+    {
+        if (_pendingSkill == null) return;
+
+        SkillData skill   = _pendingSkill;
+        Entity    target  = _pendingTarget;
+        bool      isMulti = _pendingIsMulti;
+
+        if (isMulti)
+        {
+            _skillSystem?.ResolveMultiHitStep(skill, this, target, hitIndex);
+            _pendingMultiNextIndex++;
+            int totalHits = 1 + (skill.hitSteps?.Count ?? 0);
+            if (_pendingMultiNextIndex < totalHits) return;   // encore des hits à venir
+        }
+        else
+        {
+            if (skill.hasDelayedImpact)
+                _skillSystem?.PlantDelayedZone(skill, this, target);
+            else if (skill.isTrajectory)
+                _skillSystem?.StartTrajectory(skill, this);
+            else
+                _skillSystem?.ResolveExecute(skill, this, target);
+        }
+
+        _pendingSkill   = null;
+        _pendingTarget  = null;
+        _pendingTimeout = 0f;
+        _pendingIsMulti = false;
+
+        // CD posé ici (résolution), pas au déclenchement — même principe que le chantier B côté
+        // Player. Ne concerne que les skills secondaires (data.skills) — l'attaque de base
+        // utilise attackTimer, déjà reposé au déclenchement dans HandleAttack().
+        if (data.skills != null && data.skills.Contains(skill))
+            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
     }
 
     // =========================================================
