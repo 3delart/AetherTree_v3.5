@@ -227,6 +227,22 @@ sous-chantier 1, forme actuelle confirmée ci-dessous, mais toujours vérifier a
 
 ### `World/MobAnimatorController.cs`
 
+- [ ] **Step 0: Corriger le commentaire d'en-tête périmé**
+
+Trouver :
+```csharp
+// PAS de paramètre InCombat (aucune mécanique d'équipement visible sur Mob),
+// PAS de CancelActionTrigger/state Channel (sous-chantier 2, futur).
+// =============================================================
+```
+Remplacer par :
+```csharp
+// PAS de paramètre InCombat (aucune mécanique d'équipement visible sur Mob).
+// CancelActionTrigger ajouté au sous-chantier 2 (canalisation) — pas de state Channel séparé,
+// réutilise le state "Attack" existant.
+// =============================================================
+```
+
 - [ ] **Step 1: Ajouter la constante `CancelActionTrigger`**
 
 Trouver :
@@ -469,26 +485,63 @@ Remplacer par :
                 ResolvePendingHit(_pendingIsMulti ? _pendingMultiNextIndex : 0);
         }
 
-        // Poll d'interrupt de la canalisation — hard CC ou mort du caster (non-volontaire, CD
-        // complet) ou cible morte (volontaire, CD demi). Les dégâts simples n'interrompent PAS,
-        // même règle que SkillBar côté Player (vérifiée dans le code réel, pas une nouveauté).
+        // Poll d'interrupt de la canalisation — hard CC (non-volontaire, CD complet) ou cible
+        // morte (volontaire, CD demi). Les dégâts simples n'interrompent PAS, même règle que
+        // SkillBar côté Player (vérifiée dans le code réel, pas une nouveauté). PAS de terme
+        // isDead ici — Update() a déjà un early-return dessus juste au-dessus (ligne
+        // `if (isDead || data == null) return;`), donc cette branche ne serait jamais atteinte ;
+        // la mort est couverte séparément par le nettoyage explicite dans Die() (Step 7bis).
+        // InterruptChannelCast() gère elle-même l'annulation de _channelBar (voir Step 6) — ne
+        // JAMAIS appeler _channelBar?.Cancel() ici (trouvé en vérification indépendante du
+        // plan : appeler Cancel() avant InterruptChannelCast ferait exécuter le callback
+        // onCancel réentrant — () => InterruptChannelCast(voluntary: true, ...) — PENDANT que
+        // _isChanneling est encore vrai, posant silencieusement le CD demi avant même que cet
+        // appel explicite, potentiellement voluntary:false, n'atteigne son propre garde et
+        // no-op — un hard CC finirait TOUJOURS avec le CD demi au lieu du CD complet).
         if (_isChanneling)
         {
-            bool hardCC = isDead || (statusEffects != null && (statusEffects.isStunned ||
+            bool hardCC = statusEffects != null && (statusEffects.isStunned ||
                           statusEffects.isShocked || statusEffects.isFreezed ||
                           statusEffects.isKnockedBack || statusEffects.isFeared ||
-                          statusEffects.isSilenced));
+                          statusEffects.isSilenced);
             if (hardCC)
-            {
-                _channelBar?.Cancel();
-                InterruptChannelCast(voluntary: false, reason: isDead ? "mort" : "CC");
-            }
+                InterruptChannelCast(voluntary: false, reason: "CC");
             else if (_channelTarget != null && _channelTarget.isDead)
-            {
-                _channelBar?.Cancel();
                 InterruptChannelCast(voluntary: true, reason: "cible morte");
-            }
         }
+```
+
+- [ ] **Step 3bis: Ajouter la garde de ré-entrée `_isChanneling`**
+
+**Bug trouvé en vérification indépendante du plan** : `IsPendingHit` (sous-chantier 1) ne couvre
+PAS `_isChanneling`. Sans garde dédiée, `TryUseSkill()` et le bloc d'attaque de base de
+`HandleAttack()` redéclencheraient `StartChannelCast()` À CHAQUE frame tant que la canalisation
+est en vol — mana vidée en boucle, un nouveau `vfxCast`/`CastBarSpawner` instancié chaque frame
+sans jamais détruire le précédent (fuite), anim relancée sur sa frame 0 sans arrêt.
+
+Trouver, en tête de `TryUseSkill()` (posé au sous-chantier 1) :
+```csharp
+        // Un pending-hit est déjà en vol (secondaire OU attaque de base) — ne rien redéclencher
+        // tant qu'il n'est pas résolu (event ou timeout). Retourne true pour que HandleAttack()/
+        // HandleChase() traitent ce tick comme "occupé" (mêmes early-return qu'un vrai skill
+        // lancé) plutôt que de tomber sur l'attaque de base.
+        if (IsPendingHit) return true;
+```
+Remplacer par :
+```csharp
+        // Un pending-hit OU une canalisation est déjà en vol — ne rien redéclencher tant que
+        // l'un des deux n'est pas résolu. Retourne true pour que HandleAttack()/HandleChase()
+        // traitent ce tick comme "occupé" plutôt que de tomber sur l'attaque de base.
+        if (IsPendingHit || _isChanneling) return true;
+```
+
+Trouver, dans `HandleAttack()` (posé au sous-chantier 1) :
+```csharp
+        if (attackTimer <= 0f && !IsPendingHit)
+```
+Remplacer par :
+```csharp
+        if (attackTimer <= 0f && !IsPendingHit && !_isChanneling)
 ```
 
 - [ ] **Step 4: Brancher `castTime > 0` dans `HandleAttack()`**
@@ -602,19 +655,31 @@ Remplacer par :
     }
 
     /// <summary>voluntary = true (cible morte, bar volée en interne — CD moitié) | false
-    /// (CC/mort subie — CD complet). Même règle que SkillBar.InterruptChannel() côté Player.</summary>
+    /// (CC/mort subie — CD complet). Même règle que SkillBar.InterruptChannel() côté Player.
+    /// Capture _channelBar AVANT EndChannelCastState() puis annule la bar APRÈS — ORDRE
+    /// CRITIQUE (trouvé en vérification indépendante du plan) : si la bar était annulée AVANT,
+    /// son callback onCancel réentrant (() => InterruptChannelCast(voluntary: true, ...))
+    /// s'exécuterait pendant que _isChanneling est encore vrai et poserait le CD demi avant que
+    /// CET appel n'atteigne son propre garde — un hard CC finirait TOUJOURS avec le CD demi au
+    /// lieu du CD complet, silencieusement. Seule cette méthode a le droit d'appeler
+    /// _channelBar.Cancel() — tous les autres appelants (poll Update(), GoReturn(), Die())
+    /// appellent seulement InterruptChannelCast(...) et laissent CETTE méthode gérer la bar.</summary>
     private void InterruptChannelCast(bool voluntary, string reason)
     {
         if (!_isChanneling) return;
 
-        SkillData skill = _channelSkill;
+        SkillData      skill = _channelSkill;
+        CastBarSpawner bar   = _channelBar;
 
-        EndChannelCastState();
+        EndChannelCastState();   // _isChanneling = false AVANT bar.Cancel() — voir résumé ci-dessus
 
+        bar?.Cancel();           // callback onCancel réentrant tombe sur !_isChanneling, no-op
         _animatorController?.CancelChannel();
 
         if (data.skills != null && data.skills.Contains(skill))
             _skillCooldowns[skill] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
+
+        Debug.Log($"[MOB] Canalisation interrompue ({reason}) — {(voluntary ? "CD demi" : "CD complet")}.");
     }
 
     private void EndChannelCastState()
@@ -624,9 +689,9 @@ Remplacer par :
         _channelTarget = null;
 
         if (_channelVfxCast != null) { Destroy(_channelVfxCast); _channelVfxCast = null; }
-        // _channelBar se détruit lui-même (Update() atteint duration, ou Cancel() appelé
-        // explicitement par l'appelant AVANT EndChannelCastState) — jamais Destroy() directement
-        // ici, sinon le callback onComplete/onCancel ne serait jamais invoqué.
+        // _channelBar n'est PAS annulé ici — InterruptChannelCast() s'en charge APRÈS cet appel
+        // (voir son commentaire ci-dessus). ResolveChannelCast() (fin normale, la bar a déjà
+        // terminé d'elle-même) n'a rien à annuler non plus. Juste null la référence.
         _channelBar = null;
     }
 
@@ -676,12 +741,46 @@ Remplacer par :
 
         // Même raisonnement pour la canalisation (sous-chantier 2) — un Mob qui se désengage en
         // pleine canalisation ne doit pas la voir résoudre plus tard sur une cible hors combat.
+        // NE PAS appeler _channelBar?.Cancel() ici — InterruptChannelCast() s'en charge elle-
+        // même, dans le bon ordre (voir son commentaire, Step 6).
         if (_isChanneling)
-        {
-            _channelBar?.Cancel();
             InterruptChannelCast(voluntary: true, reason: "désengagement");
-        }
     }
+```
+
+- [ ] **Step 7bis: Nettoyer la canalisation dans `Die()`**
+
+**Requis pour Mob (trouvé en vérification indépendante du plan)** : le poll `hardCC` de la
+Step 3 ne peut jamais voir une mort (`Update()` a déjà un early-return `if (isDead || data ==
+null) return;` AVANT ce poll) — sans nettoyage explicite dans `Die()`, un Mob tué en pleine
+canalisation garde sa barre/son `vfxCast`/son anim affichés pendant tout le reste de `castTime`.
+
+Trouver, dans `Die()` :
+```csharp
+    protected override void Die()
+    {
+        base.Die();
+        agent.ResetPath();
+        agent.enabled = false;
+        this.enabled = false;
+```
+Remplacer par :
+```csharp
+    protected override void Die()
+    {
+        base.Die();
+        agent.ResetPath();
+        agent.enabled = false;
+
+        // Canalisation en vol au moment de la mort (sous-chantier 2) — nettoyée AVANT de
+        // désactiver ce composant, sinon la barre/le vfxCast/l'anim resteraient affichés
+        // jusqu'à la fin naturelle du timer sur un Mob déjà mort (trouvé en vérification
+        // indépendante du plan). NE PAS appeler _channelBar?.Cancel() directement —
+        // InterruptChannelCast() s'en charge dans le bon ordre (voir Step 6).
+        if (_isChanneling)
+            InterruptChannelCast(voluntary: false, reason: "mort");
+
+        this.enabled = false;
 ```
 
 - [ ] **Step 8: Vérifier la compilation**
@@ -690,7 +789,15 @@ Lire le fichier modifié en entier — confirmer accolades équilibrées, les 4 
 canalisation bien à l'intérieur de la classe `Mob`, `?.` préservé sur tous les appels
 `_skillSystem`/`_animatorController`/`_channelBar`. Confirmer que `LocalizationManager` (classe
 statique globale, `Data/Localization/LocalizationManager.cs`) est accessible sans nouveau
-`using` (pas de namespace dans ce projet).
+`using` (pas de namespace dans ce projet). Confirmer spécifiquement (points ajoutés après
+vérification indépendante du plan) :
+- `TryUseSkill()` retourne `true` immédiatement via `if (IsPendingHit || _isChanneling) return true;` (Step 3bis).
+- `HandleAttack()`'s bloc d'attaque de base porte `&& !IsPendingHit && !_isChanneling` (Step 3bis).
+- `InterruptChannelCast()` capture `_channelBar` dans une variable locale, appelle
+  `EndChannelCastState()` AVANT `bar?.Cancel()` (Step 6) — jamais l'inverse.
+- Aucun appel externe à `_channelBar?.Cancel()` nulle part dans le fichier (poll `Update()`,
+  `GoReturn()`, `Die()`) — seule `InterruptChannelCast()` y touche.
+- `Die()` nettoie bien la canalisation AVANT `this.enabled = false;` (Step 7bis).
 
 - [ ] **Step 9: Commit**
 
@@ -769,25 +876,47 @@ Remplacer par :
                 ResolvePendingHit(_pendingIsMulti ? _pendingMultiNextIndex : 0);
         }
 
-        // Poll d'interrupt de la canalisation — même règle que Mob.cs (hard CC/mort = CD
-        // complet, cible morte = CD demi, dégâts simples n'interrompent PAS).
+        // Poll d'interrupt de la canalisation — même règle que Mob.cs (hard CC = CD complet,
+        // cible morte = CD demi, dégâts simples n'interrompent PAS). PAS de terme isDead ici —
+        // même raison que Mob.cs (Update() a déjà un early-return dessus juste au-dessus) ; la
+        // mort est couverte séparément par Die() (Step 8). InterruptChannelCast() gère elle-
+        // même l'annulation de _channelBar — ne JAMAIS appeler _channelBar?.Cancel() ici (voir
+        // le commentaire détaillé sur InterruptChannelCast(), Step 7 — appeler Cancel() avant
+        // ferait exécuter le callback onCancel réentrant pendant que _isChanneling est encore
+        // vrai, posant silencieusement le CD demi même sur un hard CC).
         if (_isChanneling)
         {
-            bool hardCC = isDead || (statusEffects != null && (statusEffects.isStunned ||
+            bool hardCC = statusEffects != null && (statusEffects.isStunned ||
                           statusEffects.isShocked || statusEffects.isFreezed ||
                           statusEffects.isKnockedBack || statusEffects.isFeared ||
-                          statusEffects.isSilenced));
+                          statusEffects.isSilenced);
             if (hardCC)
-            {
-                _channelBar?.Cancel();
-                InterruptChannelCast(voluntary: false, reason: isDead ? "mort" : "CC");
-            }
+                InterruptChannelCast(voluntary: false, reason: "CC");
             else if (_channelTarget != null && _channelTarget.isDead)
-            {
-                _channelBar?.Cancel();
                 InterruptChannelCast(voluntary: true, reason: "cible morte");
-            }
         }
+```
+
+- [ ] **Step 3bis: Ajouter la garde de ré-entrée `_isChanneling`**
+
+**Bug trouvé en vérification indépendante du plan** — même raison que Mob.cs Step 3bis :
+`IsPendingHit` ne couvre pas `_isChanneling`, sans garde dédiée `TryUseSecondarySkill()` et le
+bloc d'attaque de base de `HandleCombatAI()` redéclencheraient `StartChannelCast()` à chaque
+frame pendant toute la canalisation.
+
+Trouver, en tête de `TryUseSecondarySkill()` (posé au sous-chantier 1) :
+```csharp
+        // Un pending-hit est déjà en vol (secondaire OU attaque de base) — ne rien redéclencher
+        // tant qu'il n'est pas résolu. Retourne true pour que HandleCombatAI() traite ce tick
+        // comme "occupé" plutôt que de tomber sur l'attaque de base.
+        if (IsPendingHit) return true;
+```
+Remplacer par :
+```csharp
+        // Un pending-hit OU une canalisation est déjà en vol — ne rien redéclencher tant que
+        // l'un des deux n'est pas résolu. Retourne true pour que HandleCombatAI() traite ce tick
+        // comme "occupé" plutôt que de tomber sur l'attaque de base.
+        if (IsPendingHit || _isChanneling) return true;
 ```
 
 - [ ] **Step 4: Nettoyer la canalisation dans le bloc leash de `HandleCombatAI()`**
@@ -823,12 +952,11 @@ Remplacer par :
             _pendingTimeout = 0f;
             _pendingIsMulti = false;
 
-            // Même raisonnement pour la canalisation (sous-chantier 2).
+            // Même raisonnement pour la canalisation (sous-chantier 2). NE PAS appeler
+            // _channelBar?.Cancel() ici — InterruptChannelCast() s'en charge elle-même, dans le
+            // bon ordre (voir son commentaire, Step 7).
             if (_isChanneling)
-            {
-                _channelBar?.Cancel();
                 InterruptChannelCast(voluntary: true, reason: "désengagement");
-            }
 
             ReturnToSpawn();
             return;
@@ -851,10 +979,12 @@ Trouver :
 ```
 Remplacer par :
 ```csharp
-            // Bloqué tant qu'un pending-hit est en vol — même raison que Mob.HandleAttack()
-            // (voir Global Constraints : sans cette garde, plus rien n'empêche un
-            // redéclenchement à chaque frame une fois le CD déplacé à la résolution).
-            if (_attackTimer <= 0f && !IsPendingHit && data.basicAttackSkill != null)
+            // Bloqué tant qu'un pending-hit OU une canalisation est en vol — même raison que
+            // Mob.HandleAttack() (sans cette garde, plus rien n'empêche un redéclenchement à
+            // chaque frame une fois le CD déplacé à la résolution ; le taunt court-circuite
+            // TryUseSecondarySkill() donc sa propre garde ne couvre pas ce chemin, voir
+            // Step 3bis).
+            if (_attackTimer <= 0f && !IsPendingHit && !_isChanneling && data.basicAttackSkill != null)
             {
                 if (!isDead && !_combatTarget.isDead)
                 {
@@ -951,19 +1081,31 @@ Remplacer par :
     }
 
     /// <summary>voluntary = true (cible morte, bar volée en interne — CD moitié) | false
-    /// (CC/mort subie — CD complet). Même règle que SkillBar.InterruptChannel() côté Player.</summary>
+    /// (CC/mort subie — CD complet). Même règle que SkillBar.InterruptChannel() côté Player.
+    /// Capture _channelBar AVANT EndChannelCastState() puis annule la bar APRÈS — ORDRE
+    /// CRITIQUE (trouvé en vérification indépendante du plan) : si la bar était annulée AVANT,
+    /// son callback onCancel réentrant (() => InterruptChannelCast(voluntary: true, ...))
+    /// s'exécuterait pendant que _isChanneling est encore vrai et poserait le CD demi avant que
+    /// CET appel n'atteigne son propre garde — un hard CC finirait TOUJOURS avec le CD demi au
+    /// lieu du CD complet, silencieusement. Seule cette méthode a le droit d'appeler
+    /// _channelBar.Cancel() — tous les autres appelants (poll Update(), leash, Die())
+    /// appellent seulement InterruptChannelCast(...) et laissent CETTE méthode gérer la bar.</summary>
     private void InterruptChannelCast(bool voluntary, string reason)
     {
         if (!_isChanneling) return;
 
-        SkillData skill = _channelSkill;
+        SkillData      skill = _channelSkill;
+        CastBarSpawner bar   = _channelBar;
 
-        EndChannelCastState();
+        EndChannelCastState();   // _isChanneling = false AVANT bar.Cancel() — voir résumé ci-dessus
 
+        bar?.Cancel();           // callback onCancel réentrant tombe sur !_isChanneling, no-op
         _animatorController?.CancelChannel();
 
         if (data.skills != null && data.skills.Contains(skill))
             _skillCooldowns[skill] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
+
+        Debug.Log($"[PNJ] Canalisation interrompue ({reason}) — {(voluntary ? "CD demi" : "CD complet")}.");
     }
 
     private void EndChannelCastState()
@@ -973,6 +1115,9 @@ Remplacer par :
         _channelTarget = null;
 
         if (_channelVfxCast != null) { Destroy(_channelVfxCast); _channelVfxCast = null; }
+        // _channelBar n'est PAS annulé ici — InterruptChannelCast() s'en charge APRÈS cet appel
+        // (voir son commentaire ci-dessus). ResolveChannelCast() (fin normale) n'a rien à
+        // annuler non plus. Juste null la référence.
         _channelBar = null;
     }
 
@@ -1012,19 +1157,27 @@ Remplacer par :
         _pendingTimeout = 0f;
         _pendingIsMulti = false;
 
-        // Même raisonnement pour la canalisation (sous-chantier 2).
+        // Même raisonnement pour la canalisation (sous-chantier 2). NE PAS appeler
+        // _channelBar?.Cancel() ici — InterruptChannelCast() s'en charge elle-même, dans le bon
+        // ordre (voir son commentaire, Step 7).
         if (_isChanneling)
-        {
-            _channelBar?.Cancel();
             InterruptChannelCast(voluntary: false, reason: "mort");
-        }
 ```
 
 - [ ] **Step 9: Vérifier la compilation**
 
 Lire le fichier modifié en entier — confirmer accolades équilibrées, ZÉRO `?.` introduit sur
 `_skillSystem` dans le nouveau code (`_animatorController`/`_channelBar` restent avec `?.`, c'est
-correct), les 4 nouvelles méthodes bien à l'intérieur de la classe `PNJ`.
+correct), les 4 nouvelles méthodes bien à l'intérieur de la classe `PNJ`. Confirmer
+spécifiquement (points ajoutés après vérification indépendante du plan) :
+- `TryUseSecondarySkill()` retourne `true` immédiatement via
+  `if (IsPendingHit || _isChanneling) return true;` (Step 3bis).
+- Le bloc d'attaque de base de `HandleCombatAI()` porte
+  `&& !IsPendingHit && !_isChanneling` (Step 5).
+- `InterruptChannelCast()` capture `_channelBar` dans une variable locale, appelle
+  `EndChannelCastState()` AVANT `bar?.Cancel()` (Step 7) — jamais l'inverse.
+- Aucun appel externe à `_channelBar?.Cancel()` nulle part dans le fichier (poll `Update()`,
+  leash de `HandleCombatAI()`, `Die()`) — seule `InterruptChannelCast()` y touche.
 
 - [ ] **Step 10: Commit**
 
@@ -1073,6 +1226,12 @@ Reprendre les 11 points de la section « Vérification » de
 9. PNJ `canFight` — mêmes vérifications 2-8.
 10. PNJ non-`canFight` — aucune régression dialogue/boutique.
 11. Aucune régression sur la canalisation Player, le harvest, ou le craft.
+12. Garde de ré-entrée : sur un `castTime` long (>2s), l'anim/le `vfxCast`/la barre restent
+    stables tout du long — pas de redémarrage/instanciation répétée, pas de drain de mana en
+    boucle.
+13. Hard CC sur un Mob/PNJ en canalisation → vérifier dans la Console que le log affiche bien
+    « CD complet » (pas « CD demi ») ; interrompre volontairement via une cible tuée → « CD
+    demi ».
 
 - [ ] **Step 3: Rapporter les résultats**
 
@@ -1100,3 +1259,22 @@ consommées identiquement par les deux fichiers. `PlayChannel(AnimationClip)`/`C
 identiquement. Tous les appels `SkillSystem.Execute`/`PlantDelayedZone`/`StartTrajectory`
 utilisent les signatures exactes déjà vérifiées dans le code réel au moment de l'écriture de ce
 plan.
+
+**4. Vérification indépendante plan-vs-code (post-écriture) — 2 blockers + 1 medium corrigés
+avant exécution** :
+- **Blocker (garde de ré-entrée manquante)** : `_isChanneling` n'était consultée nulle part dans
+  `TryUseSkill()`/`HandleAttack()`/`TryUseSecondarySkill()`/`HandleCombatAI()` — une canalisation
+  en vol se serait redéclenchée à chaque frame (mana vidée, `vfxCast`/barres instanciés sans
+  fin). Fixé : Step 3bis ajouté aux Tasks 3 et 4, guard étendu sur les blocs d'attaque de base.
+- **Blocker (ordre `EndChannelCastState()`/`bar.Cancel()` inversé)** : la version initiale
+  appelait `_channelBar?.Cancel()` AVANT `InterruptChannelCast()` dans 7 sites — le callback
+  `onCancel` réentrant posait alors TOUJOURS le CD demi (même sur un hard CC), silencieusement.
+  Fixé : `InterruptChannelCast()` capture `_channelBar`, appelle `EndChannelCastState()` d'abord,
+  puis `bar?.Cancel()` — tous les appels externes à `_channelBar?.Cancel()` supprimés (Steps 6-7
+  Mob, 7-8 PNJ).
+- **Medium (pas de nettoyage canalisation dans `Mob.Die()`)** : le poll `hardCC` ne peut jamais
+  voir `isDead` (early-return de `Update()` déjà dessus) — Mob n'avait donc aucun filet pour ce
+  cas, contrairement à PNJ. Fixé : Step 7bis ajouté à la Task 3.
+
+Spec (`2026-09-12-mob-pnj-channel-vfxcast-design.md`) corrigée en parallèle pour rester
+cohérente avec ces 3 fixes.
