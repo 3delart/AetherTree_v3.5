@@ -8,15 +8,17 @@ using UnityEngine.AI;
 // Fondations (sous-chantier 1, voir docs/superpowers/specs/
 // 2026-09-12-mob-pnj-animator-foundations-design.md) — locomotion (Speed) +
 // state "Attack" réutilisable, même pattern que PlayerAnimatorController.cs.
-// PAS de paramètre InCombat (aucune mécanique d'équipement visible sur Mob),
-// PAS de CancelActionTrigger/state Channel (sous-chantier 2, futur).
+// PAS de paramètre InCombat (aucune mécanique d'équipement visible sur Mob).
+// CancelActionTrigger ajouté au sous-chantier 2 (canalisation) — pas de state Channel séparé,
+// réutilise le state "Attack" existant.
 // =============================================================
 
 [RequireComponent(typeof(Animator))]
 public class MobAnimatorController : MonoBehaviour
 {
-    private const string SpeedParam  = "Speed";
-    private const string AttackState = "Attack";
+    private const string SpeedParam          = "Speed";
+    private const string AttackState         = "Attack";
+    private const string CancelActionTrigger = "CancelAction";
 
     [Header("Attack (override)")]
     [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"Attack\" dans l'Animator\n" +
@@ -65,12 +67,32 @@ public class MobAnimatorController : MonoBehaviour
         // Indexation par référence au clip D'ORIGINE (attackPlaceholderClip), pas par nom de
         // state — voir le commentaire sur le champ ci-dessus.
         _overrideController[attackPlaceholderClip] = clip;
+
+        // Reset du trigger CancelAction avant de rejouer le state Attack — sinon un trigger posé
+        // par CancelChannel() qui n'a jamais trouvé de transition à consommer (ex: l'Animator
+        // était déjà revenu en locomotion) resterait en attente et se déclencherait au prochain
+        // re-entré dans Attack, coupant net un skill qui n'a rien à voir avec l'interrupt
+        // précédent — même protection que PlayerAnimatorController.cs.
+        _animator.ResetTrigger(CancelActionTrigger);
         _animator.Play(AttackState, 0, 0f);
     }
 
     /// <summary>Joue l'animation d'un skill — échange le clip du state "Attack" réutilisable
     /// puis relance ce state depuis le début. Appelé par Mob.StartPendingHit().</summary>
     public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip);
+
+    /// <summary>Joue l'animation de canalisation d'un skill (castTime > 0) — même mécanisme
+    /// d'échange que PlayAttack (réutilise le state "Attack", pas de state séparé). Appelé par
+    /// Mob.StartChannelCast().</summary>
+    public void PlayChannel(AnimationClip clip) => PlayOverrideClip(clip);
+
+    /// <summary>Coupe net l'anim de canalisation en cours — déclenche le trigger qui force le
+    /// retour à la locomotion. Appelé par Mob.InterruptChannelCast().</summary>
+    public void CancelChannel()
+    {
+        if (_animator == null) return;
+        _animator.SetTrigger(CancelActionTrigger);
+    }
 
     /// <summary>Appelé par Unity depuis un Animation Event posé sur le clip en cours de lecture
     /// (state "Attack"). hitIndex : 0 par défaut (hit simple ou coup de base d'un MultiHit),
