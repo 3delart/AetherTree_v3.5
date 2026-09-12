@@ -482,7 +482,10 @@ public class Mob : Entity
     /// <summary>Résout le hit en attente — branchement à 3 voies identique à avant ce
     /// sous-chantier (hasDelayedImpact / isTrajectory / dispatch standard), sauf routage
     /// MultiHit par index. Pose le cooldown du skill secondaire APRÈS résolution (pas au
-    /// déclenchement).</summary>
+    /// déclenchement). Rejette un hitIndex hors séquence (event mal numéroté sur le clip —
+    /// piège trouvé en task-review : Unity met souvent l'argument int par défaut à 0 sur
+    /// CHAQUE event d'un clip MultiHit si on oublie de le changer, ce qui résoudrait le coup
+    /// de base plusieurs fois au lieu des hitSteps distincts, silencieusement).</summary>
     private void ResolvePendingHit(int hitIndex)
     {
         if (_pendingSkill == null) return;
@@ -490,6 +493,12 @@ public class Mob : Entity
         SkillData skill   = _pendingSkill;
         Entity    target  = _pendingTarget;
         bool      isMulti = _pendingIsMulti;
+
+        if (isMulti && hitIndex != _pendingMultiNextIndex)
+        {
+            Debug.LogWarning($"[MOB] Animation Event MultiHit reçu avec hitIndex={hitIndex}, attendu={_pendingMultiNextIndex} — event mal numéroté sur le clip ?");
+            return;
+        }
 
         if (isMulti)
         {
@@ -558,6 +567,14 @@ public class Mob : Entity
         patrolPointsSet   = false;
         currentState      = MobState.Patrol;
         _skillCooldowns.Clear();
+
+        // Un Mob qui rentre au spawn (leash) en plein milieu de l'anim de son attaque ne doit
+        // pas voir ce coup résoudre plus tard sur une cible désormais hors combat — trouvé en
+        // task-review.
+        _pendingSkill   = null;
+        _pendingTarget  = null;
+        _pendingTimeout = 0f;
+        _pendingIsMulti = false;
         enemyList.Clear();
         damageContributions.Clear();
         lastSkillByAttacker.Clear();
