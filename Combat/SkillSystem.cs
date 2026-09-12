@@ -357,7 +357,17 @@ public class SkillSystem : MonoBehaviour
     private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination)
     {
         float totalDistance = Vector3.Distance(origin, destination);
-        if (totalDistance <= 0.01f) yield break; // origine == destination, rien à parcourir
+        if (totalDistance <= 0.01f)
+        {
+            // Origine == destination (ex: GroundTarget avec raycast manqué, joueur a cliqué le
+            // ciel) — sans ce fallback, le skill consomme mana/HP/or + cooldown au lancement puis
+            // ne produit RIEN de perceptible, ce qui se lit comme un bouton mort/cassé.
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, destination, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, destination);
+            yield break; // origine == destination, rien à parcourir
+        }
 
         float speed  = skill.projectileSpeed > 0f ? skill.projectileSpeed : 10f;
         float radius = skill.aoeRadius       > 0f ? skill.aoeRadius       : 0.5f;
@@ -388,8 +398,9 @@ public class SkillSystem : MonoBehaviour
                 AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
         }
 
-        Vector3 previousPos = origin;
-        float   traveled    = 0f;
+        Vector3 previousPos  = origin;
+        float   traveled     = 0f;
+        bool    casterDied   = false;
 
         while (traveled < totalDistance)
         {
@@ -398,7 +409,7 @@ public class SkillSystem : MonoBehaviour
             // coroutine). DashToTarget/DashInDirection utilisent `yield break` (pas `break`) car
             // ILS ont du nettoyage post-boucle à sauter — pas le cas ici, comparaison à ces
             // deux-là non pertinente.
-            if (caster == null || caster.isDead) break;
+            if (caster == null || caster.isDead) { casterDied = true; break; }
 
             traveled += speed * Time.deltaTime;
             Vector3 currentPos = origin + dir * Mathf.Min(traveled, totalDistance);
@@ -432,6 +443,19 @@ public class SkillSystem : MonoBehaviour
 
             previousPos = currentPos;
             yield return null;
+        }
+
+        // Trajectoire terminée sans toucher personne (et sans que le caster soit mort en cours
+        // de route — dans ce cas-là on ne veut PAS de VFX, "le caster est mort avant qu'on puisse
+        // savoir" n'est pas un vrai "whiff") — même fallback que le cas origine==destination
+        // ci-dessus : le skill a coûté mana/HP/or + cooldown, il doit produire un feedback même
+        // sur un whiff total.
+        if (!casterDied && alreadyHit.Count == 0)
+        {
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, destination, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, destination);
         }
     }
 

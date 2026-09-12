@@ -255,6 +255,7 @@ public class SkillData : ScriptableObject
              "GroundTarget : voyage vers le point cliqué au sol. Direction : voyage en ligne " +
              "droite sur une distance = range.")]
     [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Direction,
+        AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
         Header = "⑨Ter Trajectoire mobile")]
     public bool isTrajectory = false;
 
