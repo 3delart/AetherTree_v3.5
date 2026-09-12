@@ -280,9 +280,15 @@ public class StatusEffectSystem : MonoBehaviour
             if (_activeDebuffs.TryGetValue(debuff.debuffType, out var existingList) && existingList.Count > 0)
             {
                 var existing = existingList[0];
+                if (existing.data != debuff)
+                {
+                    if (existing.spawnedVfx != null) Destroy(existing.spawnedVfx);
+                    existing.spawnedVfx = null;
+                }
                 existing.data = debuff;
                 existing.Refresh();
                 existing.source = source;
+                if (existing.spawnedVfx == null) SpawnStatusVfx(existing);
                 return true;
             }
 
@@ -337,9 +343,15 @@ public class StatusEffectSystem : MonoBehaviour
             if (_activeBuffs.TryGetValue(buff.buffType, out var existingList) && existingList.Count > 0)
             {
                 var existing = existingList[0];
+                if (existing.data != buff)
+                {
+                    if (existing.spawnedVfx != null) Destroy(existing.spawnedVfx);
+                    existing.spawnedVfx = null;
+                }
                 existing.data = buff;
                 existing.Refresh();
                 existing.source = source; // Revive : re-cast met à jour QUI recevra le crédit/log au déclenchement
+                if (existing.spawnedVfx == null) SpawnStatusVfx(existing);
                 return;
             }
 
@@ -418,7 +430,7 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (instance.data.statusVfx == null) return;
         instance.spawnedVfx = Instantiate(instance.data.statusVfx, _entity.transform.position,
-            Quaternion.identity, _entity.transform);
+            _entity.transform.rotation, _entity.transform);
     }
 
     // =========================================================

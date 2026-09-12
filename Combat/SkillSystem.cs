@@ -361,9 +361,10 @@ public class SkillSystem : MonoBehaviour
     /// `origin` précède la boucle (un SphereCastAll ne détecte pas un chevauchement déjà présent
     /// à son point de départ — sinon une entité collée au caster au lancement ne serait jamais
     /// touchée). Une entité ne peut être touchée qu'une seule fois par cast (HashSet).
-    /// vfxImpact/soundEffect joués par entité touchée (même précédent que ResolveMultiHitStep) —
-    /// seul le VFX de TRAJET (effet qui suivrait le déplacement lui-même) reste hors scope,
-    /// chantier VFX séparé à venir.</summary>
+    /// vfxImpact/soundEffect joués par entité touchée (même précédent que ResolveMultiHitStep).
+    /// Le VFX de TRAJET (trajectoryVfx) est spawné au lancement, suit position+rotation à chaque
+    /// frame pendant tout le déplacement, et est détruit sur chaque chemin de sortie de la
+    /// coroutine.</summary>
     private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination, GameObject trajectoryVfx)
     {
         float totalDistance = Vector3.Distance(origin, destination);

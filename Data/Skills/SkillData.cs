@@ -264,7 +264,7 @@ public class SkillData : ScriptableObject
     public Sprite     icon;
 
     [Tooltip("VFX spawné à la position du caster AU LANCEMENT (pentacle aux pieds, glow aux\n" +
-             "mains...) — ne suit PAS le caster ensuite s'il bouge (viendra avec le chantier VFX).\n" +
+             "mains...) — ne suit PAS le caster ensuite s'il bouge.\n" +
              "Optionnel — vide = pas de VFX de cast.")]
     public GameObject vfxCast;
 
