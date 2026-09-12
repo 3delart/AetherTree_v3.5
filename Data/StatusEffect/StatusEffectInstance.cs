@@ -16,6 +16,11 @@ public abstract class StatusEffectInstance
     public Entity           source;
     public float            remainingTime;
 
+    /// <summary>Référence à l'instance VFX spawnée pour CET effet précis (une par instance,
+    /// propre au stacking : chaque instance stackée a la sienne). Null si data.statusVfx est
+    /// vide ou pas encore spawnée.</summary>
+    public GameObject spawnedVfx;
+
     public bool IsExpired => remainingTime <= 0f;
 
     protected StatusEffectInstance(StatusEffectData data, Entity source)
