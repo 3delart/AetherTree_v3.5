@@ -77,6 +77,19 @@ public class PNJ : Entity
     // Cooldowns des skills secondaires — même pattern que Mob.cs
     private Dictionary<SkillData, float> _skillCooldowns = new Dictionary<SkillData, float>();
 
+    // ── Attente de résolution (hit-frame-sync — un seul hit en vol à la fois) —
+    // sous-chantier 1, voir docs/superpowers/specs/2026-09-12-mob-pnj-animator-foundations-
+    // design.md ──────────────────────────────────────────────────────────────────────────
+    private SkillData _pendingSkill   = null;
+    private Entity    _pendingTarget  = null;
+    private float     _pendingTimeout = 0f;
+    private bool      _pendingIsMulti = false;
+    private int       _pendingMultiNextIndex = 0;
+
+    public bool IsPendingHit => _pendingSkill != null;
+
+    private PNJAnimatorController _animatorController;
+
     // =========================================================
     // INITIALISATION
     // =========================================================
@@ -116,7 +129,8 @@ public class PNJ : Entity
         LoadKnownPlayersFromPrefs();
 
         // Cache des composants combat
-        _skillSystem = GetComponent<SkillSystem>();
+        _skillSystem        = GetComponent<SkillSystem>();
+        _animatorController = GetComponent<PNJAnimatorController>();
         _spawnPos    = transform.position;
 
         if (data != null && data.canFight)
@@ -135,6 +149,14 @@ public class PNJ : Entity
     {
         base.Update();
         if (isDead) return;
+
+        // Timeout de secours (event d'impact jamais reçu) — même principe que Mob.cs.
+        if (_pendingSkill != null)
+        {
+            _pendingTimeout -= Time.deltaTime;
+            if (_pendingTimeout <= 0f)
+                ResolvePendingHit(_pendingIsMulti ? _pendingMultiNextIndex : 0);
+        }
 
         if (data != null && data.canFight)
             HandleCombatAI();
@@ -497,8 +519,14 @@ public class PNJ : Entity
         if (data.leashRadius > 0f &&
             Vector3.Distance(transform.position, _spawnPos) > data.leashRadius)
         {
-            // Trop loin du spawn — lâche la cible et rentre
-            _combatTarget = null;
+            // Trop loin du spawn — lâche la cible et rentre. Un pending-hit en vol ne doit pas
+            // résoudre plus tard sur une cible désormais hors combat — trouvé en task-review
+            // (même bug que Mob.FullReset()).
+            _combatTarget   = null;
+            _pendingSkill   = null;
+            _pendingTarget  = null;
+            _pendingTimeout = 0f;
+            _pendingIsMulti = false;
             ReturnToSpawn();
             return;
         }
@@ -526,17 +554,13 @@ public class PNJ : Entity
             // la source du taunt (§3.1.1.1), même schéma que Mob.HandleAttack.
             bool tauntedNow = statusEffects != null && statusEffects.isTaunted;
             if (!tauntedNow && TryUseSecondarySkill(_combatTarget)) return;
-            if (_attackTimer <= 0f && data.basicAttackSkill != null)
+            // Bloqué tant qu'un pending-hit est en vol — même raison que Mob.HandleAttack()
+            // (voir Global Constraints : sans cette garde, plus rien n'empêche un
+            // redéclenchement à chaque frame une fois le CD déplacé à la résolution).
+            if (_attackTimer <= 0f && !IsPendingHit && data.basicAttackSkill != null)
             {
                 if (!isDead && !_combatTarget.isDead)
-                {
-                    if (data.basicAttackSkill.hasDelayedImpact)
-                        _skillSystem.PlantDelayedZone(data.basicAttackSkill, this, _combatTarget);
-                    else if (data.basicAttackSkill.isTrajectory)
-                        _skillSystem.StartTrajectory(data.basicAttackSkill, this);
-                    else
-                        _skillSystem.Execute(data.basicAttackSkill, this, _combatTarget);
-                }
+                    StartPendingHit(data.basicAttackSkill, _combatTarget);
                 _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             }
         }
@@ -552,6 +576,10 @@ public class PNJ : Entity
     /// </summary>
     private bool TryUseSecondarySkill(Entity target)
     {
+        // Un pending-hit est déjà en vol (secondaire OU attaque de base) — ne rien redéclencher
+        // tant qu'il n'est pas résolu. Retourne true pour que HandleCombatAI() traite ce tick
+        // comme "occupé" plutôt que de tomber sur l'attaque de base.
+        if (IsPendingHit) return true;
         if (data.skills == null || data.skills.Count == 0) return false;
 
         // Tick des cooldowns
@@ -575,18 +603,94 @@ public class PNJ : Entity
             if (skill.manaCost > 0f) SpendMana(skill.manaCost);
 
             LookAt(target.transform);
-            if (skill.hasDelayedImpact)
-                _skillSystem.PlantDelayedZone(skill, this, target);
-            else if (skill.isTrajectory)
-                _skillSystem.StartTrajectory(skill, this);
-            else
-                _skillSystem.Execute(skill, this, target);
-            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
+            StartPendingHit(skill, target);
             _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>Déclenche l'anim d'attaque et pose l'état pending — la résolution réelle
+    /// n'arrive qu'à l'event d'impact ou au timeout de secours. Sans attackAnimation assignée,
+    /// résout immédiatement (comportement identique à avant ce sous-chantier). Un MultiHit SANS
+    /// attackAnimation reste sur l'ancien chemin Execute()/ExecuteMultiHit (respecte
+    /// HitStep.delay via coroutine) plutôt que d'entrer dans le pending-hit.</summary>
+    private void StartPendingHit(SkillData skill, Entity target)
+    {
+        bool isMulti = skill.executionType == SkillExecutionType.MultiHit
+                       && skill.hitSteps != null && skill.hitSteps.Count > 0;
+
+        if (isMulti && skill.attackAnimation == null)
+        {
+            _skillSystem.Execute(skill, this, target);
+            if (data.skills != null && data.skills.Contains(skill))
+                _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
+            return;
+        }
+
+        _animatorController?.PlayAttack(skill.attackAnimation);
+
+        _pendingSkill   = skill;
+        _pendingTarget  = target;
+        _pendingIsMulti = isMulti;
+        _pendingMultiNextIndex = 0;
+        _pendingTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+
+        if (_pendingTimeout <= 0f)
+            ResolvePendingHit(0);
+    }
+
+    /// <summary>Reçoit l'Animation Event relayé par PNJAnimatorController.OnSkillHitFrame.</summary>
+    public void OnAnimationHitEvent(int hitIndex = 0)
+    {
+        if (_pendingSkill == null) return;
+        ResolvePendingHit(hitIndex);
+    }
+
+    /// <summary>Résout le hit en attente — même branchement à 3 voies qu'avant ce
+    /// sous-chantier, sauf routage MultiHit par index. Pose le cooldown du skill secondaire
+    /// APRÈS résolution. Rejette un hitIndex hors séquence (event mal numéroté sur le clip —
+    /// piège trouvé en task-review sur Mob.cs : Unity met souvent l'argument int par défaut à
+    /// 0 sur chaque event d'un clip MultiHit si on oublie de le changer).</summary>
+    private void ResolvePendingHit(int hitIndex)
+    {
+        if (_pendingSkill == null) return;
+
+        SkillData skill   = _pendingSkill;
+        Entity    target  = _pendingTarget;
+        bool      isMulti = _pendingIsMulti;
+
+        if (isMulti && hitIndex != _pendingMultiNextIndex)
+        {
+            Debug.LogWarning($"[PNJ] Animation Event MultiHit reçu avec hitIndex={hitIndex}, attendu={_pendingMultiNextIndex} — event mal numéroté sur le clip ?");
+            return;
+        }
+
+        if (isMulti)
+        {
+            _skillSystem.ResolveMultiHitStep(skill, this, target, hitIndex);
+            _pendingMultiNextIndex++;
+            int totalHits = 1 + (skill.hitSteps?.Count ?? 0);
+            if (_pendingMultiNextIndex < totalHits) return;
+        }
+        else
+        {
+            if (skill.hasDelayedImpact)
+                _skillSystem.PlantDelayedZone(skill, this, target);
+            else if (skill.isTrajectory)
+                _skillSystem.StartTrajectory(skill, this);
+            else
+                _skillSystem.ResolveExecute(skill, this, target);
+        }
+
+        _pendingSkill   = null;
+        _pendingTarget  = null;
+        _pendingTimeout = 0f;
+        _pendingIsMulti = false;
+
+        if (data.skills != null && data.skills.Contains(skill))
+            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
     }
 
     /// <summary>
@@ -650,6 +754,16 @@ public class PNJ : Entity
 
         _agent?.ResetPath();
         _combatTarget = null;
+
+        // Un PNJ (contrairement à un Mob) n'est jamais désactivé à sa mort — RespawnCoroutine()
+        // repasse isDead = false après data.respawnDelay secondes. Sans ce nettoyage, un
+        // pending-hit resté en vol (Mob/PNJ tué pendant l'anim de son attaque) résoudrait au
+        // premier Update() après respawn — dégâts/zone/trajectoire fantômes depuis le point de
+        // spawn (trouvé en vérification indépendante du plan).
+        _pendingSkill   = null;
+        _pendingTarget  = null;
+        _pendingTimeout = 0f;
+        _pendingIsMulti = false;
 
         if (data.respawnDelay > 0f)
             StartCoroutine(RespawnCoroutine());
