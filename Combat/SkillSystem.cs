@@ -117,6 +117,14 @@ public class SkillSystem : MonoBehaviour
         if (target is Mob mobTarget && caster is Player attackerPlayer)
             mobTarget.RegisterLastSkill(attackerPlayer, skill);
 
+        // Position résolue AVANT le dispatch — ExecuteGroundTarget() consomme et annule
+        // _groundTargetPoint, donc la lire APRÈS le dispatch retombe toujours sur la position
+        // du caster pour un GroundTarget (bug trouvé lors de l'audit VFX du 2026-09-12,
+        // présent depuis l'introduction de GroundTarget, pas lié au chantier VFX lui-même).
+        Vector3 vfxPos = target != null
+            ? target.transform.position
+            : _groundTargetPoint ?? caster.transform.position;
+
         // ── Dispatch selon executionType ─────────────────────
         if (skill.executionType == SkillExecutionType.MultiHit
             && skill.hitSteps != null && skill.hitSteps.Count > 0)
@@ -133,12 +141,7 @@ public class SkillSystem : MonoBehaviour
 
         // ── VFX & Son ────────────────────────────────────────
         if (skill.vfxImpact != null)
-        {
-            Vector3 vfxPos = target != null
-                ? target.transform.position
-                : _groundTargetPoint ?? caster.transform.position;
             Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
-        }
         if (skill.soundEffect != null)
             AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
     }
@@ -176,15 +179,15 @@ public class SkillSystem : MonoBehaviour
         if (target is Mob mobTarget && caster is Player attackerPlayer)
             mobTarget.RegisterLastSkill(attackerPlayer, skill);
 
+        // Position résolue AVANT le dispatch — même raison que Execute() ci-dessus.
+        Vector3 vfxPos = target != null
+            ? target.transform.position
+            : _groundTargetPoint ?? caster.transform.position;
+
         DispatchByTargetType(skill, caster, target);
 
         if (skill.vfxImpact != null)
-        {
-            Vector3 vfxPos = target != null
-                ? target.transform.position
-                : _groundTargetPoint ?? caster.transform.position;
             Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
-        }
         if (skill.soundEffect != null)
             AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
     }
