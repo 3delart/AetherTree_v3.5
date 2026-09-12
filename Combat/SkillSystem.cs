@@ -341,7 +341,17 @@ public class SkillSystem : MonoBehaviour
             destination = origin + dir * range;
         }
 
-        StartCoroutine(TrajectoryRoutine(skill, caster, origin, destination));
+        // Quaternion.LookRotation logue un warning Console sur un vecteur nul — cas dégénéré
+        // origin == destination (raycast manqué), déjà géré par le yield break précoce de
+        // TrajectoryRoutine juste après. Le VFX sera de toute façon détruit à la frame suivante
+        // par ce même chemin de sortie — Quaternion.identity en attendant évite juste le warning.
+        Vector3 initialDir = destination - origin;
+        GameObject trajectoryVfx = skill.vfxTrajectory != null
+            ? Instantiate(skill.vfxTrajectory, origin,
+                initialDir.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(initialDir) : Quaternion.identity)
+            : null;
+
+        StartCoroutine(TrajectoryRoutine(skill, caster, origin, destination, trajectoryVfx));
     }
 
     /// <summary>Déplace un point virtuel de `origin` à `destination` à la vitesse
@@ -354,7 +364,7 @@ public class SkillSystem : MonoBehaviour
     /// vfxImpact/soundEffect joués par entité touchée (même précédent que ResolveMultiHitStep) —
     /// seul le VFX de TRAJET (effet qui suivrait le déplacement lui-même) reste hors scope,
     /// chantier VFX séparé à venir.</summary>
-    private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination)
+    private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination, GameObject trajectoryVfx)
     {
         float totalDistance = Vector3.Distance(origin, destination);
         if (totalDistance <= 0.01f)
@@ -366,6 +376,8 @@ public class SkillSystem : MonoBehaviour
                 Instantiate(skill.vfxImpact, destination, Quaternion.identity);
             if (skill.soundEffect != null)
                 AudioSource.PlayClipAtPoint(skill.soundEffect, destination);
+            if (trajectoryVfx != null)
+                Destroy(trajectoryVfx);
             yield break; // origine == destination, rien à parcourir
         }
 
@@ -417,7 +429,8 @@ public class SkillSystem : MonoBehaviour
 
             if (segment > 0.0001f)
             {
-                RaycastHit[] hits = Physics.SphereCastAll(previousPos, radius, (currentPos - previousPos).normalized, segment);
+                Vector3 segmentDir = (currentPos - previousPos).normalized;
+                RaycastHit[] hits = Physics.SphereCastAll(previousPos, radius, segmentDir, segment);
                 foreach (RaycastHit h in hits)
                 {
                     Entity entity = h.collider.GetComponentInParent<Entity>();
@@ -439,6 +452,12 @@ public class SkillSystem : MonoBehaviour
                     if (skill.soundEffect != null)
                         AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
                 }
+
+                if (trajectoryVfx != null)
+                {
+                    trajectoryVfx.transform.position = currentPos;
+                    trajectoryVfx.transform.rotation = Quaternion.LookRotation(segmentDir);
+                }
             }
 
             previousPos = currentPos;
@@ -457,6 +476,12 @@ public class SkillSystem : MonoBehaviour
             if (skill.soundEffect != null)
                 AudioSource.PlayClipAtPoint(skill.soundEffect, destination);
         }
+
+        // Nettoyage INCONDITIONNEL — contrairement au fallback vfxImpact/soundEffect ci-dessus
+        // (qui ne joue pas si casterDied), le VFX de trajet doit TOUJOURS disparaître, mort du
+        // caster comprise, sinon il resterait affiché indéfiniment sur une trajectoire abandonnée.
+        if (trajectoryVfx != null)
+            Destroy(trajectoryVfx);
     }
 
     /// <summary>Résout UN hit précis d'un skill MultiHit (joueur uniquement, chantier B) —
