@@ -169,9 +169,11 @@ public class SkillSystem : MonoBehaviour
     /// son propre impact. DEUXIÈME écart volontaire avec Execute() : la branche MultiHit
     /// d'Execute() (dispatch + StartCoroutine(ExecuteMultiHit)) est ENTIÈREMENT absente ici —
     /// ResolveExecute() ne gère jamais un skill MultiHit, ce cas passe par
-    /// ResolveMultiHitStep() ci-dessous à la place, appelée directement par SkillBar au bon
-    /// index. Utilisée pour Normal/Combo-step côté joueur (chantier B) ; Mob/PNJ/passifs
-    /// restent sur Execute() (inchangée, ci-dessus, MultiHit inclus).</summary>
+    /// ResolveMultiHitStep() ci-dessous à la place, appelée directement par SkillBar (joueur)
+    /// ou Mob.cs/PNJ.cs (chantier fondations Animator Mob/PNJ) au bon index. Utilisée pour
+    /// Normal/Combo-step côté joueur (chantier B) ET pour Normal côté Mob/PNJ (leur pending-hit
+    /// interne, même principe) ; seuls les skills de passif restent sur Execute() (inchangée,
+    /// ci-dessus, MultiHit inclus) sans jamais passer par ce chemin.</summary>
     public void ResolveExecute(SkillData skill, Entity caster, Entity target)
     {
         if (skill == null || caster == null || caster.isDead) return;
@@ -534,8 +536,9 @@ public class SkillSystem : MonoBehaviour
             Destroy(gameObject);
     }
 
-    /// <summary>Résout UN hit précis d'un skill MultiHit (joueur uniquement, chantier B) —
-    /// hitIndex 0 = coup de base (dispatch standard, comme un skill à un seul coup), hitIndex
+    /// <summary>Résout UN hit précis d'un skill MultiHit (joueur — chantier B — et Mob/PNJ via
+    /// leur propre pending-hit) — hitIndex 0 = coup de base (dispatch standard, comme un skill
+    /// à un seul coup), hitIndex
     /// 1..N = hitSteps[hitIndex - 1] (même calcul que le corps de boucle d'ExecuteMultiHit,
     /// un step résolu à la demande au lieu d'un foreach avec WaitForSeconds).</summary>
     public void ResolveMultiHitStep(SkillData skill, Entity caster, Entity target, int hitIndex)
