@@ -14,8 +14,14 @@ using UnityEngine;
 //
 // Assigne un layer distinct à chaque clip trouvé — Play() n'arrête que les
 // clips du MÊME layer, donc les mettre sur des layers différents les fait
-// tourner tous en parallèle sans interférence, peu importe ce qu'ils
-// animent chacun.
+// jouer tous en parallèle sans interférence, peu importe ce qu'ils animent
+// chacun.
+//
+// Ne force AUCUN wrapMode — chaque clip garde celui réglé à l'import (case
+// "Loop Time" par clip, onglet Animation du FBX). Un effet ponctuel (ex:
+// pentacle qui s'ouvre → tourne → se referme) doit rester non-bouclé pour
+// avoir une vraie fin — voir DestroySelfWhenAnimationFinished.cs pour le
+// détruire proprement à ce moment-là plutôt qu'après une durée devinée.
 // =============================================================
 
 [RequireComponent(typeof(Animation))]
@@ -28,8 +34,7 @@ public class PlayAllAnimationClips : MonoBehaviour
 
         foreach (AnimationState state in anim)
         {
-            state.layer    = layer++;
-            state.wrapMode = WrapMode.Loop;
+            state.layer = layer++;
             anim.Play(state.name);
         }
     }
