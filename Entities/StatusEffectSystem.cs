@@ -289,6 +289,7 @@ public class StatusEffectSystem : MonoBehaviour
             DebuffInstance newInstance = (DebuffInstance)debuff.CreateInstance(source);
             _activeDebuffs[debuff.debuffType] = new List<DebuffInstance> { newInstance };
             OnApplyDebuff(newInstance);
+            SpawnStatusVfx(newInstance);
             return true;
         }
 
@@ -315,6 +316,7 @@ public class StatusEffectSystem : MonoBehaviour
         DebuffInstance stackedInstance = (DebuffInstance)debuff.CreateInstance(source);
         list.Add(stackedInstance);
         OnApplyDebuff(stackedInstance);
+        SpawnStatusVfx(stackedInstance);
 
         return true;
     }
@@ -344,6 +346,7 @@ public class StatusEffectSystem : MonoBehaviour
             BuffInstance newInstance = (BuffInstance)buff.CreateInstance(source);
             _activeBuffs[buff.buffType] = new List<BuffInstance> { newInstance };
             OnApplyBuff(newInstance);
+            SpawnStatusVfx(newInstance);
             return;
         }
 
@@ -369,6 +372,7 @@ public class StatusEffectSystem : MonoBehaviour
         BuffInstance stackedInstance = (BuffInstance)buff.CreateInstance(source);
         list.Add(stackedInstance);
         OnApplyBuff(stackedInstance);
+        SpawnStatusVfx(stackedInstance);
     }
 
     /// <summary>Applique/rafraîchit un buff avec une durée EXPLICITE, ignorant BuffData.duration
@@ -402,6 +406,19 @@ public class StatusEffectSystem : MonoBehaviour
         instance.remainingTime = remainingSeconds;
         list.Add(instance);
         OnApplyBuff(instance);
+        SpawnStatusVfx(instance);
+    }
+
+    /// <summary>Spawn le VFX persistant d'un effet nouvellement créé (jamais sur un simple
+    /// Refresh() — voir les 5 call sites dans ApplyBuff/TryApplyDebuff/ApplyBuffWithDuration).
+    /// Enfant du transform de l'entité : suit position/rotation/animations automatiquement,
+    /// détruit avec le GameObject parent si l'entité est détruite (comportement Unity par
+    /// défaut, rien à coder).</summary>
+    private void SpawnStatusVfx(StatusEffectInstance instance)
+    {
+        if (instance.data.statusVfx == null) return;
+        instance.spawnedVfx = Instantiate(instance.data.statusVfx, _entity.transform.position,
+            Quaternion.identity, _entity.transform);
     }
 
     // =========================================================
@@ -976,6 +993,11 @@ public class StatusEffectSystem : MonoBehaviour
         if (!_activeDebuffs.TryGetValue(type, out var list) || !list.Remove(instance)) return;
         if (list.Count == 0) _activeDebuffs.Remove(type);
 
+        // Placé AVANT tout branchement type-spécifique ci-dessous — 7 types (Slow, Freeze,
+        // Blind, ArmorBreak, Poison, Prey, Stats) font `return` tôt via RecalculateAndReapply(),
+        // un nettoyage placé plus bas dans la méthode serait sauté pour chacun d'eux.
+        if (instance.spawnedVfx != null) Destroy(instance.spawnedVfx);
+
         var expiringBonusStats = instance.DebuffData.bonusStats;
 
         // ── Flags booléens — retirés manuellement ────────────
@@ -1080,6 +1102,11 @@ public class StatusEffectSystem : MonoBehaviour
             delay = d.reviveDelay;
             hpPercent = d.reviveHPPercent;
             manaPercent = d.reviveManaPercent;
+            // Retrait direct du dictionnaire (pas ExpireBuffInstance) — comportement pré-existant
+            // inchangé. Le nettoyage VFX doit quand même se faire ici, sinon un statusVfx sur ce
+            // Revive resterait attaché au joueur indéfiniment (il ressuscite, son GameObject
+            // n'est jamais détruit, rien d'autre ne nettoierait jamais ce VFX enfant).
+            if (list[0].spawnedVfx != null) Destroy(list[0].spawnedVfx);
             _activeBuffs.Remove(BuffType.Revive);
             return true;
         }
@@ -1110,6 +1137,10 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (!_activeBuffs.TryGetValue(type, out var list) || !list.Remove(instance)) return;
         if (list.Count == 0) _activeBuffs.Remove(type);
+
+        // Placé AVANT tout branchement type-spécifique ci-dessous — certains (BuffType.Stats)
+        // font `return` tôt, un nettoyage placé plus bas dans la méthode serait sauté.
+        if (instance.spawnedVfx != null) Destroy(instance.spawnedVfx);
 
         var expiringBonusStats = instance.BuffData.bonusStats;
 
