@@ -360,7 +360,12 @@ public class Mob : Entity
             // Double vérification avant de lancer l'attaque
             if (!isDead && !target.isDead && data.basicAttackSkill != null)
             {
-                _skillSystem?.Execute(data.basicAttackSkill, this, target);
+                if (data.basicAttackSkill.hasDelayedImpact)
+                    _skillSystem?.PlantDelayedZone(data.basicAttackSkill, this, target);
+                else if (data.basicAttackSkill.isTrajectory)
+                    _skillSystem?.StartTrajectory(data.basicAttackSkill, this);
+                else
+                    _skillSystem?.Execute(data.basicAttackSkill, this, target);
             }
             else if (data.basicAttackSkill == null)
                 Debug.LogWarning($"[MOB] {data.mobName} n'a pas de basicAttackSkill — assigne un SkillData dans MobData.");
@@ -400,7 +405,12 @@ public class Mob : Entity
             if (skill.manaCost > 0f) SpendMana(skill.manaCost);
 
             LookAt(target.transform);
-            _skillSystem?.Execute(skill, this, target);
+            if (skill.hasDelayedImpact)
+                _skillSystem?.PlantDelayedZone(skill, this, target);
+            else if (skill.isTrajectory)
+                _skillSystem?.StartTrajectory(skill, this);
+            else
+                _skillSystem?.Execute(skill, this, target);
             _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
             attackTimer = data.attackCooldown;
             return true;
