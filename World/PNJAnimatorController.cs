@@ -15,8 +15,9 @@ using UnityEngine.AI;
 [RequireComponent(typeof(Animator))]
 public class PNJAnimatorController : MonoBehaviour
 {
-    private const string SpeedParam  = "Speed";
-    private const string AttackState = "Attack";
+    private const string SpeedParam          = "Speed";
+    private const string AttackState         = "Attack";
+    private const string CancelActionTrigger = "CancelAction";
 
     [Header("Attack (override)")]
     [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"Attack\" dans l'Animator\n" +
@@ -58,12 +59,29 @@ public class PNJAnimatorController : MonoBehaviour
     {
         if (clip == null || _overrideController == null || attackPlaceholderClip == null) return;
         _overrideController[attackPlaceholderClip] = clip;
+
+        // Reset du trigger CancelAction avant de rejouer le state Attack — même protection que
+        // MobAnimatorController.cs/PlayerAnimatorController.cs.
+        _animator.ResetTrigger(CancelActionTrigger);
         _animator.Play(AttackState, 0, 0f);
     }
 
     /// <summary>Joue l'animation d'un skill — échange le clip du state "Attack" réutilisable
     /// puis relance ce state depuis le début. Appelé par PNJ.StartPendingHit().</summary>
     public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip);
+
+    /// <summary>Joue l'animation de canalisation d'un skill (castTime > 0) — même mécanisme
+    /// d'échange que PlayAttack (réutilise le state "Attack", pas de state séparé). Appelé par
+    /// PNJ.StartChannelCast().</summary>
+    public void PlayChannel(AnimationClip clip) => PlayOverrideClip(clip);
+
+    /// <summary>Coupe net l'anim de canalisation en cours — déclenche le trigger qui force le
+    /// retour à la locomotion. Appelé par PNJ.InterruptChannelCast().</summary>
+    public void CancelChannel()
+    {
+        if (_animator == null) return;
+        _animator.SetTrigger(CancelActionTrigger);
+    }
 
     /// <summary>Appelé par Unity depuis un Animation Event posé sur le clip en cours de lecture
     /// (state "Attack"). hitIndex : 0 par défaut (hit simple ou coup de base d'un MultiHit),
