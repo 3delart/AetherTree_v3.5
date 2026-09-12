@@ -245,6 +245,11 @@ public abstract class StatusEffectData : ScriptableObject
     public LocalizedText description = new LocalizedText();
     public Sprite icon;
 
+    [Tooltip("VFX persistant tant que ce buff/debuff est actif sur une entité — attaché en " +
+             "enfant du transform de l'entité (suit position/rotation/animations " +
+             "automatiquement). Optionnel — vide = pas de VFX de statut.")]
+    public GameObject statusVfx;
+
     [Header("Durée")]
     [Tooltip("Durée de base de l'effet en secondes.\n§3.1.1.4 : durée et chance d'application définitives sur SkillData.")]
     public float duration = 3f;
