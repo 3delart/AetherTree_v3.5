@@ -288,6 +288,153 @@ public class SkillSystem : MonoBehaviour
         if (marker != null) Destroy(marker);
     }
 
+    /// <summary>Résout un skill `isTrajectory` DÉJÀ lancé par SkillBar (mana/anim/BeginSkillUse
+    /// déjà faits au lancement) — fait le bookkeeping de résolution immédiatement (comme
+    /// ResolveExecute/PlantDelayedZone), mais lance une coroutine qui déplace une hitbox du
+    /// caster vers une destination, infligeant des dégâts à tout ce qu'elle traverse. Distinct de
+    /// PlantDelayedZone (zone FIXE une fois plantée) — mutuellement exclusif, voir
+    /// SkillData.OnValidate(). GroundTarget et Direction ne prennent jamais de cible Entity (voir
+    /// commentaire en tête de fichier), donc pas de paramètre `target` ici.</summary>
+    public void StartTrajectory(SkillData skill, Entity caster)
+    {
+        if (skill == null || caster == null || caster.isDead) return;
+
+        if (caster.entityType == EntityType.Player && caster is Player player)
+        {
+            player.ResolveSkillUse(skill, null);
+
+            GameEventBus.Publish(new SkillUsedEvent
+            {
+                skill          = skill,
+                target         = null,
+                caster         = player,
+                primaryElement = skill.PrimaryElement,
+                isCombo        = skill.elements != null && skill.elements.Count >= 2,
+                locationID     = player.currentZoneID,
+                isInParty      = false,
+            });
+        }
+
+        Vector3 origin = caster.transform.position;
+        Vector3 destination;
+
+        if (skill.targetType == TargetType.GroundTarget)
+        {
+            // Même consommation que ExecuteGroundTarget()/PlantDelayedZone() — sans ce reset,
+            // un skill sans rapport lancé plus tard hériterait d'une position périmée.
+            destination = _groundTargetPoint ?? origin;
+            _groundTargetPoint = null;
+        }
+        else // TargetType.Direction (ou targetType incompatible — voir OnValidate, traité
+             // comme Direction par défaut plutôt que planter)
+        {
+            // _skillDirection n'est en réalité JAMAIS posé par le flow joueur actuel —
+            // SetSkillDirection() n'a qu'un seul appelant dans tout le projet
+            // (TargetingSystem.TryExecuteSkill(), lui-même sans appelant, code mort). Le
+            // fallback caster.transform.forward est donc TOUJOURS celui utilisé en pratique
+            // aujourd'hui — comportement déjà identique pour ExecuteDirection()/
+            // ExecuteSkillshot()/ExecuteCone(), pas une régression introduite ici. La direction
+            // résolue est celle où le PERSONNAGE fait face, pas la souris/le regard caméra.
+            Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
+            _skillDirection = null;
+            float range = skill.range > 0f ? skill.range : 10f;
+            destination = origin + dir * range;
+        }
+
+        StartCoroutine(TrajectoryRoutine(skill, caster, origin, destination));
+    }
+
+    /// <summary>Déplace un point virtuel de `origin` à `destination` à la vitesse
+    /// `skill.projectileSpeed` (fallback 10), balaie un SphereCastAll (rayon `skill.aoeRadius`,
+    /// fallback 0.5) entre la position du tick précédent et la position du tick courant à CHAQUE
+    /// FRAME — ne peut jamais sauter une cible même à vitesse élevée. Un OverlapSphere initial à
+    /// `origin` précède la boucle (un SphereCastAll ne détecte pas un chevauchement déjà présent
+    /// à son point de départ — sinon une entité collée au caster au lancement ne serait jamais
+    /// touchée). Une entité ne peut être touchée qu'une seule fois par cast (HashSet).
+    /// vfxImpact/soundEffect joués par entité touchée (même précédent que ResolveMultiHitStep) —
+    /// seul le VFX de TRAJET (effet qui suivrait le déplacement lui-même) reste hors scope,
+    /// chantier VFX séparé à venir.</summary>
+    private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination)
+    {
+        float totalDistance = Vector3.Distance(origin, destination);
+        if (totalDistance <= 0.01f) yield break; // origine == destination, rien à parcourir
+
+        float speed  = skill.projectileSpeed > 0f ? skill.projectileSpeed : 10f;
+        float radius = skill.aoeRadius       > 0f ? skill.aoeRadius       : 0.5f;
+        Vector3 dir  = (destination - origin) / totalDistance;
+
+        HashSet<Entity> alreadyHit = new HashSet<Entity>();
+
+        // Pass initiale à l'origine — un SphereCastAll ne détecte JAMAIS un collider déjà en
+        // chevauchement à son point de départ (limitation connue de la physique Unity, même
+        // raison pour laquelle DashInDirection utilise OverlapSphere et non un SphereCast). Sans
+        // ce pass, une entité collée au caster au moment du lancement (ex: un ennemi au
+        // corps-à-corps quand le joueur lance la trajectoire) pourrait n'être JAMAIS touchée.
+        foreach (Collider col in Physics.OverlapSphere(origin, radius))
+        {
+            Entity entity = col.GetComponentInParent<Entity>();
+            if (entity == null || entity.isDead) continue;
+            if (alreadyHit.Contains(entity)) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+
+            alreadyHit.Add(entity);
+            ApplyEffectType(skill, caster, entity);
+            ApplyStatusEffects(skill, caster, entity);
+            CheckKill(entity);
+
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+        }
+
+        Vector3 previousPos = origin;
+        float   traveled    = 0f;
+
+        while (traveled < totalDistance)
+        {
+            // Garde caster mort en cours de trajet — même effet que le `break` de
+            // DelayedZoneRoutine (rien à nettoyer après, pas de marker/VFX créé par cette
+            // coroutine). DashToTarget/DashInDirection utilisent `yield break` (pas `break`) car
+            // ILS ont du nettoyage post-boucle à sauter — pas le cas ici, comparaison à ces
+            // deux-là non pertinente.
+            if (caster == null || caster.isDead) break;
+
+            traveled += speed * Time.deltaTime;
+            Vector3 currentPos = origin + dir * Mathf.Min(traveled, totalDistance);
+            float   segment    = Vector3.Distance(previousPos, currentPos);
+
+            if (segment > 0.0001f)
+            {
+                RaycastHit[] hits = Physics.SphereCastAll(previousPos, radius, (currentPos - previousPos).normalized, segment);
+                foreach (RaycastHit h in hits)
+                {
+                    Entity entity = h.collider.GetComponentInParent<Entity>();
+                    if (entity == null || entity.isDead) continue;
+                    if (alreadyHit.Contains(entity)) continue;
+                    if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+
+                    alreadyHit.Add(entity);
+                    ApplyEffectType(skill, caster, entity);
+                    ApplyStatusEffects(skill, caster, entity);
+                    CheckKill(entity);
+
+                    // Un vfxImpact/soundEffect PAR entité touchée — même précédent que
+                    // ResolveMultiHitStep() (une trajectoire est une séquence de hits distincts,
+                    // pas une zone unique comme DelayedZoneRoutine qui joue un seul vfx/son par
+                    // tick peu importe combien d'entités touchées).
+                    if (skill.vfxImpact != null)
+                        Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+                    if (skill.soundEffect != null)
+                        AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+                }
+            }
+
+            previousPos = currentPos;
+            yield return null;
+        }
+    }
+
     /// <summary>Résout UN hit précis d'un skill MultiHit (joueur uniquement, chantier B) —
     /// hitIndex 0 = coup de base (dispatch standard, comme un skill à un seul coup), hitIndex
     /// 1..N = hitSteps[hitIndex - 1] (même calcul que le corps de boucle d'ExecuteMultiHit,
