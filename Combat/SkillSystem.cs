@@ -52,7 +52,6 @@ using System.Collections.Generic;
 //   pour les skills directionnels. Remis à null après utilisation.
 // =============================================================
 
-[RequireComponent(typeof(MonoBehaviour))]
 public class SkillSystem : MonoBehaviour
 {
     public static SkillSystem Instance { get; private set; }
@@ -71,9 +70,16 @@ public class SkillSystem : MonoBehaviour
 
     private void Awake()
     {
-        // Singleton souple — le Player porte l'instance principale.
-        // Les Mob/PNJ portent leur propre composant sans écraser l'instance.
-        if (Instance == null)
+        // Singleton souple — le Player porte l'instance principale. Seul un SkillSystem sur un
+        // GameObject avec un composant Player peut réclamer Instance — un Mob/PNJ/host
+        // temporaire ne l'écrase donc jamais, peu importe l'ordre réel des Awake() (non garanti
+        // par Unity entre GameObjects différents). Corrige un bug réel trouvé en vérification :
+        // avant ce fix, `if (Instance == null)` seul pouvait laisser un Mob gagner la course au
+        // démarrage et voler la place — cassant silencieusement tous les skills du Player
+        // ensuite (SkillBar/TargetingSystem/PassiveSkillSystem appellent tous
+        // SkillSystem.Instance?.Execute(...), le `?.` ne faisant plus rien sur un Instance
+        // devenu un Mob mort).
+        if (Instance == null && GetComponent<Player>() != null)
             Instance = this;
     }
 
@@ -256,7 +262,17 @@ public class SkillSystem : MonoBehaviour
             ? Instantiate(skill.vfxZoneMarker, position, Quaternion.identity)
             : null;
 
-        StartCoroutine(DelayedZoneRoutine(skill, caster, position, marker));
+        // Mob/PNJ : Destroy(gameObject, délai de corpse) sur le caster tuerait cette coroutine
+        // avant qu'elle atteigne son propre nettoyage si impactDelay+zoneDuration dépasse ce
+        // délai — délègue à un host temporaire qui survit indépendamment du caster, détruit
+        // lui-même en fin de routine. Le chemin Player (jamais détruit) reste inchangé, tourne
+        // sur `this` comme aujourd'hui.
+        SkillSystem host = caster.entityType == EntityType.Player
+            ? this
+            : new GameObject($"DelayedZoneHost_{skill.name}").AddComponent<SkillSystem>();
+        bool destroySelfOnFinish = host != this;
+
+        host.StartCoroutine(host.DelayedZoneRoutine(skill, caster, position, marker, destroySelfOnFinish));
     }
 
     /// <summary>Tick(s) de détonation d'une zone plantée par PlantDelayedZone(). Un seul tick si
@@ -264,7 +280,7 @@ public class SkillSystem : MonoBehaviour
     /// `zoneTickInterval` secondes pendant `zoneDuration` (zone persistante type lave). Chaque
     /// tick réutilise EXACTEMENT la logique de ExecuteGroundTarget()/ExecuteAoETarget() — même
     /// OverlapSphere + PassesAoeFilter + ApplyEffectType/ApplyStatusEffects/CheckKill.</summary>
-    private IEnumerator DelayedZoneRoutine(SkillData skill, Entity caster, Vector3 position, GameObject marker)
+    private IEnumerator DelayedZoneRoutine(SkillData skill, Entity caster, Vector3 position, GameObject marker, bool destroySelfOnFinish)
     {
         yield return new WaitForSeconds(skill.impactDelay);
 
@@ -307,6 +323,7 @@ public class SkillSystem : MonoBehaviour
         }
 
         if (marker != null) Destroy(marker);
+        if (destroySelfOnFinish) Destroy(gameObject);
     }
 
     /// <summary>Résout un skill `isTrajectory` DÉJÀ lancé par SkillBar (mana/anim/BeginSkillUse
@@ -372,7 +389,14 @@ public class SkillSystem : MonoBehaviour
                 initialDir.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(initialDir) : Quaternion.identity)
             : null;
 
-        StartCoroutine(TrajectoryRoutine(skill, caster, origin, destination, trajectoryVfx));
+        // Mob/PNJ : même raison que PlantDelayedZone() ci-dessus — host temporaire qui survit
+        // indépendamment du caster, détruit lui-même en fin de routine.
+        SkillSystem host = caster.entityType == EntityType.Player
+            ? this
+            : new GameObject($"TrajectoryHost_{skill.name}").AddComponent<SkillSystem>();
+        bool destroySelfOnFinish = host != this;
+
+        host.StartCoroutine(host.TrajectoryRoutine(skill, caster, origin, destination, trajectoryVfx, destroySelfOnFinish));
     }
 
     /// <summary>Déplace un point virtuel de `origin` à `destination` à la vitesse
@@ -386,7 +410,7 @@ public class SkillSystem : MonoBehaviour
     /// Le VFX de TRAJET (trajectoryVfx) est spawné au lancement, suit position+rotation à chaque
     /// frame pendant tout le déplacement, et est détruit sur chaque chemin de sortie de la
     /// coroutine.</summary>
-    private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination, GameObject trajectoryVfx)
+    private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination, GameObject trajectoryVfx, bool destroySelfOnFinish)
     {
         float totalDistance = Vector3.Distance(origin, destination);
         if (totalDistance <= 0.01f)
@@ -400,6 +424,8 @@ public class SkillSystem : MonoBehaviour
                 AudioSource.PlayClipAtPoint(skill.soundEffect, destination);
             if (trajectoryVfx != null)
                 Destroy(trajectoryVfx);
+            if (destroySelfOnFinish)
+                Destroy(gameObject);
             yield break; // origine == destination, rien à parcourir
         }
 
@@ -504,6 +530,8 @@ public class SkillSystem : MonoBehaviour
         // caster comprise, sinon il resterait affiché indéfiniment sur une trajectoire abandonnée.
         if (trajectoryVfx != null)
             Destroy(trajectoryVfx);
+        if (destroySelfOnFinish)
+            Destroy(gameObject);
     }
 
     /// <summary>Résout UN hit précis d'un skill MultiHit (joueur uniquement, chantier B) —
