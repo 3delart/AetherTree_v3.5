@@ -69,6 +69,10 @@ public class SkillBar : MonoBehaviour
     // Auto-approche
     private SkillData _pendingSkill;
     private Entity    _pendingTarget;
+    // GroundTarget uniquement — point au sol visé, figé au clic (jamais re-raycasté à
+    // l'arrivée, même philosophie que _pendingTarget : commis à sa valeur d'origine).
+    // Mutuellement exclusif avec _pendingTarget (l'un ou l'autre est set, jamais les deux).
+    private Vector3?  _pendingGroundPoint;
     private int       _pendingSlot   = -1;
     private bool      _isApproaching = false;
 
@@ -410,7 +414,11 @@ public class SkillBar : MonoBehaviour
         // portée (le skill ne partait donc jamais, l'auto-attaque semblant "forcer"
         // à taper l'engagée). Un skill sur un autre slot ne doit annuler que SA
         // PROPRE approche précédente, jamais celle d'un slot différent.
-        if (_isApproaching && _pendingSlot == slot && (_pendingSkill != skill || _pendingTarget != target))
+        // GroundTarget n'a pas de cible Entity — un nouveau clic sur ce slot doit toujours
+        // annuler une approche vers un ancien point au sol (le nouveau point n'est connu
+        // qu'après ce check, il ne peut jamais être "égal" à l'ancien ici).
+        if (_isApproaching && _pendingSlot == slot &&
+            (_pendingSkill != skill || _pendingTarget != target || _pendingGroundPoint.HasValue))
         {
             CancelApproach();
         }
@@ -438,6 +446,31 @@ public class SkillBar : MonoBehaviour
                 StartApproach(skill, slot, target);
                 return false;
             }
+        }
+        else if (skill.targetType == TargetType.GroundTarget)
+        {
+            // Point figé ICI, au clic — jamais re-raycasté à la résolution ni à l'arrivée
+            // d'une approche (StartInstant()/StartMultiHit()/StartChannel()/LaunchComboHit()
+            // consomment désormais ce point déjà posé, voir plus bas — même philosophie que
+            // les skills à cible Entity : commis à sa valeur d'origine, jamais réévalué en
+            // route).
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (!Physics.Raycast(ray, out RaycastHit hit, 200f))
+            {
+                Debug.Log($"[SKILLBAR] Raycast sol manqué pour {skill.name}");
+                return false;
+            }
+
+            float dist  = Vector3.Distance(_player.transform.position, hit.point);
+            float range = skill.range > 0f ? skill.range : GetDefaultRange();
+
+            if (dist > range)
+            {
+                StartGroundApproach(skill, slot, hit.point);
+                return false;
+            }
+
+            SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
         }
 
         // ── Combo séquentiel (Méthode 2) ─────────────────────
@@ -490,12 +523,9 @@ public class SkillBar : MonoBehaviour
         if (skill.vfxCast != null)
             Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
 
-        if (skill.targetType == TargetType.GroundTarget)
-        {
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
-                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
-        }
+        // GroundTarget : _groundTargetPoint est déjà posé par TryUseSlot()/CheckApproach()
+        // avant cet appel (point figé au clic, jamais re-raycasté ici — voir StartApproach/
+        // StartGroundApproach ci-dessous).
 
         _pendingHitSlot    = slot;
         _pendingHitSkill   = skill;
@@ -569,18 +599,14 @@ public class SkillBar : MonoBehaviour
         if (skill.vfxCast != null)
             Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
 
-        if (skill.targetType == TargetType.GroundTarget)
-        {
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
-                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
-        }
+        // GroundTarget : _groundTargetPoint déjà posé par TryUseSlot()/CheckApproach() avant
+        // cet appel — point figé au clic, jamais re-raycasté ici.
 
         _pendingMultiSlot      = slot;
         _pendingMultiSkill     = skill;
         // GroundTarget n'a jamais de vraie cible Entity — même raison que StartInstant() :
         // sinon ResolveMultiHitStep()/le placement VFX par step utiliserait la position d'une
-        // entité non-pertinente au lieu du point au sol (raycasté juste au-dessus).
+        // entité non-pertinente au lieu du point au sol.
         _pendingMultiTarget    = skill.targetType == TargetType.GroundTarget ? null : target;
         _pendingMultiNextIndex = 0;
         _pendingMultiTimeout   = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
@@ -682,16 +708,10 @@ public class SkillBar : MonoBehaviour
         if (skill.vfxCast != null)
             Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
 
-        // GroundTarget : raycast au LANCEMENT (aim-then-channel), pas à la résolution — le point
-        // est locké quand le joueur commet à la canalisation, cohérent avec mana/HP/gold dépensés
-        // au clic. ResolveChannel() n'a besoin d'aucun changement : _groundTargetPoint sera déjà
+        // GroundTarget : le point est locké au clic (TryUseSlot()/CheckApproach(), avant cet
+        // appel), pas re-raycasté ici — aim-then-channel, cohérent avec mana/HP/gold dépensés
+        // au clic. ResolveChannel() n'a besoin d'aucun changement : _groundTargetPoint est déjà
         // posé quand SkillSystem.Execute() le consomme.
-        if (skill.targetType == TargetType.GroundTarget)
-        {
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
-                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
-        }
 
         // POINT D'EXTENSION CHANTIER B (calage sur frame d'impact, hors scope de ce plan) :
         // le déclencheur de ResolveChannel() est ICI, et seulement ici. Le jour où B est
@@ -834,16 +854,9 @@ public class SkillBar : MonoBehaviour
 
         EngageAndFaceTarget(skill, slot, target);
 
-        // GroundTarget par cohérence avec StartInstant()/StartMultiHit() (Tâche 4) — aucun
-        // skill de combo existant n'utilise GroundTarget aujourd'hui, mais rien n'empêche
-        // d'en configurer un plus tard : sans ce bloc, un tel step résoudrait ses effets sur
-        // la position du caster au lieu du point visé.
-        if (skill.targetType == TargetType.GroundTarget)
-        {
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out RaycastHit hit, 200f))
-                SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
-        }
+        // GroundTarget : aucun skill de combo existant n'utilise GroundTarget aujourd'hui, mais
+        // rien n'empêche d'en configurer un plus tard — _groundTargetPoint est déjà posé par
+        // TryUseSlot()/CheckApproach() avant cet appel, pas re-raycasté ici.
 
         _pendingHitSlot    = slot;
         _pendingHitSkill   = skill;
@@ -898,8 +911,47 @@ public class SkillBar : MonoBehaviour
             _agent.SetDestination(target.transform.position);
     }
 
+    // GroundTarget uniquement — même mécanisme que StartApproach() mais vers un Vector3 figé
+    // au clic plutôt qu'une Entity (voir _pendingGroundPoint).
+    private void StartGroundApproach(SkillData skill, int slot, Vector3 point)
+    {
+        _pendingSkill       = skill;
+        _pendingSlot        = slot;
+        _pendingGroundPoint = point;
+        _isApproaching      = true;
+
+        if (_agent != null)
+            _agent.SetDestination(point);
+    }
+
     private void CheckApproach()
     {
+        // GroundTarget : le point est fixe (jamais de re-sélection dynamique comme pour une
+        // Entity au slot 0 ci-dessous — un point au sol ne peut pas "mourir" ni être remplacé
+        // par une nouvelle cible en cours de route).
+        if (_pendingGroundPoint.HasValue)
+        {
+            float distG  = Vector3.Distance(_player.transform.position, _pendingGroundPoint.Value);
+            float rangeG = _pendingSkill.range > 0f ? _pendingSkill.range : GetDefaultRange();
+
+            if (distG <= rangeG)
+            {
+                // Même garde que le cas Entity ci-dessous — laisser l'anim en cours se terminer.
+                if (IsAnimLocked) return;
+
+                if (_agent != null) _agent.ResetPath();
+                SkillSystem.Instance?.SetGroundTargetPoint(_pendingGroundPoint.Value);
+                if (!TryAdvanceCombo(_pendingSkill, _pendingSlot, null))
+                    LaunchSkill(_pendingSkill, _pendingSlot, null);
+                CancelApproach();
+            }
+            else
+            {
+                if (_agent != null) _agent.SetDestination(_pendingGroundPoint.Value);
+            }
+            return;
+        }
+
         if (_pendingTarget == null || _pendingTarget.isDead)
         {
             CancelApproach();
@@ -1074,10 +1126,11 @@ public class SkillBar : MonoBehaviour
 
     public void CancelApproach()
     {
-        _pendingSkill  = null;
-        _pendingTarget = null;
-        _pendingSlot   = -1;
-        _isApproaching = false;
+        _pendingSkill       = null;
+        _pendingTarget      = null;
+        _pendingGroundPoint = null;
+        _pendingSlot        = -1;
+        _isApproaching      = false;
     }
 
     /// <summary>
