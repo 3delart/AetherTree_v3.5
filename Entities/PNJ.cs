@@ -90,6 +90,15 @@ public class PNJ : Entity
 
     private PNJAnimatorController _animatorController;
 
+    // ── Canalisation visible (castTime > 0) — sous-chantier 2, voir docs/superpowers/specs/
+    // 2026-09-12-mob-pnj-channel-vfxcast-design.md — mutuellement exclusif du mécanisme
+    // _pendingSkill ci-dessus : un skill castTime > 0 ne passe JAMAIS par StartPendingHit() ────
+    private bool           _isChanneling   = false;
+    private SkillData      _channelSkill   = null;
+    private Entity         _channelTarget  = null;
+    private GameObject     _channelVfxCast = null;
+    private CastBarSpawner _channelBar     = null;
+
     // =========================================================
     // INITIALISATION
     // =========================================================
@@ -156,6 +165,26 @@ public class PNJ : Entity
             _pendingTimeout -= Time.deltaTime;
             if (_pendingTimeout <= 0f)
                 ResolvePendingHit(_pendingIsMulti ? _pendingMultiNextIndex : 0);
+        }
+
+        // Poll d'interrupt de la canalisation — même règle que Mob.cs (hard CC = CD complet,
+        // cible morte = CD demi, dégâts simples n'interrompent PAS). PAS de terme isDead ici —
+        // même raison que Mob.cs (Update() a déjà un early-return dessus juste au-dessus) ; la
+        // mort est couverte séparément par Die() (Step 8). InterruptChannelCast() gère elle-
+        // même l'annulation de _channelBar — ne JAMAIS appeler _channelBar?.Cancel() ici (voir
+        // le commentaire détaillé sur InterruptChannelCast(), Step 7 — appeler Cancel() avant
+        // ferait exécuter le callback onCancel réentrant pendant que _isChanneling est encore
+        // vrai, posant silencieusement le CD demi même sur un hard CC).
+        if (_isChanneling)
+        {
+            bool hardCC = statusEffects != null && (statusEffects.isStunned ||
+                          statusEffects.isShocked || statusEffects.isFreezed ||
+                          statusEffects.isKnockedBack || statusEffects.isFeared ||
+                          statusEffects.isSilenced);
+            if (hardCC)
+                InterruptChannelCast(voluntary: false, reason: "CC");
+            else if (_channelTarget != null && _channelTarget.isDead)
+                InterruptChannelCast(voluntary: true, reason: "cible morte");
         }
 
         if (data != null && data.canFight)
@@ -527,6 +556,13 @@ public class PNJ : Entity
             _pendingTarget  = null;
             _pendingTimeout = 0f;
             _pendingIsMulti = false;
+
+            // Même raisonnement pour la canalisation (sous-chantier 2). NE PAS appeler
+            // _channelBar?.Cancel() ici — InterruptChannelCast() s'en charge elle-même, dans le
+            // bon ordre (voir son commentaire, Step 7).
+            if (_isChanneling)
+                InterruptChannelCast(voluntary: true, reason: "désengagement");
+
             ReturnToSpawn();
             return;
         }
@@ -554,13 +590,20 @@ public class PNJ : Entity
             // la source du taunt (§3.1.1.1), même schéma que Mob.HandleAttack.
             bool tauntedNow = statusEffects != null && statusEffects.isTaunted;
             if (!tauntedNow && TryUseSecondarySkill(_combatTarget)) return;
-            // Bloqué tant qu'un pending-hit est en vol — même raison que Mob.HandleAttack()
-            // (voir Global Constraints : sans cette garde, plus rien n'empêche un
-            // redéclenchement à chaque frame une fois le CD déplacé à la résolution).
-            if (_attackTimer <= 0f && !IsPendingHit && data.basicAttackSkill != null)
+            // Bloqué tant qu'un pending-hit OU une canalisation est en vol — même raison que
+            // Mob.HandleAttack() (sans cette garde, plus rien n'empêche un redéclenchement à
+            // chaque frame une fois le CD déplacé à la résolution ; le taunt court-circuite
+            // TryUseSecondarySkill() donc sa propre garde ne couvre pas ce chemin, voir
+            // Step 3bis).
+            if (_attackTimer <= 0f && !IsPendingHit && !_isChanneling && data.basicAttackSkill != null)
             {
                 if (!isDead && !_combatTarget.isDead)
-                    StartPendingHit(data.basicAttackSkill, _combatTarget);
+                {
+                    if (data.basicAttackSkill.castTime > 0f)
+                        StartChannelCast(data.basicAttackSkill, _combatTarget);
+                    else
+                        StartPendingHit(data.basicAttackSkill, _combatTarget);
+                }
                 _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             }
         }
@@ -576,10 +619,10 @@ public class PNJ : Entity
     /// </summary>
     private bool TryUseSecondarySkill(Entity target)
     {
-        // Un pending-hit est déjà en vol (secondaire OU attaque de base) — ne rien redéclencher
-        // tant qu'il n'est pas résolu. Retourne true pour que HandleCombatAI() traite ce tick
+        // Un pending-hit OU une canalisation est déjà en vol — ne rien redéclencher tant que
+        // l'un des deux n'est pas résolu. Retourne true pour que HandleCombatAI() traite ce tick
         // comme "occupé" plutôt que de tomber sur l'attaque de base.
-        if (IsPendingHit) return true;
+        if (IsPendingHit || _isChanneling) return true;
         if (data.skills == null || data.skills.Count == 0) return false;
 
         // Tick des cooldowns
@@ -603,7 +646,10 @@ public class PNJ : Entity
             if (skill.manaCost > 0f) SpendMana(skill.manaCost);
 
             LookAt(target.transform);
-            StartPendingHit(skill, target);
+            if (skill.castTime > 0f)
+                StartChannelCast(skill, target);
+            else
+                StartPendingHit(skill, target);
             _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
             return true;
         }
@@ -693,6 +739,92 @@ public class PNJ : Entity
             _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
     }
 
+    // =========================================================
+    // CANALISATION (castTime > 0) — sous-chantier 2
+    // =========================================================
+
+    private void StartChannelCast(SkillData skill, Entity target)
+    {
+        _isChanneling  = true;
+        _channelSkill  = skill;
+        _channelTarget = target;
+
+        _animatorController?.PlayChannel(skill.channelAnimation);
+
+        _channelVfxCast = skill.vfxCast != null
+            ? Instantiate(skill.vfxCast, transform.position, Quaternion.identity)
+            : null;
+
+        _channelBar = CastBarSpawner.Show(
+            label:        skill.skillName.Get(LocalizationManager.CurrentLanguage),
+            duration:     skill.castTime,
+            followTarget: transform,
+            onComplete:   ResolveChannelCast,
+            onCancel:     () => InterruptChannelCast(voluntary: true, reason: "bar volée")
+        );
+    }
+
+    private void ResolveChannelCast()
+    {
+        if (!_isChanneling) return;
+
+        SkillData skill  = _channelSkill;
+        Entity    target = _channelTarget;
+
+        EndChannelCastState();
+
+        if (skill.hasDelayedImpact)
+            _skillSystem.PlantDelayedZone(skill, this, target);
+        else if (skill.isTrajectory)
+            _skillSystem.StartTrajectory(skill, this);
+        else
+            _skillSystem.Execute(skill, this, target);
+
+        if (data.skills != null && data.skills.Contains(skill))
+            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
+    }
+
+    /// <summary>voluntary = true (cible morte, bar volée en interne — CD moitié) | false
+    /// (CC/mort subie — CD complet). Même règle que SkillBar.InterruptChannel() côté Player.
+    /// Capture _channelBar AVANT EndChannelCastState() puis annule la bar APRÈS — ORDRE
+    /// CRITIQUE (trouvé en vérification indépendante du plan) : si la bar était annulée AVANT,
+    /// son callback onCancel réentrant (() => InterruptChannelCast(voluntary: true, ...))
+    /// s'exécuterait pendant que _isChanneling est encore vrai et poserait le CD demi avant que
+    /// CET appel n'atteigne son propre garde — un hard CC finirait TOUJOURS avec le CD demi au
+    /// lieu du CD complet, silencieusement. Seule cette méthode a le droit d'appeler
+    /// _channelBar.Cancel() — tous les autres appelants (poll Update(), leash, Die())
+    /// appellent seulement InterruptChannelCast(...) et laissent CETTE méthode gérer la bar.</summary>
+    private void InterruptChannelCast(bool voluntary, string reason)
+    {
+        if (!_isChanneling) return;
+
+        SkillData      skill = _channelSkill;
+        CastBarSpawner bar   = _channelBar;
+
+        EndChannelCastState();   // _isChanneling = false AVANT bar.Cancel() — voir résumé ci-dessus
+
+        bar?.Cancel();           // callback onCancel réentrant tombe sur !_isChanneling, no-op
+        _animatorController?.CancelChannel();
+
+        if (data.skills != null && data.skills.Contains(skill))
+            _skillCooldowns[skill] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
+
+        Debug.Log($"[PNJ] Canalisation interrompue ({reason}) — {(voluntary ? "CD demi" : "CD complet")}.");
+    }
+
+    private void EndChannelCastState()
+    {
+        _isChanneling  = false;
+        _channelSkill  = null;
+        _channelTarget = null;
+
+        if (_channelVfxCast != null) { Destroy(_channelVfxCast); _channelVfxCast = null; }
+        // _channelBar n'est PAS annulé ici — InterruptChannelCast() s'en charge APRÈS cet appel
+        // (voir son commentaire ci-dessus). ResolveChannelCast() (fin normale) n'a rien à
+        // annuler non plus. Juste null la référence.
+        _channelBar = null;
+    }
+
     /// <summary>
     /// Cherche l'entité ennemie la plus proche dans aggroRadius.
     /// Cibles actuelles : Mobs uniquement.
@@ -764,6 +896,12 @@ public class PNJ : Entity
         _pendingTarget  = null;
         _pendingTimeout = 0f;
         _pendingIsMulti = false;
+
+        // Même raisonnement pour la canalisation (sous-chantier 2). NE PAS appeler
+        // _channelBar?.Cancel() ici — InterruptChannelCast() s'en charge elle-même, dans le bon
+        // ordre (voir son commentaire, Step 7).
+        if (_isChanneling)
+            InterruptChannelCast(voluntary: false, reason: "mort");
 
         if (data.respawnDelay > 0f)
             StartCoroutine(RespawnCoroutine());
