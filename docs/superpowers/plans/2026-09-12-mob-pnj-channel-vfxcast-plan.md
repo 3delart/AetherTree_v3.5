@@ -1205,6 +1205,14 @@ moins un clip d'attaque avec Animation Event) :
    Player, rien à faire ici).
 4. Assigner ce skill de test comme `basicAttackSkill` ou dans `data.skills` d'un Mob ET d'un PNJ
    `canFight` de test.
+5. **Ajouter le paramètre Trigger `CancelAction` à l'Animator Controller du Mob ET du PNJ de
+   test, avec une transition Any-State → locomotion dessus (Has Exit Time décoché).** Trouvé en
+   review finale : `PlayOverrideClip()` appelle `ResetTrigger("CancelAction")` sur CHAQUE
+   attaque/canalisation (pas seulement la canalisation) depuis le sous-chantier 1 — sans ce
+   paramètre sur le Controller, Unity logue `Parameter 'CancelAction' does not exist.` à CHAQUE
+   attaque de test, et une interruption de canalisation ne coupera jamais visuellement l'anim.
+   Sans lien avec ce plan-ci en particulier — un oubli de setup du sous-chantier 1 rendu visible
+   seulement maintenant que du code appelle réellement le trigger.
 
 - [ ] **Step 2: Exécuter la checklist de vérification du spec**
 

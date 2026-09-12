@@ -807,7 +807,16 @@ public class PNJ : Entity
         _animatorController?.CancelChannel();
 
         if (data.skills != null && data.skills.Contains(skill))
-            _skillCooldowns[skill] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
+        {
+            // Même fallback 6f que ResolveChannelCast()/ResolvePendingHit() — sans lui, un
+            // skill castTime>0 avec cooldown=0f interrompu par un hard CC repostait un CD de
+            // 0f, et le garde de ré-entrée (_isChanneling) se referme dans la MÊME frame que ce
+            // posage — boucle instanciation/destruction par frame tant que le CC dure. PNJ y est
+            // encore plus exposé que Mob : HandleCombatAI() n'a aucun garde-fou CC générique
+            // (trouvé en review finale).
+            float baseCd = skill.cooldown > 0f ? skill.cooldown : 6f;
+            _skillCooldowns[skill] = voluntary ? baseCd * 0.5f : baseCd;
+        }
 
         Debug.Log($"[PNJ] Canalisation interrompue ({reason}) — {(voluntary ? "CD demi" : "CD complet")}.");
     }
