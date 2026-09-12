@@ -60,7 +60,9 @@ Vu l'ampleur, le travail est découpé en deux sous-chantiers séquentiels (déc
 | Paramètre `InCombat` (variante armée/désarmée) comme le Player ? | **Non — YAGNI.** Aucune mécanique d'équipement/dégainage visible sur Mob/PNJ aujourd'hui ; ajouter ce paramètre sans state Animator qui l'utilise serait du code mort. |
 | `CancelActionTrigger`/state `Channel` dans ce sous-chantier ? | **Non — sous-chantier 2.** Même séquencement que le Player (chantier A a ajouté Channel/le trigger, avant même le hit-frame-sync du chantier B) — ici on ne touche que la fondation Attack. |
 | CD/GCD posé au déclenchement de l'anim ou à la résolution ? | **À la résolution**, même principe déjà appliqué au Player (chantier B) : sans ça, un skill à cooldown court + anim longue verrait son CD quasi épuisé avant même que le coup parte. Trouvé en relisant le code réel de `Mob.HandleAttack()`/`TryUseSkill()`/`PNJ.HandleCombatAI()`/`TryUseSecondarySkill()` : aujourd'hui `_skillCooldowns[skill] = ...`/`attackTimer = data.attackCooldown` sont posés **immédiatement** au déclenchement — ce sous-chantier déplace ce posage vers le callback de résolution. |
-| Mort en vol (caster tué pendant que son anim d'attaque joue) | **Aucune annulation explicite nécessaire.** `ResolveExecute`/`PlantDelayedZone`/`StartTrajectory`/`ResolveMultiHitStep` gardent tous déjà `caster.isDead` en tête de méthode. Par ailleurs, `Mob.Update()` s'arrête via `this.enabled = false` posé par `Die()`, et `PNJ.Update()` a son propre garde `if (isDead) return;` — dans les deux cas, le tick de timeout du pending-hit s'arrête aussi tout seul. Un pending-hit abandonné sur une entité morte est un état orphelin inoffensif (pas de fuite, jamais lu ni relu). |
+| Garde de ré-entrée pendant qu'un pending-hit est en vol ? | **Obligatoire — trouvé en vérification indépendante du plan, absent du premier jet.** Déplacer le CD à la résolution retire la SEULE protection qui empêchait aujourd'hui `TryUseSkill()`/`TryUseSecondarySkill()`/le bloc d'attaque de base de se redéclencher à CHAQUE frame tant que l'anim joue (`_skillCooldowns`/`attackTimer` ne sont plus réarmés avant la résolution). Sans garde, ceci provoque un vrai bug : mana vidée frame par frame, `Animator.Play(AttackState, 0, 0f)` relancé sur sa frame 0 en boucle, l'event d'impact jamais atteint. Fix : `IsPendingHit` (déjà prévu comme champ public) doit être consommé — `if (IsPendingHit) return true;` en tête de `TryUseSkill()`/`TryUseSecondarySkill()`, et `&& !IsPendingHit` ajouté à la condition du bloc d'attaque de base dans `HandleAttack()`/`HandleCombatAI()` (ce dernier point est nécessaire séparément car le chemin Taunt court-circuite l'appel à `TryUseSkill()`/`TryUseSecondarySkill()`, contournant sinon la garde). |
+| MultiHit sans `attackAnimation` assignée — reste sur l'ancien chemin ou entre dans le pending-hit ? | **Reste sur l'ancien chemin `SkillSystem.Execute()`/`ExecuteMultiHit()` (coroutine).** Trouvé en vérification indépendante : sans anim, il n'y a pas de frame d'impact à attendre — faire entrer ce cas dans le pending-hit ferait perdre le respect de `HitStep.delay` entre les coups (la coroutine `ExecuteMultiHit` honore ce délai via `WaitForSeconds`, le pending-hit n'a rien d'équivalent). `StartPendingHit()` détecte ce cas (`isMulti && skill.attackAnimation == null`) et route directement vers `Execute()` avant même de poser l'état pending. |
+| Mort en vol (caster tué pendant que son anim d'attaque joue) | **Aucune annulation explicite nécessaire pour `Mob`** — `ResolveExecute`/`PlantDelayedZone`/`StartTrajectory`/`ResolveMultiHitStep` gardent tous déjà `caster.isDead` en tête de méthode, et `Mob.Update()` s'arrête via `this.enabled = false` posé par `Die()` (le pending abandonné n'est jamais relu). **Faux pour `PNJ` — trouvé en vérification indépendante du plan.** `PNJ.Die()` NE désactive PAS le composant (`isDead = true` seulement) et `PNJ.RespawnCoroutine()` repasse `isDead = false` après `data.respawnDelay` secondes sans jamais nettoyer un pending-hit resté en vol — un PNJ tué pendant l'anim de son attaque respawnerait avec un pending-hit fantôme, résolu au premier `Update()` après respawn (dégâts/zone/trajectoire déclenchés depuis le point de spawn). **Fix : `PNJ.Die()` doit nettoyer `_pendingSkill`/`_pendingTarget`/`_pendingTimeout`/`_pendingIsMulti`** (juste après `_combatTarget = null;`, avant le `if (data.respawnDelay > 0f)`). |
 
 ## Architecture
 
@@ -171,42 +173,63 @@ tolérance que le Player avec `AnimatorController?.`).
 **`HandleAttack()`** (ligne 331-373) — remplacer le bloc d'attaque de base :
 
 ```csharp
-// Double vérification avant de lancer l'attaque
-if (!isDead && !target.isDead && data.basicAttackSkill != null)
+// Bloqué tant qu'un pending-hit est en vol — voir Décisions ci-dessus ("Garde de ré-entrée").
+if (attackTimer <= 0f && !IsPendingHit)
 {
-    StartPendingHit(data.basicAttackSkill, target);
+    attackTimer = data.attackCooldown;
+
+    // Double vérification avant de lancer l'attaque
+    if (!isDead && !target.isDead && data.basicAttackSkill != null)
+    {
+        StartPendingHit(data.basicAttackSkill, target);
+    }
+    else if (data.basicAttackSkill == null)
+        Debug.LogWarning($"[MOB] {data.mobName} n'a pas de basicAttackSkill — assigne un SkillData dans MobData.");
 }
-else if (data.basicAttackSkill == null)
-    Debug.LogWarning($"[MOB] {data.mobName} n'a pas de basicAttackSkill — assigne un SkillData dans MobData.");
 ```
 
-(le `if (attackTimer <= 0f) { attackTimer = data.attackCooldown; ... }` englobant reste
-identique — SEUL le contenu du bloc change ; `attackTimer` continue d'être reposé
-immédiatement ici, il joue le rôle de "délai avant de retenter une attaque", pas un vrai
-cooldown de skill — cohérent avec son usage actuel, pas concerné par la règle "CD à la
-résolution" qui vise `_skillCooldowns` pour les skills secondaires ci-dessous.)
+(`attackTimer` continue d'être reposé immédiatement, il joue le rôle de "délai avant de
+retenter une attaque", pas un vrai cooldown de skill — pas concerné par la règle "CD à la
+résolution" qui vise `_skillCooldowns` pour les skills secondaires ci-dessous. Le `&&
+!IsPendingHit` ajouté à la condition englobante EST le fix de la garde de ré-entrée : sans lui,
+une fois `_skillCooldowns`/le CD déplacés à la résolution, plus rien n'empêche ce bloc de se
+redéclencher à chaque frame pendant l'anim.)
 
-**`TryUseSkill()`** (ligne 384-420) — remplacer le corps de la boucle de déclenchement :
+**`TryUseSkill()`** (ligne 384-420) — ajouter la garde de ré-entrée en tête de méthode, puis
+remplacer le corps de la boucle de déclenchement :
 
 ```csharp
-foreach (var skill in data.skills)
+private void TryUseSkill(Entity target)   // signature réelle : private bool TryUseSkill(...)
 {
-    if (skill == null) continue;
-    float cd = _skillCooldowns.ContainsKey(skill) ? _skillCooldowns[skill] : 0f;
-    if (cd > 0f) continue;
-    if (!IsInRange(target, skill.range)) continue;
-    if (skill.manaCost > 0f && !HasMana(skill.manaCost)) continue;
+    // Un pending-hit est déjà en vol — ne rien redéclencher tant qu'il n'est pas résolu.
+    // Retourne true pour que HandleAttack()/HandleChase() traitent ce tick comme "occupé".
+    if (IsPendingHit) return true;
+    if (data.skills == null || data.skills.Count == 0) return false;
 
-    if (skill.manaCost > 0f) SpendMana(skill.manaCost);
+    // ... tick des cooldowns inchangé ...
 
-    LookAt(target.transform);
-    StartPendingHit(skill, target);
-    return true;
+    foreach (var skill in data.skills)
+    {
+        if (skill == null) continue;
+        float cd = _skillCooldowns.ContainsKey(skill) ? _skillCooldowns[skill] : 0f;
+        if (cd > 0f) continue;
+        if (!IsInRange(target, skill.range)) continue;
+        if (skill.manaCost > 0f && !HasMana(skill.manaCost)) continue;
+
+        if (skill.manaCost > 0f) SpendMana(skill.manaCost);
+
+        LookAt(target.transform);
+        StartPendingHit(skill, target);
+        attackTimer = data.attackCooldown;
+        return true;
+    }
+
+    return false;
 }
 ```
 
 Le posage de `_skillCooldowns[skill] = ...` disparaît d'ici — déplacé dans `ResolvePendingHit()`
-ci-dessous (règle "CD à la résolution").
+ci-dessous (règle "CD à la résolution"). `attackTimer` reste posé ici, inchangé.
 
 **Nouvelles méthodes** (section "SKILL", après `TryUseSkill()`) :
 
@@ -214,15 +237,27 @@ ci-dessous (règle "CD à la résolution").
 /// <summary>Déclenche l'anim d'attaque et pose l'état pending — la résolution réelle
 /// (dégâts/effets/zone/trajectoire) n'arrive qu'à l'event d'impact ou au timeout de secours,
 /// jamais ici. Sans attackAnimation assignée, résout immédiatement (comportement identique
-/// à avant ce sous-chantier).</summary>
+/// à avant ce sous-chantier). Un MultiHit SANS attackAnimation reste sur l'ancien chemin
+/// Execute()/ExecuteMultiHit (coroutine, respecte HitStep.delay) — il n'y a pas de frame
+/// d'impact à attendre, entrer dans le pending-hit ferait perdre ce délai entre coups.</summary>
 private void StartPendingHit(SkillData skill, Entity target)
 {
+    bool isMulti = skill.executionType == SkillExecutionType.MultiHit
+                   && skill.hitSteps != null && skill.hitSteps.Count > 0;
+
+    if (isMulti && skill.attackAnimation == null)
+    {
+        _skillSystem?.Execute(skill, this, target);
+        if (data.skills != null && data.skills.Contains(skill))
+            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
+        return;
+    }
+
     _animatorController?.PlayAttack(skill.attackAnimation);
 
     _pendingSkill   = skill;
     _pendingTarget  = target;
-    _pendingIsMulti = skill.executionType == SkillExecutionType.MultiHit
-                      && skill.hitSteps != null && skill.hitSteps.Count > 0;
+    _pendingIsMulti = isMulti;
     _pendingMultiNextIndex = 0;
     _pendingTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
 
@@ -307,7 +342,8 @@ protected override void Update()
 **`HandleCombatAI()`** (ligne 490-547) — remplacer le bloc d'attaque de base (ligne 529-541) :
 
 ```csharp
-if (_attackTimer <= 0f && data.basicAttackSkill != null)
+// Bloqué tant qu'un pending-hit est en vol — même raison que Mob.HandleAttack().
+if (_attackTimer <= 0f && !IsPendingHit && data.basicAttackSkill != null)
 {
     if (!isDead && !_combatTarget.isDead)
         StartPendingHit(data.basicAttackSkill, _combatTarget);
@@ -315,13 +351,26 @@ if (_attackTimer <= 0f && data.basicAttackSkill != null)
 }
 ```
 
-**`TryUseSecondarySkill()`** (ligne 553+) — remplacer le déclenchement de la même façon que
-`Mob.TryUseSkill()` (retirer le posage de `_skillCooldowns[skill]` du point de déclenchement,
-appeler `StartPendingHit(skill, target)`).
+**`TryUseSecondarySkill()`** (ligne 553+) — ajouter la garde de ré-entrée en tête de méthode
+(`if (IsPendingHit) return true;`, même pattern que `Mob.TryUseSkill()`), puis remplacer le
+déclenchement de la même façon (retirer le posage de `_skillCooldowns[skill]` du point de
+déclenchement, appeler `StartPendingHit(skill, target)` — **`_attackTimer` reste posé après**,
+ne pas le supprimer par erreur en même temps que `_skillCooldowns[skill]`).
+
+**`Die()`** — la seule différence structurelle avec Mob (voir Décisions, ligne "Mort en vol") :
+`PNJ.Die()` ne désactive jamais le composant, donc un pending-hit doit être explicitement
+nettoyé, juste après `_combatTarget = null;` :
+
+```csharp
+_pendingSkill   = null;
+_pendingTarget  = null;
+_pendingTimeout = 0f;
+_pendingIsMulti = false;
+```
 
 **Nouvelles méthodes** `StartPendingHit`/`OnAnimationHitEvent`/`ResolvePendingHit` — code
-identique à Mob.cs, sans `?.` sur `_skillSystem` (idiome déjà établi dans ce fichier, garanti
-non-null par `HandleCombatAI()`).
+identique à Mob.cs (y compris le détour MultiHit-sans-anim vers `Execute()`), sans `?.` sur
+`_skillSystem` (idiome déjà établi dans ce fichier, garanti non-null par `HandleCombatAI()`).
 
 **`Update()`** (ligne 134-141) — tick du timeout AVANT le `if (isDead) return;` n'a pas de sens
 ici puisque `HandleCombatAI()` lui-même est déjà gardé par `isDead`/`canFight` — le tick de
@@ -356,17 +405,20 @@ protected override void Update()
   `hitIndex` correspond exactement à `_pendingMultiNextIndex` avant de résoudre (contrairement à
   `SkillBar.ResolveMultiHitIndex` qui rejette un index hors séquence) — accepté comme
   simplification volontaire pour ce sous-chantier : Mob/PNJ n'ont qu'un seul clip d'attaque par
-  skill (pas de re-déclenchement concurrent possible tant que `_pendingSkill != null`, protégé
-  par le fait qu'aucun autre appel à `StartPendingHit` ne peut survenir tant qu'un pending est
-  actif — `TryUseSkill()`/`HandleAttack()` ne sont eux-mêmes réévalués qu'au tick `Update()`
-  suivant, et un nouveau déclenchement écraserait silencieusement un pending en cours. **Ruling
-  retenu** : accepté tel quel pour ce sous-chantier (le risque de collision est le même risque
-  déjà présent avant ce chantier — un Mob ne relance jamais un 2e skill avant que le 1er ait
-  fini son cooldown/attackTimer) ; un vrai verrou anti-écrasement (équivalent
-  `TryUseSlot()`/`IsPendingHit` du Player) serait sur-ingénierie tant qu'aucun symptôme réel n'a
-  été observé.
-- **Mort pendant l'anim d'attaque** : voir table des décisions ci-dessus — no-op propre via les
-  gardes déjà existantes de `SkillSystem`, pending abandonné sans effet.
+  skill, et la garde de ré-entrée (`IsPendingHit`, voir Décisions) empêche désormais tout
+  second appel à `StartPendingHit` tant qu'un pending est en vol — un vrai verrou anti-index
+  hors séquence (équivalent `SkillBar.ResolveMultiHitIndex`) serait sur-ingénierie tant qu'aucun
+  symptôme réel n'a été observé sur un simple oubli/décalage d'authoring d'events.
+- **Re-déclenchement pendant qu'un pending-hit est en vol** : voir Décisions ci-dessus ("Garde
+  de ré-entrée") — un vrai bug trouvé en vérification indépendante du plan (mana vidée, anim
+  jamais avancée), corrigé par `IsPendingHit` consommé explicitement dans `TryUseSkill()`/
+  `TryUseSecondarySkill()` ET dans le bloc d'attaque de base.
+- **MultiHit sans `attackAnimation`** : voir Décisions ci-dessus — route directement vers
+  `SkillSystem.Execute()` (préserve `HitStep.delay`), n'entre jamais dans le pending-hit.
+- **Mort pendant l'anim d'attaque** : voir table des décisions ci-dessus — no-op propre pour
+  `Mob` via les gardes déjà existantes de `SkillSystem` + `this.enabled = false`. Pour `PNJ`,
+  nettoyage EXPLICITE requis dans `Die()` (voir ci-dessus et Décisions) — sans lui, un pending
+  survit au respawn et se résout en pending fantôme.
 - **PNJ non-`canFight`** : `_animatorController`/`_agent` restent nullables, jamais appelés
   puisque `HandleCombatAI()` n'est jamais invoquée (`data.canFight` false) — aucun changement de
   comportement pour les PNJ purement dialogue/boutique.
@@ -423,3 +475,13 @@ Mob et un PNJ `canFight` :
    d'effet appliqué après la mort (`caster.isDead` guard côté `SkillSystem`).
 10. PNJ non-`canFight` (Marchand, Forgeron) — aucune régression, comportement dialogue/boutique
     inchangé.
+11. **Garde de ré-entrée** (trouvé en vérification indépendante du plan) : sur un Mob/PNJ avec un
+    `attackAnimation` assez longue (>1s), observer que le clip joue jusqu'au bout sans redémarrer
+    en boucle sur sa frame 0, que la mana n'est PAS drainée à chaque frame pendant l'anim, et
+    qu'un seul hit part au total (pas un par frame).
+12. **PNJ tué pendant l'anim d'attaque, avec `respawnDelay` court** : attendre le respawn →
+    vérifier qu'AUCUN coup fantôme ne part au moment du respawn (pas de dégâts/zone/trajectoire
+    surgissant depuis le point de spawn sans action du joueur).
+13. **MultiHit sans `attackAnimation` assignée** : vérifier que `HitStep.delay` est toujours
+    respecté entre les coups (comportement du coroutine `ExecuteMultiHit` d'avant ce
+    sous-chantier, inchangé pour ce cas précis).
