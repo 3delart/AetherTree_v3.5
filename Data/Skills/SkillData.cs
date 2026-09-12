@@ -248,6 +248,16 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(hasDelayedImpact), true)]
     public float zoneTickInterval = 1f;
 
+    [Tooltip("Transforme la résolution de ce skill en hitbox mobile qui voyage du caster vers " +
+             "une destination (au lieu de résoudre les dégâts au point de résolution existant, " +
+             "une trajectoire est parcourue et touche tout ce qui se trouve sur son passage). " +
+             "Distinct de hasDelayedImpact (zone FIXE une fois plantée) — mutuellement exclusif. " +
+             "GroundTarget : voyage vers le point cliqué au sol. Direction : voyage en ligne " +
+             "droite sur une distance = range.")]
+    [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Direction,
+        Header = "⑨Ter Trajectoire mobile")]
+    public bool isTrajectory = false;
+
     // ── ⑩ Visuel & Son ────────────────────────────────────────
     [Header("⑩ Visuel & Son")]
     public Sprite     icon;
@@ -406,6 +416,37 @@ public class SkillData : ScriptableObject
                               "la zone différée réutilise aoeRadius pour sa taille (contrairement " +
                               "à un skill Target normal, qui l'ignore). Règle aoeRadius > 0, sinon " +
                               "la zone ne touche qu'une cible parfaitement immobile au point exact.", this);
+
+        // isTrajectory et hasDelayedImpact sont mutuellement exclusifs — un skill est soit une
+        // zone fixe différée (chantier C), soit une trajectoire mobile (ce chantier), jamais les
+        // deux. Avertissement seulement, pas de correction automatique (idiome du fichier).
+        if (isTrajectory && hasDelayedImpact)
+            Debug.LogWarning($"[SkillData:{name}] isTrajectory = true ET hasDelayedImpact = " +
+                              "true simultanément — combinaison non supportée, mutuellement " +
+                              "exclusifs. Décoche l'un des deux.", this);
+
+        // [ShowIf] masque isTrajectory hors GroundTarget/Direction dans l'Inspector, mais ne le
+        // RESET jamais si targetType change après coup (ShowIf n'a aucun writeback) — le champ
+        // reste true, invisible, et StartTrajectory() tourne quand même au runtime, traitant
+        // silencieusement le skill comme targetType = Direction (voir SkillSystem.StartTrajectory).
+        if (isTrajectory && targetType != TargetType.GroundTarget && targetType != TargetType.Direction)
+            Debug.LogWarning($"[SkillData:{name}] isTrajectory = true avec targetType = " +
+                              $"{targetType} — non supporté (le champ est masqué dans l'Inspector " +
+                              "mais reste actif). La trajectoire sera quand même lancée, traitée " +
+                              "comme Direction. Décoche isTrajectory ou remets targetType sur " +
+                              "GroundTarget/Direction.", this);
+
+        // Symétrique du warning existant hasDelayedImpact && executionType != Normal. Sans lui,
+        // un skill isTrajectory configuré en MultiHit/ComboSequence n'a aucun avertissement alors
+        // que StartTrajectory() n'est jamais atteinte depuis le dispatch MultiHit/ComboSequence
+        // normal (silencieusement ignorée) — sauf le cas particulier castTime > 0 + MultiHit, où
+        // LaunchSkill() teste castTime AVANT executionType et route vers StartChannel()/
+        // ResolveChannel() (isTrajectory y EST atteint, hitSteps silencieusement ignoré) —
+        // comportement préexistant identique pour hasDelayedImpact, non corrigé ici.
+        if (isTrajectory && executionType != SkillExecutionType.Normal)
+            Debug.LogWarning($"[SkillData:{name}] isTrajectory = true avec executionType = " +
+                              $"{executionType} — combinaison non gérée, la trajectoire ne " +
+                              "fonctionne qu'avec executionType = Normal (instant ou canalisé).", this);
     }
 #endif
 }
