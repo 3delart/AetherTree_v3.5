@@ -10,7 +10,7 @@ using System.Collections.Generic;
 // type, stats, dialogues, shop, quêtes, respawn.
 //
 // Combat :
-//   canFight = true → PNJ.cs active HandleCombatAI() via SkillSystem.
+//   canFight = true → PNJ.cs active CombatAIController.Tick() via SkillSystem.
 //   Fonctionne pour tout pnjType — Guard, Merchant itinérant, FactionNPC...
 //   basicAttackSkill est obligatoire si canFight.
 //   skills (optionnel) = liste de skills secondaires, même pattern que MobData.
@@ -115,7 +115,7 @@ public class PNJData : ScriptableObject
     // ── Combat — PNJ canFight ─────────────────────────────────
     // Activé dès que canFight = true, quel que soit le pnjType.
     // Guard, marchand itinérant, PNJ faction... tous passent par
-    // le même HandleCombatAI() via SkillSystem.Execute().
+    // le même CombatAIController.Tick() via SkillSystem.Execute().
     [Header("Combat (canFight)")]
     [Tooltip("Active l'IA de combat et les stats HP/Mana/Attaque.\nObligatoire : basicAttackSkill doit être assigné.")]
     public bool canFight = false;
@@ -161,6 +161,18 @@ public class PNJData : ScriptableObject
     [Tooltip("Vitesse de déplacement en mode combat. 0 = utilise baseMoveSpeed.")]
     [ShowIf(nameof(canFight), true)]
     public float combatMoveSpeed = 0f;
+
+    [Tooltip("Rayon de patrouille autour du spawn quand aucune cible n'est engagée. 0 = reste\n" +
+             "immobile au spawn (comportement actuel). Équivalent de MobData.patrolRadius.")]
+    [ShowIf(nameof(canFight), true)]
+    public float patrolRadius = 0f;
+
+    [Tooltip("Passive : n'engage que s'il est attaqué directement (TakeDamage). Aggressive :\n" +
+             "engage dès qu'un ennemi entre dans aggroRadius — comportement actuel, DÉFAUT à ne\n" +
+             "jamais changer pour ne pas casser les PNJData existants. Boss non utilisé côté\n" +
+             "PNJ (réutilise MobAIType tel quel — même enum que MobData, aucun risque ordinal).")]
+    [ShowIf(nameof(canFight), true)]
+    public MobAIType aiType = MobAIType.Aggressive;
 
     // ── Critique ──────────────────────────────────────────────
     [Tooltip("Chance de critique [0..1]. Poussé sur Entity via SetCritChance().")]
