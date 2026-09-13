@@ -445,7 +445,14 @@ public class Mob : Entity
             : 2f;
         if (!IsInRange(target, basicRange))
         {
-            currentState = MobState.Chase;
+            // NE PAS changer d'état ici (`currentState = MobState.Chase`) — bug réel trouvé en
+            // test manuel : HandleChase() repasse en Attack dès que
+            // IsInRange(target, GetMaxSkillRange()) (le check qui a amené ici en premier lieu),
+            // pas basicRange — ça créait une oscillation Attack↔Chase à CHAQUE frame tant que
+            // la distance était entre basicRange et GetMaxSkillRange() et qu'aucun skill
+            // secondaire ne pouvait tirer (CD/mana). On reste en Attack, on avance juste vers
+            // la cible directement, comme le fait déjà PNJ.HandleCombatAI() pour le même cas.
+            agent.SetDestination(target.transform.position);
             return;
         }
 
