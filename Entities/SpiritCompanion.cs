@@ -7,59 +7,50 @@ using UnityEngine;
 //
 // Ajouté automatiquement (AddComponent) sur l'instance spawnée par
 // Player.SpawnSpiritCompanion() — le prefab (SpiritData.spiritPrefab) n'a besoin d'aucun
-// script dessus, juste le mesh/FBX. Suivi procédural (lerp + bob sinusoïdal), pas de
-// NavMeshAgent ni d'Animator requis — traverse les obstacles, look "familier magique".
+// script dessus, juste le mesh/rig/anim.
 //
-// Comportement : joueur en mouvement → suit derrière/à côté (offset fixe, espace local).
-// Joueur à l'arrêt → orbite autour de lui (cercle horizontal, vitesse angulaire constante).
-// Détection du mouvement auto-contenue (delta de position du target d'une frame à l'autre) —
-// aucune dépendance à Player/AFK, le compagnon observe juste sa cible.
-//
-// Réglages par défaut ici ; pour un esprit qui doit flotter différemment (plus vite/haut),
-// ajouter ce même component DIRECTEMENT sur le prefab avec des valeurs personnalisées —
-// Init() ne touche jamais les réglages visuels, seulement _target.
+// Suivi minimal (2026-09-08) : la POSITION se rapproche simplement de celle du joueur
+// (Lerp, zéro offset — un offset en espace local du joueur faisait décrire une courbe au
+// spirit à chaque virage, et cassait le rendu de l'Idle_Hover). La ROTATION n'est PAS
+// pilotée ici du tout — le spirit garde l'orientation que lui donne l'anim/le rig, jamais
+// calquée sur celle du joueur. Tout en LateUpdate, après l'Animator, pour éviter qu'il
+// écrase la position si les clips animent aussi la racine du rig.
 // =============================================================
 public class SpiritCompanion : MonoBehaviour
 {
-    [Header("Suivi (joueur en mouvement)")]
-    [Tooltip("Décalage par rapport au joueur, en espace LOCAL du joueur (x=droite, y=hauteur, z=avant).")]
-    public Vector3 offset = new Vector3(0.8f, 1.8f, -0.6f);
-    [Tooltip("Vitesse de rattrapage de la position cible — plus haut = suit de plus près.")]
+    [Header("Suivi")]
+    [Tooltip("Vitesse de rattrapage de la position — plus haut = suit de plus près.")]
     public float followSmoothing = 5f;
+    [Tooltip("Vitesse de rattrapage de l'orientation — le spirit fait face à SA direction de\nvol réelle (vers le joueur, puisqu'il le suit), pas la rotation du joueur elle-même —\nsinon un virage fait décrire une courbe (déjà vu, voir historique).")]
+    public float rotationSmoothing = 5f;
 
-    [Header("Orbite (joueur à l'arrêt)")]
-    public float orbitRadius = 1.5f;
-    public float orbitHeight = 1.8f;
-    [Tooltip("Vitesse de rotation autour du joueur, en degrés/seconde.")]
-    public float orbitSpeed = 60f;
-    [Tooltip("Vitesse du joueur en dessous de laquelle il est considéré à l'arrêt (unités/sec).")]
+    [Header("Animation")]
+    [Tooltip("Nom du paramètre bool sur l'Animator Controller — true quand le joueur bouge\n(état Fly_Move), false à l'arrêt (état Idle_Hover). L'Animator est auto-détecté\n(GetComponentInChildren) ; absent = aucune anim pilotée.")]
+    public string isMovingParam = "IsMoving";
+    [Tooltip("Vitesse du joueur au-dessus de laquelle il est considéré en mouvement (unités/sec).")]
     public float idleSpeedThreshold = 0.15f;
 
-    [Header("Flottaison")]
-    public float bobHeight = 0.15f;
-    public float bobSpeed = 2f;
-
     private Transform _target;
-    private float _bobTimer;
-    private float _orbitAngle;
-    private Vector3 _lastTargetPos;
-    private bool _hasLastPos;
+    private Animator  _animator;
+    private Vector3   _lastTargetPos;
+    private bool      _hasLastPos;
 
-    /// <summary>Appelé une fois juste après Instantiate — ne touche jamais les réglages
-    /// visuels (offset/orbite/bob/smoothing), seulement la cible à suivre.</summary>
+    /// <summary>Appelé une fois juste après Instantiate — ne touche jamais followSmoothing,
+    /// seulement la cible à suivre.</summary>
     public void Init(Transform target)
     {
         _target = target;
-        _bobTimer = Random.Range(0f, Mathf.PI * 2f); // déphasage — plusieurs esprits ne bobbent pas en sync
-        _orbitAngle = Random.Range(0f, 360f);
+        _animator = GetComponentInChildren<Animator>();
+        if (_animator == null)
+            Debug.LogWarning($"[SPIRIT] Aucun Animator trouvé sur {name} (GetComponentInChildren) — " +
+                              "l'état d'anim ne sera jamais piloté, reste bloqué sur l'état par défaut du Controller.");
+
         _hasLastPos = false;
     }
 
     private void Update()
     {
-        if (_target == null) return;
-
-        _bobTimer += Time.deltaTime * bobSpeed;
+        if (_target == null || _animator == null) return;
 
         float targetSpeed = 0f;
         if (_hasLastPos)
@@ -67,23 +58,24 @@ public class SpiritCompanion : MonoBehaviour
         _lastTargetPos = _target.position;
         _hasLastPos = true;
 
-        bool isIdle = targetSpeed <= idleSpeedThreshold;
+        bool isMoving = targetSpeed > idleSpeedThreshold;
+        _animator.SetBool(isMovingParam, isMoving);
+    }
 
-        Vector3 desired;
-        if (isIdle)
+    /// <summary>Position (se rapproche du joueur, zéro offset) + orientation vers la
+    /// direction de vol réelle (le joueur, puisque c'est la cible suivie) — PAS la rotation
+    /// du joueur elle-même. En LateUpdate, après l'Animator.</summary>
+    private void LateUpdate()
+    {
+        if (_target == null) return;
+
+        transform.position = Vector3.Lerp(transform.position, _target.position, Time.deltaTime * followSmoothing);
+
+        Vector3 toTarget = _target.position - transform.position;
+        if (toTarget.sqrMagnitude > 0.01f)
         {
-            _orbitAngle += orbitSpeed * Time.deltaTime;
-            float rad = _orbitAngle * Mathf.Deg2Rad;
-            desired = _target.position + new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad)) * orbitRadius;
-            desired.y = _target.position.y + orbitHeight;
+            Quaternion desiredRotation = Quaternion.LookRotation(toTarget.normalized);
+            transform.rotation = Quaternion.Slerp(transform.rotation, desiredRotation, Time.deltaTime * rotationSmoothing);
         }
-        else
-        {
-            desired = _target.position + _target.TransformDirection(offset);
-        }
-
-        desired.y += Mathf.Sin(_bobTimer) * bobHeight;
-
-        transform.position = Vector3.Lerp(transform.position, desired, Time.deltaTime * followSmoothing);
     }
 }

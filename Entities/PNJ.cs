@@ -619,6 +619,10 @@ public class PNJ : Entity
                 // PNJData.attackCooldown, retiré — trouvé en test manuel : ignoré, seule la
                 // durée d'anim comptait, confusion pour Florian).
                 _attackTimer = data.basicAttackSkill.cooldown > 0f ? data.basicAttackSkill.cooldown : 2f;
+
+                // DEBUG TEMPORAIRE — diagnostic pause avant relais de l'attaque de base.
+                Debug.Log($"[PNJ-DEBUG] t={Time.time:F2} BASIC '{data.basicAttackSkill.name}' déclenché, " +
+                          $"_attackTimer posé à {_attackTimer:F2}s");
             }
         }
         else
@@ -668,6 +672,10 @@ public class PNJ : Entity
             // résolution) reprend le CD du skill qui vient de partir, plus de
             // PNJData.attackCooldown (retiré).
             _attackTimer = skill.cooldown > 0f ? skill.cooldown : 6f;
+
+            // DEBUG TEMPORAIRE — diagnostic pause avant relais de l'attaque de base.
+            Debug.Log($"[PNJ-DEBUG] t={Time.time:F2} SPECIAL '{skill.name}' déclenché, " +
+                      $"_attackTimer posé à {_attackTimer:F2}s (skill.cooldown={skill.cooldown:F2})");
             return true;
         }
 
