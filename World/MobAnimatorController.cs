@@ -8,7 +8,9 @@ using UnityEngine.AI;
 // Fondations (sous-chantier 1, voir docs/superpowers/specs/
 // 2026-09-12-mob-pnj-animator-foundations-design.md) — locomotion (Speed) +
 // state "Attack" réutilisable, même pattern que PlayerAnimatorController.cs.
-// PAS de paramètre InCombat (aucune mécanique d'équipement visible sur Mob).
+// PAS de paramètre InCombat (aucune mécanique d'équipement visible sur Mob). IsChasing (bool)
+// ajouté pour distinguer walk (Patrol) de chase (Chase) — Speed seul ne suffit pas, les deux
+// utilisent la même vitesse aujourd'hui.
 // CancelActionTrigger ajouté au sous-chantier 2 (canalisation) — pas de state Channel séparé,
 // réutilise le state "Attack" existant.
 // =============================================================
@@ -17,6 +19,7 @@ using UnityEngine.AI;
 public class MobAnimatorController : MonoBehaviour
 {
     private const string SpeedParam          = "Speed";
+    private const string IsChasingParam      = "IsChasing";
     private const string AttackState         = "Attack";
     private const string CancelActionTrigger = "CancelAction";
 
@@ -58,6 +61,10 @@ public class MobAnimatorController : MonoBehaviour
         if (_animator == null) return;
         float speed = _agent != null ? _agent.velocity.magnitude : 0f;
         _animator.SetFloat(SpeedParam, speed);
+
+        // Distingue walk (Patrol) de chase (Chase) — impossible via Speed seul, les deux
+        // utilisent la même vitesse aujourd'hui (Mob.agent.speed ne varie pas selon l'état).
+        _animator.SetBool(IsChasingParam, _mob != null && _mob.CurrentState == MobState.Chase);
     }
 
     private void PlayOverrideClip(AnimationClip clip)

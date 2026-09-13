@@ -33,6 +33,10 @@ public class Mob : Entity
     protected Vector3      spawnPos;
     protected MobState     currentState = MobState.Patrol;
 
+    // Exposé pour MobAnimatorController — distingue walk (Patrol) de chase (Chase), impossible
+    // via le seul paramètre Speed puisque les deux utilisent la même vitesse aujourd'hui.
+    public MobState CurrentState => currentState;
+
     // ── enemyList — GDD v3.5 §3.3 ────────────────────────────
     // Contient joueurs ET pets à portée
     protected List<Entity> enemyList = new List<Entity>();
