@@ -664,6 +664,13 @@ public class PNJ : Entity
     /// HitStep.delay via coroutine) plutôt que d'entrer dans le pending-hit.</summary>
     private void StartPendingHit(SkillData skill, Entity target)
     {
+        // Fire-and-forget, comme SkillBar.StartInstant()/StartMultiHit()/LaunchComboHit() côté
+        // Player — pas de handle stocké/nettoyé ici, contrairement à _channelVfxCast : un skill
+        // instantané ne s'interrompt jamais avant résolution, le prefab gère sa propre durée de
+        // vie (trouvé manquant lors d'une relecture du statut VFX Mob/PNJ).
+        if (skill.vfxCast != null)
+            Instantiate(skill.vfxCast, transform.position, Quaternion.identity);
+
         bool isMulti = skill.executionType == SkillExecutionType.MultiHit
                        && skill.hitSteps != null && skill.hitSteps.Count > 0;
 
