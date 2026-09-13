@@ -193,11 +193,6 @@ public class PNJData : ScriptableObject
         if (canFight && !canDie)
             Debug.LogWarning($"[PNJData] {pnjName} : canFight = true mais canDie = false — " +
                              "ce PNJ peut attaquer mais est invulnérable. Intentionnel ?");
-
-        if (attackRange == 0f && basicAttackSkill != null && basicAttackSkill.range > 0f)
-        {
-            // Pas une erreur — juste informatif : PNJ.cs utilisera basicAttackSkill.range
-        }
     }
 #endif
 }
