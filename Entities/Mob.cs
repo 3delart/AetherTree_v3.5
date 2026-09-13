@@ -418,9 +418,24 @@ public class Mob : Entity
         LookAt(target.transform);
 
         // Skill secondaire prioritaire sur l'attaque de base — bloqué si Taunt actif, force
-        // l'attaque de base uniquement sur la source du taunt (§3.1.1.1).
+        // l'attaque de base uniquement sur la source du taunt (§3.1.1.1). TryUseSkill() vérifie
+        // déjà sa propre range par skill (skill.range) — rien à ajouter ici.
         bool tauntedInAttack = statusEffects != null && statusEffects.isTaunted;
         if (!tauntedInAttack && TryUseSkill(target)) return;
+
+        // Range de l'attaque de base spécifiquement — PAS GetMaxSkillRange() (potentiellement
+        // la portée d'un skill secondaire bien plus longue, utilisée seulement pour la
+        // transition Chase→Attack plus haut). Trouvé en test manuel (PNJ, même code ici) :
+        // sans ce check séparé, le Mob tirait son attaque de base depuis la portée du spécial
+        // au lieu de s'approcher jusqu'à SA propre portée.
+        float basicRange = data.basicAttackSkill != null && data.basicAttackSkill.range > 0f
+            ? data.basicAttackSkill.range
+            : 2f;
+        if (!IsInRange(target, basicRange))
+        {
+            currentState = MobState.Chase;
+            return;
+        }
 
         // Attaque de base — bloquée tant qu'un pending-hit est en vol (StartPendingHit ci-
         // dessous) : sans cette garde, une fois le CD déplacé à la résolution (Step 7), plus

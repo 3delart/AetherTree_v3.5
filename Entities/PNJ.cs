@@ -594,12 +594,33 @@ public class PNJ : Entity
 
         if (dist <= attackRange)
         {
-            _agent?.ResetPath();
             LookAt(_combatTarget.transform);
             // Skill secondaire bloqué si Taunt actif — force l'attaque de base uniquement sur
-            // la source du taunt (§3.1.1.1), même schéma que Mob.HandleAttack.
+            // la source du taunt (§3.1.1.1), même schéma que Mob.HandleAttack. TryUseSecondarySkill()
+            // vérifie déjà sa propre range par skill (skill.range) — rien à ajouter ici.
             bool tauntedNow = statusEffects != null && statusEffects.isTaunted;
-            if (!tauntedNow && TryUseSecondarySkill(_combatTarget)) return;
+            if (!tauntedNow && TryUseSecondarySkill(_combatTarget))
+            {
+                _agent?.ResetPath();
+                return;
+            }
+
+            // Range de l'attaque de base spécifiquement — PAS `attackRange` (= GetMaxSkillRange(),
+            // potentiellement la portée d'un skill secondaire bien plus longue). Trouvé en test
+            // manuel : sans ce check séparé, le PNJ tirait son attaque de base depuis la portée du
+            // spécial (ex: 10) au lieu de s'approcher jusqu'à SA propre portée (ex: 2.5).
+            float basicRange = data.basicAttackSkill != null && data.basicAttackSkill.range > 0f
+                ? data.basicAttackSkill.range
+                : 2f;
+
+            if (dist > basicRange)
+            {
+                _agent?.SetDestination(_combatTarget.transform.position);
+                return;
+            }
+
+            _agent?.ResetPath();
+
             // Bloqué tant qu'un pending-hit OU une canalisation est en vol — même raison que
             // Mob.HandleAttack() (sans cette garde, plus rien n'empêche un redéclenchement à
             // chaque frame une fois le CD déplacé à la résolution ; le taunt court-circuite
