@@ -34,11 +34,12 @@ using System.Collections.Generic;
 //     basicAttackSkill  : SkillData de l'attaque de base (obligatoire si canFight)
 //     skills            : liste de skills secondaires (optionnel)
 //     aggroRadius       : rayon de détection des mobs
-//     attackRange       : portée d'attaque (fallback = skill.range)
 //     combatMoveSpeed   : vitesse en mode combat (0 = utilise moveSpeed)
 //
 //   Cooldown de l'attaque de base = basicAttackSkill.cooldown (PAS un champ PNJData séparé —
 //   retiré, ignoré par erreur en pratique, source de confusion trouvée en test manuel).
+//   Portée d'engagement = GetMaxSkillRange() (max entre basicAttackSkill.range et data.skills —
+//   PAS PNJData.attackRange, retiré, même raison : toujours vérifier sur SkillData).
 //
 // Die() :
 //   Tout PNJ avec data.canDie == true peut mourir et respawner.
@@ -589,9 +590,7 @@ public class PNJ : Entity
         }
 
         float dist        = Vector3.Distance(transform.position, _combatTarget.transform.position);
-        float attackRange = data.attackRange > 0f
-            ? data.attackRange
-            : (data.basicAttackSkill != null ? data.basicAttackSkill.range : 2f);
+        float attackRange = GetMaxSkillRange();
 
         if (dist <= attackRange)
         {
@@ -664,7 +663,7 @@ public class PNJ : Entity
             float cd = _skillCooldowns.ContainsKey(skill) ? _skillCooldowns[skill] : 0f;
             if (cd > 0f) continue;
 
-            float range = skill.range > 0f ? skill.range : data.attackRange;
+            float range = skill.range > 0f ? skill.range : 2f;
             if (Vector3.Distance(transform.position, target.transform.position) > range) continue;
             if (skill.manaCost > 0f && !HasMana(skill.manaCost)) continue;
 
@@ -876,6 +875,28 @@ public class PNJ : Entity
         _channelBar = null;
     }
 
+    /// <summary>Plus grande range configurée parmi basicAttackSkill + data.skills — décide
+    /// quand ce PNJ arrête de s'approcher pour engager (jamais PNJData.attackRange, retiré :
+    /// toujours vérifier sur SkillData, trouvé en test manuel — un skill secondaire à longue
+    /// portée obligeait sinon le PNJ à rentrer en mêlée avant de pouvoir l'utiliser).</summary>
+    private float GetMaxSkillRange()
+    {
+        float max = data.basicAttackSkill != null && data.basicAttackSkill.range > 0f
+            ? data.basicAttackSkill.range
+            : 2f;
+
+        if (data.skills != null)
+        {
+            foreach (var skill in data.skills)
+            {
+                if (skill == null) continue;
+                if (skill.range > max) max = skill.range;
+            }
+        }
+
+        return max;
+    }
+
     /// <summary>
     /// Cherche l'entité ennemie la plus proche dans aggroRadius.
     /// Cibles actuelles : Mobs uniquement.
@@ -1017,9 +1038,7 @@ public class PNJ : Entity
             Gizmos.color = new Color(1f, 0.5f, 0f, 0.4f);
             Gizmos.DrawWireSphere(transform.position, data.aggroRadius);
             Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(transform.position, data.attackRange > 0f
-                ? data.attackRange
-                : (data.basicAttackSkill != null ? data.basicAttackSkill.range : 2f));
+            Gizmos.DrawWireSphere(transform.position, GetMaxSkillRange());
         }
     }
 }

@@ -83,7 +83,6 @@ public class MobData : ScriptableObject
 
     // ── Combat ────────────────────────────────────────────────
     [Header("Combat")]
-    public float attackRange    = 1.5f;
     [Tooltip("Catégorie d'arme — détermine quelle défense du joueur s'applique. GDD §3.1.")]
     public WeaponCategory weaponCategory = WeaponCategory.Melee;
 

@@ -384,7 +384,7 @@ public class Mob : Entity
         bool tauntedInChase = statusEffects != null && statusEffects.isTaunted;
         if (!tauntedInChase && TryUseSkill(target)) return;
 
-        if (IsInRange(target, data.attackRange))
+        if (IsInRange(target, GetMaxSkillRange()))
         {
             currentState = MobState.Attack;
             agent.ResetPath();
@@ -409,7 +409,7 @@ public class Mob : Entity
         Entity target = GetClosestEnemy();
         if (target == null || target.isDead) { GoReturn(); return; }
 
-        if (!IsInRange(target, data.attackRange * 1.2f))
+        if (!IsInRange(target, GetMaxSkillRange() * 1.2f))
         {
             currentState = MobState.Chase;
             return;
@@ -993,6 +993,28 @@ public class Mob : Entity
         return Vector3.Distance(transform.position, target.transform.position) <= range;
     }
 
+    /// <summary>Plus grande range configurée parmi basicAttackSkill + data.skills — décide
+    /// quand ce Mob arrête de s'approcher pour engager (jamais MobData.attackRange, retiré :
+    /// toujours vérifier sur SkillData, trouvé en test manuel — un skill secondaire à longue
+    /// portée obligeait sinon le Mob à rentrer en mêlée avant de pouvoir l'utiliser).</summary>
+    private float GetMaxSkillRange()
+    {
+        float max = data.basicAttackSkill != null && data.basicAttackSkill.range > 0f
+            ? data.basicAttackSkill.range
+            : 2f;
+
+        if (data.skills != null)
+        {
+            foreach (var skill in data.skills)
+            {
+                if (skill == null) continue;
+                if (skill.range > max) max = skill.range;
+            }
+        }
+
+        return max;
+    }
+
     private bool IsBeyondLeash()
     {
         // ⚠ Ne pas court-circuiter sur enemyList vide :
@@ -1035,7 +1057,7 @@ public class Mob : Entity
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, data.detectionRange);
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, data.attackRange);
+        Gizmos.DrawWireSphere(transform.position, GetMaxSkillRange());
         Gizmos.color = Color.blue;
         Gizmos.DrawWireSphere(origin, data.detectionRange * data.leashMultiplier);
         Gizmos.color = new Color(0f, 1f, 0f, 0.4f);

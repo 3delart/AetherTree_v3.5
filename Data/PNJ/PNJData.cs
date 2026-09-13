@@ -158,10 +158,6 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public float leashRadius = 10f;
 
-    [Tooltip("Portée d'attaque. 0 = utilise basicAttackSkill.range.")]
-    [ShowIf(nameof(canFight), true)]
-    public float attackRange = 0f;
-
     [Tooltip("Vitesse de déplacement en mode combat. 0 = utilise baseMoveSpeed.")]
     [ShowIf(nameof(canFight), true)]
     public float combatMoveSpeed = 0f;
