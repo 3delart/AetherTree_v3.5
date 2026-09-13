@@ -16,7 +16,7 @@ using UnityEngine.AI;
 // =============================================================
 
 [RequireComponent(typeof(Animator))]
-public class MobAnimatorController : MonoBehaviour
+public class MobAnimatorController : MonoBehaviour, ICombatAnimator
 {
     private const string SpeedParam          = "Speed";
     private const string IsChasingParam      = "IsChasing";

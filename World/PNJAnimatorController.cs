@@ -13,7 +13,7 @@ using UnityEngine.AI;
 // =============================================================
 
 [RequireComponent(typeof(Animator))]
-public class PNJAnimatorController : MonoBehaviour
+public class PNJAnimatorController : MonoBehaviour, ICombatAnimator
 {
     private const string SpeedParam          = "Speed";
     private const string AttackState         = "Attack";
