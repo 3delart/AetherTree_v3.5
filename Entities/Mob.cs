@@ -1,14 +1,15 @@
 using UnityEngine;
 using UnityEngine.AI;
 using System.Collections.Generic;
-using System.Linq;
 
 // =============================================================
-// MOB — Entité ennemie avec IA NavMesh 4 états
+// MOB — Entité ennemie, IA déléguée à CombatAIController
 // Path : Assets/Scripts/Core/Mob.cs
 // AetherTree GDD v3.5 — §3.3 (Mobs)
 //
-// IA : Patrol → Chase → Attack → Return (avec Leash) — GDD v3.5 §3.3
+// IA : Mob se contente d'implémenter ICombatAIProfile et de piloter le CombatAIController
+// partagé (Combat/CombatAIController.cs), qui gère lui-même la machine à 3 états
+// Patrol → Engage → Return (avec Leash) — GDD v3.5 §3.3
 //
 // Points clés :
 // — enemyList<Entity> : joueurs + pets à portée de détection — §3.3
@@ -274,9 +275,11 @@ public class Mob : Entity, ICombatAIProfile
         aggroPos = transform.position;
     }
 
-    /// <summary>Ancien corps de FullReset() — HP/Mana à 100%, cooldowns/pending déjà remis à
-    /// zéro par CombatAIController lui-même à ce même instant, il ne reste ici que ce qui est
-    /// propre à Mob (contributions, aggro, debuffs).</summary>
+    /// <summary>Ancien corps de FullReset() — HP/Mana à 100%. Les cooldowns de skills
+    /// secondaires sont vidés par CombatAIController.TickReturn() via ResetCooldowns(), appelé
+    /// juste avant ce hook ; le pending-hit/la canalisation en cours ont déjà été nettoyés plus
+    /// tôt, dès l'entrée en Return (GoReturn()). Il ne reste ici que ce qui est propre à Mob
+    /// (contributions, aggro, debuffs).</summary>
     public void OnReturnToPatrol()
     {
         currentHP   = maxHP;
@@ -484,31 +487,6 @@ public class Mob : Entity, ICombatAIProfile
         if (!damageContributions.ContainsKey(player)) return 0f;
         // totalDamageTaken (toute source), même correction que Die() — voir son commentaire.
         return totalDamageTaken > 0f ? damageContributions[player] / totalDamageTaken : 0f;
-    }
-
-    // =========================================================
-    // UTILITAIRES PRIVÉS
-    // =========================================================
-
-    private void LookAt(Transform target)
-    {
-        if (target == null) return;
-        Vector3 dir = target.position - transform.position;
-        dir.y = 0f;
-        if (dir.sqrMagnitude > 0.001f)
-            transform.rotation = Quaternion.LookRotation(dir);
-    }
-
-    private Vector3 GetNavMeshPoint(Vector3 center, float radius)
-    {
-        for (int i = 0; i < 10; i++)
-        {
-            Vector3 point = center + Random.insideUnitSphere * radius;
-            point.y = center.y;
-            if (NavMesh.SamplePosition(point, out NavMeshHit hit, radius, NavMesh.AllAreas))
-                return hit.position;
-        }
-        return center;
     }
 
     // =========================================================

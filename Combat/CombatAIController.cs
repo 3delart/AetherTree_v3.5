@@ -294,6 +294,7 @@ public class CombatAIController : MonoBehaviour
         {
             _agent.ResetPath();
             _agent.Warp(_spawnPos);
+            ResetCooldowns();
             _profile.OnReturnToPatrol();
             _patrolPointsSet = false;
             CurrentState = CombatAIState.Patrol;

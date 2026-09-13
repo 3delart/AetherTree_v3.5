@@ -26,8 +26,9 @@ using System.Collections.Generic;
 // Combat (SkillSystem) :
 //   Tout PNJ avec data.canFight == true et data.basicAttackSkill assigné
 //   peut combattre — pas seulement les Gardes.
-//   HandleCombatAI() est actif pour tout PNJ canFight, quel que soit
-//   son pnjType. Un marchand itinérant, un garde, un PNJ de faction
+//   PNJ implémente ICombatAIProfile et délègue l'IA au CombatAIController partagé
+//   (Combat/CombatAIController.cs, machine à 3 états Patrol/Engage/Return) pour tout PNJ
+//   canFight, quel que soit son pnjType. Un marchand itinérant, un garde, un PNJ de faction
 //   utilisent tous le même chemin via SkillSystem.Execute().
 //   Champs PNJData requis pour le combat :
 //     canFight          : active l'IA de combat
@@ -38,8 +39,8 @@ using System.Collections.Generic;
 //
 //   Cooldown de l'attaque de base = basicAttackSkill.cooldown (PAS un champ PNJData séparé —
 //   retiré, ignoré par erreur en pratique, source de confusion trouvée en test manuel).
-//   Portée d'engagement = GetMaxSkillRange() (max entre basicAttackSkill.range et data.skills —
-//   PAS PNJData.attackRange, retiré, même raison : toujours vérifier sur SkillData).
+//   Portée d'engagement = CombatAIController.EngageRange (max entre basicAttackSkill.range et
+//   data.skills — PAS PNJData.attackRange, retiré, même raison : toujours vérifier sur SkillData).
 //
 // Die() :
 //   Tout PNJ avec data.canDie == true peut mourir et respawner.
