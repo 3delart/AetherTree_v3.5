@@ -43,6 +43,9 @@ son spawn hors combat).
   méthode (`StopAgent()`), pour ne plus jamais l'oublier à un nouveau point de sortie.
 - Ajouter la patrouille au PNJ Garde (roam dans un rayon autour du spawn, `patrolRadius = 0` =
   reste immobile — comportement actuel préservé par défaut).
+- Ajouter la distinction Passive/Aggressive au PNJ Garde, identique à Mob (`aiType`, réutilise
+  `MobAIType`, défaut `Aggressive` = comportement actuel préservé) — un Garde Passive n'engage un
+  mob que s'il se fait taper par lui.
 
 ## 3. Non-objectifs
 
@@ -83,10 +86,11 @@ public interface ICombatAIProfile
     List<SkillData> SecondarySkills   { get; }
     float           PatrolRadius      { get; }   // 0 = reste au spawn (pas de roam)
     float           LeashDistance     { get; }   // distance absolue depuis l'ancre d'aggro
-    bool            AutoEngageOnSight { get; }   // true = passe en Engage dès qu'un ennemi est détecté (Mob Aggressive, PNJ Guard)
+    bool            AutoEngageOnSight { get; }   // true = passe en Engage dès qu'un ennemi est détecté — Mob/PNJ : aiType == Aggressive (§5bis)
     Entity          FindClosestEnemy();          // taunt-aware, retourne null si aucun candidat — pool dépendant de l'owner, voir §5bis
     bool            HasAnyEnemyNearby();         // check bon marché pour Patrol (seulement appelé si AutoEngageOnSight)
-    void            OnForcedEngage(Entity aggressor); // hook owner — voir §5bis (Mob y ajoute aggressor à son aggroSet)
+    void            OnForcedEngage(Entity aggressor); // hook owner — voir §5bis (Mob/PNJ y ajoutent aggressor à leur aggroSet)
+    void            OnReturnToPatrol();          // hook owner appelé UNE FOIS à l'arrivée au spawn (Return → Patrol) — voir §5bis
 }
 
 [RequireComponent(typeof(NavMeshAgent))]
@@ -179,9 +183,14 @@ Engage : décision RE-CALCULÉE À CHAQUE FRAME, aucun sous-état persisté — 
   10. si attackTimer <= 0 && !IsPendingHit && !_isChanneling : déclenche l'attaque de base
       (StartChannelCast si castTime > 0, sinon StartPendingHit), attackTimer = cooldown
 
-Return ──(distance(spawn) <= 2f)──▶ Patrol (agent.Warp(spawn), reset patrouille)
+Return ──(distance(spawn) <= 2f)──▶ Patrol (agent.Warp(spawn), profile.OnReturnToPatrol(), reset patrouille)
 Return : SetDestination(spawn) tant que non arrivé.
 ```
+`OnReturnToPatrol()` est appelé une seule fois, juste après `agent.Warp(spawn)`, avant de
+repasser en `Patrol` — Mob y fait tout ce que faisait `FullReset()` (HP/Mana 100%, `enemyList`
+ET `aggroSet` vidés, debuffs nettoyés, etc., voir §6.1) ; PNJ n'y fait QUE vider `aggroSet` et
+`_skillCooldowns` (§6.5bis — pas de reset HP/Mana instantané pour un PNJ, décision Florian :
+`baseRegenHP` suffit, aucun code actuel ne fait de "FullReset PNJ").
 
 Statuts spéciaux gérés AVANT l'entrée dans cette machine (par l'owner, voir §6.3 — comportement
 Mob actuel généralisé aux deux) :
@@ -244,10 +253,35 @@ ci-dessus. `Mob.TakeDamage()` appelle `_combatAI.ForceEngage(attacker)` (au lieu
 évaluation de cible. `FullReset()` doit vider `aggroSet` en plus de `enemyList` (même moment,
 retour au spawn — sinon un Mob Passif garderait en mémoire un agresseur d'un combat précédent).
 
-**PNJ Garde** : pas de distinction Passif/Agressif pour l'instant (non demandé) — reste
-`AutoEngageOnSight = true` inconditionnel, scan de proximité classique
-(`FindClosestEnemy()` actuel), sans `aggroSet`. Si un Garde Passif est demandé plus tard, le
-même mécanisme s'applique identiquement via `ICombatAIProfile`.
+**PNJ Garde — extension demandée par Florian, IDENTIQUE au Mob** : `PNJData` gagne un champ
+`aiType` (type `MobAIType`, réutilisé tel quel — Passive/Aggressive/Boss, `Boss` simplement
+jamais lu côté PNJ, aucun risque ordinal à partager l'enum). `AutoEngageOnSight` = `data.aiType
+== MobAIType.Aggressive` (au lieu du `true` inconditionnel actuel). **Défaut = `Aggressive`** —
+critique pour la compatibilité : tout `PNJData` existant doit continuer à se comporter EXACTEMENT
+comme avant (scan de proximité + engage spontané), donc le défaut du nouveau champ ne doit
+jamais être `Passive`.
+
+PNJ gagne le même `HashSet<Entity> aggroSet` + `OnForcedEngage(Entity aggressor)` que Mob (§5bis
+ci-dessus), et `FindClosestEnemy()` devient aiType-aware avec la même règle : Aggressive = scan
+de proximité (`Physics.OverlapSphere(aggroRadius)`, code actuel inchangé) ∪ `aggroSet` ; Passive
+= `aggroSet` seul. `HasAnyEnemyNearby()` : Aggressive = scan de proximité non vide ; jamais
+appelé pour Passive (gated par `AutoEngageOnSight`, comme Mob).
+
+**Nouveau hook nécessaire — `PNJ.TakeDamage()`** : PNJ n'a AUCUN override de `TakeDamage()`
+aujourd'hui (contrairement à Mob) — un PNJ frappé par un Mob ne fait rien de spécial, il ne
+riposte que si `HandleCombatAI()` retrouve un ennemi par le scan de proximité classique
+(fonctionnait par coïncidence tant que l'attaquant était dans `aggroRadius`, comme l'ancien
+comportement Mob avant `aggroSet`). Nouvel override, même schéma que `Mob.TakeDamage()` :
+```csharp
+public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null)
+{
+    base.TakeDamage(amount, sourceElement, source);
+    if (!isDead && data != null && data.canFight)
+        _combatAI.ForceEngage(source);
+}
+```
+Pas d'attribution de contributions ici (PNJ n'a pas de loot/XP à distribuer sur sa propre mort
+aux dépens d'un Mob — hors scope, non demandé).
 
 **Taunt — trou trouvé en auto-relecture, corrigé ici** : le code actuel de `HandlePatrol()`
 exige `enemyList.Count > 0` MÊME pour la branche taunt (`(aiType == Aggressive || isTaunted) &&
@@ -270,7 +304,9 @@ Mob/PNJ, réutilisable telle quelle sans dépendre du pool de ciblage.
 - `RefreshEnemyList()` (aiType-aware, voir §5bis), `GetClosestEnemy()`, `OnForcedEngage()` —
   implémentent `ICombatAIProfile.FindClosestEnemy()`/`HasAnyEnemyNearby()`
   (`enemyList.Count > 0`)/`OnForcedEngage()`
-- nouveau champ `aggroSet` (§5bis) — vidé dans `FullReset()` aux côtés de `enemyList`
+- nouveau champ `aggroSet` (§5bis) — `OnReturnToPatrol()` = corps actuel de `FullReset()` +
+  `aggroSet.Clear()` aux côtés de `enemyList.Clear()` (appelé par le composant, plus par un
+  `switch` interne)
 - `TakeDamage()` — attribution des contributions, PUIS `if (!isDead) _combatAI.ForceEngage(attacker);`
   (remplace l'actuel `currentState = MobState.Chase` conditionnel — `attacker` déjà résolu par
   `ResolveAttacker(source)` juste au-dessus dans le code actuel)
@@ -343,7 +379,9 @@ différemment — à valider en Play Mode (voir §9).
 
 `Awake()` (stats/dialogue), tout le système de dialogue (`Interact`/`SelectOption`/
 `HandleDialogueAction`/...), `Die()`/`RespawnCoroutine()`, mémoire joueurs connus,
-`FindClosestEnemy()` (implémente `ICombatAIProfile`), gizmos.
+`FindClosestEnemy()` devenu aiType-aware + nouveau `aggroSet`/`OnForcedEngage()`/
+`OnReturnToPatrol()` (implémentent `ICombatAIProfile`, voir §5bis), nouveau `TakeDamage()`
+override (§5bis — n'existait pas avant), gizmos.
 
 ### 6.6 `PNJ.cs` — ce qui DISPARAÎT
 
@@ -367,18 +405,27 @@ l'actuel `ReturnToSpawn()`-puis-immobile pour un Garde non configuré.
 
 ## 7. Données — `PNJData.cs`
 
-Nouveau champ, sous un header `Déplacement` existant (celui qui porte déjà `baseMoveSpeed`) :
+Deux nouveaux champs, sous le header `Combat (canFight)` existant (celui qui porte déjà
+`aggroRadius`/`leashRadius`) :
 
 ```csharp
 [Tooltip("Rayon de patrouille autour du spawn quand aucune cible n'est engagée. 0 = reste immobile\n" +
          "au spawn (comportement actuel). Équivalent de MobData.patrolRadius.")]
 [ShowIf(nameof(canFight), true)]
 public float patrolRadius = 0f;
+
+[Tooltip("Passive : n'engage que s'il est attaqué directement (TakeDamage). Aggressive : engage\n" +
+         "dès qu'un ennemi entre dans aggroRadius — comportement actuel, DÉFAUT à ne jamais changer\n" +
+         "pour ne pas casser les PNJData existants. Boss non utilisé côté PNJ (réutilise MobAIType\n" +
+         "tel quel — même enum que MobData, aucun risque ordinal).")]
+[ShowIf(nameof(canFight), true)]
+public MobAIType aiType = MobAIType.Aggressive;
 ```
-`ShowIf(canFight)` : la patrouille n'a de sens que pour un PNJ combattant (Garde) — cohérent avec
-tous les autres champs combat déjà `ShowIf(canFight)` dans ce fichier. Défaut `0f` : AUCUN
-`PNJData` existant ne change de comportement tant que Florian ne remonte pas explicitement cette
-valeur dans l'Inspector.
+`ShowIf(canFight)` : cohérent avec tous les autres champs combat déjà `ShowIf(canFight)` dans ce
+fichier. Défauts choisis pour ZÉRO changement de comportement sur les `PNJData` existants tant
+que Florian ne les modifie pas explicitement dans l'Inspector : `patrolRadius = 0f` (immobile,
+comme avant), `aiType = Aggressive` (scan de proximité + engage spontané, comme avant — un défaut
+`Passive` aurait cassé tous les Gardes existants silencieusement).
 
 ## 8. Cas limites déjà couverts par le rapatriement (aucun changement de comportement attendu)
 
@@ -410,6 +457,13 @@ valeur dans l'Inspector.
 7. PNJ Garde avec `patrolRadius > 0` configuré : patrouille visiblement dans le rayon, revient y
    patrouiller après un combat (retour au spawn, `patrolRadius = 0` déjà validé en (1)/(5) via un
    Garde existant non modifié).
+7bis. PNJ Garde `aiType = Aggressive` (défaut) : comportement inchangé vs avant (régression
+   check — engage tout mob à portée spontanément).
+7ter. PNJ Garde `aiType = Passive` (nouveau, à créer pour le test) : ignore un mob qui passe à
+   portée ; engage dès qu'un mob le frappe en premier (`TakeDamage` → `ForceEngage(source)`),
+   cible ce mob spécifiquement même si un autre mob non-agresseur est plus proche. Au retour au
+   spawn (leash/désengagement), `aggroSet` se vide (`OnReturnToPatrol()`) — pas de reset HP/Mana
+   instantané, contrairement à Mob.
 8. Canalisation (castTime > 0) sur Mob ET PNJ : toujours interrompue correctement par hard CC
    (CD complet) et cible morte (CD demi) — aucune régression de l'ordre `_channelBar`/
    `EndChannelCastState`.
