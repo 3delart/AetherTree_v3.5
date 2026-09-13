@@ -85,12 +85,14 @@ public interface ICombatAIProfile
     SkillData       BasicAttackSkill  { get; }
     List<SkillData> SecondarySkills   { get; }
     float           PatrolRadius      { get; }   // 0 = reste au spawn (pas de roam)
-    float           LeashDistance     { get; }   // distance absolue depuis l'ancre d'aggro
+    float           LeashDistance     { get; }   // distance MAX autorisée depuis LeashAnchor avant désengagement
+    Vector3         LeashAnchor       { get; }   // point de référence du leash — Mob : aggroPos (dynamique, voir OnEngageStart) ; PNJ : spawn fixe (constant, jamais modifié — trouvé en session : PNJ mesure aujourd'hui depuis son spawn, pas depuis un point d'engagement mobile comme Mob, décision explicite de Florian de NE PAS changer ça)
     bool            AutoEngageOnSight { get; }   // true = passe en Engage dès qu'un ennemi est détecté — Mob/PNJ : aiType == Aggressive (§5bis)
     Entity          FindClosestEnemy();          // taunt-aware, retourne null si aucun candidat — pool dépendant de l'owner, voir §5bis
     bool            HasAnyEnemyNearby();         // check bon marché pour Patrol (seulement appelé si AutoEngageOnSight)
     void            OnForcedEngage(Entity aggressor); // hook owner — voir §5bis (Mob/PNJ y ajoutent aggressor à leur aggroSet)
     void            OnReturnToPatrol();          // hook owner appelé UNE FOIS à l'arrivée au spawn (Return → Patrol) — voir §5bis
+    void            OnEngageStart();             // hook owner appelé UNE FOIS à la transition Patrol → Engage — Mob y fait `aggroPos = transform.position` (ancre dynamique) ; PNJ ne fait rien (ancre fixe déjà posée par LeashAnchor)
 }
 
 [RequireComponent(typeof(NavMeshAgent))]
@@ -174,10 +176,11 @@ dans `Mob.cs` (3 sites) et `PNJ.cs` (2 sites).
 
 ```
 Patrol ──(AutoEngageOnSight && HasAnyEnemyNearby()) || IsTauntedWithValidSource() || ForceEngage(aggressor)──▶ Engage
+  (appelle profile.OnEngageStart() une seule fois à cette transition, voir ICombatAIProfile ci-dessus)
 Patrol : PatrolRadius == 0 ? reste immobile au spawn : roam (GetNavMeshPoint + wait 2-5s), identique à Mob.HandlePatrol() actuel.
 
 Engage ──(FindClosestEnemy() == null)──▶ Return
-Engage ──(distance(spawn-anchor) > LeashDistance)──▶ Return
+Engage ──(distance(owner, LeashAnchor) > LeashDistance)──▶ Return
 Engage : décision RE-CALCULÉE À CHAQUE FRAME, aucun sous-état persisté — reprend exactement
          PNJ.HandleCombatAI() actuel :
   1. si _isChanneling : freeze complet (aucun mouvement/décision), StopAgent() une fois à l'entrée
