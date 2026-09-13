@@ -491,10 +491,13 @@ public class Mob : Entity
                 StartChannelCast(skill, target);
             else
                 StartPendingHit(skill, target);
-            // attackTimer (délai générique, pas _skillCooldowns[skill] — posé séparément à la
-            // résolution) reprend le CD du skill qui vient de partir, plus de MobData.attackCooldown
-            // (retiré).
-            attackTimer = skill.cooldown > 0f ? skill.cooldown : 6f;
+            // attackTimer NE DOIT PAS être touché ici — c'est le timer de l'attaque de base
+            // uniquement (trouvé en test manuel côté PNJ, même code ici : le partager avec les
+            // skills secondaires bloquait le basic pour tout le CD du spécial, ex: un spécial à
+            // CD 10s empêchait le basic de retirer pendant 10s au lieu de reprendre dès la fin
+            // de l'anim du spécial). Le skill secondaire est déjà gardé indépendamment par
+            // _skillCooldowns[skill] (posé dans ResolvePendingHit()/ResolveChannelCast()/
+            // InterruptChannelCast()) — rien d'autre à faire ici.
             return true;
         }
 

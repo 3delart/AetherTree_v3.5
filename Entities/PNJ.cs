@@ -668,14 +668,17 @@ public class PNJ : Entity
                 StartChannelCast(skill, target);
             else
                 StartPendingHit(skill, target);
-            // _attackTimer (délai générique, pas _skillCooldowns[skill] — posé séparément à la
-            // résolution) reprend le CD du skill qui vient de partir, plus de
-            // PNJData.attackCooldown (retiré).
-            _attackTimer = skill.cooldown > 0f ? skill.cooldown : 6f;
+            // _attackTimer NE DOIT PAS être touché ici — c'est le timer de l'attaque de base
+            // uniquement (trouvé en test manuel : le partager avec les skills secondaires
+            // bloquait le basic pour tout le CD du spécial, ex: un spécial à CD 10s empêchait
+            // le basic de retirer pendant 10s au lieu de reprendre dès la fin de l'anim du
+            // spécial). Le skill secondaire est déjà gardé indépendamment par
+            // _skillCooldowns[skill] (posé dans ResolvePendingHit()/ResolveChannelCast()/
+            // InterruptChannelCast()) — rien d'autre à faire ici.
 
             // DEBUG TEMPORAIRE — diagnostic pause avant relais de l'attaque de base.
-            Debug.Log($"[PNJ-DEBUG] t={Time.time:F2} SPECIAL '{skill.name}' déclenché, " +
-                      $"_attackTimer posé à {_attackTimer:F2}s (skill.cooldown={skill.cooldown:F2})");
+            Debug.Log($"[PNJ-DEBUG] t={Time.time:F2} SPECIAL '{skill.name}' déclenché " +
+                      $"(skill.cooldown={skill.cooldown:F2}, _attackTimer inchangé={_attackTimer:F2})");
             return true;
         }
 
