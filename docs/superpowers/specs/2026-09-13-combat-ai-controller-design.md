@@ -261,10 +261,12 @@ private void RefreshEnemyList()
 
 `GetClosestEnemy()` (taunt-aware, choix du plus proche) n'a besoin d'AUCUN changement — il scanne
 déjà `enemyList`, qui contient maintenant le bon pool selon `aiType` grâce au changement
-ci-dessus. `Mob.TakeDamage()` appelle `_combatAI.ForceEngage(attacker)` (au lieu de
-`ForceEngage()` sans argument) pour que l'attaquant soit ajouté à `aggroSet` AVANT la première
-évaluation de cible. `FullReset()` doit vider `aggroSet` en plus de `enemyList` (même moment,
-retour au spawn — sinon un Mob Passif garderait en mémoire un agresseur d'un combat précédent).
+ci-dessus. `Mob.TakeDamage()` appelle `_combatAI.ForceEngage(source)` — le paramètre `source`
+BRUT de `TakeDamage()`, PAS le `attacker` résolu par `ResolveAttacker(source)` (qui ne renvoie
+non-null que pour un `Player` — voir la correction en §6.1 trouvée en écrivant le plan) — pour
+que l'agresseur réel soit ajouté à `aggroSet` AVANT la première évaluation de cible.
+`OnReturnToPatrol()` doit vider `aggroSet` en plus de `enemyList` (même moment, retour au spawn —
+sinon un Mob Passif garderait en mémoire un agresseur d'un combat précédent).
 
 **PNJ Garde — extension demandée par Florian, IDENTIQUE au Mob** : `PNJData` gagne un champ
 `aiType` (type `MobAIType`, réutilisé tel quel — Passive/Aggressive/Boss, `Boss` simplement
@@ -320,9 +322,14 @@ Mob/PNJ, réutilisable telle quelle sans dépendre du pool de ciblage.
 - nouveau champ `aggroSet` (§5bis) — `OnReturnToPatrol()` = corps actuel de `FullReset()` +
   `aggroSet.Clear()` aux côtés de `enemyList.Clear()` (appelé par le composant, plus par un
   `switch` interne)
-- `TakeDamage()` — attribution des contributions, PUIS `if (!isDead) _combatAI.ForceEngage(attacker);`
-  (remplace l'actuel `currentState = MobState.Chase` conditionnel — `attacker` déjà résolu par
-  `ResolveAttacker(source)` juste au-dessus dans le code actuel)
+- `TakeDamage()` — attribution des contributions, PUIS `if (!isDead) _combatAI.ForceEngage(source);`
+  (remplace l'actuel `currentState = MobState.Chase` conditionnel). **`source` brut, PAS
+  `attacker`** — trouvé en écrivant le plan : `attacker = ResolveAttacker(source)` ne renvoie
+  non-null QUE si `source is Player` (sert à l'attribution loot, où un Pet doit compter pour son
+  owner) ; pour l'aggro, un Mob frappé par un PNJ Garde (`source` = le PNJ, `attacker` = `null`
+  puisque `ResolveAttacker` ne gère pas ce cas) doit quand même le cibler en retour — passer
+  `attacker` aurait silencieusement empêché tout aggro sur les PNJ Garde alliés qui attaquent le
+  Mob.
 - `Die()` — calcul loot/`MobKilledEvent`, appelle `_combatAI.NotifyDeath()` avant de se désactiver
 - `AggroFrom()` — appelle `_combatAI.ForceEngage(attacker)`
 - `GetDamageContribution()`, `RegisterLastSkill()`, `IsCaptureable()`, gizmos
@@ -458,7 +465,7 @@ comme avant), `aiType = Aggressive` (scan de proximité + engage spontané, comm
    Attack/Chase visible dans une session de combat prolongée (>30s, plusieurs cycles
    attaque/déplacement).
 3. Mob (Passive) : ignore un joueur qui passe à portée sans le taunter/toucher ; engage dès le
-   premier coup reçu (`TakeDamage` → `ForceEngage(attacker)`). Cas limite §5bis : 2 joueurs A et
+   premier coup reçu (`TakeDamage` → `ForceEngage(source)`). Cas limite §5bis : 2 joueurs A et
    B dans `detectionRange` (B plus proche que A) — A tape le mob → le mob cible A (l'attaquant),
    PAS B même si B est plus proche. Si un attaquant kite hors `detectionRange`, le mob Passif le
    suit quand même (reste dans `aggroSet`) au lieu de perdre sa cible.
