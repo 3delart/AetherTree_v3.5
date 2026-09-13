@@ -461,19 +461,26 @@ public class Mob : Entity
     /// </summary>
     private bool TryUseSkill(Entity target)
     {
+        // Tick des cooldowns — TOUJOURS, même pendant un pending-hit/canalisation en vol (basic
+        // OU secondaire). Trouvé en test manuel (PNJ, même code ici) : ce tick était placé
+        // APRÈS le early-return ci-dessous, donc gelé chaque fois qu'une attaque de base était
+        // en vol (quasi en permanence) — le CD d'un skill secondaire ne progressait quasiment
+        // jamais en temps réel, ne redevenait jamais disponible.
+        if (data.skills != null)
+        {
+            foreach (var skill in data.skills)
+            {
+                if (skill == null) continue;
+                if (_skillCooldowns.ContainsKey(skill))
+                    _skillCooldowns[skill] -= Time.deltaTime;
+            }
+        }
+
         // Un pending-hit OU une canalisation est déjà en vol — ne rien redéclencher tant que
         // l'un des deux n'est pas résolu. Retourne true pour que HandleAttack()/HandleChase()
         // traitent ce tick comme "occupé" plutôt que de tomber sur l'attaque de base.
         if (IsPendingHit || _isChanneling) return true;
         if (data.skills == null || data.skills.Count == 0) return false;
-
-        // Tick des cooldowns
-        foreach (var skill in data.skills)
-        {
-            if (skill == null) continue;
-            if (_skillCooldowns.ContainsKey(skill))
-                _skillCooldowns[skill] -= Time.deltaTime;
-        }
 
         // Premier skill prêt et à portée
         foreach (var skill in data.skills)
