@@ -135,7 +135,17 @@ Depuis `Mob.cs`/`PNJ.cs` vers `CombatAIController` :
 
 - Champs : `_pendingSkill`, `_pendingTarget`, `_pendingTimeout`, `_pendingIsMulti`,
   `_pendingMultiNextIndex`, `_isChanneling`, `_channelSkill`, `_channelTarget`,
-  `_channelVfxCast`, `_channelBar`, `_skillCooldowns`, `_wasInBasicRange`
+  `_channelVfxCast`, `_channelBar`, `_skillCooldowns`, `_wasInBasicRange`, et **`attackTimer`/
+  `_attackTimer` (Mob/PNJ) → renommé `_basicAttackTimer`** — trou trouvé en écrivant le plan : le
+  §5 (Engage, étape 10) en dépend directement pour déclencher l'attaque de base, oublié de cette
+  liste dans une version précédente de cette section. **Décision de placement** : `Tick()` tique
+  `_basicAttackTimer -= Time.deltaTime` tout en haut, avant le `switch` Patrol/Engage/Return —
+  donc il ne décompte QUE quand `Tick()` tourne (jamais pendant un CC dur, puisque l'owner ne
+  l'appelle pas dans ce cas, voir §6.3). Différence mineure assumée avec le `Mob.cs` actuel (où
+  `attackTimer` décompte dans `Update()` même pendant un CC, contrairement à `_skillCooldowns` qui
+  lui ne décompte déjà QUE hors CC) — la migration rend `_basicAttackTimer` cohérent avec
+  `_skillCooldowns` au lieu de l'inverse. Effet quasi nul en jeu (décalage d'au plus quelques
+  frames sur un CD), ne nécessite pas de validation Play Mode dédiée.
 - Méthodes : `StartPendingHit()`, `ResolvePendingHit()`, `StartChannelCast()`,
   `ResolveChannelCast()`, `InterruptChannelCast()`, `EndChannelCastState()`, `TryUseSkill()`
   (renommé `TryUseSecondarySkill()` — nom déjà utilisé côté PNJ, plus clair), `GetMaxSkillRange()`
