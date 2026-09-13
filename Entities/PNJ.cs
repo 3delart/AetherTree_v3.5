@@ -589,6 +589,13 @@ public class PNJ : Entity
             return;
         }
 
+        // Gèle mouvement/décision tant qu'une canalisation est en vol — sans ce garde, rien
+        // n'empêchait le PNJ de continuer à s'approcher (agent.SetDestination plus bas) pendant
+        // son propre cast, ce qui n'a pas de sens visuellement (trouvé sur demande de Florian).
+        // Le poll d'interrupt (hard CC/cible morte) continue de tourner dans Update(),
+        // indépendant de ce gel ; le leash ci-dessus continue aussi de s'appliquer.
+        if (_isChanneling) return;
+
         float dist        = Vector3.Distance(transform.position, _combatTarget.transform.position);
         float attackRange = GetMaxSkillRange();
 

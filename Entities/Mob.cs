@@ -378,6 +378,13 @@ public class Mob : Entity
         Entity target = GetClosestEnemy();
         if (target == null) { GoReturn(); return; }
 
+        // Gèle mouvement/décision tant qu'une canalisation est en vol — sans ce garde, rien
+        // n'empêchait le Mob de continuer à s'approcher (agent.SetDestination plus bas) pendant
+        // son propre cast, ce qui n'a pas de sens visuellement et pouvait le faire changer
+        // d'état en pleine canalisation (trouvé sur demande de Florian). Le poll d'interrupt
+        // (hard CC/cible morte) continue de tourner dans Update(), indépendant de ce gel.
+        if (_isChanneling) { agent.ResetPath(); return; }
+
         // Skill secondaire depuis Chase — dash, projectile, etc. Bloqué si Taunt actif : la
         // cible est déjà forcée sur la source du taunt via GetClosestEnemy(), Taunt force
         // AUSSI l'attaque de base uniquement, pas de skill spécial (§3.1.1.1).
@@ -408,6 +415,11 @@ public class Mob : Entity
 
         Entity target = GetClosestEnemy();
         if (target == null || target.isDead) { GoReturn(); return; }
+
+        // Gèle mouvement/décision tant qu'une canalisation est en vol — voir même garde dans
+        // HandleChase(). Empêche notamment un changement d'état (retour en Chase) en pleine
+        // canalisation si la cible bouge hors de portée.
+        if (_isChanneling) return;
 
         if (!IsInRange(target, GetMaxSkillRange() * 1.2f))
         {
