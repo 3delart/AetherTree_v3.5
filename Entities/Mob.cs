@@ -46,6 +46,13 @@ public class Mob : Entity
     // Les dégâts du Pet sont attribués à son owner
     protected Dictionary<Player, float>    damageContributions = new Dictionary<Player, float>();
 
+    // Total RÉEL de tous les dégâts subis (Player + PNJ + tout le reste) — sert de dénominateur
+    // pour le seuil d'éligibilité ≥10% (damageContributions ne trace QUE les Player, donc un
+    // PNJ allié qui inflige la majorité des dégâts gonflait artificiellement le % du Player :
+    // trouvé en test manuel, un Garde tuant un Mob à 95% laissait le Player "éligible" à 100%
+    // sur les 5% qu'il avait réellement infligés).
+    protected float totalDamageTaken = 0f;
+
     // ── Dernier skill utilisé par chaque attaquant ────────────
     // Mis à jour par SkillSystem via RegisterLastSkill() avant TakeDamage().
     // Null pour les kills DoT (le skill n'est pas connu au moment du tick).
@@ -741,6 +748,7 @@ public class Mob : Entity
         _pendingIsMulti = false;
         enemyList.Clear();
         damageContributions.Clear();
+        totalDamageTaken = 0f;
         lastSkillByAttacker.Clear();
 
         // Nettoie tous les effets actifs — un mob qui rentre au spawn repart sans debuffs. GDD v3.5 §3.3.
@@ -765,6 +773,12 @@ public class Mob : Entity
         // Ordre critique : Die() est appelé dans base.TakeDamage si HP <= 0
         // Les contributions doivent être enregistrées avant pour que
         // eligiblePlayers soit correct dans Die() — même pour les kills DoT
+
+        // totalDamageTaken compte TOUTE source (Player, PNJ, DoT...) — c'est le vrai
+        // dénominateur du seuil ≥10%, contrairement à damageContributions qui ne trace que
+        // les Player et gonflerait sinon leur % si un PNJ allié inflige le plus gros des dégâts.
+        totalDamageTaken += amount;
+
         Player attacker = ResolveAttacker(source);
         if (attacker != null)
         {
@@ -835,9 +849,10 @@ public class Mob : Entity
 
 
         // ── Calcul dégâts totaux ──────────────────────────────
-        float totalDamage = 0f;
-        foreach (float d in damageContributions.Values)
-            totalDamage += d;
+        // totalDamageTaken (toute source) — PAS la somme de damageContributions (Player
+        // uniquement), sinon un PNJ allié qui inflige le gros des dégâts gonfle artificiellement
+        // le % du Player (trouvé en test manuel).
+        float totalDamage = totalDamageTaken;
 
 
         // ── Joueurs éligibles — ≥10% des dégâts totaux (XP joueur / loot) ────
@@ -944,8 +959,8 @@ public class Mob : Entity
     public float GetDamageContribution(Player player)
     {
         if (!damageContributions.ContainsKey(player)) return 0f;
-        float total = damageContributions.Values.Sum();
-        return total > 0f ? damageContributions[player] / total : 0f;
+        // totalDamageTaken (toute source), même correction que Die() — voir son commentaire.
+        return totalDamageTaken > 0f ? damageContributions[player] / totalDamageTaken : 0f;
     }
 
     // =========================================================
