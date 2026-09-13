@@ -62,9 +62,12 @@ public class MobAnimatorController : MonoBehaviour, ICombatAnimator
         float speed = _agent != null ? _agent.velocity.magnitude : 0f;
         _animator.SetFloat(SpeedParam, speed);
 
-        // Distingue walk (Patrol) de chase (Chase) — impossible via Speed seul, les deux
-        // utilisent la même vitesse aujourd'hui (Mob.agent.speed ne varie pas selon l'état).
-        _animator.SetBool(IsChasingParam, _mob != null && _mob.CurrentState == MobState.Chase);
+        // Distingue walk (Patrol) de combat rapproché (Engage) — impossible via Speed seul,
+        // Speed=0 pendant Engage (immobile en train d'attaquer) ressemble à Speed=0 en Patrol
+        // (arrivé à un point d'attente). Avec la fusion Chase+Attack en un seul état Engage
+        // (voir CombatAIController), IsChasing est vrai pendant TOUT Engage — approche ET combat
+        // rapproché immobile — combiné à Speed pour le blend Idle/Walk/Run de l'Animator.
+        _animator.SetBool(IsChasingParam, _mob != null && _mob.CurrentState == CombatAIState.Engage);
     }
 
     private void PlayOverrideClip(AnimationClip clip)

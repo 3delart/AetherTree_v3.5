@@ -23,7 +23,8 @@ using System.Linq;
 [RequireComponent(typeof(StatusEffectSystem))]
 [RequireComponent(typeof(CapsuleCollider))]
 [RequireComponent(typeof(SkillSystem))]
-public class Mob : Entity
+[RequireComponent(typeof(CombatAIController))]
+public class Mob : Entity, ICombatAIProfile
 {
     [Header("Data")]
     public MobData data;
@@ -31,11 +32,11 @@ public class Mob : Entity
 
     protected NavMeshAgent agent;
     protected Vector3      spawnPos;
-    protected MobState     currentState = MobState.Patrol;
+    private   CombatAIController _combatAI;
+    private   Vector3            aggroPos;
 
-    // Exposé pour MobAnimatorController — distingue walk (Patrol) de chase (Chase), impossible
-    // via le seul paramètre Speed puisque les deux utilisent la même vitesse aujourd'hui.
-    public MobState CurrentState => currentState;
+    // Exposé pour MobAnimatorController — voir CombatAIController pour le sens de chaque état.
+    public CombatAIState CurrentState => _combatAI.CurrentState;
 
     // ── enemyList — GDD v3.5 §3.3 ────────────────────────────
     // Contient joueurs ET pets à portée
@@ -58,45 +59,19 @@ public class Mob : Entity
     // Null pour les kills DoT (le skill n'est pas connu au moment du tick).
     private Dictionary<Player, SkillData>   lastSkillByAttacker = new Dictionary<Player, SkillData>();
 
-    private float attackTimer = 0f;
     public bool IsDashing { get; set; } = false;
-    // Cooldown individuel par skill — clé = SkillData, valeur = temps restant
-    private Dictionary<SkillData, float> _skillCooldowns = new Dictionary<SkillData, float>();
-
-    // ── Attente de résolution (hit-frame-sync — un seul hit en vol à la fois, un Mob n'agit
-    // jamais en parallèle sur deux skills) — sous-chantier 1, voir docs/superpowers/specs/
-    // 2026-09-12-mob-pnj-animator-foundations-design.md ─────────────────────────────────
-    private SkillData _pendingSkill   = null;
-    private Entity    _pendingTarget  = null;
-    private float     _pendingTimeout = 0f;
-    private bool      _pendingIsMulti = false;
-    private int       _pendingMultiNextIndex = 0;
-
-    public bool IsPendingHit => _pendingSkill != null;
 
     private MobAnimatorController _animatorController;
 
-    // ── Canalisation visible (castTime > 0) — sous-chantier 2, voir docs/superpowers/specs/
-    // 2026-09-12-mob-pnj-channel-vfxcast-design.md — mutuellement exclusif du mécanisme
-    // _pendingSkill ci-dessus : un skill castTime > 0 ne passe JAMAIS par StartPendingHit() ────
-    private bool           _isChanneling   = false;
-    private SkillData      _channelSkill   = null;
-    private Entity         _channelTarget  = null;
-    private GameObject     _channelVfxCast = null;
-    private CastBarSpawner _channelBar     = null;
-
     private System.Action onDeathCallback;
 
-    // Patrouille
-    private bool  patrolPointsSet = false;
-    private bool  isWaiting       = false;
-    private float waitTimer       = 0f;
+    // ── Aggro (§5bis de la spec) — Passive ne cible QUE ce qui l'a frappé ; Aggressive garde le
+    // scan de proximité ET mémorise en plus quiconque le frappe (utile si l'attaquant sort
+    // ensuite de detectionRange en kitant). Vidé uniquement dans OnReturnToPatrol().
+    private HashSet<Entity> aggroSet = new HashSet<Entity>();
 
     // Skills — cache du SkillSystem porté par ce GameObject
     private SkillSystem _skillSystem;
-
-    // Aggro
-    private Vector3     aggroPos;
 
     // =========================================================
     // INITIALISATION
@@ -108,8 +83,11 @@ public class Mob : Entity
         agent               = GetComponent<NavMeshAgent>();
         _skillSystem        = GetComponent<SkillSystem>();
         _animatorController = GetComponent<MobAnimatorController>();
+        _combatAI           = GetComponent<CombatAIController>();
         spawnPos = transform.position;
+        aggroPos = spawnPos;
         ApplyData();
+        _combatAI.Initialize(this, agent, _skillSystem, this, _animatorController, spawnPos);
     }
 
        private void ApplyData()
@@ -169,42 +147,10 @@ public class Mob : Entity
         base.Update();
         if (isDead || data == null) return;
 
-        attackTimer -= Time.deltaTime;
-
-        // Timeout de secours (event d'impact jamais reçu) — tick AVANT tout early-return CC :
-        // un coup déjà lancé va au bout, non-interruptible, même principe que le Player
-        // (chantier B hit-frame-sync).
-        if (_pendingSkill != null)
-        {
-            _pendingTimeout -= Time.deltaTime;
-            if (_pendingTimeout <= 0f)
-                ResolvePendingHit(_pendingIsMulti ? _pendingMultiNextIndex : 0);
-        }
-
-        // Poll d'interrupt de la canalisation — hard CC (non-volontaire, CD complet) ou cible
-        // morte (volontaire, CD demi). Les dégâts simples n'interrompent PAS, même règle que
-        // SkillBar côté Player (vérifiée dans le code réel, pas une nouveauté). PAS de terme
-        // isDead ici — Update() a déjà un early-return dessus juste au-dessus (ligne
-        // `if (isDead || data == null) return;`), donc cette branche ne serait jamais atteinte ;
-        // la mort est couverte séparément par le nettoyage explicite dans Die() (Step 7bis).
-        // InterruptChannelCast() gère elle-même l'annulation de _channelBar (voir Step 6) — ne
-        // JAMAIS appeler _channelBar?.Cancel() ici (trouvé en vérification indépendante du
-        // plan : appeler Cancel() avant InterruptChannelCast ferait exécuter le callback
-        // onCancel réentrant — () => InterruptChannelCast(voluntary: true, ...) — PENDANT que
-        // _isChanneling est encore vrai, posant silencieusement le CD demi avant même que cet
-        // appel explicite, potentiellement voluntary:false, n'atteigne son propre garde et
-        // no-op — un hard CC finirait TOUJOURS avec le CD demi au lieu du CD complet).
-        if (_isChanneling)
-        {
-            bool hardCC = statusEffects != null && (statusEffects.isStunned ||
-                          statusEffects.isShocked || statusEffects.isFreezed ||
-                          statusEffects.isKnockedBack || statusEffects.isFeared ||
-                          statusEffects.isSilenced);
-            if (hardCC)
-                InterruptChannelCast(voluntary: false, reason: "CC");
-            else if (_channelTarget != null && _channelTarget.isDead)
-                InterruptChannelCast(voluntary: true, reason: "cible morte");
-        }
+        // Poll d'interrupt de canalisation — DOIT rester avant le freeze CC ci-dessous : un hard
+        // CC doit interrompre la canalisation EN COURS, pas être bloqué par le early-return sur
+        // isCCd qui vient juste après.
+        _combatAI.PollChannelInterrupt();
 
         // Slow × Haste — multiplicatifs
         if (statusEffects != null && data != null)
@@ -214,22 +160,12 @@ public class Mob : Entity
 
         if (IsDashing) return;
 
-        // Stun/Sleep — CC dur, GDD §3.1.1.1 : "bloque TOUTES les actions". Avant ce fix, seul
-        // HandleAttack() vérifiait isStunned (l'attaque était bloquée mais le mob continuait
-        // de patrouiller/chasser normalement) et isSleeping n'était vérifié NULLE PART pour
-        // bloquer une action (seulement utilisé pour le réveil au premier dégât reçu) — gel
-        // complet ici, un seul endroit, plutôt que dans chaque Handle* séparément.
+        // Stun/Sleep — CC dur, GDD §3.1.1.1 : "bloque TOUTES les actions".
         bool isCCd = statusEffects != null && (statusEffects.isStunned || statusEffects.isSleeping || statusEffects.isShocked || statusEffects.isFreezed);
         if (agent != null && agent.isOnNavMesh) agent.isStopped = isCCd;
         if (isCCd) return;
 
-        switch (currentState)
-        {
-            case MobState.Patrol: HandlePatrol(); break;
-            case MobState.Chase:  HandleChase();  break;
-            case MobState.Attack: HandleAttack(); break;
-            case MobState.Return: HandleReturn(); break;
-        }
+        _combatAI.Tick();
     }
 
     // =========================================================
@@ -244,36 +180,46 @@ public class Mob : Entity
     private void RefreshEnemyList()
     {
         enemyList.Clear();
+        aggroSet.RemoveWhere(e => e == null || e.isDead);
 
-        // Détecte tous les colliders dans le rayon de détection
-        Collider[] hits = Physics.OverlapSphere(transform.position, data.detectionRange);
-        foreach (Collider col in hits)
+        // Passive (spec §5bis) : PAS de scan de proximité — ce mob ne cible QUE ce qui l'a
+        // frappé (aggroSet, fusionné plus bas). Déviation assumée du GDD §3.7 tel qu'écrit
+        // aujourd'hui (qui décrit un scan de proximité identique pour les deux aiType) — voir
+        // la spec pour le détail complet de cette décision.
+        if (data.aiType == MobAIType.Aggressive)
         {
-            // Joueur — Stealth = totalement ignoré (jamais détecté, mouvement ou pas — le
-            // "clignotement" en bougeant existe seulement côté PvP futur, pas contre l'IA).
-            Player player = col.GetComponent<Player>();
-            if (player != null && !player.isDead && !(player.statusEffects?.isStealthed ?? false))
+            Collider[] hits = Physics.OverlapSphere(transform.position, data.detectionRange);
+            foreach (Collider col in hits)
             {
-                if (!enemyList.Contains(player))
-                    enemyList.Add(player);
-                continue;
-            }
+                // Joueur — Stealth = totalement ignoré (jamais détecté, mouvement ou pas — le
+                // "clignotement" en bougeant existe seulement côté PvP futur, pas contre l'IA).
+                Player player = col.GetComponent<Player>();
+                if (player != null && !player.isDead && !(player.statusEffects?.isStealthed ?? false))
+                {
+                    if (!enemyList.Contains(player))
+                        enemyList.Add(player);
+                    continue;
+                }
 
-            // Pet — TODO : ajouter quand Pet.cs sera implémenté
-            // Pet pet = col.GetComponent<Pet>();
-            // if (pet != null && !pet.isDead && !enemyList.Contains(pet))
-            //     enemyList.Add(pet);
+                // Pet — TODO : ajouter quand Pet.cs sera implémenté
+                // Pet pet = col.GetComponent<Pet>();
+                // if (pet != null && !pet.isDead && !enemyList.Contains(pet))
+                //     enemyList.Add(pet);
 
-            // PNJ — les mobs ciblent tous les PNJ (GDD v3.5 §3.4 : tous peuvent mourir)
-            // Guards protègent le village en priorité, mais tous peuvent mourir
-            // (ex: village envahi — marchands, décoratifs etc. sont attaquables)
-            PNJ pnj = col.GetComponentInParent<PNJ>();
-            if (pnj != null && !pnj.isDead)
-            {
-                if (!enemyList.Contains(pnj))
-                    enemyList.Add(pnj);
+                // PNJ — les mobs ciblent tous les PNJ (GDD v3.5 §3.4 : tous peuvent mourir)
+                PNJ pnj = col.GetComponentInParent<PNJ>();
+                if (pnj != null && !pnj.isDead)
+                {
+                    if (!enemyList.Contains(pnj))
+                        enemyList.Add(pnj);
+                }
             }
         }
+
+        // aggroSet fusionné pour LES DEUX aiType — Aggressive y ajoute ses attaquants sortis de
+        // detectionRange en plus du scan ci-dessus ; Passive n'a QUE ça.
+        foreach (Entity e in aggroSet)
+            if (!enemyList.Contains(e)) enemyList.Add(e);
     }
 
     /// <summary>
@@ -282,7 +228,7 @@ public class Mob : Entity
     /// la SOURCE du debuff (GDD §3.1.1.1 : "force les ennemis à cibler cette entité" = celle qui
     /// a taunté), peu importe la proximité normale. Réévaluée à chaque tick — GDD v3.5 §3.3.
     /// </summary>
-    private Entity GetClosestEnemy()
+    public Entity FindClosestEnemy()
     {
         if (statusEffects != null && statusEffects.isTaunted)
         {
@@ -307,508 +253,45 @@ public class Mob : Entity
     }
 
     // =========================================================
-    // PATROL
+    // ICombatAIProfile — voir spec §5bis pour le détail de chaque membre
     // =========================================================
+    public SkillData       BasicAttackSkill  => data?.basicAttackSkill;
+    public List<SkillData> SecondarySkills   => data?.skills;
+    public float           PatrolRadius      => data != null ? data.patrolRadius : 0f;
+    public float           LeashDistance     => data != null ? data.detectionRange * data.leashMultiplier : 0f;
+    public Vector3         LeashAnchor       => aggroPos;
+    public bool            AutoEngageOnSight => data != null && data.aiType == MobAIType.Aggressive;
 
-    private void HandlePatrol()
+    public bool HasAnyEnemyNearby() => enemyList.Count > 0;
+
+    public void OnForcedEngage(Entity aggressor)
     {
-        // Taunt (GDD §3.1.1.1) force l'engagement même sur un mob Passif — le debuff cible
-        // "Enemies" = CE mob (pas le lanceur), donc c'est statusEffects.isTaunted DE CE MOB
-        // qu'il faut checker, pas scanner enemyList. Sans ce check, un mob Passif tauntée
-        // ignorait purement et simplement l'appel au combat tant qu'il n'avait pas déjà pris
-        // de dégâts (seul déclencheur normal de son aggro).
-        bool isTaunted = statusEffects != null && statusEffects.isTaunted;
-
-        if ((data.aiType == MobAIType.Aggressive || isTaunted) && enemyList.Count > 0)
-        {
-            BeginChase();
-            return;
-        }
-
-        if (!patrolPointsSet)
-        {
-            agent.SetDestination(GetNavMeshPoint(spawnPos, data.patrolRadius));
-            patrolPointsSet = true;
-            return;
-        }
-
-        if (isWaiting)
-        {
-            waitTimer -= Time.deltaTime;
-            if (waitTimer <= 0f)
-            {
-                isWaiting = false;
-                agent.SetDestination(GetNavMeshPoint(spawnPos, data.patrolRadius));
-            }
-            return;
-        }
-
-        if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.3f)
-        {
-            isWaiting = true;
-            waitTimer = Random.Range(2f, 5f);
-        }
+        if (aggressor != null && !aggressor.isDead) aggroSet.Add(aggressor);
     }
 
-    // =========================================================
-    // CHASE
-    // =========================================================
-
-    private void HandleChase()
+    public void OnEngageStart()
     {
-        if (IsBeyondLeash()) { GoReturn(); return; }
-
-        if (statusEffects != null && statusEffects.isRooted)
-        {
-            agent.ResetPath();
-            return;
-        }
-
-        if (statusEffects != null && statusEffects.isFeared)
-        {
-            Entity threat = GetClosestEnemy();
-            if (threat != null)
-            {
-                Vector3 fleeDir = (transform.position - threat.transform.position).normalized;
-                agent.SetDestination(transform.position + fleeDir * 5f);
-            }
-            return;
-        }
-
-        Entity target = GetClosestEnemy();
-        if (target == null) { GoReturn(); return; }
-
-        // Gèle mouvement/décision tant qu'une canalisation est en vol — sans ce garde, rien
-        // n'empêchait le Mob de continuer à s'approcher (agent.SetDestination plus bas) pendant
-        // son propre cast, ce qui n'a pas de sens visuellement et pouvait le faire changer
-        // d'état en pleine canalisation (trouvé sur demande de Florian). Le poll d'interrupt
-        // (hard CC/cible morte) continue de tourner dans Update(), indépendant de ce gel.
-        if (_isChanneling) { agent.ResetPath(); return; }
-
-        // Skill secondaire depuis Chase — dash, projectile, etc. Bloqué si Taunt actif : la
-        // cible est déjà forcée sur la source du taunt via GetClosestEnemy(), Taunt force
-        // AUSSI l'attaque de base uniquement, pas de skill spécial (§3.1.1.1).
-        bool tauntedInChase = statusEffects != null && statusEffects.isTaunted;
-        if (!tauntedInChase && TryUseSkill(target)) return;
-
-        if (IsInRange(target, GetMaxSkillRange()))
-        {
-            currentState = MobState.Attack;
-            agent.ResetPath();
-            return;
-        }
-
-        agent.SetDestination(target.transform.position);
+        aggroPos = transform.position;
     }
 
-    // =========================================================
-    // ATTACK
-    // =========================================================
-
-    private void HandleAttack()
+    /// <summary>Ancien corps de FullReset() — HP/Mana à 100%, cooldowns/pending déjà remis à
+    /// zéro par CombatAIController lui-même à ce même instant, il ne reste ici que ce qui est
+    /// propre à Mob (contributions, aggro, debuffs).</summary>
+    public void OnReturnToPatrol()
     {
-        if (isDead) return;
-
-        if (IsBeyondLeash()) { GoReturn(); return; }
-
-        if (statusEffects != null && (statusEffects.isStunned || statusEffects.isShocked || statusEffects.isFreezed)) return;
-
-        Entity target = GetClosestEnemy();
-        if (target == null || target.isDead) { GoReturn(); return; }
-
-        // Gèle mouvement/décision tant qu'une canalisation est en vol — voir même garde dans
-        // HandleChase(). Empêche notamment un changement d'état (retour en Chase) en pleine
-        // canalisation si la cible bouge hors de portée.
-        if (_isChanneling) return;
-
-        if (!IsInRange(target, GetMaxSkillRange() * 1.2f))
-        {
-            currentState = MobState.Chase;
-            return;
-        }
-
-        LookAt(target.transform);
-
-        // Skill secondaire prioritaire sur l'attaque de base — bloqué si Taunt actif, force
-        // l'attaque de base uniquement sur la source du taunt (§3.1.1.1). TryUseSkill() vérifie
-        // déjà sa propre range par skill (skill.range) — rien à ajouter ici.
-        bool tauntedInAttack = statusEffects != null && statusEffects.isTaunted;
-        if (!tauntedInAttack && TryUseSkill(target)) return;
-
-        // Range de l'attaque de base spécifiquement — PAS GetMaxSkillRange() (potentiellement
-        // la portée d'un skill secondaire bien plus longue, utilisée seulement pour la
-        // transition Chase→Attack plus haut). Trouvé en test manuel (PNJ, même code ici) :
-        // sans ce check séparé, le Mob tirait son attaque de base depuis la portée du spécial
-        // au lieu de s'approcher jusqu'à SA propre portée.
-        float basicRange = data.basicAttackSkill != null && data.basicAttackSkill.range > 0f
-            ? data.basicAttackSkill.range
-            : 2f;
-        if (!IsInRange(target, basicRange))
-        {
-            // NE PAS changer d'état ici (`currentState = MobState.Chase`) — bug réel trouvé en
-            // test manuel : HandleChase() repasse en Attack dès que
-            // IsInRange(target, GetMaxSkillRange()) (le check qui a amené ici en premier lieu),
-            // pas basicRange — ça créait une oscillation Attack↔Chase à CHAQUE frame tant que
-            // la distance était entre basicRange et GetMaxSkillRange() et qu'aucun skill
-            // secondaire ne pouvait tirer (CD/mana). On reste en Attack, on avance juste vers
-            // la cible directement, comme le fait déjà PNJ.HandleCombatAI() pour le même cas.
-            agent.SetDestination(target.transform.position);
-            return;
-        }
-
-        // Attaque de base — bloquée tant qu'un pending-hit est en vol (StartPendingHit ci-
-        // dessous) : sans cette garde, une fois le CD déplacé à la résolution (Step 7), plus
-        // rien n'empêcherait ce bloc de se redéclencher à CHAQUE frame pendant l'anim (trouvé
-        // en vérification indépendante du plan — voir Global Constraints).
-        if (attackTimer <= 0f && !IsPendingHit && !_isChanneling)
-        {
-            // Double vérification avant de lancer l'attaque
-            if (!isDead && !target.isDead && data.basicAttackSkill != null)
-            {
-                // Cooldown de l'attaque de base = celui du SkillData lui-même (pas
-                // MobData.attackCooldown, retiré — trouvé en test manuel : ignoré, seule la
-                // durée d'anim comptait, confusion pour Florian). Même fallback que partout
-                // ailleurs dans ce fichier.
-                attackTimer = data.basicAttackSkill.cooldown > 0f ? data.basicAttackSkill.cooldown : 2f;
-
-                if (data.basicAttackSkill.castTime > 0f)
-                    StartChannelCast(data.basicAttackSkill, target);
-                else
-                    StartPendingHit(data.basicAttackSkill, target);
-            }
-            else if (data.basicAttackSkill == null)
-            {
-                attackTimer = 2f;
-                Debug.LogWarning($"[MOB] {data.mobName} n'a pas de basicAttackSkill — assigne un SkillData dans MobData.");
-            }
-        }
-    }
-
-    // =========================================================
-    // SKILL — tick CD + exécution (Chase ET Attack)
-    // =========================================================
-
-    /// <summary>
-    /// Tick les cooldowns et tente d'exécuter le premier skill secondaire disponible.
-    /// Appelé depuis HandleChase ET HandleAttack.
-    /// Retourne true si un skill a été lancé.
-    /// </summary>
-    private bool TryUseSkill(Entity target)
-    {
-        // Tick des cooldowns — TOUJOURS, même pendant un pending-hit/canalisation en vol (basic
-        // OU secondaire). Trouvé en test manuel (PNJ, même code ici) : ce tick était placé
-        // APRÈS le early-return ci-dessous, donc gelé chaque fois qu'une attaque de base était
-        // en vol (quasi en permanence) — le CD d'un skill secondaire ne progressait quasiment
-        // jamais en temps réel, ne redevenait jamais disponible.
-        if (data.skills != null)
-        {
-            foreach (var skill in data.skills)
-            {
-                if (skill == null) continue;
-                if (_skillCooldowns.ContainsKey(skill))
-                    _skillCooldowns[skill] -= Time.deltaTime;
-            }
-        }
-
-        // Un pending-hit OU une canalisation est déjà en vol — ne rien redéclencher tant que
-        // l'un des deux n'est pas résolu. Retourne true pour que HandleAttack()/HandleChase()
-        // traitent ce tick comme "occupé" plutôt que de tomber sur l'attaque de base.
-        if (IsPendingHit || _isChanneling) return true;
-        if (data.skills == null || data.skills.Count == 0) return false;
-
-        // Premier skill prêt et à portée
-        foreach (var skill in data.skills)
-        {
-            if (skill == null) continue;
-            float cd = _skillCooldowns.ContainsKey(skill) ? _skillCooldowns[skill] : 0f;
-            if (cd > 0f) continue;
-            if (!IsInRange(target, skill.range)) continue;
-            if (skill.manaCost > 0f && !HasMana(skill.manaCost)) continue;
-
-            if (skill.manaCost > 0f) SpendMana(skill.manaCost);
-
-            LookAt(target.transform);
-            if (skill.castTime > 0f)
-                StartChannelCast(skill, target);
-            else
-                StartPendingHit(skill, target);
-            // attackTimer NE DOIT PAS être touché ici — c'est le timer de l'attaque de base
-            // uniquement (trouvé en test manuel côté PNJ, même code ici : le partager avec les
-            // skills secondaires bloquait le basic pour tout le CD du spécial, ex: un spécial à
-            // CD 10s empêchait le basic de retirer pendant 10s au lieu de reprendre dès la fin
-            // de l'anim du spécial). Le skill secondaire est déjà gardé indépendamment par
-            // _skillCooldowns[skill] (posé dans ResolvePendingHit()/ResolveChannelCast()/
-            // InterruptChannelCast()) — rien d'autre à faire ici.
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>Déclenche l'anim d'attaque et pose l'état pending — la résolution réelle
-    /// (dégâts/effets/zone/trajectoire) n'arrive qu'à l'event d'impact ou au timeout de
-    /// secours, jamais ici. Sans attackAnimation assignée, résout immédiatement (comportement
-    /// identique à avant ce sous-chantier). Un MultiHit SANS attackAnimation reste sur l'ancien
-    /// chemin Execute()/ExecuteMultiHit (respecte HitStep.delay via coroutine) — il n'y a pas de
-    /// frame d'impact à attendre, entrer dans le pending-hit ferait perdre ce délai entre coups
-    /// (trouvé en vérification indépendante du plan).</summary>
-    private void StartPendingHit(SkillData skill, Entity target)
-    {
-        // Fire-and-forget, comme SkillBar.StartInstant()/StartMultiHit()/LaunchComboHit() côté
-        // Player — pas de handle stocké/nettoyé ici, contrairement à _channelVfxCast : un skill
-        // instantané ne s'interrompt jamais avant résolution, le prefab gère sa propre durée de
-        // vie (trouvé manquant lors d'une relecture du statut VFX Mob/PNJ).
-        if (skill.vfxCast != null)
-            Instantiate(skill.vfxCast, transform.position, Quaternion.identity);
-
-        bool isMulti = skill.executionType == SkillExecutionType.MultiHit
-                       && skill.hitSteps != null && skill.hitSteps.Count > 0;
-
-        if (isMulti && skill.attackAnimation == null)
-        {
-            _skillSystem?.Execute(skill, this, target);
-            if (data.skills != null && data.skills.Contains(skill))
-                _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
-            return;
-        }
-
-        _animatorController?.PlayAttack(skill.attackAnimation);
-
-        _pendingSkill   = skill;
-        _pendingTarget  = target;
-        _pendingIsMulti = isMulti;
-        _pendingMultiNextIndex = 0;
-        _pendingTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
-
-        if (_pendingTimeout <= 0f)
-            ResolvePendingHit(0);
-    }
-
-    /// <summary>Reçoit l'Animation Event relayé par MobAnimatorController.OnSkillHitFrame.</summary>
-    public void OnAnimationHitEvent(int hitIndex = 0)
-    {
-        if (_pendingSkill == null) return;   // event hors contexte, ignoré silencieusement
-        ResolvePendingHit(hitIndex);
-    }
-
-    /// <summary>Résout le hit en attente — branchement à 3 voies identique à avant ce
-    /// sous-chantier (hasDelayedImpact / isTrajectory / dispatch standard), sauf routage
-    /// MultiHit par index. Pose le cooldown du skill secondaire APRÈS résolution (pas au
-    /// déclenchement). Rejette un hitIndex hors séquence (event mal numéroté sur le clip —
-    /// piège trouvé en task-review : Unity met souvent l'argument int par défaut à 0 sur
-    /// CHAQUE event d'un clip MultiHit si on oublie de le changer, ce qui résoudrait le coup
-    /// de base plusieurs fois au lieu des hitSteps distincts, silencieusement).</summary>
-    private void ResolvePendingHit(int hitIndex)
-    {
-        if (_pendingSkill == null) return;
-
-        SkillData skill   = _pendingSkill;
-        Entity    target  = _pendingTarget;
-        bool      isMulti = _pendingIsMulti;
-
-        if (isMulti && hitIndex != _pendingMultiNextIndex)
-        {
-            Debug.LogWarning($"[MOB] Animation Event MultiHit reçu avec hitIndex={hitIndex}, attendu={_pendingMultiNextIndex} — event mal numéroté sur le clip ?");
-            return;
-        }
-
-        if (isMulti)
-        {
-            _skillSystem?.ResolveMultiHitStep(skill, this, target, hitIndex);
-            _pendingMultiNextIndex++;
-            int totalHits = 1 + (skill.hitSteps?.Count ?? 0);
-            if (_pendingMultiNextIndex < totalHits) return;   // encore des hits à venir
-        }
-        else
-        {
-            if (skill.hasDelayedImpact)
-                _skillSystem?.PlantDelayedZone(skill, this, target);
-            else if (skill.isTrajectory)
-                _skillSystem?.StartTrajectory(skill, this);
-            else
-                _skillSystem?.ResolveExecute(skill, this, target);
-        }
-
-        _pendingSkill   = null;
-        _pendingTarget  = null;
-        _pendingTimeout = 0f;
-        _pendingIsMulti = false;
-
-        // CD posé ici (résolution), pas au déclenchement — même principe que le chantier B côté
-        // Player. Ne concerne que les skills secondaires (data.skills) — l'attaque de base
-        // utilise attackTimer, déjà reposé au déclenchement dans HandleAttack().
-        if (data.skills != null && data.skills.Contains(skill))
-            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
-    }
-
-    // =========================================================
-    // CANALISATION (castTime > 0) — sous-chantier 2
-    // =========================================================
-
-    private void StartChannelCast(SkillData skill, Entity target)
-    {
-        _isChanneling  = true;
-        _channelSkill  = skill;
-        _channelTarget = target;
-
-        _animatorController?.PlayChannel(skill.channelAnimation);
-
-        _channelVfxCast = skill.vfxCast != null
-            ? Instantiate(skill.vfxCast, transform.position, Quaternion.identity)
-            : null;
-
-        _channelBar = CastBarSpawner.Show(
-            label:        skill.skillName.Get(LocalizationManager.CurrentLanguage),
-            duration:     skill.castTime,
-            followTarget: transform,
-            onComplete:   ResolveChannelCast,
-            onCancel:     () => InterruptChannelCast(voluntary: true, reason: "bar volée")
-        );
-    }
-
-    private void ResolveChannelCast()
-    {
-        if (!_isChanneling) return;   // garde-fou si déjà interrompu entre-temps
-
-        SkillData skill  = _channelSkill;
-        Entity    target = _channelTarget;
-
-        EndChannelCastState();
-
-        if (skill.hasDelayedImpact)
-            _skillSystem?.PlantDelayedZone(skill, this, target);
-        else if (skill.isTrajectory)
-            _skillSystem?.StartTrajectory(skill, this);
-        else
-            _skillSystem?.Execute(skill, this, target);
-
-        if (data.skills != null && data.skills.Contains(skill))
-            _skillCooldowns[skill] = skill.cooldown > 0f ? skill.cooldown : 6f;
-    }
-
-    /// <summary>voluntary = true (cible morte, bar volée en interne — CD moitié) | false
-    /// (CC/mort subie — CD complet). Même règle que SkillBar.InterruptChannel() côté Player.
-    /// Capture _channelBar AVANT EndChannelCastState() puis annule la bar APRÈS — ORDRE
-    /// CRITIQUE (trouvé en vérification indépendante du plan) : si la bar était annulée AVANT,
-    /// son callback onCancel réentrant (() => InterruptChannelCast(voluntary: true, ...))
-    /// s'exécuterait pendant que _isChanneling est encore vrai et poserait le CD demi avant que
-    /// CET appel n'atteigne son propre garde — un hard CC finirait TOUJOURS avec le CD demi au
-    /// lieu du CD complet, silencieusement. Seule cette méthode a le droit d'appeler
-    /// _channelBar.Cancel() — tous les autres appelants (poll Update(), GoReturn(), Die())
-    /// appellent seulement InterruptChannelCast(...) et laissent CETTE méthode gérer la bar.</summary>
-    private void InterruptChannelCast(bool voluntary, string reason)
-    {
-        if (!_isChanneling) return;
-
-        SkillData      skill = _channelSkill;
-        CastBarSpawner bar   = _channelBar;
-
-        EndChannelCastState();   // _isChanneling = false AVANT bar.Cancel() — voir résumé ci-dessus
-
-        bar?.Cancel();           // callback onCancel réentrant tombe sur !_isChanneling, no-op
-        _animatorController?.CancelChannel();
-
-        if (data.skills != null && data.skills.Contains(skill))
-        {
-            // Même fallback 6f que ResolveChannelCast()/ResolvePendingHit() — sans lui, un
-            // skill castTime>0 avec cooldown=0f interrompu par un hard CC repostait un CD de
-            // 0f, et comme le garde de ré-entrée (_isChanneling) se referme dans la MÊME frame
-            // que ce posage, rien n'empêchait un redéclenchement immédiat — boucle
-            // instanciation/destruction par frame tant que le CC dure (trouvé en review finale,
-            // exposition PNJ encore plus large : HandleCombatAI() n'a aucun garde-fou CC générique).
-            float baseCd = skill.cooldown > 0f ? skill.cooldown : 6f;
-            _skillCooldowns[skill] = voluntary ? baseCd * 0.5f : baseCd;
-        }
-
-        Debug.Log($"[MOB] Canalisation interrompue ({reason}) — {(voluntary ? "CD demi" : "CD complet")}.");
-    }
-
-    private void EndChannelCastState()
-    {
-        _isChanneling  = false;
-        _channelSkill  = null;
-        _channelTarget = null;
-
-        if (_channelVfxCast != null) { Destroy(_channelVfxCast); _channelVfxCast = null; }
-        // _channelBar n'est PAS annulé ici — InterruptChannelCast() s'en charge APRÈS cet appel
-        // (voir son commentaire ci-dessus). ResolveChannelCast() (fin normale, la bar a déjà
-        // terminé d'elle-même) n'a rien à annuler non plus. Juste null la référence.
-        _channelBar = null;
-    }
-
-    // =========================================================
-    // RETURN
-    // =========================================================
-
-    private void HandleReturn()
-    {
-        if (!agent.hasPath || agent.pathStatus == NavMeshPathStatus.PathInvalid)
-            agent.SetDestination(spawnPos);
-
-        if (Vector3.Distance(transform.position, spawnPos) <= 2f)
-        {
-            agent.ResetPath();
-            agent.Warp(spawnPos);
-            FullReset();
-        }
-    }
-
-    private void GoReturn()
-    {
-        currentState = MobState.Return;
-        agent.SetDestination(spawnPos);
-
-        // Un pending-hit en vol ne doit pas résoudre plus tard sur une cible désormais hors
-        // combat — FullReset() (appelé seulement à l'ARRIVÉE au spawn, secondes plus tard) est
-        // trop tardif pour ça, le timeout du pending a déjà quasi toujours résolu entre-temps.
-        // GoReturn() est appelé au moment RÉEL du désengagement (leash dépassé, cible perdue),
-        // donc c'est ici que le nettoyage doit avoir lieu (trouvé en review finale — parité
-        // avec le nettoyage déjà posé au même moment côté PNJ.HandleCombatAI()).
-        _pendingSkill   = null;
-        _pendingTarget  = null;
-        _pendingTimeout = 0f;
-        _pendingIsMulti = false;
-
-        // Même raisonnement pour la canalisation (sous-chantier 2) — un Mob qui se désengage en
-        // pleine canalisation ne doit pas la voir résoudre plus tard sur une cible hors combat.
-        // NE PAS appeler _channelBar?.Cancel() ici — InterruptChannelCast() s'en charge elle-
-        // même, dans le bon ordre (voir son commentaire, Step 6).
-        if (_isChanneling)
-            InterruptChannelCast(voluntary: true, reason: "désengagement");
-    }
-
-    private void BeginChase()
-    {
-        isWaiting    = false;
-        aggroPos     = transform.position;
-        currentState = MobState.Chase;
-    }
-
-    private void FullReset()
-    {
-        currentHP         = maxHP;
-        currentMana       = maxMana;
-        isWaiting         = false;
-        patrolPointsSet   = false;
-        currentState      = MobState.Patrol;
-        _skillCooldowns.Clear();
-
-        // Un Mob qui rentre au spawn (leash) en plein milieu de l'anim de son attaque ne doit
-        // pas voir ce coup résoudre plus tard sur une cible désormais hors combat — trouvé en
-        // task-review.
-        _pendingSkill   = null;
-        _pendingTarget  = null;
-        _pendingTimeout = 0f;
-        _pendingIsMulti = false;
+        currentHP   = maxHP;
+        currentMana = maxMana;
         enemyList.Clear();
+        aggroSet.Clear();
         damageContributions.Clear();
         totalDamageTaken = 0f;
         lastSkillByAttacker.Clear();
-
-        // Nettoie tous les effets actifs — un mob qui rentre au spawn repart sans debuffs. GDD v3.5 §3.3.
         statusEffects?.ResetDebuffResistances();
         RequestRecalculate();
     }
+
+    /// <summary>Reçoit l'Animation Event relayé par MobAnimatorController.OnSkillHitFrame.</summary>
+    public void OnAnimationHitEvent(int hitIndex = 0) => _combatAI.OnAnimationHitEvent(hitIndex);
 
     // =========================================================
     // DÉGÂTS — aggro + contributions
@@ -844,16 +327,11 @@ public class Mob : Entity
         base.TakeDamage(amount, sourceElement, source);
 
         // ── Aggro automatique — GDD v3.5 §3.3 ────────────────
-        // Tout mob agressé entre en Chase même s'il est Passif
-        if (!isDead &&
-            currentState != MobState.Chase  &&
-            currentState != MobState.Attack &&
-            currentState != MobState.Return)
-        {
-            aggroPos = transform.position;
-            isWaiting = false;
-            currentState = MobState.Chase;
-        }
+        // Tout mob agressé entre en combat même s'il est Passif. `source` BRUT, pas `attacker`
+        // résolu ci-dessus (qui vaut null pour tout ce qui n'est pas un Player) — un Mob frappé
+        // par un PNJ Garde doit quand même le cibler en retour (trouvé en écrivant le plan).
+        if (!isDead)
+            _combatAI.ForceEngage(source);
     }
 
     /// <summary>
@@ -888,16 +366,11 @@ public class Mob : Entity
     protected override void Die()
     {
         base.Die();
-        agent.ResetPath();
-        agent.enabled = false;
 
-        // Canalisation en vol au moment de la mort (sous-chantier 2) — nettoyée AVANT de
-        // désactiver ce composant, sinon la barre/le vfxCast/l'anim resteraient affichés
-        // jusqu'à la fin naturelle du timer sur un Mob déjà mort (trouvé en vérification
-        // indépendante du plan). NE PAS appeler _channelBar?.Cancel() directement —
-        // InterruptChannelCast() s'en charge dans le bon ordre (voir Step 6).
-        if (_isChanneling)
-            InterruptChannelCast(voluntary: false, reason: "mort");
+        // Nettoyage pending-hit/canalisation AVANT de désactiver quoi que ce soit — sinon la
+        // barre/le vfxCast/l'anim resteraient affichés sur un Mob déjà mort.
+        _combatAI.NotifyDeath();
+        agent.enabled = false;
 
         this.enabled = false;
 
@@ -995,11 +468,7 @@ public class Mob : Entity
     public void AggroFrom(Entity attacker)
     {
         if (isDead || attacker == null) return;
-        if (!enemyList.Contains(attacker))
-            enemyList.Add(attacker);
-        aggroPos     = transform.position;
-        isWaiting    = false;
-        currentState = MobState.Chase;
+        _combatAI.ForceEngage(attacker);
     }
 
     /// <summary>True si le mob peut être capturé (HP sous le seuil).</summary>
@@ -1020,43 +489,6 @@ public class Mob : Entity
     // =========================================================
     // UTILITAIRES PRIVÉS
     // =========================================================
-
-    private bool IsInRange(Entity target, float range)
-    {
-        if (target == null) return false;
-        return Vector3.Distance(transform.position, target.transform.position) <= range;
-    }
-
-    /// <summary>Plus grande range configurée parmi basicAttackSkill + data.skills — décide
-    /// quand ce Mob arrête de s'approcher pour engager (jamais MobData.attackRange, retiré :
-    /// toujours vérifier sur SkillData, trouvé en test manuel — un skill secondaire à longue
-    /// portée obligeait sinon le Mob à rentrer en mêlée avant de pouvoir l'utiliser).</summary>
-    private float GetMaxSkillRange()
-    {
-        float max = data.basicAttackSkill != null && data.basicAttackSkill.range > 0f
-            ? data.basicAttackSkill.range
-            : 2f;
-
-        if (data.skills != null)
-        {
-            foreach (var skill in data.skills)
-            {
-                if (skill == null) continue;
-                if (skill.range > max) max = skill.range;
-            }
-        }
-
-        return max;
-    }
-
-    private bool IsBeyondLeash()
-    {
-        // ⚠ Ne pas court-circuiter sur enemyList vide :
-        // si tous les ennemis sortent de la detectionRange, RefreshEnemyList vide la liste
-        // mais le mob doit quand même rentrer s'il s'est éloigné de son aggroPos.
-        float leash = data.detectionRange * data.leashMultiplier;
-        return Vector3.Distance(transform.position, aggroPos) > leash;
-    }
 
     private void LookAt(Transform target)
     {
@@ -1091,12 +523,10 @@ public class Mob : Entity
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, data.detectionRange);
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, GetMaxSkillRange());
+        Gizmos.DrawWireSphere(transform.position, _combatAI != null ? _combatAI.EngageRange : 0f);
         Gizmos.color = Color.blue;
         Gizmos.DrawWireSphere(origin, data.detectionRange * data.leashMultiplier);
         Gizmos.color = new Color(0f, 1f, 0f, 0.4f);
         Gizmos.DrawWireSphere(origin, data.patrolRadius);
     }
 }
-
-public enum MobState { Patrol, Chase, Attack, Return }
