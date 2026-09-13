@@ -71,7 +71,7 @@ the *why* behind several non-obvious decisions this plan only references by sect
   `HasAnyEnemyNearby()`, `OnForcedEngage(Entity)`, `OnReturnToPatrol()`, `OnEngageStart()`);
   class `CombatAIController` with public members `CurrentState`, `IsPendingHit`, `IsChanneling`,
   `EngageRange`, and methods `Initialize(...)`, `Tick()`, `PollChannelInterrupt()`,
-  `ForceEngage(Entity)`, `NotifyDeath()`, `OnAnimationHitEvent(int)`.
+  `ForceEngage(Entity)`, `NotifyDeath()`, `OnAnimationHitEvent(int)`, `ResetCooldowns()`.
 - Consumes: nothing from other tasks — this is the foundation every other task builds on.
 
 - [ ] **Step 1: Write the complete file**
@@ -113,7 +113,7 @@ public interface ICombatAIProfile
     SkillData       BasicAttackSkill  { get; }
     List<SkillData> SecondarySkills   { get; }
     float           PatrolRadius      { get; }   // 0 = reste au spawn (pas de roam)
-    float           LeashDistance     { get; }   // distance MAX autorisée depuis LeashAnchor
+    float           LeashDistance     { get; }   // distance MAX autorisée depuis LeashAnchor ; <= 0 = illimité (jamais de désengagement auto)
     Vector3         LeashAnchor       { get; }   // Mob : aggroPos (dynamique) ; PNJ : spawn (fixe)
     bool            AutoEngageOnSight { get; }   // true = passe en Engage dès qu'un ennemi est détecté
 
@@ -272,7 +272,13 @@ public class CombatAIController : MonoBehaviour
 
     private void TickEngage()
     {
-        if (Vector3.Distance(_owner.transform.position, _profile.LeashAnchor) > _profile.LeashDistance)
+        // LeashDistance <= 0 = illimité, jamais de désengagement automatique — préserve le
+        // comportement actuel de PNJData.leashRadius (0 documenté comme "illimité" sur le champ
+        // lui-même) ; trouvé en relisant ce plan avant exécution, sans ce garde un Garde
+        // configuré à 0 se désengagerait dès son premier pas hors spawn au lieu de ne jamais
+        // lâcher prise.
+        if (_profile.LeashDistance > 0f &&
+            Vector3.Distance(_owner.transform.position, _profile.LeashAnchor) > _profile.LeashDistance)
         {
             GoReturn();
             return;
@@ -432,6 +438,17 @@ public class CombatAIController : MonoBehaviour
     {
         if (_pendingSkill == null) return;
         ResolvePendingHit(hitIndex);
+    }
+
+    /// <summary>Vide tous les cooldowns de skills secondaires — utilisé par
+    /// PNJ.RespawnCoroutine() (un PNJ qui respawn après sa mort repart à zéro, contrairement à un
+    /// simple désengagement via OnReturnToPatrol(), qui ne touche pas aux cooldowns). Trouvé en
+    /// relisant PNJ.cs pendant la revue finale de ce plan : RespawnCoroutine() fait
+    /// `_skillCooldowns.Clear()` directement aujourd'hui, un champ que cette migration retire de
+    /// PNJ — sans cette méthode, Task 5 casserait la compilation.</summary>
+    public void ResetCooldowns()
+    {
+        _skillCooldowns.Clear();
     }
 
     // =========================================================
@@ -735,14 +752,29 @@ Add immediately after it:
     public MobAIType aiType = MobAIType.Aggressive;
 ```
 
-- [ ] **Step 2: Compile check**
+- [ ] **Step 2: Update two stale top-of-file comments (cosmetic, found in final review)**
+
+`PNJData.cs`'s header comments still name `HandleCombatAI()`, which Task 5 deletes. Find (two
+separate lines, not adjacent):
+```
+//   canFight = true → PNJ.cs active HandleCombatAI() via SkillSystem.
+```
+and
+```
+    // le même HandleCombatAI() via SkillSystem.Execute().
+```
+Replace `HandleCombatAI()` with `CombatAIController.Tick()` in both. Purely cosmetic — these are
+comments, not code, so skipping this step would not break the build — but leaving a doc comment
+pointing at a method this same plan deletes is worth avoiding while already in the area.
+
+- [ ] **Step 3: Compile check**
 
 Open Unity, let it recompile. `MobAIType` is defined in `Data/Mobs/MobData.cs` in the global
 namespace — no `using` needed.
 
 Expected: 0 compile errors.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add Data/PNJ/PNJData.cs
@@ -978,7 +1010,9 @@ Replace with:
 - [ ] **Step 4: Rewrite `Update()`**
 
 Find the entire method (from `protected override void Update()` through its closing `}`,
-immediately before the `// ENEMYLIST` section header):
+immediately before the `// ENEMYLIST` section header). **This block is reproduced verbatim from
+the current file, comments included — match it exactly, do not paraphrase or shorten any
+comment when searching for it:**
 ```csharp
     protected override void Update()
     {
@@ -998,7 +1032,18 @@ immediately before the `// ENEMYLIST` section header):
         }
 
         // Poll d'interrupt de la canalisation — hard CC (non-volontaire, CD complet) ou cible
-        // morte (volontaire, CD demi). ...
+        // morte (volontaire, CD demi). Les dégâts simples n'interrompent PAS, même règle que
+        // SkillBar côté Player (vérifiée dans le code réel, pas une nouveauté). PAS de terme
+        // isDead ici — Update() a déjà un early-return dessus juste au-dessus (ligne
+        // `if (isDead || data == null) return;`), donc cette branche ne serait jamais atteinte ;
+        // la mort est couverte séparément par le nettoyage explicite dans Die() (Step 7bis).
+        // InterruptChannelCast() gère elle-même l'annulation de _channelBar (voir Step 6) — ne
+        // JAMAIS appeler _channelBar?.Cancel() ici (trouvé en vérification indépendante du
+        // plan : appeler Cancel() avant InterruptChannelCast ferait exécuter le callback
+        // onCancel réentrant — () => InterruptChannelCast(voluntary: true, ...) — PENDANT que
+        // _isChanneling est encore vrai, posant silencieusement le CD demi avant même que cet
+        // appel explicite, potentiellement voluntary:false, n'atteigne son propre garde et
+        // no-op — un hard CC finirait TOUJOURS avec le CD demi au lieu du CD complet).
         if (_isChanneling)
         {
             bool hardCC = statusEffects != null && (statusEffects.isStunned ||
@@ -1019,7 +1064,11 @@ immediately before the `// ENEMYLIST` section header):
 
         if (IsDashing) return;
 
-        // Stun/Sleep — CC dur, GDD §3.1.1.1 ...
+        // Stun/Sleep — CC dur, GDD §3.1.1.1 : "bloque TOUTES les actions". Avant ce fix, seul
+        // HandleAttack() vérifiait isStunned (l'attaque était bloquée mais le mob continuait
+        // de patrouiller/chasser normalement) et isSleeping n'était vérifié NULLE PART pour
+        // bloquer une action (seulement utilisé pour le réveil au premier dégât reçu) — gel
+        // complet ici, un seul endroit, plutôt que dans chaque Handle* séparément.
         bool isCCd = statusEffects != null && (statusEffects.isStunned || statusEffects.isSleeping || statusEffects.isShocked || statusEffects.isFreezed);
         if (agent != null && agent.isOnNavMesh) agent.isStopped = isCCd;
         if (isCCd) return;
@@ -1257,6 +1306,14 @@ delete the private fields these methods used that have not already been handled 
 `_pendingIsMulti`, `_pendingMultiNextIndex`, `IsPendingHit` (the property), `_isChanneling`,
 `_channelSkill`, `_channelTarget`, `_channelVfxCast`, `_channelBar`, `patrolPointsSet`,
 `isWaiting`, `waitTimer`.
+
+Also delete `IsInRange(Entity target, float range)` and `IsBeyondLeash()` from the
+`// UTILITAIRES PRIVÉS` section near the bottom of the file — found while cross-checking this
+plan against the real file: every call site of both (`Mob.cs` lines 368, 404, 423, 446, 489, 586
+as of this plan's writing) lives inside a method this step already deletes, and
+`CombatAIController` reimplements both checks inline rather than as named helpers. Leaving them
+in would compile fine (C# doesn't error on unused private methods) but would be confusing dead
+code in a file this plan is meant to shrink, not leave cluttered.
 
 - [ ] **Step 8: Re-add a small `OnAnimationHitEvent` that forwards to the controller**
 
@@ -1553,17 +1610,18 @@ Replace with:
 
         if (data != null && data.canFight)
         {
-            _agent = GetComponent<NavMeshAgent>();
-            if (_agent != null)
-                _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
-
             // Ajouté dynamiquement, pas via [RequireComponent] sur la classe — un PNJ non
             // combattant (civil, décoratif) ne doit jamais se voir forcer un NavMeshAgent par la
-            // chaîne de RequireComponent de CombatAIController. Le prefab d'un PNJ canFight doit
-            // déjà porter un NavMeshAgent (même exigence qu'avant cette migration) — sinon Unity
-            // en ajoute un par défaut ici via le RequireComponent de CombatAIController, non
-            // configuré, à corriger sur le prefab si ça arrive.
+            // chaîne de RequireComponent de CombatAIController. `_agent` est relu APRÈS
+            // AddComponent, PAS avant — CombatAIController requiert NavMeshAgent
+            // ([RequireComponent]), donc si le prefab n'en portait pas déjà un (il le devrait,
+            // même exigence qu'avant cette migration), Unity en ajoute un par défaut à l'instant
+            // de cet AddComponent ; lire _agent avant ce point l'aurait laissé null, et
+            // Initialize() aurait reçu ce null au lieu du NavMeshAgent réellement présent sur le
+            // GameObject — trouvé en relisant ce plan avant exécution.
             _combatAI = gameObject.AddComponent<CombatAIController>();
+            _agent    = GetComponent<NavMeshAgent>();
+            _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
             _combatAI.Initialize(this, _agent, _skillSystem, this, _animatorController, _spawnPos);
         }
     }
@@ -1571,7 +1629,8 @@ Replace with:
 
 - [ ] **Step 3: Rewrite `Update()`**
 
-Find the entire method:
+Find the entire method. **Reproduced verbatim from the current file, comments included — match
+it exactly:**
 ```csharp
     protected override void Update()
     {
@@ -1595,7 +1654,14 @@ Find the entire method:
                 ResolvePendingHit(_pendingIsMulti ? _pendingMultiNextIndex : 0);
         }
 
-        // Poll d'interrupt de la canalisation ...
+        // Poll d'interrupt de la canalisation — même règle que Mob.cs (hard CC = CD complet,
+        // cible morte = CD demi, dégâts simples n'interrompent PAS). PAS de terme isDead ici —
+        // même raison que Mob.cs (Update() a déjà un early-return dessus juste au-dessus) ; la
+        // mort est couverte séparément par Die() (Step 8). InterruptChannelCast() gère elle-
+        // même l'annulation de _channelBar — ne JAMAIS appeler _channelBar?.Cancel() ici (voir
+        // le commentaire détaillé sur InterruptChannelCast(), Step 7 — appeler Cancel() avant
+        // ferait exécuter le callback onCancel réentrant pendant que _isChanneling est encore
+        // vrai, posant silencieusement le CD demi même sur un hard CC).
         if (_isChanneling)
         {
             bool hardCC = statusEffects != null && (statusEffects.isStunned ||
@@ -1759,23 +1825,30 @@ Replace with:
     }
 ```
 
-- [ ] **Step 5: Delete the entire combat-loop block**
+- [ ] **Step 5: Delete the old combat-loop methods — by name, NOT by "everything in this range"**
 
-Delete every method between the `// IA COMBAT` section header and the
-`private void LookAt(Transform target)` utility method (exclusive of `LookAt` itself, which
-stays — it's still used, now called from inside `CombatAIController`, but `PNJ.LookAt()` is no
-longer called from `PNJ.cs`... actually it IS no longer called from anywhere in `PNJ.cs` after
-this deletion, since `CombatAIController` has its own private `LookAt()`. Delete `PNJ.LookAt()`
-too (it becomes dead code) — see the full deletion list below.):
+**Do not delete by physical range.** Step 4 already inserted `RefreshEnemyList()`, the new
+`FindClosestEnemy()`, and the `ICombatAIProfile` block in the exact spot the OLD
+`FindClosestEnemy()` used to occupy — physically between the `// IA COMBAT` header and
+`LookAt()`. A "delete everything between header X and method Y" instruction would delete that
+brand-new code along with the old code it's meant to replace. Delete ONLY the methods named
+below, individually, by name:
 
-Delete `HandleCombatAI()`, `TryUseSecondarySkill()`, `StartPendingHit()`, `OnAnimationHitEvent`
-(a NEW, smaller version is re-added in Step 6, same as Task 4 Step 8), `ResolvePendingHit()`,
+`HandleCombatAI()`, `TryUseSecondarySkill()`, `StartPendingHit()`, `OnAnimationHitEvent` (a NEW,
+smaller version is re-added in Step 6, same as Task 4 Step 8), `ResolvePendingHit()`,
 `StartChannelCast()`, `ResolveChannelCast()`, `InterruptChannelCast()`, `EndChannelCastState()`,
-`GetMaxSkillRange()` (moved into `CombatAIController`), `ReturnToSpawn()`, and `LookAt()`. Also
-delete the leftover fields `_combatTarget`, `_attackTimer`, `_skillCooldowns`, `_pendingSkill`,
-`_pendingTarget`, `_pendingTimeout`, `_pendingIsMulti`, `_pendingMultiNextIndex`, `IsPendingHit`
-(property — this one already deleted in Step 1's replacement, confirm it's gone),
-`BasicRangeExitFactor`/`_wasInBasicRange` (already deleted in Step 1's replacement, confirm).
+`GetMaxSkillRange()` (moved into `CombatAIController`), `ReturnToSpawn()`, and
+`LookAt(Transform target)` (becomes dead code — `CombatAIController` has its own private
+`LookAt()`, and nothing in `PNJ.cs` calls this one anymore once the methods above are gone).
+
+Do NOT delete `RefreshEnemyList()`, `FindClosestEnemy()`, or anything in the
+`// ICombatAIProfile` block — all three were just added by Step 4 and must survive this step.
+
+Also delete the leftover fields `_combatTarget`, `_attackTimer`, `_skillCooldowns`,
+`_pendingSkill`, `_pendingTarget`, `_pendingTimeout`, `_pendingIsMulti`,
+`_pendingMultiNextIndex`, `IsPendingHit` (property — this one already deleted in Step 1's
+replacement, confirm it's gone), `BasicRangeExitFactor`/`_wasInBasicRange` (already deleted in
+Step 1's replacement, confirm).
 
 - [ ] **Step 6: Re-add a small `OnAnimationHitEvent` that forwards to the controller**
 
@@ -1848,16 +1921,39 @@ Replace with:
         if (data.respawnDelay > 0f)
 ```
 
-- [ ] **Step 9: Compile check**
+- [ ] **Step 9: Fix `RespawnCoroutine()`'s now-deleted field reference**
+
+`RespawnCoroutine()` is NOT part of the block Step 5 deletes, but it references `_skillCooldowns`
+directly — a field Step 1/5 removed from `PNJ` (moved into `CombatAIController`). Found while
+reviewing this plan against the real file: without this fix, Task 5 would not compile.
+
+Find (inside `RespawnCoroutine()`):
+```csharp
+        isDead             = false;
+        currentHP          = maxHP;
+        currentMana        = maxMana;
+        transform.position = _spawnPos;
+        _skillCooldowns.Clear();
+```
+Replace with:
+```csharp
+        isDead             = false;
+        currentHP          = maxHP;
+        currentMana        = maxMana;
+        transform.position = _spawnPos;
+        _combatAI?.ResetCooldowns();
+```
+
+- [ ] **Step 10: Compile check**
 
 Open Unity, let it recompile.
 
 Expected: 0 compile errors. Any error inside `PNJ.cs` about a missing field means Step 5's
-deletion list missed something still referenced — check the exact field name in the error and
-confirm it was on the deletion list; if it's a field this plan didn't anticipate, fix it and note
-the discrepancy rather than silently improvising.
+deletion list (or Step 9 above) missed something still referenced — check the exact field name
+in the error; if it's a field this plan didn't anticipate, fix it and note the discrepancy rather
+than silently improvising.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add Entities/PNJ.cs
@@ -1915,7 +2011,11 @@ below and reports back anything that doesn't match.
     `EndChannelCastState` ordering.
 11. Leash (general): Mob and PNJ both return to spawn correctly beyond their respective leash
     distance, with no pending-hit/channel ghost-resolving after disengagement.
-12. **New in this plan, not originally in the spec's own checklist**: confirm a Mob or PNJ no
+12. **New in this plan, found in final review**: if any `PNJData` Guard has `leashRadius = 0`
+    ("illimité" per its own tooltip), confirm it now chases indefinitely without ever
+    auto-returning to spawn — before this fix, any zero leash value would have caused an instant
+    disengage on the Guard's very first step away from its post.
+13. **New in this plan, not originally in the spec's own checklist**: confirm a Mob or PNJ no
     longer needs to get all the way to `GetMaxSkillRange() * 1.2` before re-engaging at melee —
     it should now commit to closing the gap the moment it's within `GetMaxSkillRange()` (no
     multiplier). This is an intentional simplification (Global Constraints, point 4) — the thing

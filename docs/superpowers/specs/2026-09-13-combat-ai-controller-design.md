@@ -85,7 +85,7 @@ public interface ICombatAIProfile
     SkillData       BasicAttackSkill  { get; }
     List<SkillData> SecondarySkills   { get; }
     float           PatrolRadius      { get; }   // 0 = reste au spawn (pas de roam)
-    float           LeashDistance     { get; }   // distance MAX autorisée depuis LeashAnchor avant désengagement
+    float           LeashDistance     { get; }   // distance MAX autorisée depuis LeashAnchor ; <= 0 = illimité (jamais de désengagement auto — préserve `PNJData.leashRadius`, déjà documenté "0 = illimité" sur ce champ ; trouvé lors de la revue finale du plan, avant lui rien ne gérait ce cas spécial) avant désengagement
     Vector3         LeashAnchor       { get; }   // point de référence du leash — Mob : aggroPos (dynamique, voir OnEngageStart) ; PNJ : spawn fixe (constant, jamais modifié — trouvé en session : PNJ mesure aujourd'hui depuis son spawn, pas depuis un point d'engagement mobile comme Mob, décision explicite de Florian de NE PAS changer ça)
     bool            AutoEngageOnSight { get; }   // true = passe en Engage dès qu'un ennemi est détecté — Mob/PNJ : aiType == Aggressive (§5bis)
     Entity          FindClosestEnemy();          // taunt-aware, retourne null si aucun candidat — pool dépendant de l'owner, voir §5bis
