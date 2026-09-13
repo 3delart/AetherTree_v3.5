@@ -159,6 +159,15 @@ public class PNJ : Entity
         base.Update();
         if (isDead) return;
 
+        // ── DEBUG TEMPORAIRE — diagnostic sink-au-sol, à retirer une fois trouvé ──
+        if (data != null && data.canFight && _agent != null)
+        {
+            bool onMesh = _agent.isOnNavMesh;
+            if (!onMesh || _agent.enabled == false)
+                Debug.LogWarning($"[PNJ-DEBUG] {data.pnjName} Y={transform.position.y:F3} " +
+                                  $"agentEnabled={_agent.enabled} onMesh={onMesh}");
+        }
+
         // Timeout de secours (event d'impact jamais reçu) — même principe que Mob.cs.
         if (_pendingSkill != null)
         {
