@@ -428,18 +428,25 @@ public class Mob : Entity
         // en vérification indépendante du plan — voir Global Constraints).
         if (attackTimer <= 0f && !IsPendingHit && !_isChanneling)
         {
-            attackTimer = data.attackCooldown;
-
             // Double vérification avant de lancer l'attaque
             if (!isDead && !target.isDead && data.basicAttackSkill != null)
             {
+                // Cooldown de l'attaque de base = celui du SkillData lui-même (pas
+                // MobData.attackCooldown, retiré — trouvé en test manuel : ignoré, seule la
+                // durée d'anim comptait, confusion pour Florian). Même fallback que partout
+                // ailleurs dans ce fichier.
+                attackTimer = data.basicAttackSkill.cooldown > 0f ? data.basicAttackSkill.cooldown : 2f;
+
                 if (data.basicAttackSkill.castTime > 0f)
                     StartChannelCast(data.basicAttackSkill, target);
                 else
                     StartPendingHit(data.basicAttackSkill, target);
             }
             else if (data.basicAttackSkill == null)
+            {
+                attackTimer = 2f;
                 Debug.LogWarning($"[MOB] {data.mobName} n'a pas de basicAttackSkill — assigne un SkillData dans MobData.");
+            }
         }
     }
 
@@ -484,7 +491,10 @@ public class Mob : Entity
                 StartChannelCast(skill, target);
             else
                 StartPendingHit(skill, target);
-            attackTimer = data.attackCooldown;
+            // attackTimer (délai générique, pas _skillCooldowns[skill] — posé séparément à la
+            // résolution) reprend le CD du skill qui vient de partir, plus de MobData.attackCooldown
+            // (retiré).
+            attackTimer = skill.cooldown > 0f ? skill.cooldown : 6f;
             return true;
         }
 

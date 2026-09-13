@@ -141,8 +141,8 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public WeaponCategory weaponCategory = WeaponCategory.Melee;
 
-    [Tooltip("Skill d'attaque de base — utilisé à chaque attackCooldown.\n" +
-             "Doit avoir targetType = Target et effectType = Damage.\nObligatoire si canFight.")]
+    [Tooltip("Skill d'attaque de base — son propre champ cooldown gère le délai entre deux\n" +
+             "attaques.\nDoit avoir targetType = Target et effectType = Damage.\nObligatoire si canFight.")]
     [ShowIf(nameof(canFight), true)]
     public SkillData basicAttackSkill;
 
@@ -161,10 +161,6 @@ public class PNJData : ScriptableObject
     [Tooltip("Portée d'attaque. 0 = utilise basicAttackSkill.range.")]
     [ShowIf(nameof(canFight), true)]
     public float attackRange = 0f;
-
-    [Tooltip("Cooldown de l'attaque de base en secondes.")]
-    [ShowIf(nameof(canFight), true)]
-    public float attackCooldown = 2f;
 
     [Tooltip("Vitesse de déplacement en mode combat. 0 = utilise baseMoveSpeed.")]
     [ShowIf(nameof(canFight), true)]

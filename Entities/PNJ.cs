@@ -35,8 +35,10 @@ using System.Collections.Generic;
 //     skills            : liste de skills secondaires (optionnel)
 //     aggroRadius       : rayon de détection des mobs
 //     attackRange       : portée d'attaque (fallback = skill.range)
-//     attackCooldown    : cooldown de l'attaque de base
 //     combatMoveSpeed   : vitesse en mode combat (0 = utilise moveSpeed)
+//
+//   Cooldown de l'attaque de base = basicAttackSkill.cooldown (PAS un champ PNJData séparé —
+//   retiré, ignoré par erreur en pratique, source de confusion trouvée en test manuel).
 //
 // Die() :
 //   Tout PNJ avec data.canDie == true peut mourir et respawner.
@@ -613,7 +615,10 @@ public class PNJ : Entity
                     else
                         StartPendingHit(data.basicAttackSkill, _combatTarget);
                 }
-                _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
+                // Cooldown de l'attaque de base = celui du SkillData lui-même (pas
+                // PNJData.attackCooldown, retiré — trouvé en test manuel : ignoré, seule la
+                // durée d'anim comptait, confusion pour Florian).
+                _attackTimer = data.basicAttackSkill.cooldown > 0f ? data.basicAttackSkill.cooldown : 2f;
             }
         }
         else
@@ -659,7 +664,10 @@ public class PNJ : Entity
                 StartChannelCast(skill, target);
             else
                 StartPendingHit(skill, target);
-            _attackTimer = data.attackCooldown > 0f ? data.attackCooldown : 2f;
+            // _attackTimer (délai générique, pas _skillCooldowns[skill] — posé séparément à la
+            // résolution) reprend le CD du skill qui vient de partir, plus de
+            // PNJData.attackCooldown (retiré).
+            _attackTimer = skill.cooldown > 0f ? skill.cooldown : 6f;
             return true;
         }
 
