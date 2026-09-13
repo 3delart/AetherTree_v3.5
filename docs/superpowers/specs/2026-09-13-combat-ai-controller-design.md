@@ -58,8 +58,10 @@ son spawn hors combat).
   comportement).
 - Ne renomme aucune API publique consommée ailleurs dans le projet
   (`Mob.CurrentState`/`MobState` restent, voir §7) sauf mention explicite.
-- Ne touche pas au ciblage lui-même (qui est ennemi de qui) — Mob cible Players+PNJ, PNJ cible
+- Ne touche pas au ciblage PAR ESPÈCE (qui est ennemi de qui) — Mob cible Players+PNJ, PNJ cible
   Mobs, cette différence reste encapsulée dans un delegate fourni par chaque owner (§4).
+  **Exception explicite** : la composition du pool de cibles pour un Mob Passif CHANGE de
+  comportement par rapport au GDD écrit — voir §5bis, décision assumée de Florian.
 
 ## 4. Architecture
 
@@ -81,9 +83,10 @@ public interface ICombatAIProfile
     List<SkillData> SecondarySkills   { get; }
     float           PatrolRadius      { get; }   // 0 = reste au spawn (pas de roam)
     float           LeashDistance     { get; }   // distance absolue depuis l'ancre d'aggro
-    bool            AutoEngageOnSight { get; }   // true = passe en Engage dès qu'un ennemi est détecté
-    Entity          FindClosestEnemy();          // taunt-aware, retourne null si aucun candidat
-    bool            HasAnyEnemyNearby();         // check bon marché pour Patrol (pas de calcul de distance)
+    bool            AutoEngageOnSight { get; }   // true = passe en Engage dès qu'un ennemi est détecté (Mob Aggressive, PNJ Guard)
+    Entity          FindClosestEnemy();          // taunt-aware, retourne null si aucun candidat — pool dépendant de l'owner, voir §5bis
+    bool            HasAnyEnemyNearby();         // check bon marché pour Patrol (seulement appelé si AutoEngageOnSight)
+    void            OnForcedEngage(Entity aggressor); // hook owner — voir §5bis (Mob y ajoute aggressor à son aggroSet)
 }
 
 [RequireComponent(typeof(NavMeshAgent))]
@@ -104,7 +107,9 @@ public class CombatAIController : MonoBehaviour
 
     // Force la transition Patrol → Engage indépendamment de AutoEngageOnSight — hook pour
     // Mob.TakeDamage() (aggro sur dégâts, mob Passif) et Mob/PNJ.AggroFrom() (pet attaqué).
-    public void ForceEngage();
+    // aggressor peut être null (ex: dégât de zone sans source directe) — dans ce cas la
+    // transition a lieu mais rien n'est ajouté à un éventuel aggroSet côté owner (voir §5bis).
+    public void ForceEngage(Entity aggressor);
 
     // Nettoyage pending-hit/canalisation — appelé par Die() de l'owner AVANT de désactiver quoi
     // que ce soit (même ordre que le code actuel : la bar/le vfxCast ne doivent pas rester
@@ -154,7 +159,7 @@ dans `Mob.cs` (3 sites) et `PNJ.cs` (2 sites).
 ## 5. Machine à états unifiée
 
 ```
-Patrol ──(AutoEngageOnSight && HasAnyEnemyNearby) || isTaunted || ForceEngage()──▶ Engage
+Patrol ──(AutoEngageOnSight && HasAnyEnemyNearby()) || IsTauntedWithValidSource() || ForceEngage(aggressor)──▶ Engage
 Patrol : PatrolRadius == 0 ? reste immobile au spawn : roam (GetNavMeshPoint + wait 2-5s), identique à Mob.HandlePatrol() actuel.
 
 Engage ──(FindClosestEnemy() == null)──▶ Return
@@ -184,17 +189,93 @@ Mob actuel généralisé aux deux) :
 - `isFeared` : fuite (direction opposée à la cible la plus proche), pas de décision skill
 - CC dur (`isStunned`/`isSleeping`/`isShocked`/`isFreezed`) : gel complet, `agent.isStopped = true`
 
+## 5bis. Modèle de ciblage Passif / Agressif — DÉVIATION ASSUMÉE vs GDD §3.7 écrit
+
+**Le GDD (§3.7 "Règles de Perception") décrit aujourd'hui** : `enemyList` = scan de proximité
+(`detectionRange`, Joueurs+Pets+PNJ) pour TOUS les mobs sans distinction Passif/Agressif ; la
+SEULE différence entre les deux types est le déclencheur d'entrée en Chase (spontané dès qu'un
+ennemi est détecté pour Aggressive ; uniquement sur `TakeDamage` pour Passive) — une fois en
+Chase, les deux ciblent "l'entité hostile la plus proche dans enemyList" indifféremment.
+
+**Florian a explicitement demandé un comportement différent** (validé en session, conflit avec
+le GDD écrit signalé et confirmé) : un mob **Passif** ne doit cibler QUE les entités qui l'ont
+frappé — jamais un bystander non-hostile même plus proche. Un mob **Agressif** garde le scan de
+proximité ET mémorise en plus quiconque le frappe (utile si un attaquant sort ensuite de
+`detectionRange` en kitant — il reste ciblé). Cette spec implémente la version de Florian ;
+**le document GDD devra être mis à jour séparément pour refléter §3.7 correctement** (hors
+scope de ce chantier de code).
+
+**Implémentation** — nouveau `HashSet<Entity> aggroSet` sur `Mob` (persistant entre frames,
+contrairement à `enemyList` qui est vidée à chaque `RefreshEnemyList()`) :
+
+```csharp
+private HashSet<Entity> aggroSet = new HashSet<Entity>();
+
+// Implémente ICombatAIProfile.OnForcedEngage — Mob.cs
+public void OnForcedEngage(Entity aggressor)
+{
+    if (aggressor != null && !aggressor.isDead) aggroSet.Add(aggressor);
+}
+
+private void RefreshEnemyList()
+{
+    enemyList.Clear();
+    aggroSet.RemoveWhere(e => e == null || e.isDead);
+
+    if (data.aiType == MobAIType.Aggressive)
+    {
+        // Scan de proximité existant (Physics.OverlapSphere sur detectionRange, filtre
+        // Player/PNJ, exclusion Stealth) — inchangé, alimente enemyList comme aujourd'hui.
+        ...
+    }
+
+    // Passive : enemyList reste VIDE après le scan (skippé ci-dessus) — seul aggroSet peuple
+    // la liste finale, ci-dessous, pour les DEUX types (Aggressive y ajoute ses attaquants
+    // sortis de detectionRange en plus de son scan de proximité).
+    foreach (Entity e in aggroSet)
+        if (!enemyList.Contains(e)) enemyList.Add(e);
+}
+```
+
+`GetClosestEnemy()` (taunt-aware, choix du plus proche) n'a besoin d'AUCUN changement — il scanne
+déjà `enemyList`, qui contient maintenant le bon pool selon `aiType` grâce au changement
+ci-dessus. `Mob.TakeDamage()` appelle `_combatAI.ForceEngage(attacker)` (au lieu de
+`ForceEngage()` sans argument) pour que l'attaquant soit ajouté à `aggroSet` AVANT la première
+évaluation de cible. `FullReset()` doit vider `aggroSet` en plus de `enemyList` (même moment,
+retour au spawn — sinon un Mob Passif garderait en mémoire un agresseur d'un combat précédent).
+
+**PNJ Garde** : pas de distinction Passif/Agressif pour l'instant (non demandé) — reste
+`AutoEngageOnSight = true` inconditionnel, scan de proximité classique
+(`FindClosestEnemy()` actuel), sans `aggroSet`. Si un Garde Passif est demandé plus tard, le
+même mécanisme s'applique identiquement via `ICombatAIProfile`.
+
+**Taunt — trou trouvé en auto-relecture, corrigé ici** : le code actuel de `HandlePatrol()`
+exige `enemyList.Count > 0` MÊME pour la branche taunt (`(aiType == Aggressive || isTaunted) &&
+enemyList.Count > 0`) — ça ne posait jamais problème avant `aggroSet`, puisque le scan de
+proximité tournait pour TOUS les mobs et un lanceur de Taunt est presque toujours dans
+`detectionRange` au moment du cast, donc déjà présent dans `enemyList`. Avec le nouveau modèle
+Passif (§5bis, `enemyList` = `aggroSet` uniquement, jamais peuplée par la proximité), un mob
+Passif tauntée-mais-jamais-frappé aurait un `aggroSet` vide et resterait bloqué en Patrol — RÉGRESSION
+du comportement Taunt actuel. **`IsTauntedWithValidSource()` ci-dessus est donc un check
+indépendant d'`ICombatAIProfile`/`enemyList`**, réalisé directement par `CombatAIController` sur
+`owner.statusEffects` (`isTaunted` + `GetDebuffSource(DebuffType.Taunt)` non-null et vivant) —
+même logique déjà dupliquée aujourd'hui en tête de `GetClosestEnemy()`/`FindClosestEnemy()` côté
+Mob/PNJ, réutilisable telle quelle sans dépendre du pool de ciblage.
+
 ## 6. Migration Mob.cs / PNJ.cs
 
 ### 6.1 `Mob.cs` — ce qui RESTE dans le fichier
 
 - `ApplyData()`, tout `Awake()` (stats, `MobStatCalculator`)
-- `RefreshEnemyList()`, `GetClosestEnemy()` — implémentent `ICombatAIProfile.FindClosestEnemy()`
-  et `HasAnyEnemyNearby()` (`enemyList.Count > 0`)
-- `TakeDamage()` — attribution des contributions, PUIS `if (!isDead) _combatAI.ForceEngage();`
-  (remplace l'actuel `currentState = MobState.Chase` conditionnel)
+- `RefreshEnemyList()` (aiType-aware, voir §5bis), `GetClosestEnemy()`, `OnForcedEngage()` —
+  implémentent `ICombatAIProfile.FindClosestEnemy()`/`HasAnyEnemyNearby()`
+  (`enemyList.Count > 0`)/`OnForcedEngage()`
+- nouveau champ `aggroSet` (§5bis) — vidé dans `FullReset()` aux côtés de `enemyList`
+- `TakeDamage()` — attribution des contributions, PUIS `if (!isDead) _combatAI.ForceEngage(attacker);`
+  (remplace l'actuel `currentState = MobState.Chase` conditionnel — `attacker` déjà résolu par
+  `ResolveAttacker(source)` juste au-dessus dans le code actuel)
 - `Die()` — calcul loot/`MobKilledEvent`, appelle `_combatAI.NotifyDeath()` avant de se désactiver
-- `AggroFrom()` — appelle `_combatAI.ForceEngage()`
+- `AggroFrom()` — appelle `_combatAI.ForceEngage(attacker)`
 - `GetDamageContribution()`, `RegisterLastSkill()`, `IsCaptureable()`, gizmos
 
 ### 6.2 `Mob.cs` — ce qui DISPARAÎT (déplacé dans `CombatAIController`)
@@ -317,7 +398,10 @@ valeur dans l'Inspector.
    Attack/Chase visible dans une session de combat prolongée (>30s, plusieurs cycles
    attaque/déplacement).
 3. Mob (Passive) : ignore un joueur qui passe à portée sans le taunter/toucher ; engage dès le
-   premier coup reçu (`TakeDamage` → `ForceEngage()`).
+   premier coup reçu (`TakeDamage` → `ForceEngage(attacker)`). Cas limite §5bis : 2 joueurs A et
+   B dans `detectionRange` (B plus proche que A) — A tape le mob → le mob cible A (l'attaquant),
+   PAS B même si B est plus proche. Si un attaquant kite hors `detectionRange`, le mob Passif le
+   suit quand même (reste dans `aggroSet`) au lieu de perdre sa cible.
 4. Mob : plus de "marche sur place" (Speed reste à 0 pendant toute l'attaque, `hasPath=False`).
 5. PNJ Garde : comportement combat identique à avant (skill spécial prioritaire, attaque de base
    sinon, portée respectée) — aucune régression perceptible.
