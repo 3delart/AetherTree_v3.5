@@ -470,7 +470,7 @@ public class SkillData : ScriptableObject
                               $"{executionType} — combinaison non gérée, la zone différée ne " +
                               "fonctionne qu'avec executionType = Normal (instant ou canalisé).", this);
 
-        // [ShowIf] masque hasDelayedImpact hors Target/GroundTarget/AoE_Target/Cone/Direction dans
+        // [ShowIf] masque hasDelayedImpact hors Self/AoE_Self/Target/GroundTarget/AoE_Target/Cone dans
         // l'Inspector, mais ne le RESET jamais si targetType change après coup (ShowIf n'a aucun
         // writeback) — le champ reste true, invisible, et PlantDelayedZone() tourne quand même au
         // runtime, repliant silencieusement le skill sur une sphère centrée sur le caster.
@@ -497,8 +497,8 @@ public class SkillData : ScriptableObject
                               "à un skill Target normal, qui l'ignore). Règle aoeRadius > 0, sinon " +
                               "la zone ne touche qu'une cible parfaitement immobile au point exact.", this);
 
-        // isTrajectory et hasDelayedImpact sont mutuellement exclusifs, SAUF Cone/Direction/
-        // GroundTarget — exception délibérée (demande Florian) : le sweep/l'expansion inflige son
+        // isTrajectory et hasDelayedImpact sont mutuellement exclusifs, SAUF Cone/GroundTarget/
+        // Target — exception délibérée (demande Florian) : le sweep/l'expansion inflige son
         // dégât immédiat ET une zone classique se plante en plus au bout du trajet (voir
         // SkillSystem.TrajectoryRoutine/TrajectoryConeRoutine — ex: mur de feu qui voyage vers le
         // point cliqué (GroundTarget) et laisse une zone brûlante à l'arrivée). Pour tout autre
@@ -514,11 +514,10 @@ public class SkillData : ScriptableObject
                               "non supportée pour ce targetType (seuls Cone/GroundTarget/Target " +
                               "l'autorisent). Décoche l'un des deux.", this);
 
-        // [ShowIf] masque isTrajectory hors GroundTarget/Direction/Target/AoE_Target/LineTarget/
-        // Skillshot/Cone dans l'Inspector, mais ne le RESET jamais si targetType change après
-        // coup (ShowIf n'a aucun writeback) — le champ reste true, invisible, et
-        // StartTrajectory() tourne quand même au runtime, traitant silencieusement le skill
-        // comme targetType = Direction (voir SkillSystem.StartTrajectory).
+        // [ShowIf] masque isTrajectory hors GroundTarget/Target/AoE_Target/Cone dans l'Inspector,
+        // mais ne le RESET jamais si targetType change après coup (ShowIf n'a aucun writeback) —
+        // le champ reste true, invisible, et StartTrajectory() tourne quand même au runtime,
+        // traitant silencieusement le skill comme le trajet générique (voir SkillSystem.StartTrajectory).
         bool isTrajectorySupportedTargetType =
             targetType == TargetType.GroundTarget || targetType == TargetType.Target ||
             targetType == TargetType.AoE_Target   || targetType == TargetType.Cone;

@@ -17,8 +17,8 @@ using UnityEngine.AI;
 
 public enum CombatAIState { Patrol, Engage, Return }
 
-/// <summary>Pont vers MobAnimatorController/PNJAnimatorController — signatures déjà identiques
-/// entre les deux aujourd'hui, cette interface ne fait que les déclarer formellement.</summary>
+/// <summary>Pont vers CombatEntityAnimatorController (composant unique partagé Mob/PNJ, voir
+/// World/CombatEntityAnimatorController.cs).</summary>
 public interface ICombatAnimator
 {
     void PlayAttack(AnimationClip clip);
@@ -354,8 +354,7 @@ public class CombatAIController : MonoBehaviour
         _pendingIsMulti = false;
     }
 
-    /// <summary>Relais direct depuis MobAnimatorController.OnSkillHitFrame /
-    /// PNJAnimatorController.OnSkillHitFrame.</summary>
+    /// <summary>Relais direct depuis CombatEntityAnimatorController.OnSkillHitFrame.</summary>
     public void OnAnimationHitEvent(int hitIndex = 0)
     {
         if (_pendingSkill == null) return;
@@ -472,10 +471,15 @@ public class CombatAIController : MonoBehaviour
         }
         else
         {
-            if (skill.hasDelayedImpact)
+            // isTrajectory vérifié EN PREMIER — un skill Cone/Target/GroundTarget avec les deux flags
+            // cochés (combo autorisé, voir SkillData.isTrajectory) doit passer par
+            // StartTrajectory(), qui plante lui-même la zone différée en plus du dégât immédiat.
+            // Priorité inversée sans risque pour tout le reste : un skill qui n'a qu'un seul des
+            // deux flags actif se comporte identiquement peu importe l'ordre des checks.
+            if (skill.isTrajectory)
+                _skillSystem?.StartTrajectory(skill, _owner, target);
+            else if (skill.hasDelayedImpact)
                 _skillSystem?.PlantDelayedZone(skill, _owner, target);
-            else if (skill.isTrajectory)
-                _skillSystem?.StartTrajectory(skill, _owner);
             else
                 _skillSystem?.ResolveExecute(skill, _owner, target);
         }
@@ -522,10 +526,11 @@ public class CombatAIController : MonoBehaviour
 
         EndChannelCastState();
 
-        if (skill.hasDelayedImpact)
+        // Ordre inversé — voir commentaire équivalent dans ResolvePendingHit().
+        if (skill.isTrajectory)
+            _skillSystem?.StartTrajectory(skill, _owner, target);
+        else if (skill.hasDelayedImpact)
             _skillSystem?.PlantDelayedZone(skill, _owner, target);
-        else if (skill.isTrajectory)
-            _skillSystem?.StartTrajectory(skill, _owner);
         else
             _skillSystem?.Execute(skill, _owner, target);
 
@@ -590,7 +595,12 @@ public class CombatAIController : MonoBehaviour
 
     private void StopAgent()
     {
-        _agent.ResetPath();
+        // isOnNavMesh gardé — trouvé en test manuel : ResetPath() jette
+        // "can only be called on an active agent that has been placed on a NavMesh" si l'agent
+        // est temporairement hors-mesh (knockback, spawn, glitch de collision) ; ni Mob.cs ni
+        // PNJ.cs ne garantissaient ce cas avant la migration non plus, mais cette méthode est
+        // maintenant le point de passage unique pour les deux, donc le garde-fou vit ici.
+        if (_agent.isOnNavMesh) _agent.ResetPath();
         _agent.velocity = Vector3.zero;
     }
 

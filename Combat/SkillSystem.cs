@@ -234,6 +234,14 @@ public class SkillSystem : MonoBehaviour
     {
         if (skill == null || caster == null || caster.isDead) return;
 
+        // Cone + hasDelayedImpact SANS isTrajectory reste possible côté Inspector (nécessaire
+        // pour que le combo isTrajectory+hasDelayedImpact reste éditable, voir OnValidate) même
+        // si non recommandé seul — SkillBar/CombatAIController posent _skillDirection AVANT de
+        // dispatcher ici pour tout Cone, mais ce chemin (zone différée pure) ne le consomme
+        // jamais. Sans ce reset, la direction resterait périmée et polluerait le PROCHAIN cast
+        // directionnel (Cone/Dash_Direction) lancé juste après.
+        _skillDirection = null;
+
         if (caster.entityType == EntityType.Player && caster is Player player)
         {
             player.ResolveSkillUse(skill, target);
@@ -260,6 +268,14 @@ public class SkillSystem : MonoBehaviour
             // rapport lancé plus tard (ex: TeleportSelf) hériterait de cette position périmée.
             position = _groundTargetPoint ?? caster.transform.position;
             _groundTargetPoint = null;
+        }
+        else if (skill.targetType == TargetType.Self || skill.targetType == TargetType.AoE_Self)
+        {
+            // Self/AoE_Self plantent TOUJOURS sur le caster, jamais sur `target` — `target` ici
+            // n'est que la cible sélectionnée/engagée du joueur au moment du cast (SkillBar la
+            // résout systématiquement, même pour un skill qui n'en a pas besoin), sans rapport
+            // avec où la zone doit apparaître pour ces deux targetType.
+            position = caster.transform.position;
         }
         else
         {
@@ -603,6 +619,12 @@ public class SkillSystem : MonoBehaviour
                 RaycastHit[] hits = skill.trajectoryShape == TrajectoryShape.Box
                     ? Physics.BoxCastAll(previousPos, halfExtents, segmentDir, Quaternion.LookRotation(segmentDir), segment)
                     : Physics.SphereCastAll(previousPos, radius, segmentDir, segment);
+                // stopAtFirstHit : SphereCastAll/BoxCastAll ne trient pas par distance — sans ce
+                // tri, un hit plus lointain dans le batch pourrait être traité avant un hit plus
+                // proche (hitbox large, plusieurs ennemis dans un même segment), contrairement à
+                // l'ancien ExecuteSkillshot qui sélectionnait explicitement le hit le plus proche.
+                if (skill.stopAtFirstHit)
+                    System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
                 foreach (RaycastHit h in hits)
                 {
                     Entity entity = h.collider.GetComponentInParent<Entity>();
@@ -625,8 +647,16 @@ public class SkillSystem : MonoBehaviour
                         AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
 
                     // stopAtFirstHit : le trajet s'arrête AU POINT DE CE HIT, pas à `destination`
-                    // — une flèche qui perce le premier ennemi ne continue pas au-delà.
-                    if (skill.stopAtFirstHit) { stopPoint = h.point; stoppedEarly = true; break; }
+                    // — une flèche qui perce le premier ennemi ne continue pas au-delà. h.point
+                    // vaut toujours Vector3.zero quand h.distance == 0 (entité déjà chevauchée à
+                    // l'instant du cast) — retombe sur previousPos plutôt que de planter une zone
+                    // en (0,0,0).
+                    if (skill.stopAtFirstHit)
+                    {
+                        stopPoint = h.distance > 0.0001f ? h.point : previousPos;
+                        stoppedEarly = true;
+                        break;
+                    }
                 }
 
                 if (trajectoryVfx != null)
