@@ -12,6 +12,7 @@
 ## Sommaire
 
 - [Champs de base](#champs-de-base)
+- [Exemples concrets par type](#exemples-concrets-par-type)
 - [Compatibilité arme & variantes](#compatibilité-arme--variantes)
 - [Partage de clip entre skills](#partage-de-clip-entre-skills--seulement-si-le-timing-devent-est-identique)
 - [Normal](#normal-executiontype--normal-casttime--0)
@@ -26,6 +27,9 @@
 
 ## Champs de base
 
+> Numérotation alignée sur les headers Inspector réels de `SkillData.cs` (① à ⑩) — si tu vois un
+> autre numéro dans l'Inspector qu'ici, le fichier a bougé, se fier à l'Inspector.
+
 ### ① Identité
 
 | Champ | Rôle |
@@ -34,9 +38,8 @@
 | `skillName` / `description` | Textes affichés au joueur (fr/en). |
 | `tags` | Liste de `SkillTag` (Stun, DoT, Mobilite, Combo…) — informatif, utilisé pour le filtrage `SkillLibraryUI` et par `UnlockManager`. |
 | `skillType` | `BasicAttack` (slot 0 uniquement) / `Active` (slots 1-8) / `Ultimate` (slot 9). |
-| `icon`, `vfxImpact`, `soundEffect` | Visuel/son du skill (ou du coup de base pour un MultiHit — chaque `HitStep` peut avoir les siens, sinon hérite de ceux-ci). |
 
-### ③ Effet principal
+### ③ Effet principal (+ Effet spécial, Dégâts physiques, Éléments)
 
 | Champ | Rôle |
 |---|---|
@@ -52,27 +55,79 @@
 | `damageMultiplier` | Multiplicateur global (1.0 = normal, 2.0 = double dégâts). |
 | `damageMeleeRatio` / `damageRangedRatio` / `damageMagicRatio` | Part des dégâts réduite par chaque type de défense de la cible — **la somme doit faire 1.0**. Ex: skill mêlée pur → Melee 1.0/0/0 ; hybride → 0.7/0/0.3. |
 
-### ④ Coût
+**Éléments** (actif si `effectType = Damage` ou `Other`) :
+
+`elements` (liste — vide = skill neutre, 1 = élémentaire simple, 2+ = combo élémentaire) + `elementalMultiplier` (0 à 5, ignoré si `elements` est vide).
+
+### ④ Exécution avancée
+
+`executionType` (Normal/MultiHit/ComboSequence — voir sections dédiées plus bas), `hitSteps` (MultiHit uniquement), `comboSteps`/`comboWindowDuration`/`comboStepInterval` (Combo uniquement). Disponible pour les **3 `skillType`** (`BasicAttack`/`Active`/`Ultimate` — ils ne diffèrent que par leur slot SkillBar, aucune restriction d'exécution entre eux) si `effectType = Damage`/`Other` — n'a pas de sens pour un Buff/Debuff pur.
+
+### ⑤ Coût
 
 `manaCost` / `hpCost` / `goldCost` — dépensés au **lancement** (pas à la résolution).
 
-### ⑤ Ciblage & Portée
+### ⑥ Ciblage & Portée
 
-`targetType` (Target/Self/AoE_Self/AoE_Target/Skillshot/LineTarget/GroundTarget/Cone/Direction/Dash_Target/Dash_Direction), `range`, `aoeRadius`, `projectileSpeed`/`projectilePrefab` (si projectile), `aoeFaction` (Enemies/Allies/Everyone — qui peut être touché en zone).
+`aoeFaction` (Enemies/Allies/Everyone — qui peut être touché) s'applique à tous les types ci-dessous sauf `Self`. `projectileSpeed` ne sert qu'à la trajectoire (⑦, vitesse de déplacement du point/cône) — le visuel du projectile en mouvement, lui, c'est `vfxTrajectory` (⑨), pas un champ séparé (`projectilePrefab` a été supprimé, mort/jamais lu).
 
-### ⑥ Éléments
+**`targetType` — les 8 possibilités, aucune n'est redondante malgré des géométries qui se
+ressemblent :**
 
-`elements` (liste — vide = skill neutre, 1 = élémentaire simple, 2+ = combo élémentaire) + `elementalMultiplier` (0 à 5, ignoré si `elements` est vide). Actif si `effectType = Damage` ou `Other`.
+| `targetType` | Cible verrouillée ? | Portée / zone | Comportement | Cas d'usage typique |
+|---|---|---|---|---|
+| `Target` | **Oui** | `range` = distance max au clic | Touche la cible verrouillée. + `isTrajectory` : perce tout jusqu'à elle (position figée au lancement, pas de homing) — décoche `stopAtFirstHit` pour percer, coche-le pour s'arrêter au 1er ennemi touché (ex: lance qui transperce vs flèche qui s'arrête). | Sort mono-cible, ou lance qui transperce jusqu'à une cible verrouillée. |
+| `Self` | Non | — | Touche uniquement le caster. | Buff/heal/shield sur soi. |
+| `AoE_Self` | Non | `aoeRadius`, centré sur le **caster** | Sphère autour de toi, touche tout ce qui passe `aoeFaction`. | Explosion/aura centrée sur soi. |
+| `AoE_Target` | **Oui** | `aoeRadius`, centré sur la **cible** | Sphère autour de la cible verrouillée (pas autour de toi). | Impact qui éclabousse autour d'un ennemi. |
+| `GroundTarget` | Non (point au sol, visé à la souris) | `aoeRadius`, centré sur le point cliqué | Sphère à un point choisi au sol. + `isTrajectory` : voyage vers ce point (mur/vague qui avance vers où tu cliques) — `stopAtFirstHit` disponible pareil que `Target`. | Météore, zone posée au sol, ou mur de feu qui voyage vers la souris. |
+| `Cone` | Non, **visé à la souris** | `range` (portée), `coneHalfAngle` (demi-angle en degrés) | Éventail devant le caster, orienté vers la souris (priorité à la cible engagée/sélectionnée si il y en a une) — touche tout ce qui est dans l'angle ET la portée. | Souffle, attaque en arc dirigée par le joueur. |
+| `Dash_Target` | **Oui** | — (offset d'arrêt fixe côté code) | Le **CASTER** se déplace jusqu'à la cible (s'arrête juste avant). Ne fait AUCUN dégât par lui-même — c'est un déplacement pur. | Charge/gap-closer vers une cible. |
+| `Dash_Direction` | Non | `range` (distance du dash, défaut 6) | Le **CASTER** se déplace en ligne droite dans sa direction de face. Ne fait aucun dégât par lui-même. | Esquive/dash directionnel. |
 
-### ⑦ Effets secondaires
+`Target`/`GroundTarget`/`AoE_Target`/`Cone` peuvent en plus
+devenir des trajectoires mobiles (hitbox qui voyage/s'élargit) via `isTrajectory` — voir ⑦.
+
+### ⑦ Zone à impact différé / Trajectoire mobile
+
+Deux modes de résolution, tous deux optionnels :
+
+| Champ | Rôle |
+|---|---|
+| `hasDelayedImpact` | Zone plantée au sol/sur une entité, dégâts différés de `impactDelay` secondes. `Self`/`AoE_Self`/`Target`/`GroundTarget`/`AoE_Target`/`Cone`. |
+| `isTrajectory` | Hitbox mobile qui voyage/s'élargit et touche tout sur son passage (perce, sauf `stopAtFirstHit` coché). `GroundTarget`/`Target`/`AoE_Target`/`Cone`. |
+| `stopAtFirstHit` | `isTrajectory` + `Target`/`GroundTarget` uniquement. Coché = le trajet s'arrête au 1er ennemi touché (comme une flèche qui se plante). Décoché (défaut) = perce tout (comme un rayon/une lance). |
+| `zoneFollowsAnchor` | `hasDelayedImpact` + `Self`/`AoE_Self`/`Target`/`AoE_Target` uniquement (jamais `GroundTarget`, pas d'entité à suivre). Coché = la zone recalcule sa position à chaque tick sur le CASTER (Self/AoE_Self) ou la CIBLE (Target/AoE_Target) — ex: tourbillon qui te suit, corbeaux qui suivent une cible marquée. Décoché (défaut) = zone figée au point de lancement — ex: fiole de poison posée au sol. |
+
+**Mutuellement exclusifs, SAUF `Cone`, `GroundTarget` et `Target`** — ces trois-là autorisent les
+deux cochés en même temps : le dégât immédiat du sweep/de l'expansion s'applique normalement, ET
+une zone classique (`aoeRadius` en Sphere) se plante en plus là où le trajet s'est terminé (le
+point d'arrêt réel si `stopAtFirstHit` a coupé court, pas la destination d'origine), détonant
+après `impactDelay` — **double dégât voulu** si une cible reste dans le rayon final. Pour tous
+les autres `targetType`, toujours incompatibles (warning Console si les deux sont cochés
+ensemble).
+
+Exemple concret (GroundTarget) : un mur de feu qui voyage du caster jusqu'au point cliqué à la
+souris (`isTrajectory`, `trajectoryShape = Box` pour un vrai mur large — voir plus bas), brûlant
+tout sur son passage, PUIS laisse une zone de flammes au sol à l'endroit cliqué qui détone après
+`impactDelay` (`hasDelayedImpact`).
+
+**Forme de la hitbox** (`isTrajectory` uniquement, ignoré pour `Cone`) :
+
+| Champ | Rôle |
+|---|---|
+| `trajectoryShape` | `Sphere` (défaut) — ronde, largeur = profondeur = `aoeRadius`. `Box` — rectangulaire, largeur/profondeur indépendantes, hauteur fixe (pas de champ — inutile au combat, entités ~au même niveau au sol). |
+| `trajectoryWidth` / `trajectoryDepth` | Box uniquement. `trajectoryWidth` = largeur (perpendiculaire au trajet). `trajectoryDepth` = épaisseur avant/arrière — règle selon le VFX (mince type lame de vent vs épais type bloc de pierre). Ex : flèche fine → `Sphere` + `aoeRadius` petit (0.2-0.3). Mur de feu large et fin → `Box` + `trajectoryWidth` 6-8, `trajectoryDepth` 0.5-1. |
+
+En `Box`, `aoeRadius` ne sert plus à rien (remplacé par `trajectoryWidth`/`trajectoryDepth`).
+
+### ⑧ Effets secondaires
 
 `statusEffects` — liste de `BuffData`/`DebuffData` + % de chance, déclenchés à l'usage. Un skill `Buff`/`Debuff` pur n'a QUE ça comme effet (pas de dégâts).
 
-### ⑨ Exécution avancée
+### ⑨ Visuel
 
-`executionType` (Normal/MultiHit/ComboSequence — voir sections dédiées plus bas), `hitSteps` (MultiHit uniquement), `comboSteps`/`comboWindowDuration`/`comboStepInterval` (Combo uniquement). Actif uniquement si `skillType = Active` et `effectType = Damage`/`Other` — n'a pas de sens pour un Buff/Debuff pur ni pour une Ultimate/BasicAttack au sens strict (bien que `BasicAttack` puisse aussi utiliser Normal/MultiHit).
-
-### ⑩ Visuel & Son (animation)
+`icon`, `vfxCast`, `vfxTrajectory` (`isTrajectory` uniquement), `vfxZoneMarker` (`hasDelayedImpact` uniquement), `vfxImpact`, et les animations :
 
 `attackAnimation` vs `channelAnimation` — **mutuellement exclusifs, jamais les deux sur le même skill** :
 
@@ -81,6 +136,157 @@
 
 Détails de synchronisation (Animation Event, timing, verrous) : voir les sections par type
 ci-dessous.
+
+### ⑩ Son
+
+`soundEffect` (ou celui du coup de base pour un MultiHit — chaque `HitStep` peut avoir le sien, sinon hérite de celui-ci).
+
+---
+
+## Exemples concrets par type
+
+Un exemple complet de champs pour chaque possibilité — à copier/adapter plutôt que de repartir
+de zéro. Chaque exemple ne liste que les champs qui comptent pour ce type ; le reste garde ses
+valeurs par défaut ou suit [Champs de base](#champs-de-base).
+
+### Direct (`effectType = Damage`, `executionType = Normal`, `castTime = 0`)
+
+Le cas le plus simple — un coup, une résolution. Exemple : `skl_epee_frappe1`.
+
+| Champ | Valeur |
+|---|---|
+| `skillType` | Active |
+| `effectType` | Damage |
+| `executionType` | Normal |
+| `castTime` | 0 |
+| `cooldown` | 4 |
+| `damageMultiplier` | 1.2 |
+| `damageMeleeRatio`/`Ranged`/`Magic` | 1.0 / 0 / 0 |
+| `manaCost` | 8 |
+| `targetType` | Target |
+| `range` | 2.5 |
+| `elements` | vide (Neutre) |
+| `statusEffects` | vide |
+| `attackAnimation` | `epee_frappe1.anim` |
+
+Setup : 1 Animation Event `OnSkillHitFrame` (`Int = 0`) à la frame d'impact — voir
+[Normal](#normal-executiontype--normal-casttime--0).
+
+### MultiHit (`executionType = MultiHit`)
+
+Une activation, plusieurs coups. Exemple : `skl_dague_rafale` — 1 coup de base + 2 `hitSteps`.
+
+| Champ | Valeur |
+|---|---|
+| `effectType` | Damage |
+| `executionType` | MultiHit |
+| `cooldown` | 6 |
+| `damageMultiplier` (coup de base) | 0.6 |
+| `hitSteps[0]` | `damageMultiplier` 0.6, `element` Neutral, `delay` 0.2 |
+| `hitSteps[1]` | `damageMultiplier` 0.8, `element` Neutral, `delay` 0.2 |
+| `attackAnimation` | `dague_rafale.anim` |
+
+Setup : **3 Animation Events** sur `dague_rafale.anim` — `hitIndex 0` (coup de base), `hitIndex
+1` (`hitSteps[0]`), `hitIndex 2` (`hitSteps[1]`), chacun à sa frame d'impact réelle. Voir
+[MultiHit](#multihit-executiontype--multihit-casttime--0).
+
+### Combo (`executionType = ComboSequence`)
+
+N appuis successifs, N `SkillData` séparés. Exemple : combo épée 3 coups.
+
+- **Parent** `skl_epee_combo` : `executionType = ComboSequence`, `comboSteps = [skl_epee_combo_2,
+  skl_epee_combo_3]`, `comboWindowDuration = 1.5`, `comboStepInterval = 0.3`, `cooldown = 8`
+  (posé une seule fois, à la fin du combo complet — les steps intermédiaires n'ont pas de
+  cooldown effectif). `damageMultiplier = 1.0`, `attackAnimation = epee_combo1.anim` + event
+  hitIndex 0.
+- **Step 2** `skl_epee_combo_2` (asset séparé) : `damageMultiplier = 1.1`, sa propre
+  `attackAnimation = epee_combo2.anim` + event hitIndex 0.
+- **Step 3** `skl_epee_combo_3` (asset séparé, coup final plus fort) : `damageMultiplier = 1.5`,
+  `attackAnimation = epee_combo3.anim` + event hitIndex 0, peut porter un `statusEffects` (ex:
+  30% `dbf_stun_leger`) pour un finisher qui étourdit.
+
+Voir [Combo](#combo-comboSequence-executiontype--combosequence-casttime--0).
+
+### Canalisation (`castTime > 0`)
+
+Sort à temps de cast. Exemple : `skl_boule_de_feu`.
+
+| Champ | Valeur |
+|---|---|
+| `effectType` | Damage |
+| `executionType` | Normal (obligatoire) |
+| `castTime` | 1.5 |
+| `cooldown` | 10 |
+| `manaCost` | 25 |
+| `targetType` | GroundTarget |
+| `aoeRadius` | 3 |
+| `elements` | `[Fire]` |
+| `elementalMultiplier` | 2.0 |
+| `channelAnimation` | `mage_cast_fire.anim` (**pas** `attackAnimation`) |
+| `vfxCast` | glow aux mains |
+| `vfxImpact` | explosion de feu |
+
+Setup : aucun Animation Event — résolution automatique à la fin des `castTime` secondes. Voir
+[Canalisation](#canalisation-casttime--0).
+
+### Buff (`effectType = Buff`)
+
+Aucun dégât — uniquement des `statusEffects`. Exemple : `skl_cri_de_guerre` (buff sur soi).
+
+| Champ | Valeur |
+|---|---|
+| `effectType` | Buff |
+| `executionType` | n'apparaît pas (masqué — pas de sens pour un Buff pur) |
+| `castTime` | 0 |
+| `cooldown` | 20 |
+| `targetType` | Self |
+| `manaCost` | 15 |
+| `statusEffects` | `[{ effect: buff_haste, chance: 1.0 }]` |
+| `attackAnimation` | `cri_de_guerre.anim` (optionnel — vide si effet purement passif sans anim dédiée) |
+
+`buff_haste` (`BuffData`) : `buffType = Stats`, `buffStatType = MoveSpeed`, `buffModifier =
+Percent`, `buffStatValue = 0.30`, `duration = 8`.
+
+### Debuff (`effectType = Debuff`)
+
+Aucun dégât direct — uniquement des `statusEffects` sur la cible. Exemple : `skl_cri_effroi`.
+
+| Champ | Valeur |
+|---|---|
+| `effectType` | Debuff |
+| `targetType` | AoE_Target |
+| `aoeRadius` | 4 |
+| `aoeFaction` | Enemies |
+| `cooldown` | 15 |
+| `statusEffects` | `[{ effect: dbf_fear, chance: 1.0 }]` |
+
+`dbf_fear` (`DebuffData`) : `debuffType = Fear`, `duration = 3`.
+
+Un debuff **DoT** (dégâts sur la durée) se construit pareil, avec `dbf_poison_lame`
+(`DebuffData`) : `debuffType = Dot`, `damageElement = Nature`, `baseDamagePercent = 0.01`,
+`rankDamagePercent = 0.2`, `elementalPointsMultiplier = 0.10`, `duration = 5` — attaché en
+`statusEffects` sur n'importe quel skill `Damage` (le DoT s'ajoute en plus des dégâts directs du
+coup), pas besoin d'un skill `effectType = Debuff` dédié pour ça.
+
+### Effet spécial (`effectType = Other`)
+
+Ni dégâts classiques ni statusEffect pur — `specialEffect` pilote un comportement dédié.
+Exemple : `skl_grappin` (tire la cible vers le caster).
+
+| Champ | Valeur |
+|---|---|
+| `effectType` | Other |
+| `specialEffect` | Pull |
+| `pullPushForce` | 6 |
+| `targetType` | Target |
+| `range` | 8 |
+| `damageMultiplier` | 0 (pas de dégâts, juste le déplacement) |
+| `cooldown` | 12 |
+
+Autres `specialEffect` disponibles suivant le même principe (un seul champ dédié apparaît selon
+le choix) : `Push`/`SwapPosition`/`PullAoE`/`PushAoE`/`GatherAoE`/`Vortex` (déplacement),
+`TeleportSelf`/`TeleportTarget`, `DrainHP` (+ `drainHealRatio`, ex: 0.5 = 50% des dégâts infligés
+rendus en soin) / `DrainMana`, `Summon` (+ `summonMobData`/`summonDuration`), `Interrupt`.
 
 ---
 
