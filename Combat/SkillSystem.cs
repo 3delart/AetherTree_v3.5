@@ -99,8 +99,7 @@ public class SkillSystem : MonoBehaviour
 
     /// <summary>
     /// Lance un skill depuis n'importe quelle entité (Player, Mob, PNJ, Pet).
-    /// target peut être null pour Self / AoE_Self / GroundTarget / Direction /
-    /// Skillshot / Cone / Dash_Direction.
+    /// target peut être null pour Self / AoE_Self / GroundTarget / Cone / Dash_Direction.
     /// </summary>
     public void Execute(SkillData skill, Entity caster, Entity target)
     {
@@ -368,11 +367,11 @@ public class SkillSystem : MonoBehaviour
     /// ResolveExecute/PlantDelayedZone), mais lance une coroutine qui déplace une hitbox du
     /// caster vers une destination, infligeant des dégâts à tout ce qu'elle traverse. Distinct de
     /// PlantDelayedZone (zone FIXE une fois plantée) — mutuellement exclusif, voir
-    /// SkillData.OnValidate(). GroundTarget/Direction/Skillshot ne prennent jamais de cible Entity
-    /// (voir commentaire en tête de fichier) ; `target` n'est lu que pour Target/AoE_Target/
-    /// LineTarget — position figée AU LANCEMENT, pas de homing (voir tooltip
-    /// SkillData.isTrajectory). Cone est un chemin de résolution entièrement séparé
-    /// (TrajectoryConeRoutine, pas de `destination` unique) — voir plus bas.</summary>
+    /// SkillData.OnValidate(). GroundTarget ne prend jamais de cible Entity (voir commentaire en
+    /// tête de fichier) ; `target` n'est lu que pour Target/AoE_Target — position figée AU
+    /// LANCEMENT, pas de homing (voir tooltip SkillData.isTrajectory). Cone est un chemin de
+    /// résolution entièrement séparé (TrajectoryConeRoutine, pas de `destination` unique) — voir
+    /// plus bas.</summary>
     public void StartTrajectory(SkillData skill, Entity caster, Entity target = null)
     {
         if (skill == null || caster == null || caster.isDead) return;
@@ -447,9 +446,9 @@ public class SkillSystem : MonoBehaviour
             // SetSkillDirection() n'a qu'un seul appelant dans tout le projet
             // (TargetingSystem.TryExecuteSkill(), lui-même sans appelant, code mort). Le
             // fallback caster.transform.forward est donc TOUJOURS celui utilisé en pratique
-            // aujourd'hui — comportement déjà identique pour ExecuteDirection()/
-            // ExecuteSkillshot()/ExecuteCone(), pas une régression introduite ici. La direction
-            // résolue est celle où le PERSONNAGE fait face, pas la souris/le regard caméra.
+            // aujourd'hui — comportement déjà identique à ExecuteCone(), pas une régression
+            // introduite ici. La direction résolue est celle où le PERSONNAGE fait face, pas la
+            // souris/le regard caméra.
             Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
             _skillDirection = null;
             float range = skill.range > 0f ? skill.range : 10f;
@@ -1634,7 +1633,7 @@ public class SkillSystem : MonoBehaviour
 
     /// <summary>
     /// Fournit la direction pour le prochain skill directionnel.
-    /// Utilisé par : Direction, Skillshot, Cone, Dash_Direction.
+    /// Utilisé par : Cone, Dash_Direction.
     /// </summary>
     public void SetSkillDirection(Vector3 direction)
     {
