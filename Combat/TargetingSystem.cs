@@ -436,8 +436,6 @@ public class TargetingSystem : MonoBehaviour
                 return;
             }
 
-            case TargetType.Direction:
-            case TargetType.Skillshot:
             case TargetType.Cone:
             case TargetType.Dash_Direction:
             {
@@ -449,7 +447,6 @@ public class TargetingSystem : MonoBehaviour
             case TargetType.Target:
             case TargetType.AoE_Target:
             case TargetType.Dash_Target:
-            case TargetType.LineTarget:
             {
                 Entity target = engagedTarget ?? selectedTarget;
                 if (target == null || target.isDead)
@@ -471,7 +468,11 @@ public class TargetingSystem : MonoBehaviour
     // HELPERS DIRECTION
     // =========================================================
 
-    private Vector3 ResolveDirection()
+    /// <summary>Résout la direction de visée pour un skill directionnel (Cone) — priorité à la
+    /// cible engagée/sélectionnée (direction caster→cible), sinon raycast souris (aplati sur XZ),
+    /// sinon le facing du caster en dernier recours. Publique — appelée par SkillBar.cs juste
+    /// avant StartTrajectory()/Execute() pour tout skill targetType == Cone.</summary>
+    public Vector3 ResolveDirection()
     {
         Entity aim = engagedTarget ?? selectedTarget;
         if (aim != null)
