@@ -200,19 +200,88 @@ tourner avec le joueur), et le laisser en `world space` sinon (comportement actu
 trajectoire n'a pas de sens à "suivre" une entité, c'est déjà un point fixe résolu au bout du
 trajet.
 
+## §6 — Trous trouvés en re-relisant (champs déjà codés depuis, jamais reliés à cette spec)
+
+Deux mécanismes existent déjà dans `SkillSystem.cs`/`SkillData.cs` (ajoutés APRÈS la première
+version de cette spec) qui référencent encore `Direction`/`LineTarget`/`Skillshot` — sans les
+corriger ici, le projet ne compile plus une fois §1 appliqué.
+
+### §6a — `trajectoryShape`/`trajectoryWidth`/`trajectoryDepth` (forme Sphere/Box)
+
+Ces 3 champs (déjà en prod, servent à un mur de feu large type `Box` vs une flèche fine type
+`Sphere`) ont un `[ShowIf]` qui liste EXPLICITEMENT `GroundTarget, Direction, Target, AoE_Target,
+LineTarget, Skillshot` comme valeurs autorisées. Après §1, retirer `Direction`/`LineTarget`/
+`Skillshot` de cette liste (compileraient plus sinon) — il reste `GroundTarget, Target,
+AoE_Target`, inchangés fonctionnellement, rien d'autre à toucher (la logique `TrajectoryRoutine`
+qui lit `trajectoryShape` ne référence déjà aucun de ces 3 types supprimés).
+
+### §6b — Branche fallback de `StartTrajectory()` (ex-branche Direction/Skillshot)
+
+`StartTrajectory()` a 3 branches selon `targetType` pour calculer `destination` : `GroundTarget`,
+`Target`/`AoE_Target`/`LineTarget`, et un `else` catch-all — c'est CETTE branche `else` qui
+portait tout le comportement `Direction`/`Skillshot` (facing du caster + `range`), **y compris le
+fix de dépassement de portée** (`forwardHalfExtent` — le bord de la sphère/boîte dépasse son
+centre de son propre rayon/profondeur, compensé en raccourcissant la distance de voyage, voir
+historique du chantier trajectoire).
+
+Une fois `Direction`/`Skillshot` supprimés, **aucun `targetType` valide n'atteint plus jamais
+cette branche** en usage normal — `GroundTarget`/`Target`/`AoE_Target` ont chacun leur propre
+branche dédiée, `Cone` sort tôt de la méthode (branche séparée). Cette branche `else` ne
+s'exécute donc plus que pour un `targetType` réellement incompatible avec `isTrajectory` (cas
+déjà couvert par le warning `OnValidate` existant — "non supporté... traité comme Direction par
+défaut"). **Décision : la garder telle quelle, comme filet de sécurité générique** (jamais un
+skill qui a déjà coûté mana/CD ne doit se solder par un no-op silencieux — même philosophie que
+partout ailleurs dans ce fichier), juste renommer son commentaire ("ex-Direction/Skillshot" →
+"fallback générique, targetType non supporté par isTrajectory") et retirer les mentions de
+`Direction`/`Skillshot` dans les commentaires alentour (`ExecuteDirection()`/`ExecuteSkillshot()`
+n'existeront plus pour la référence croisée). Le calcul `forwardHalfExtent`/`effectiveRange`
+reste identique, toujours correct pour ce cas résiduel.
+
+### §6c — Autres références trouvées en grep exhaustif
+
+Un grep `TargetType\.(Direction|Skillshot|LineTarget)` sur tout `Assets/Scripts/*.cs` remonte
+encore 4 fichiers (au-delà de ce que §1-§5 couvrent déjà) :
+
+- **`Data/Skills/SkillData.cs`, champ `aoeFaction`** — son `[ShowIf]` liste aussi `Direction`/
+  `Skillshot`/`LineTarget` parmi les `targetType` valides. Retirer les 3, garder le reste
+  (`AoE_Self`/`AoE_Target`/`GroundTarget`/`Cone`/`Target`/`Dash_Target`) inchangé.
+- **`Data/Skills/SkillBar.cs`, `needsTarget` (~ligne 432)** — check qui décide si une `Entity`
+  cible est obligatoire avant le cast. Retirer `|| skill.targetType == TargetType.LineTarget` —
+  `Target`/`AoE_Target`/`Dash_Target` suffisent déjà (LineTarget devient `Target`, déjà dans la
+  liste).
+- **`Data/Skills/SkillBar.cs`, `EngageAndFaceTarget()` (~ligne 1056)** — exclut aujourd'hui
+  `Self`/`AoE_Self`/`GroundTarget`/`Direction`/`Skillshot`/`Cone` du snap-vers-la-cible-et-engage
+  (skills sans cible verrouillée, aim libre). Retirer `Direction`/`Skillshot` de cette liste de
+  garde, **garder `Cone`** (reste mouse-aimed, jamais un vrai lock sur une Entity — même après
+  §3). `Target` (absorbe LineTarget) n'a jamais été dans cette liste d'exclusion et n'a pas à y
+  être — un skill `Target`-based DOIT engager/faire face à sa cible, comportement inchangé.
+- **`Combat/TargetingSystem.cs`, `TryExecuteSkill()`** — méthode déjà signalée comme code mort
+  (§3, aucun appelant, reste hors scope de suppression). Mais son `switch` contient encore
+  `case TargetType.Direction:`/`case TargetType.Skillshot:`/`case TargetType.LineTarget:` —
+  ça ne COMPILE plus une fois ces valeurs supprimées de l'enum, même si la méthode n'est jamais
+  appelée. Retirer ces 3 `case` (les requêtes correspondantes, si un jour cette méthode était
+  rebranchée, tomberaient sur `default` — pas un souci puisqu'elle est morte de toute façon).
+
 ## Fichiers touchés
 
 - `Data/Skills/SkillData.cs` — enum `TargetType` renuméroté, `stopAtFirstHit` +
   `zoneFollowsAnchor` ajoutés, `ShowIf`/tooltips/`OnValidate()` mis à jour partout où `Skillshot`/
-  `LineTarget`/`Direction` étaient mentionnés.
+  `LineTarget`/`Direction` étaient mentionnés (dont `trajectoryShape`/`trajectoryWidth`/
+  `trajectoryDepth` §6a, et `aoeFaction` §6c).
 - `Combat/SkillSystem.cs` — `TrajectoryRoutine` (arrêt anticipé `stopAtFirstHit`, zone à
-  `Target` en plus de `Direction`/`GroundTarget`/`Cone`), `TrajectoryConeRoutine` (inchangé,
-  déjà bon), `DelayedZoneRoutine`+`PlantDelayedZone` (paramètre `anchorEntity`), `ExecuteDirection`/
-  `ExecuteSkillshot` (méthodes mortes après suppression de ces 2 `targetType` — à supprimer),
-  `DispatchByTargetType` (retire les `case Direction/Skillshot/LineTarget`).
-- `Combat/TargetingSystem.cs` — `ResolveDirection()` passe de `private` à `public`.
+  `Target` en plus de `GroundTarget`/`Cone`, branche fallback renommée §6b), `TrajectoryConeRoutine`
+  (inchangé, déjà bon), `DelayedZoneRoutine`+`PlantDelayedZone` (paramètre `anchorEntity`),
+  `ExecuteDirection`/`ExecuteSkillshot` (méthodes mortes après suppression de ces 2 `targetType` —
+  à supprimer), `DispatchByTargetType` (retire les `case Direction/Skillshot/LineTarget`), bloc de
+  commentaire en tête de fichier ("TargetType gérés", lignes ~29-40) mis à jour pour la nouvelle
+  liste.
+- `Combat/TargetingSystem.cs` — `ResolveDirection()` passe de `private` à `public` ; retire les 3
+  `case Direction/Skillshot/LineTarget` du `switch` mort de `TryExecuteSkill()` (§6c, sinon ne
+  compile plus).
 - `Data/Skills/SkillBar.cs` — les 2 sites de résolution (`ResolveInstant`/`ResolveChannel`)
-  appellent `SetSkillDirection(TargetingSystem.Instance.ResolveDirection())` pour `Cone`.
+  appellent `SetSkillDirection(TargetingSystem.Instance.ResolveDirection())` pour `Cone` ; retire
+  `LineTarget` de `needsTarget` et `Direction`/`Skillshot` de la liste d'exclusion
+  `EngageAndFaceTarget()` (§6c).
 - 5 `.asset` existants renumérotés/migrés (§1, §1bis).
 - `docs/guide-utilisation/creation-skills.md` — tableau des targetType et sections ⑥/⑦ à
   réécrire pour la nouvelle liste à 8 valeurs (6 actifs + 2 Dash inchangés) et les 2 nouveaux
@@ -236,3 +305,9 @@ trajet.
 8. Les 5 `.asset` migrés (§1) : ouvrir chacun dans l'Inspector, vérifier que le `targetType`
    affiché correspond bien à l'intention d'origine (pas de `Debug.LogWarning` `OnValidate`
    inattendu).
+9. `GroundTarget` + `isTrajectory` + `trajectoryShape = Box` (mur de feu large) : toujours
+   fonctionnel après renumérotation (§6a) — largeur/profondeur respectées.
+10. `skl_test_trajectory_storm.asset` en particulier (déjà `isTrajectory=1`, `targetType`
+    migré 6→4) : recharger dans l'Inspector, vérifier qu'aucun champ ne s'affiche cassé/vide
+    (les nouveaux champs `stopAtFirstHit`/`zoneFollowsAnchor`/`trajectoryShape` retombent sur
+    leurs valeurs par défaut, Unity gère les champs absents du YAML existant sans erreur).
