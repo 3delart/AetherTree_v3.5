@@ -14,8 +14,8 @@ using System.Collections.Generic;
 //   Le type du caster est identifié via entity.entityType (GDD §3.1).
 //
 // Target nullable par design :
-//   Self / AoE_Self / GroundTarget / Direction / Skillshot / Cone → target null autorisée
-//   Target / AoE_Target / Dash_Target / LineTarget                 → target requise
+//   Self / AoE_Self / GroundTarget / Cone → target null autorisée
+//   Target / AoE_Target / Dash_Target      → target requise
 //
 // Points d'entrée :
 //   Execute(skill, caster, target)
@@ -27,16 +27,16 @@ using System.Collections.Generic;
 //     → GameEventBus.Publish(DamageDealtEvent) [Player uniquement]
 //
 // TargetType gérés :
-//   Target        → monocible sur Entity requise
+//   Target        → monocible sur Entity requise. + isTrajectory : perce jusqu'à la cible
+//                   (stopAtFirstHit pour s'arrêter au 1er hit).
 //   AoE_Target    → zone autour de la cible
 //   Dash_Target   → dash vers la cible puis dégâts
-//   LineTarget    → ligne entre caster et cible, hits tout sur le trajet
 //   Self          → buff/heal sur le caster
 //   AoE_Self      → zone autour du caster
-//   GroundTarget  → zone autour d'un point au sol (SetGroundTargetPoint)
-//   Direction     → SphereCast dans une direction (SetSkillDirection)
-//   Skillshot     → projectile en ligne droite (SphereCast, no target required)
-//   Cone          → cône en éventail devant le caster (SetSkillDirection ou forward)
+//   GroundTarget  → zone autour d'un point au sol (SetGroundTargetPoint), visé souris.
+//                   + isTrajectory : voyage vers ce point (stopAtFirstHit possible).
+//   Cone          → cône en éventail devant le caster, visé souris (SetSkillDirection via
+//                   TargetingSystem.ResolveDirection())
 //   Dash_Direction → dash vers un point directionnel (SetSkillDirection ou forward)
 //
 // MultiHit (GDD §7.1) :
@@ -47,8 +47,8 @@ using System.Collections.Generic;
 //   SetGroundTargetPoint(point) appelé par TargetingSystem avant Execute().
 //   Remis à null après utilisation.
 //
-// Direction / Skillshot / Cone / Dash_Direction :
-//   SetSkillDirection(dir) appelé par TargetingSystem avant Execute()
+// Cone / Dash_Direction :
+//   SetSkillDirection(dir) appelé par SkillBar avant Execute()/StartTrajectory()
 //   pour les skills directionnels. Remis à null après utilisation.
 // =============================================================
 
@@ -63,6 +63,11 @@ public class SkillSystem : MonoBehaviour
 
     // Direction pour skills directionnels — alimenté par TargetingSystem
     private Vector3? _skillDirection = null;
+
+    // Demi-hauteur FIXE d'une hitbox de trajectoire Box (TrajectoryShape.Box) — pas de champ
+    // Inspector dédié, aucune variation de hauteur nécessaire au combat (entités ~au même niveau
+    // au sol) ; juste assez généreuse pour ne jamais rater une cible à cause de la hauteur.
+    private const float TrajectoryBoxHalfHeight = 1.5f;
 
     // =========================================================
     // INITIALISATION
@@ -262,9 +267,29 @@ public class SkillSystem : MonoBehaviour
             position = target != null ? target.transform.position : caster.transform.position;
         }
 
+        // Entité à suivre si skill.zoneFollowsAnchor est coché (§5 de la spec) — le CASTER pour
+        // Self/AoE_Self (le champ n'est même pas visible dans l'Inspector pour les autres
+        // targetType, voir SkillData.zoneFollowsAnchor), la CIBLE pour Target/AoE_Target, jamais
+        // pour GroundTarget (pas d'entité à suivre, un point au sol reste toujours figé).
+        Entity anchorEntity = null;
+        if (skill.zoneFollowsAnchor)
+        {
+            if (skill.targetType == TargetType.Self || skill.targetType == TargetType.AoE_Self)
+                anchorEntity = caster;
+            else if (skill.targetType == TargetType.Target || skill.targetType == TargetType.AoE_Target)
+                anchorEntity = target;
+        }
+
         GameObject marker = skill.vfxZoneMarker != null
             ? Instantiate(skill.vfxZoneMarker, position, Quaternion.identity)
             : null;
+
+        // Si la zone doit suivre une entité, parente le marker à son transform — Unity gère le
+        // suivi (position ET rotation) automatiquement, cohérent pour un VFX de tourbillon qui
+        // doit tourner avec le joueur. Sinon (défaut), le marker reste en world space, fixe,
+        // comportement inchangé.
+        if (marker != null && anchorEntity != null)
+            marker.transform.SetParent(anchorEntity.transform);
 
         // Mob/PNJ : Destroy(gameObject, délai de corpse) sur le caster tuerait cette coroutine
         // avant qu'elle atteigne son propre nettoyage si impactDelay+zoneDuration dépasse ce
@@ -276,7 +301,7 @@ public class SkillSystem : MonoBehaviour
             : new GameObject($"DelayedZoneHost_{skill.name}").AddComponent<SkillSystem>();
         bool destroySelfOnFinish = host != this;
 
-        host.StartCoroutine(host.DelayedZoneRoutine(skill, caster, position, marker, destroySelfOnFinish));
+        host.StartCoroutine(host.DelayedZoneRoutine(skill, caster, position, anchorEntity, marker, destroySelfOnFinish));
     }
 
     /// <summary>Tick(s) de détonation d'une zone plantée par PlantDelayedZone(). Un seul tick si
@@ -284,7 +309,7 @@ public class SkillSystem : MonoBehaviour
     /// `zoneTickInterval` secondes pendant `zoneDuration` (zone persistante type lave). Chaque
     /// tick réutilise EXACTEMENT la logique de ExecuteGroundTarget()/ExecuteAoETarget() — même
     /// OverlapSphere + PassesAoeFilter + ApplyEffectType/ApplyStatusEffects/CheckKill.</summary>
-    private IEnumerator DelayedZoneRoutine(SkillData skill, Entity caster, Vector3 position, GameObject marker, bool destroySelfOnFinish)
+    private IEnumerator DelayedZoneRoutine(SkillData skill, Entity caster, Vector3 position, Entity anchorEntity, GameObject marker, bool destroySelfOnFinish)
     {
         yield return new WaitForSeconds(skill.impactDelay);
 
@@ -303,7 +328,15 @@ public class SkillSystem : MonoBehaviour
             // s'exécute quand même.
             if (caster == null || caster.isDead) break;
 
-            Collider[] hits = Physics.OverlapSphere(position, skill.aoeRadius);
+            // zoneFollowsAnchor : recalcule la position sur l'entité suivie SI elle est encore
+            // vivante — sinon retombe sur `position` (figée), évite un NullReferenceException/
+            // téléportation en (0,0,0) si l'entité suivie meurt entre deux ticks. `position`
+            // elle-même n'est JAMAIS réassignée (reste le point d'origine pour ce fallback).
+            Vector3 tickPosition = (anchorEntity != null && !anchorEntity.isDead)
+                ? anchorEntity.transform.position
+                : position;
+
+            Collider[] hits = Physics.OverlapSphere(tickPosition, skill.aoeRadius);
             foreach (Collider col in hits)
             {
                 Entity entity = col.GetComponentInParent<Entity>();
@@ -316,9 +349,9 @@ public class SkillSystem : MonoBehaviour
             }
 
             if (skill.vfxImpact != null)
-                Instantiate(skill.vfxImpact, position, Quaternion.identity);
+                Instantiate(skill.vfxImpact, tickPosition, Quaternion.identity);
             if (skill.soundEffect != null)
-                AudioSource.PlayClipAtPoint(skill.soundEffect, position);
+                AudioSource.PlayClipAtPoint(skill.soundEffect, tickPosition);
 
             if (remaining <= 0f) break;
 
@@ -335,9 +368,12 @@ public class SkillSystem : MonoBehaviour
     /// ResolveExecute/PlantDelayedZone), mais lance une coroutine qui déplace une hitbox du
     /// caster vers une destination, infligeant des dégâts à tout ce qu'elle traverse. Distinct de
     /// PlantDelayedZone (zone FIXE une fois plantée) — mutuellement exclusif, voir
-    /// SkillData.OnValidate(). GroundTarget et Direction ne prennent jamais de cible Entity (voir
-    /// commentaire en tête de fichier), donc pas de paramètre `target` ici.</summary>
-    public void StartTrajectory(SkillData skill, Entity caster)
+    /// SkillData.OnValidate(). GroundTarget/Direction/Skillshot ne prennent jamais de cible Entity
+    /// (voir commentaire en tête de fichier) ; `target` n'est lu que pour Target/AoE_Target/
+    /// LineTarget — position figée AU LANCEMENT, pas de homing (voir tooltip
+    /// SkillData.isTrajectory). Cone est un chemin de résolution entièrement séparé
+    /// (TrajectoryConeRoutine, pas de `destination` unique) — voir plus bas.</summary>
+    public void StartTrajectory(SkillData skill, Entity caster, Entity target = null)
     {
         if (skill == null || caster == null || caster.isDead) return;
 
@@ -358,6 +394,29 @@ public class SkillSystem : MonoBehaviour
         }
 
         Vector3 origin = caster.transform.position;
+
+        // Cône : chemin séparé — pas un point qui voyage vers UNE destination, un ÉVENTAIL qui
+        // s'élargit depuis origin (portée 0 → range). Résolu par TrajectoryConeRoutine, jamais le
+        // sweep point-à-point de TrajectoryRoutine (géométrie incompatible) — voir tooltip
+        // SkillData.isTrajectory. Sort tôt, saute tout le calcul de `destination` ci-dessous.
+        if (skill.targetType == TargetType.Cone)
+        {
+            Vector3 coneDir = _skillDirection?.normalized ?? caster.transform.forward;
+            _skillDirection = null;
+
+            GameObject coneVfx = skill.vfxTrajectory != null
+                ? Instantiate(skill.vfxTrajectory, origin, Quaternion.LookRotation(coneDir))
+                : null;
+
+            SkillSystem coneHost = caster.entityType == EntityType.Player
+                ? this
+                : new GameObject($"TrajectoryHost_{skill.name}").AddComponent<SkillSystem>();
+            bool coneDestroySelfOnFinish = coneHost != this;
+
+            coneHost.StartCoroutine(coneHost.TrajectoryConeRoutine(skill, caster, origin, coneDir, coneVfx, coneDestroySelfOnFinish));
+            return;
+        }
+
         Vector3 destination;
 
         if (skill.targetType == TargetType.GroundTarget)
@@ -367,8 +426,22 @@ public class SkillSystem : MonoBehaviour
             destination = _groundTargetPoint ?? origin;
             _groundTargetPoint = null;
         }
-        else // TargetType.Direction (ou targetType incompatible — voir OnValidate, traité
-             // comme Direction par défaut plutôt que planter)
+        else if (skill.targetType == TargetType.Target || skill.targetType == TargetType.AoE_Target)
+        {
+            // Position figée AU LANCEMENT, pas de homing — si target meurt/sort de portée avant
+            // que StartTrajectory() soit appelée (délai d'anim), on vise quand même son dernier
+            // point connu plutôt que d'annuler silencieusement le skill (même philosophie que le
+            // fallback origin==destination plus bas, qui gère déjà le cas target == null).
+            // AoE_Target : TrajectoryRoutine balaie déjà TOUT ce qui est sur le trajet (pas juste
+            // la cible la plus proche) — même résultat qu'ExecuteAoETarget côté instantané, juste
+            // étalé dans le temps.
+            destination = target != null ? target.transform.position : origin;
+        }
+        else // Fallback générique — targetType théoriquement incompatible avec isTrajectory (voir
+             // OnValidate) : GroundTarget/Target/AoE_Target/Cone ont chacun leur propre branche
+             // ci-dessus, donc en usage normal AUCUN targetType valide n'atteint cette branche.
+             // Gardée comme filet de sécurité (facing du caster + range) pour ne jamais laisser un
+             // skill qui a déjà coûté mana/CD se solder par un no-op silencieux — voir spec §6b.
         {
             // _skillDirection n'est en réalité JAMAIS posé par le flow joueur actuel —
             // SetSkillDirection() n'a qu'un seul appelant dans tout le projet
@@ -380,7 +453,24 @@ public class SkillSystem : MonoBehaviour
             Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
             _skillDirection = null;
             float range = skill.range > 0f ? skill.range : 10f;
-            destination = origin + dir * range;
+
+            // Demi-épaisseur AVANT (axe du trajet) de la hitbox — forme-dépendante : Sphere =
+            // aoeRadius (rayon), Box = moitié de trajectoryDepth (jamais aoeRadius côté Box,
+            // qui n'y sert plus à rien — voir TrajectoryRoutine).
+            float forwardHalfExtent = skill.trajectoryShape == TrajectoryShape.Box
+                ? (skill.trajectoryDepth > 0f ? skill.trajectoryDepth : 1f) / 2f
+                : (skill.aoeRadius       > 0f ? skill.aoeRadius       : 0.5f);
+
+            // Le CENTRE de la hitbox voyage jusqu'à `destination` (TrajectoryRoutine le plafonne
+            // par Mathf.Min sur la distance totale) — mais la hitbox elle-même a du volume, donc
+            // son bord AVANT dépasserait `destination` de `forwardHalfExtent` si on ne compensait
+            // pas ici. Sans ça, le vfxTrajectory s'arrête visuellement à `range`, mais les dégâts
+            // portent au-delà — décalage trouvé en discussion, corrigé en raccourcissant la
+            // distance de voyage pour que le BORD de la hitbox (pas son centre) arrive pile à
+            // `range`. Clampé à 0 — une hitbox plus épaisse que `range` (mur très large, portée
+            // courte) donne une distance de voyage nulle, pas négative.
+            float effectiveRange = Mathf.Max(0f, range - forwardHalfExtent);
+            destination = origin + dir * effectiveRange;
         }
 
         // Quaternion.LookRotation logue un warning Console sur un vecteur nul — cas dégénéré
@@ -406,14 +496,21 @@ public class SkillSystem : MonoBehaviour
     /// <summary>Déplace un point virtuel de `origin` à `destination` à la vitesse
     /// `skill.projectileSpeed` (fallback 10), balaie un SphereCastAll (rayon `skill.aoeRadius`,
     /// fallback 0.5) entre la position du tick précédent et la position du tick courant à CHAQUE
-    /// FRAME — ne peut jamais sauter une cible même à vitesse élevée. Un OverlapSphere initial à
-    /// `origin` précède la boucle (un SphereCastAll ne détecte pas un chevauchement déjà présent
-    /// à son point de départ — sinon une entité collée au caster au lancement ne serait jamais
-    /// touchée). Une entité ne peut être touchée qu'une seule fois par cast (HashSet).
+    /// FRAME — ne peut jamais sauter une cible même à vitesse élevée. Un Overlap initial à
+    /// `origin` précède la boucle (un SphereCast/BoxCast ne détecte pas un chevauchement déjà
+    /// présent à son point de départ — sinon une entité collée au caster au lancement ne serait
+    /// jamais touchée). Forme de la hitbox = skill.trajectoryShape (Sphere par défaut ou Box,
+    /// largeur/profondeur indépendantes via trajectoryWidth/trajectoryDepth, hauteur fixe). Une entité ne peut
+    /// être touchée qu'une seule fois par cast (HashSet).
     /// vfxImpact/soundEffect joués par entité touchée (même précédent que ResolveMultiHitStep).
     /// Le VFX de TRAJET (trajectoryVfx) est spawné au lancement, suit position+rotation à chaque
     /// frame pendant tout le déplacement, et est détruit sur chaque chemin de sortie de la
-    /// coroutine.</summary>
+    /// coroutine. Si `skill.stopAtFirstHit`, le sweep s'arrête au premier hit (initial pass OU
+    /// boucle par frame) au lieu d'aller jusqu'à `destination`. Si `skill.hasDelayedImpact` ET
+    /// `targetType = Target/GroundTarget` (seule combinaison autorisée avec isTrajectory pour ces
+    /// deux types, voir SkillData.isTrajectory), plante EN PLUS une zone classique
+    /// (DelayedZoneRoutine) au point d'arrêt réel (respecte stopAtFirstHit) une fois le sweep
+    /// terminé — double dégât voulu, pas une alternative au sweep.</summary>
     private IEnumerator TrajectoryRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 destination, GameObject trajectoryVfx, bool destroySelfOnFinish)
     {
         float totalDistance = Vector3.Distance(origin, destination);
@@ -437,14 +534,32 @@ public class SkillSystem : MonoBehaviour
         float radius = skill.aoeRadius       > 0f ? skill.aoeRadius       : 0.5f;
         Vector3 dir  = (destination - origin) / totalDistance;
 
+        // Box uniquement — largeur (trajectoryWidth) et profondeur (trajectoryDepth) réglables
+        // indépendamment ; `radius` (aoeRadius) reste propre à Sphere, pas réutilisé ici. Hauteur
+        // FIXE (TrajectoryBoxHalfHeight×2) — pas de champ dédié, aucune variation de hauteur
+        // nécessaire au combat (entités ~au même niveau au sol), juste assez généreuse pour ne
+        // jamais rater une cible à cause de la hauteur. Vector3 par défaut (0,0,0) ignoré côté
+        // Sphere — jamais lu dans ce cas.
+        Vector3 halfExtents = skill.trajectoryShape == TrajectoryShape.Box
+            ? new Vector3((skill.trajectoryWidth > 0f ? skill.trajectoryWidth : 2f) / 2f,
+                          TrajectoryBoxHalfHeight,
+                          (skill.trajectoryDepth  > 0f ? skill.trajectoryDepth  : 1f) / 2f)
+            : Vector3.zero;
+
         HashSet<Entity> alreadyHit = new HashSet<Entity>();
 
-        // Pass initiale à l'origine — un SphereCastAll ne détecte JAMAIS un collider déjà en
-        // chevauchement à son point de départ (limitation connue de la physique Unity, même
-        // raison pour laquelle DashInDirection utilise OverlapSphere et non un SphereCast). Sans
-        // ce pass, une entité collée au caster au moment du lancement (ex: un ennemi au
+        // Pass initiale à l'origine — un SphereCastAll/BoxCastAll ne détecte JAMAIS un collider
+        // déjà en chevauchement à son point de départ (limitation connue de la physique Unity,
+        // même raison pour laquelle DashInDirection utilise OverlapSphere et non un SphereCast).
+        // Sans ce pass, une entité collée au caster au moment du lancement (ex: un ennemi au
         // corps-à-corps quand le joueur lance la trajectoire) pourrait n'être JAMAIS touchée.
-        foreach (Collider col in Physics.OverlapSphere(origin, radius))
+        Collider[] initialHits = skill.trajectoryShape == TrajectoryShape.Box
+            ? Physics.OverlapBox(origin, halfExtents, Quaternion.LookRotation(dir))
+            : Physics.OverlapSphere(origin, radius);
+        Vector3 stopPoint = origin; // point d'arrêt réel si stopAtFirstHit coupe court — mis à
+                                     // jour à chaque hit, lu après la boucle pour la combo zone.
+        bool stoppedEarly = false;
+        foreach (Collider col in initialHits)
         {
             Entity entity = col.GetComponentInParent<Entity>();
             if (entity == null || entity.isDead) continue;
@@ -460,13 +575,17 @@ public class SkillSystem : MonoBehaviour
                 Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
             if (skill.soundEffect != null)
                 AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+
+            // stopAtFirstHit : le trajet s'arrête ICI, dès la pass initiale — une entité déjà
+            // collée au caster au lancement compte comme le "premier hit".
+            if (skill.stopAtFirstHit) { stopPoint = origin; stoppedEarly = true; break; }
         }
 
         Vector3 previousPos  = origin;
         float   traveled     = 0f;
         bool    casterDied   = false;
 
-        while (traveled < totalDistance)
+        while (traveled < totalDistance && !stoppedEarly)
         {
             // Garde caster mort en cours de trajet — même effet que le `break` de
             // DelayedZoneRoutine (rien à nettoyer après, pas de marker/VFX créé par cette
@@ -482,7 +601,9 @@ public class SkillSystem : MonoBehaviour
             if (segment > 0.0001f)
             {
                 Vector3 segmentDir = (currentPos - previousPos).normalized;
-                RaycastHit[] hits = Physics.SphereCastAll(previousPos, radius, segmentDir, segment);
+                RaycastHit[] hits = skill.trajectoryShape == TrajectoryShape.Box
+                    ? Physics.BoxCastAll(previousPos, halfExtents, segmentDir, Quaternion.LookRotation(segmentDir), segment)
+                    : Physics.SphereCastAll(previousPos, radius, segmentDir, segment);
                 foreach (RaycastHit h in hits)
                 {
                     Entity entity = h.collider.GetComponentInParent<Entity>();
@@ -503,25 +624,50 @@ public class SkillSystem : MonoBehaviour
                         Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
                     if (skill.soundEffect != null)
                         AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+
+                    // stopAtFirstHit : le trajet s'arrête AU POINT DE CE HIT, pas à `destination`
+                    // — une flèche qui perce le premier ennemi ne continue pas au-delà.
+                    if (skill.stopAtFirstHit) { stopPoint = h.point; stoppedEarly = true; break; }
                 }
 
                 if (trajectoryVfx != null)
                 {
-                    trajectoryVfx.transform.position = currentPos;
+                    trajectoryVfx.transform.position = stoppedEarly ? stopPoint : currentPos;
                     trajectoryVfx.transform.rotation = Quaternion.LookRotation(segmentDir);
                 }
             }
 
             previousPos = currentPos;
+            if (stoppedEarly) break;
             yield return null;
         }
 
         // Trajectoire terminée sans toucher personne (et sans que le caster soit mort en cours
         // de route — dans ce cas-là on ne veut PAS de VFX, "le caster est mort avant qu'on puisse
-        // savoir" n'est pas un vrai "whiff") — même fallback que le cas origine==destination
-        // ci-dessus : le skill a coûté mana/HP/or + cooldown, il doit produire un feedback même
-        // sur un whiff total.
-        if (!casterDied && alreadyHit.Count == 0)
+        // savoir" n'est pas un vrai "whiff").
+
+        // hasDelayedImpact + isTrajectory combinés — UNIQUEMENT Target/GroundTarget/Cone (voir
+        // OnValidate, exception délibérée à leur exclusion mutuelle habituelle — Cone est géré
+        // dans TrajectoryConeRoutine, pas ici). Le sweep a déjà infligé ses dégâts immédiats aux
+        // entités traversées ; en plus, une zone classique se plante là où le trajet s'est
+        // terminé (aoeRadius côté Sphere — jamais lu par le sweep lui-même, qui a son propre
+        // radius local) et détone après impactDelay — double dégât voulu si une cible reste dans
+        // le rayon final (demande explicite Florian — ex: mur de feu qui voyage vers le point
+        // cliqué (GroundTarget) ET laisse une zone brûlante à l'arrivée ; lance qui transperce
+        // jusqu'à la cible (Target) ET explose à l'arrivée).
+        bool plantsZoneAtEnd = !casterDied && skill.hasDelayedImpact &&
+            (skill.targetType == TargetType.GroundTarget || skill.targetType == TargetType.Target);
+
+        // Point où la zone se plante — le point d'arrêt réel si stopAtFirstHit a coupé court,
+        // sinon la destination d'origine (trajet allé jusqu'au bout).
+        Vector3 zonePlantPoint = stoppedEarly ? stopPoint : destination;
+
+        // Whiff total (rien touché EN CHEMIN) — pas de feedback immédiat si une zone va de toute
+        // façon se planter au bout (son propre marker/détonation suffit, un vfxImpact immédiat en
+        // plus serait un doublon confus). Même fallback que le cas origine==destination ci-dessus
+        // sinon : le skill a coûté mana/HP/or + cooldown, il doit produire un feedback même sur un
+        // whiff total.
+        if (!casterDied && alreadyHit.Count == 0 && !plantsZoneAtEnd)
         {
             if (skill.vfxImpact != null)
                 Instantiate(skill.vfxImpact, destination, Quaternion.identity);
@@ -534,6 +680,118 @@ public class SkillSystem : MonoBehaviour
         // caster comprise, sinon il resterait affiché indéfiniment sur une trajectoire abandonnée.
         if (trajectoryVfx != null)
             Destroy(trajectoryVfx);
+
+        if (plantsZoneAtEnd)
+        {
+            GameObject marker = skill.vfxZoneMarker != null
+                ? Instantiate(skill.vfxZoneMarker, zonePlantPoint, Quaternion.identity)
+                : null;
+            // Nested sur CE host (pas un nouveau) — destroySelfOnFinish: false ici, le Destroy du
+            // host reste géré une seule fois, juste en dessous, une fois cette attente terminée.
+            // anchorEntity: null — le point d'arrivée/d'arrêt d'une trajectoire est déjà un point
+            // fixe résolu, "suivre" une entité n'a pas de sens ici (voir zoneFollowsAnchor).
+            yield return DelayedZoneRoutine(skill, caster, zonePlantPoint, null, marker, destroySelfOnFinish: false);
+        }
+
+        if (destroySelfOnFinish)
+            Destroy(gameObject);
+    }
+
+    /// <summary>Élargit un cône depuis `origin` (portée 0 → skill.range, à la vitesse
+    /// skill.projectileSpeed, fallback 10) — PAS un point qui voyage (contrairement à
+    /// TrajectoryRoutine), une ONDE qui s'étend : à chaque frame, `OverlapSphere` au rayon
+    /// courant depuis `origin` (FIXE, ne bouge jamais — contrairement au sweep point-à-point),
+    /// filtré par angle (`skill.coneHalfAngle`, fallback 45°) autour de `dir` — même filtre
+    /// exact que ExecuteCone(), juste étalé dans le temps au lieu d'un unique OverlapSphere au
+    /// rayon final. Une entité ne peut être touchée qu'une seule fois par cast (HashSet), même
+    /// convention vfxImpact/soundEffect par entité touchée que TrajectoryRoutine. `trajectoryVfx`
+    /// est spawné une fois à `origin`, orienté vers `dir`, et NE BOUGE JAMAIS (pas de position à
+    /// suivre pour un cône qui s'élargit sur place) — l'asset VFX doit porter sa propre animation
+    /// de croissance timée sur skill.range/skill.projectileSpeed si un effet visuel progressif est
+    /// voulu ; ce n'est pas ce composant qui le scale. Si `skill.hasDelayedImpact` (seule
+    /// combinaison autorisée avec isTrajectory pour Cone, voir SkillData.isTrajectory), plante EN
+    /// PLUS une zone classique (DelayedZoneRoutine) au bout du cône une fois l'expansion terminée
+    /// — double dégât voulu, pas une alternative à l'expansion.</summary>
+    private IEnumerator TrajectoryConeRoutine(SkillData skill, Entity caster, Vector3 origin, Vector3 dir, GameObject trajectoryVfx, bool destroySelfOnFinish)
+    {
+        float maxRange  = skill.range          > 0f ? skill.range          : 5f;
+        float halfAngle = skill.coneHalfAngle  > 0f ? skill.coneHalfAngle  : 45f;
+        float speed     = skill.projectileSpeed > 0f ? skill.projectileSpeed : 10f;
+        float totalTime = maxRange / speed;
+
+        HashSet<Entity> alreadyHit = new HashSet<Entity>();
+        float   elapsed    = 0f;
+        bool    casterDied = false;
+
+        while (elapsed < totalTime)
+        {
+            // Même garde caster-mort-en-vol que TrajectoryRoutine — rien à nettoyer après (pas
+            // de marker/VFX propre à cette coroutine au-delà de trajectoryVfx, déjà géré plus bas).
+            if (caster == null || caster.isDead) { casterDied = true; break; }
+
+            elapsed += Time.deltaTime;
+            float currentReach = Mathf.Min(maxRange, speed * elapsed);
+
+            foreach (Collider col in Physics.OverlapSphere(origin, currentReach))
+            {
+                Entity entity = col.GetComponentInParent<Entity>();
+                if (entity == null || entity.isDead) continue;
+                if (alreadyHit.Contains(entity)) continue;
+                if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+
+                Vector3 toEntity = (entity.transform.position - origin).normalized;
+                if (Vector3.Angle(dir, toEntity) > halfAngle) continue;
+
+                alreadyHit.Add(entity);
+                ApplyEffectType(skill, caster, entity);
+                ApplyStatusEffects(skill, caster, entity);
+                CheckKill(entity);
+
+                if (skill.vfxImpact != null)
+                    Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+                if (skill.soundEffect != null)
+                    AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+            }
+
+            yield return null;
+        }
+
+        Vector3 tipPoint = origin + dir * maxRange;
+
+        // hasDelayedImpact + isTrajectory combinés — UNIQUEMENT Cone (voir OnValidate, exception
+        // délibérée à leur exclusion mutuelle habituelle). L'expansion a déjà infligé ses dégâts
+        // immédiats à tout ce qui est entré dans l'éventail ; en plus, une zone classique se
+        // plante au bout (aoeRadius, libre pour Cone depuis coneHalfAngle) et détone après
+        // impactDelay — double dégât voulu si une cible reste dans le rayon final (demande
+        // explicite Florian).
+        bool plantsZoneAtEnd = !casterDied && skill.hasDelayedImpact;
+
+        // Cône terminé sans toucher personne (whiff) — même feedback de secours que
+        // TrajectoryRoutine, joué au bout du cône dans la direction visée plutôt qu'à `origin`
+        // (un vfxImpact à origin serait littéralement sur le caster, pas lisible comme un whiff).
+        // Sauté si une zone va de toute façon se planter au bout (son propre marker/détonation
+        // suffit, un vfxImpact immédiat en plus serait un doublon confus).
+        if (!casterDied && alreadyHit.Count == 0 && !plantsZoneAtEnd)
+        {
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, tipPoint, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, tipPoint);
+        }
+
+        if (trajectoryVfx != null)
+            Destroy(trajectoryVfx);
+
+        if (plantsZoneAtEnd)
+        {
+            GameObject marker = skill.vfxZoneMarker != null
+                ? Instantiate(skill.vfxZoneMarker, tipPoint, Quaternion.identity)
+                : null;
+            // Nested sur CE host (pas un nouveau) — destroySelfOnFinish: false ici, le Destroy du
+            // host reste géré une seule fois, juste en dessous, une fois cette attente terminée.
+            yield return DelayedZoneRoutine(skill, caster, tipPoint, null, marker, destroySelfOnFinish: false);
+        }
+
         if (destroySelfOnFinish)
             Destroy(gameObject);
     }
@@ -625,13 +883,6 @@ public class SkillSystem : MonoBehaviour
                     LogMissingTarget(skill, caster);
                 break;
 
-            case TargetType.LineTarget:
-                if (target != null && !target.isDead)
-                    ExecuteLineTarget(skill, caster, target);
-                else
-                    LogMissingTarget(skill, caster);
-                break;
-
             // ── Pas de target Entity ──────────────────────────
             case TargetType.Self:
                 ExecuteOnSelf(skill, caster);
@@ -643,14 +894,6 @@ public class SkillSystem : MonoBehaviour
 
             case TargetType.GroundTarget:
                 ExecuteGroundTarget(skill, caster);
-                break;
-
-            case TargetType.Direction:
-                ExecuteDirection(skill, caster);
-                break;
-
-            case TargetType.Skillshot:
-                ExecuteSkillshot(skill, caster);
                 break;
 
             case TargetType.Cone:
@@ -825,107 +1068,11 @@ public class SkillSystem : MonoBehaviour
     }
 
     // =========================================================
-    // DIRECTION — skill en ligne / projectile directionnel large
-    // SphereCast dans la direction fournie par TargetingSystem.
-    // Fallback : regard du caster.
-    // =========================================================
-
-    private void ExecuteDirection(SkillData skill, Entity caster)
-    {
-        Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
-        _skillDirection = null;
-
-        float range  = skill.range    > 0f ? skill.range    : 10f;
-        float radius = skill.aoeRadius > 0f ? skill.aoeRadius : 0.5f;
-
-        RaycastHit[] hits = Physics.SphereCastAll(
-            caster.transform.position,
-            radius,
-            dir,
-            range);
-
-        foreach (RaycastHit h in hits)
-        {
-            Entity entity = h.collider.GetComponentInParent<Entity>();
-            if (entity == null || entity.isDead) continue;
-            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
-
-            ApplyEffectType(skill, caster, entity);
-            ApplyStatusEffects(skill, caster, entity);
-            CheckKill(entity);
-        }
-    }
-
-    // =========================================================
-    // SKILLSHOT — projectile en ligne droite, sans target requise
-    // Similaire à Direction mais rayon plus étroit (projectile précis).
-    // Utilise _skillDirection ou le regard du caster.
-    // =========================================================
-
-    private void ExecuteSkillshot(SkillData skill, Entity caster)
-    {
-        Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
-        _skillDirection = null;
-
-        float range  = skill.range    > 0f ? skill.range    : 15f;
-        float radius = skill.aoeRadius > 0f ? skill.aoeRadius : 0.25f; // projectile étroit
-
-        RaycastHit[] hits = Physics.SphereCastAll(
-            caster.transform.position,
-            radius,
-            dir,
-            range);
-
-        // Skillshot : hit la première cible valide uniquement
-        float minDist  = float.MaxValue;
-        Entity closest = null;
-        foreach (RaycastHit h in hits)
-        {
-            Entity entity = h.collider.GetComponentInParent<Entity>();
-            if (entity == null || entity.isDead) continue;
-            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
-            if (h.distance < minDist) { minDist = h.distance; closest = entity; }
-        }
-
-        if (closest != null)
-        {
-            ApplyEffectType(skill, caster, closest);
-            ApplyStatusEffects(skill, caster, closest);
-            CheckKill(closest);
-        }
-    }
-
-    // =========================================================
-    // LINE TARGET — ligne entre le caster et la cible
-    // Hits toutes les entités sur le trajet, cible incluse.
-    // =========================================================
-
-    private void ExecuteLineTarget(SkillData skill, Entity caster, Entity target)
-    {
-        Vector3 origin    = caster.transform.position;
-        Vector3 targetPos = target.transform.position;
-        Vector3 dir       = (targetPos - origin).normalized;
-        float   distance  = Vector3.Distance(origin, targetPos);
-        float   radius    = skill.aoeRadius > 0f ? skill.aoeRadius : 0.4f;
-
-        RaycastHit[] hits = Physics.SphereCastAll(origin, radius, dir, distance);
-
-        foreach (RaycastHit h in hits)
-        {
-            Entity entity = h.collider.GetComponentInParent<Entity>();
-            if (entity == null || entity.isDead) continue;
-            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
-
-            ApplyEffectType(skill, caster, entity);
-            ApplyStatusEffects(skill, caster, entity);
-            CheckKill(entity);
-        }
-    }
-
-    // =========================================================
     // CONE — éventail devant le caster
     // Utilise _skillDirection ou le regard du caster.
-    // skill.aoeRadius = portée du cône, skill.range = angle demi-ouverture (degrés).
+    // skill.range = portée du cône (mètres), skill.coneHalfAngle = demi-angle (degrés) — deux
+    // champs dédiés depuis l'extension isTrajectory (avant : aoeRadius réutilisé comme angle,
+    // confusion trouvée en test manuel — aoeRadius garde maintenant son sens habituel partout).
     // =========================================================
 
     private void ExecuteCone(SkillData skill, Entity caster)
@@ -933,8 +1080,8 @@ public class SkillSystem : MonoBehaviour
         Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
         _skillDirection = null;
 
-        float range    = skill.range    > 0f ? skill.range    : 5f;
-        float halfAngle = skill.aoeRadius > 0f ? skill.aoeRadius : 45f; // aoeRadius réutilisé comme angle
+        float range    = skill.range         > 0f ? skill.range         : 5f;
+        float halfAngle = skill.coneHalfAngle > 0f ? skill.coneHalfAngle : 45f;
 
         Collider[] cols = Physics.OverlapSphere(caster.transform.position, range);
 
