@@ -22,7 +22,7 @@ using UnityEngine.AI;
 //   par _cooldownTimers[0] qui est posé à skill.cooldown lors du cast.
 //
 // Calls SkillSystem.Execute(skill, caster, target) — target peut être null
-//   pour Self, AoE_Self, GroundTarget, Direction, Skillshot, LineTarget, Cone.
+//   pour Self, AoE_Self, GroundTarget, Cone.
 //
 // ⚠ TODO §44 : Slot 0 protégé contre le drag & drop
 //   Bloquer drag & drop sur slot 0 côté UI (SkillBarUI)
@@ -431,8 +431,7 @@ public class SkillBar : MonoBehaviour
         // Inclut tous les TargetType nécessitant une Entity valide au cast.
         bool needsTarget = skill.targetType == TargetType.Target
                         || skill.targetType == TargetType.AoE_Target
-                        || skill.targetType == TargetType.Dash_Target
-                        || skill.targetType == TargetType.LineTarget;
+                        || skill.targetType == TargetType.Dash_Target;
 
         if (needsTarget)
         {
@@ -570,10 +569,22 @@ public class SkillBar : MonoBehaviour
             return;
         }
 
-        if (skill.hasDelayedImpact)
+        // Cone est visé à la souris (TargetingSystem.ResolveDirection() — priorité cible
+        // engagée/sélectionnée, sinon raycast souris, sinon facing) — posé juste avant le
+        // dispatch, consommé et remis à null par SkillSystem dès son premier usage plus bas
+        // (StartTrajectory ou Execute selon isTrajectory).
+        if (skill.targetType == TargetType.Cone)
+            SkillSystem.Instance?.SetSkillDirection(TargetingSystem.Instance.ResolveDirection());
+
+        // isTrajectory vérifié EN PREMIER — un skill Cone/Target/GroundTarget avec les deux flags
+        // cochés (combo autorisé, voir SkillData.isTrajectory) doit passer par StartTrajectory(),
+        // qui plante lui-même la zone différée en plus du dégât immédiat. Priorité inversée sans
+        // risque pour tout le reste : un skill qui n'a qu'un seul des deux flags actif se
+        // comporte identiquement peu importe l'ordre des checks.
+        if (skill.isTrajectory)
+            SkillSystem.Instance?.StartTrajectory(skill, _player, target);
+        else if (skill.hasDelayedImpact)
             SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);
-        else if (skill.isTrajectory)
-            SkillSystem.Instance?.StartTrajectory(skill, _player);
         else
             SkillSystem.Instance?.ResolveExecute(skill, _player, target);
 
@@ -745,10 +756,15 @@ public class SkillBar : MonoBehaviour
 
         EndChannelState();
 
-        if (skill.hasDelayedImpact)
+        // Cone visé à la souris — voir commentaire équivalent dans SkillBar.ResolveInstant().
+        if (skill.targetType == TargetType.Cone)
+            SkillSystem.Instance?.SetSkillDirection(TargetingSystem.Instance.ResolveDirection());
+
+        // Ordre inversé — voir commentaire équivalent dans SkillBar.ResolveInstant().
+        if (skill.isTrajectory)
+            SkillSystem.Instance?.StartTrajectory(skill, _player, target);
+        else if (skill.hasDelayedImpact)
             SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);
-        else if (skill.isTrajectory)
-            SkillSystem.Instance?.StartTrajectory(skill, _player);
         else
             SkillSystem.Instance?.Execute(skill, _player, target);
 
@@ -1039,7 +1055,7 @@ public class SkillBar : MonoBehaviour
     ///  - Slots ≥ 1 : EngageFromSkill() complet (Select + Engage) — un vrai skill doit aussi
     ///    ramener le TargetPanel sur sa cible.
     /// Buff/Debuff n'engagent JAMAIS le combat, même sur Target/AoE_Target/Dash_Target/
-    /// LineTarget — un buff n'est jamais hostile, et on peut débuff une cible sans pour
+    /// un buff n'est jamais hostile, et on peut débuff une cible sans pour
     /// autant l'agresser (l'auto-attaque doit rester un choix explicite du joueur).
     /// Snap immédiat vers la cible — sinon l'anim (auto-attaque ou skill) peut jouer dans le
     /// mauvais sens si le perso n'était pas déjà orienté dessus (rotation instantanée, pas de
@@ -1053,8 +1069,6 @@ public class SkillBar : MonoBehaviour
             && skill.targetType != TargetType.Self
             && skill.targetType != TargetType.AoE_Self
             && skill.targetType != TargetType.GroundTarget
-            && skill.targetType != TargetType.Direction
-            && skill.targetType != TargetType.Skillshot
             && skill.targetType != TargetType.Cone
             && skill.effectType != SkillEffectType.Buff
             && skill.effectType != SkillEffectType.Debuff)
