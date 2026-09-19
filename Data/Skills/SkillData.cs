@@ -8,14 +8,17 @@ using System.Collections.Generic;
 // AetherTree GDD v3.5 — Section 4
 //
 // Ordre Inspector :
-//   ① Identité      — nom, description, tags, skillType, icon, vfx, son
+//   ① Identité           — nom, description, tags, skillType
 //   ② Compatibilité arme
-//   ③ Effet principal — effectType, damageMultiplier, cooldown, castTime
-//   ④ Coût           — mana, HP, gold
-//   ⑤ Ciblage & Portée
-//   ⑥ Éléments & Multiplicateur élémentaire
-//   ⑦ Effets secondaires (StatusEffects SO)
-//   ⑨ Visuel & Son
+//   ③ Effet principal    — effectType, cooldown, castTime, effet spécial (Other), dégâts
+//                           physiques, éléments & multiplicateur élémentaire
+//   ④ Exécution avancée  — Normal / MultiHit (hitSteps) / ComboSequence (comboSteps)
+//   ⑤ Coût               — mana, HP, gold
+//   ⑥ Ciblage & Portée   — targetType, range, aoeRadius, coneHalfAngle, aoeFaction
+//   ⑦ Zone à impact différé / Trajectoire mobile — hasDelayedImpact, isTrajectory
+//   ⑧ Effets secondaires (StatusEffects SO)
+//   ⑨ Visuel             — icon, vfx*, animations
+//   ⑩ Son                — soundEffect
 //
 // Calcul des dégâts (GDD §6.2) :
 //   Physique  — baseDamage * damageMultiplier * ratio → réduit par défense
@@ -128,39 +131,11 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float damageMagicRatio  = 0f;
 
-    // ── ④ Coût ────────────────────────────────────────────────
-    [Header("④ Coût")]
-    [Tooltip("Coût en mana.")]
-    public float manaCost = 0f;
-    [Tooltip("Coût en HP.")]
-    public float hpCost   = 0f;
-    [Tooltip("Coût en gold.")]
-    public int   goldCost = 0;
-
-    // ── ⑤ Ciblage & Portée ────────────────────────────────────
-    [Header("⑤ Ciblage & Portée")]
-    public TargetType targetType      = TargetType.Target;
-    public float      range           = 2.5f;
-    public float      aoeRadius       = 0f;
-    public float      projectileSpeed = 15f;
-    public GameObject projectilePrefab;
-
-    [Tooltip("Qui peut être touché par ce skill — AoE ou non (Target/Dash_Target y compris,\n" +
-             "pas seulement les zones).\n" +
-             "Enemies  → seulement les ennemis du caster (dégâts classiques)\n" +
-             "Allies   → seulement les alliés du caster (soin/buff, inclut le caster lui-même\n" +
-             "           s'il est dans la zone pour un AoE — ex: Purify de zone)\n" +
-             "Everyone → tout le monde, sans distinction")]
-    [ShowIf(nameof(targetType), TargetType.AoE_Self, TargetType.AoE_Target, TargetType.GroundTarget,
-        TargetType.Cone, TargetType.Direction, TargetType.Skillshot, TargetType.LineTarget,
-        TargetType.Target, TargetType.Dash_Target, DisplayName = "Cible")]
-    public SkillAoeFaction aoeFaction = SkillAoeFaction.Enemies;
-
-    // ── ⑥ Éléments — Damage ou Other (ex: DrainHP) uniquement ─────────────
+    // ── ③ Éléments — Damage ou Other (ex: DrainHP) uniquement ─────────────
     [Tooltip("Vide = Neutre pur (pas de dégâts élémentaires)\n" +
              "1 élément = skill élémentaire\n" +
              "2+ éléments = skill combo élémentaire")]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other, Header = "⑥ Éléments")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other, Header = "③ Éléments")]
     public List<ElementType> elements = new List<ElementType>();
 
     [Range(0f, 5f)]
@@ -173,24 +148,15 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float elementalMultiplier = 1f;
 
-    // ── ⑦ Effets secondaires (StatusEffects SO) ───────────────
-    [Header("⑦ Effets secondaires (BuffData / DebuffData + chance)")]
-    [Tooltip("Effets déclenchés à l'utilisation du skill.\n" +
-             "Glisse un BuffData ou DebuffData + règle la chance.\n\n" +
-             "Ex: Skill Damage + Burn 30% → dégâts + chance de brûlure\n" +
-             "Ex: Skill Buff pur → glisse un BuffData Haste à 100%\n" +
-             "Ex: Skill Debuff pur → glisse un DebuffData Poison à 100%")]
-    public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
-
-    // ── ⑨ Exécution avancée — Active uniquement (pas BasicAttack/Ultimate), ──
-    // Damage ou Other uniquement (jamais Buff/Debuff, pas de sens à multi-hit/comboter
-    // un soin ou un buff pur avec ce mécanisme).
+    // ── ④ Exécution avancée — les 3 skillType (BasicAttack/Active/Ultimate ne diffèrent QUE
+    // par leur slot SkillBar, voir SkillType — aucune raison de restreindre MultiHit/Combo à
+    // Active seul). Damage ou Other uniquement (jamais Buff/Debuff, pas de sens à multi-hit/
+    // comboter un soin ou un buff pur avec ce mécanisme).
     [Tooltip("Normal        → exécution standard\n" +
              "MultiHit      → une activation, N hits en séquence (hitSteps)\n" +
              "ComboSequence → N appuis successifs sur le même slot (comboSteps)")]
     [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
-        AndField = nameof(skillType), AndValue = SkillType.Active,
-        Header = "⑨ Exécution avancée")]
+        Header = "④ Exécution avancée")]
     public SkillExecutionType executionType = SkillExecutionType.Normal;
 
     [Tooltip("MultiHit uniquement — liste des hits avec leurs stats propres.\n" +
@@ -216,16 +182,55 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
     public float comboStepInterval = 0f;
 
-    // ── ⑨Bis Zone à impact différé ─────────────────────────────
+    // ── ⑤ Coût ────────────────────────────────────────────────
+    [Header("⑤ Coût")]
+    [Tooltip("Coût en mana.")]
+    public float manaCost = 0f;
+    [Tooltip("Coût en HP.")]
+    public float hpCost   = 0f;
+    [Tooltip("Coût en gold.")]
+    public int   goldCost = 0;
+
+    // ── ⑥ Ciblage & Portée ────────────────────────────────────
+    [Header("⑥ Ciblage & Portée")]
+    public TargetType targetType      = TargetType.Target;
+    public float      range           = 2.5f;
+    public float      aoeRadius       = 0f;
+    public float      projectileSpeed = 15f;
+
+    [Tooltip("Demi-angle du cône EN DEGRÉS (pas un %) — ex: 45 = éventail de 90° total\n" +
+             "(45° de chaque côté de la direction visée). Champ dédié — aoeRadius garde son\n" +
+             "sens habituel (rayon en mètres) pour ce targetType, pas de double-emploi.")]
+    [Range(1f, 180f)]
+    [ShowIf(nameof(targetType), TargetType.Cone, Header = "⑥ Cône (targetType = Cone)")]
+    public float coneHalfAngle = 45f;
+
+    [Tooltip("Qui peut être touché par ce skill — AoE ou non (Target/Dash_Target y compris,\n" +
+             "pas seulement les zones).\n" +
+             "Enemies  → seulement les ennemis du caster (dégâts classiques)\n" +
+             "Allies   → seulement les alliés du caster (soin/buff, inclut le caster lui-même\n" +
+             "           s'il est dans la zone pour un AoE — ex: Purify de zone)\n" +
+             "Everyone → tout le monde, sans distinction")]
+    [ShowIf(nameof(targetType), TargetType.AoE_Self, TargetType.AoE_Target, TargetType.GroundTarget,
+        TargetType.Cone, TargetType.Target, TargetType.Dash_Target, DisplayName = "Cible")]
+    public SkillAoeFaction aoeFaction = SkillAoeFaction.Enemies;
+
+    // ── ⑦ Zone à impact différé / Trajectoire mobile ───────────
     [Tooltip("Transforme la résolution de ce skill en zone au sol à impact différé — au lieu de\n" +
              "résoudre les dégâts immédiatement au point de résolution existant (fin d'anim / fin\n" +
              "de canalisation), une zone se plante à cet endroit et les dégâts n'appliquent qu'après\n" +
              "impactDelay secondes, à qui se trouve RÉELLEMENT dans la zone à ce moment (permet une\n" +
              "vraie fenêtre d'esquive). Non supporté avec MultiHit/ComboSequence — la vraie garde\n" +
-             "contre un step de combo est côté code (SkillBar.ResolveInstant), pas ce warning seul.")]
-    [ShowIf(nameof(targetType), TargetType.Target, TargetType.GroundTarget, TargetType.AoE_Target,
+             "contre un step de combo est côté code (SkillBar.ResolveInstant), pas ce warning seul.\n" +
+             "Cone/GroundTarget/Target + isTrajectory = seule combinaison autorisée avec isTrajectory\n" +
+             "(exception délibérée, voir tooltip isTrajectory) — la zone se plante au bout du\n" +
+             "cône/du trajet, EN PLUS du dégât immédiat du sweep/de l'expansion (double dégât voulu\n" +
+             "si une cible reste dans le rayon final). Tous les autres targetType restent\n" +
+             "mutuellement exclusifs.")]
+    [ShowIf(nameof(targetType), TargetType.Self, TargetType.AoE_Self, TargetType.Target,
+        TargetType.GroundTarget, TargetType.AoE_Target, TargetType.Cone,
         AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
-        Header = "⑨Bis Zone à impact différé")]
+        Header = "⑦ Zone à impact différé")]
     public bool hasDelayedImpact = false;
 
     [Tooltip("Délai en secondes entre le plantage de la zone (résolution existante) et le premier\n" +
@@ -251,16 +256,80 @@ public class SkillData : ScriptableObject
     [Tooltip("Transforme la résolution de ce skill en hitbox mobile qui voyage du caster vers " +
              "une destination (au lieu de résoudre les dégâts au point de résolution existant, " +
              "une trajectoire est parcourue et touche tout ce qui se trouve sur son passage). " +
-             "Distinct de hasDelayedImpact (zone FIXE une fois plantée) — mutuellement exclusif. " +
-             "GroundTarget : voyage vers le point cliqué au sol. Direction : voyage en ligne " +
-             "droite sur une distance = range.")]
-    [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Direction,
+             "Distinct de hasDelayedImpact (zone FIXE une fois plantée) — mutuellement exclusif, " +
+             "SAUF Cone/GroundTarget/Target (seule combinaison autorisée, voir tooltip " +
+             "hasDelayedImpact) : la zone se plante alors au bout du trajet, EN PLUS du dégât " +
+             "immédiat.\n" +
+             "GroundTarget : voyage vers le point cliqué au sol (visé souris).\n" +
+             "Target / AoE_Target : voyage vers la position de la cible AU LANCEMENT (figée, pas " +
+             "de homing — si la cible bouge après coup, la trajectoire continue vers le point où " +
+             "elle était, peut la manquer). Perce tout sur le trajet, sauf si stopAtFirstHit.\n" +
+             "Cone : PAS un point qui voyage — un cône qui s'ÉLARGIT depuis le caster (portée 0 → " +
+             "range à la vitesse projectileSpeed), angle = coneHalfAngle, visé à la souris. Chemin " +
+             "de résolution séparé (TrajectoryConeRoutine), pas le sweep point-à-point des autres " +
+             "cas.")]
+    [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Target,
+        TargetType.AoE_Target, TargetType.Cone,
         AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
-        Header = "⑨Ter Trajectoire mobile")]
+        Header = "⑦ Trajectoire mobile")]
     public bool isTrajectory = false;
 
-    // ── ⑩ Visuel & Son ────────────────────────────────────────
-    [Header("⑩ Visuel & Son")]
+    [Tooltip("Si coché, le sweep s'arrête au PREMIER ennemi touché (comme l'ancien Skillshot —\n" +
+             "tir précis). Si décoché (défaut), perce tout ce qui est sur le trajet (comme " +
+             "l'ancien Direction/LineTarget). Cone non concerné — touche toujours tout l'éventail.\n" +
+             "Si combiné à hasDelayedImpact, la zone différée se plante au POINT D'ARRÊT réel, pas " +
+             "à la destination d'origine.")]
+    [ShowIf(nameof(targetType), TargetType.Target, TargetType.GroundTarget,
+        AndField = nameof(isTrajectory), AndValue = true, Header = "⑦ Arrêt au premier hit")]
+    public bool stopAtFirstHit = false;
+
+    [Tooltip("Forme de la hitbox qui voyage — ignoré pour Cone (toujours un éventail angulaire,\n" +
+             "pas une forme qui voyage).\n" +
+             "Sphere → ronde dans tous les axes (largeur = profondeur = aoeRadius). Cas normal —\n" +
+             "         flèche fine (aoeRadius petit) ou tube large (aoeRadius grand).\n" +
+             "Box    → rectangulaire, largeur (trajectoryWidth) et profondeur (trajectoryDepth)\n" +
+             "         réglables indépendamment — pour un VRAI mur plat, large sans être épais\n" +
+             "         (ou l'inverse), selon le VFX. Hauteur fixe (interne, généreuse) — pas de\n" +
+             "         variation de hauteur nécessaire au combat (entités ~même niveau au sol).")]
+    [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Target, TargetType.AoE_Target,
+        AndField = nameof(isTrajectory), AndValue = true, Header = "⑦ Forme de trajectoire")]
+    public TrajectoryShape trajectoryShape = TrajectoryShape.Sphere;
+
+    [Tooltip("Largeur totale de la boîte (axe horizontal, perpendiculaire au trajet). Box uniquement.")]
+    [Min(0.1f)]
+    [ShowIf(nameof(trajectoryShape), TrajectoryShape.Box)]
+    public float trajectoryWidth = 2f;
+
+    [Tooltip("Profondeur totale de la boîte (épaisseur sur l'axe du trajet, avant/arrière) — règle\n" +
+             "selon le VFX du skill (mur fin type lame de vent vs bloc épais type mur de pierre).\n" +
+             "Box uniquement.")]
+    [Min(0.1f)]
+    [ShowIf(nameof(trajectoryShape), TrajectoryShape.Box)]
+    public float trajectoryDepth = 1f;
+
+    [Tooltip("Si coché, la zone RECALCULE sa position à chaque tick sur l'entité vivante " +
+             "(Self/AoE_Self : le CASTER — ex: tourbillon qui te suit si tu te déplaces en " +
+             "spinnant. Target/AoE_Target : la CIBLE — ex: corbeaux qui suivent une cible " +
+             "marquée). Si décoché (défaut), la zone reste figée à la position capturée au " +
+             "lancement — ex: fiole de poison lancée au sol, zone qui punit une cible qui " +
+             "s'enfuit. GroundTarget : toujours figé, ce champ n'apparaît pas (pas d'entité à " +
+             "suivre).")]
+    [ShowIf(nameof(targetType), TargetType.Self, TargetType.AoE_Self, TargetType.Target,
+        TargetType.AoE_Target, AndField = nameof(hasDelayedImpact), AndValue = true,
+        Header = "⑦ Zone qui suit")]
+    public bool zoneFollowsAnchor = false;
+
+    // ── ⑧ Effets secondaires (StatusEffects SO) ───────────────
+    [Header("⑧ Effets secondaires (BuffData / DebuffData + chance)")]
+    [Tooltip("Effets déclenchés à l'utilisation du skill.\n" +
+             "Glisse un BuffData ou DebuffData + règle la chance.\n\n" +
+             "Ex: Skill Damage + Burn 30% → dégâts + chance de brûlure\n" +
+             "Ex: Skill Buff pur → glisse un BuffData Haste à 100%\n" +
+             "Ex: Skill Debuff pur → glisse un DebuffData Poison à 100%")]
+    public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
+
+    // ── ⑨ Visuel ───────────────────────────────────────────────
+    [Header("⑨ Visuel")]
     public Sprite     icon;
 
     [Tooltip("VFX spawné à la position du caster AU LANCEMENT (pentacle aux pieds, glow aux\n" +
@@ -287,8 +356,6 @@ public class SkillData : ScriptableObject
     [FormerlySerializedAs("vfxPrefab")]
     public GameObject vfxImpact;
 
-    public AudioClip  soundEffect;
-
     [Tooltip("Animation jouée par le caster à l'exécution du skill (PlayerAnimatorController.PlayAttack).\n" +
              "Vide = pas d'animation dédiée (ex: buff pur, effet purement passif).\n" +
              "⚠ Donnée visuelle — si SpellData est un jour séparé en gameplay/visuel pour le\n" +
@@ -300,6 +367,10 @@ public class SkillData : ScriptableObject
              "castTime secondes. Distincte de attackAnimation (jouée sur les skills castTime 0).\n" +
              "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
     public AnimationClip channelAnimation;
+
+    // ── ⑩ Son ──────────────────────────────────────────────────
+    [Header("⑩ Son")]
+    public AudioClip  soundEffect;
 
     // ── Helpers ───────────────────────────────────────────────
 
@@ -399,19 +470,20 @@ public class SkillData : ScriptableObject
                               $"{executionType} — combinaison non gérée, la zone différée ne " +
                               "fonctionne qu'avec executionType = Normal (instant ou canalisé).", this);
 
-        // [ShowIf] masque hasDelayedImpact hors Target/GroundTarget/AoE_Target dans l'Inspector,
-        // mais ne le RESET jamais si targetType change après coup (ShowIf n'a aucun writeback) —
-        // le champ reste true, invisible, et PlantDelayedZone() tourne quand même au runtime,
-        // repliant silencieusement le skill sur une sphère centrée sur le caster.
-        if (hasDelayedImpact
-            && targetType != TargetType.Target
-            && targetType != TargetType.GroundTarget
-            && targetType != TargetType.AoE_Target)
+        // [ShowIf] masque hasDelayedImpact hors Target/GroundTarget/AoE_Target/Cone/Direction dans
+        // l'Inspector, mais ne le RESET jamais si targetType change après coup (ShowIf n'a aucun
+        // writeback) — le champ reste true, invisible, et PlantDelayedZone() tourne quand même au
+        // runtime, repliant silencieusement le skill sur une sphère centrée sur le caster.
+        bool hasDelayedImpactSupportedTargetType =
+            targetType == TargetType.Self || targetType == TargetType.AoE_Self ||
+            targetType == TargetType.Target || targetType == TargetType.GroundTarget ||
+            targetType == TargetType.AoE_Target || targetType == TargetType.Cone;
+        if (hasDelayedImpact && !hasDelayedImpactSupportedTargetType)
             Debug.LogWarning($"[SkillData:{name}] hasDelayedImpact = true avec targetType = " +
                               $"{targetType} — non supporté (le champ est masqué dans l'Inspector " +
                               "mais reste actif). La zone se plantera quand même, centrée sur le " +
-                              "caster. Décoche hasDelayedImpact ou remets targetType sur Target/" +
-                              "GroundTarget/AoE_Target.", this);
+                              "caster. Décoche hasDelayedImpact ou remets targetType sur Self/" +
+                              "AoE_Self/Target/GroundTarget/AoE_Target/Cone.", this);
 
         // hasDelayedImpact réutilise aoeRadius pour la taille de la zone (Physics.OverlapSphere) —
         // mais aoeRadius vaut 0 par défaut et n'est jamais lu par le chemin normal d'un skill
@@ -425,24 +497,37 @@ public class SkillData : ScriptableObject
                               "à un skill Target normal, qui l'ignore). Règle aoeRadius > 0, sinon " +
                               "la zone ne touche qu'une cible parfaitement immobile au point exact.", this);
 
-        // isTrajectory et hasDelayedImpact sont mutuellement exclusifs — un skill est soit une
-        // zone fixe différée (chantier C), soit une trajectoire mobile (ce chantier), jamais les
-        // deux. Avertissement seulement, pas de correction automatique (idiome du fichier).
-        if (isTrajectory && hasDelayedImpact)
+        // isTrajectory et hasDelayedImpact sont mutuellement exclusifs, SAUF Cone/Direction/
+        // GroundTarget — exception délibérée (demande Florian) : le sweep/l'expansion inflige son
+        // dégât immédiat ET une zone classique se plante en plus au bout du trajet (voir
+        // SkillSystem.TrajectoryRoutine/TrajectoryConeRoutine — ex: mur de feu qui voyage vers le
+        // point cliqué (GroundTarget) et laisse une zone brûlante à l'arrivée). Pour tout autre
+        // targetType, toujours incompatibles — un skill est soit une zone fixe différée, soit une
+        // trajectoire mobile. Avertissement seulement, pas de correction automatique (idiome du
+        // fichier).
+        bool trajectoryPlusZoneSupportedTargetType =
+            targetType == TargetType.Cone || targetType == TargetType.GroundTarget ||
+            targetType == TargetType.Target;
+        if (isTrajectory && hasDelayedImpact && !trajectoryPlusZoneSupportedTargetType)
             Debug.LogWarning($"[SkillData:{name}] isTrajectory = true ET hasDelayedImpact = " +
-                              "true simultanément — combinaison non supportée, mutuellement " +
-                              "exclusifs. Décoche l'un des deux.", this);
+                              "true simultanément avec targetType = " + targetType + " — combinaison " +
+                              "non supportée pour ce targetType (seuls Cone/GroundTarget/Target " +
+                              "l'autorisent). Décoche l'un des deux.", this);
 
-        // [ShowIf] masque isTrajectory hors GroundTarget/Direction dans l'Inspector, mais ne le
-        // RESET jamais si targetType change après coup (ShowIf n'a aucun writeback) — le champ
-        // reste true, invisible, et StartTrajectory() tourne quand même au runtime, traitant
-        // silencieusement le skill comme targetType = Direction (voir SkillSystem.StartTrajectory).
-        if (isTrajectory && targetType != TargetType.GroundTarget && targetType != TargetType.Direction)
+        // [ShowIf] masque isTrajectory hors GroundTarget/Direction/Target/AoE_Target/LineTarget/
+        // Skillshot/Cone dans l'Inspector, mais ne le RESET jamais si targetType change après
+        // coup (ShowIf n'a aucun writeback) — le champ reste true, invisible, et
+        // StartTrajectory() tourne quand même au runtime, traitant silencieusement le skill
+        // comme targetType = Direction (voir SkillSystem.StartTrajectory).
+        bool isTrajectorySupportedTargetType =
+            targetType == TargetType.GroundTarget || targetType == TargetType.Target ||
+            targetType == TargetType.AoE_Target   || targetType == TargetType.Cone;
+        if (isTrajectory && !isTrajectorySupportedTargetType)
             Debug.LogWarning($"[SkillData:{name}] isTrajectory = true avec targetType = " +
                               $"{targetType} — non supporté (le champ est masqué dans l'Inspector " +
                               "mais reste actif). La trajectoire sera quand même lancée, traitée " +
-                              "comme Direction. Décoche isTrajectory ou remets targetType sur " +
-                              "GroundTarget/Direction.", this);
+                              "comme le trajet générique (voir StartTrajectory). Décoche isTrajectory " +
+                              "ou remets targetType sur GroundTarget/Target/AoE_Target/Cone.", this);
 
         // Symétrique du warning existant hasDelayedImpact && executionType != Normal. Sans lui,
         // un skill isTrajectory configuré en MultiHit/ComboSequence n'a aucun avertissement alors
@@ -488,8 +573,16 @@ public enum ModifierType  { Flat = 0, Percent = 1 }
 
 public enum TargetType
 {
-    Target = 0, Self = 1, AoE_Self = 2, AoE_Target = 3, Skillshot = 4,
-    LineTarget = 5, GroundTarget = 6, Cone = 7, Direction = 8, Dash_Target = 9, Dash_Direction = 10
+    Target = 0, Self = 1, AoE_Self = 2, AoE_Target = 3,
+    GroundTarget = 4, Cone = 5, Dash_Target = 6, Dash_Direction = 7,
+}
+
+/// <summary>Forme de la hitbox mobile d'un skill isTrajectory — voir SkillData.trajectoryShape.
+/// Ignoré pour Cone (toujours angulaire, jamais une forme qui voyage).</summary>
+public enum TrajectoryShape
+{
+    Sphere = 0, // Ronde dans tous les axes (largeur = hauteur = aoeRadius) — cas par défaut.
+    Box    = 1, // Rectangulaire, largeur/profondeur indépendantes (trajectoryWidth/trajectoryDepth), hauteur fixe.
 }
 
 /// <summary>Qui est touché par un effet de zone/multi-cibles — voir SkillSystem.IsAlly.</summary>
