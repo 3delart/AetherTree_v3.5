@@ -474,6 +474,7 @@ public class SkillBar : MonoBehaviour
             }
 
             SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
+            RotateTowardsDirection(hit.point - _player.transform.position);
         }
 
         // ── Combo séquentiel (Méthode 2) ─────────────────────
@@ -971,6 +972,7 @@ public class SkillBar : MonoBehaviour
 
                 if (_agent != null) _agent.ResetPath();
                 SkillSystem.Instance?.SetGroundTargetPoint(_pendingGroundPoint.Value);
+                RotateTowardsDirection(_pendingGroundPoint.Value - _player.transform.position);
                 if (!TryAdvanceCombo(_pendingSkill, _pendingSlot, null))
                     LaunchSkill(_pendingSkill, _pendingSlot, null);
                 CancelApproach();
@@ -1062,6 +1064,10 @@ public class SkillBar : MonoBehaviour
     /// lissage, l'action doit partir orientée dès la 1ère frame). Appelé au clic (ExecuteSkill)
     /// pour un skill instant, ou au LANCEMENT d'une canalisation (StartChannel) — jamais à la
     /// résolution, l'engagement/l'orientation doivent être immédiats dans les deux cas.
+    /// Cone oriente aussi le perso (vers la même direction souris que SetSkillDirection()
+    /// résoudra à la résolution) — pas d'Engage/EngageFromSkill pour autant, Cone n'a pas de
+    /// cible Entity. GroundTarget est orienté séparément, là où le point cliqué est connu
+    /// (TryUseSlot()/CheckApproach(), avant l'appel à cette méthode).
     /// </summary>
     private void EngageAndFaceTarget(SkillData skill, int slot, Entity target)
     {
@@ -1076,11 +1082,25 @@ public class SkillBar : MonoBehaviour
             if (slot == 0) TargetingSystem.Instance?.Engage(target);
             else           TargetingSystem.Instance?.EngageFromSkill(target);
 
-            Vector3 faceDir = target.transform.position - _player.transform.position;
-            faceDir.y = 0f;
-            if (faceDir.sqrMagnitude > 0.001f)
-                _player.transform.rotation = Quaternion.LookRotation(faceDir);
+            RotateTowardsDirection(target.transform.position - _player.transform.position);
         }
+        else if (skill.targetType == TargetType.Cone)
+        {
+            Vector3 dir = TargetingSystem.Instance != null
+                ? TargetingSystem.Instance.ResolveDirection()
+                : _player.transform.forward;
+            RotateTowardsDirection(dir);
+        }
+    }
+
+    // ── Rotation instantanée (pas de lissage) vers une direction, aplatie sur XZ — utilisée
+    // par EngageAndFaceTarget (cible Entity/Cone) et par les 2 sites GroundTarget qui posent
+    // le point cliqué (TryUseSlot()/CheckApproach()).
+    private void RotateTowardsDirection(Vector3 dir)
+    {
+        dir.y = 0f;
+        if (dir.sqrMagnitude > 0.001f)
+            _player.transform.rotation = Quaternion.LookRotation(dir);
     }
 
     // ── Portée par défaut selon arme ──────────────────────────
