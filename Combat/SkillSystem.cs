@@ -1172,7 +1172,7 @@ public class SkillSystem : MonoBehaviour
 
     private IEnumerator DashSelfRoutine(SkillData skill, Entity caster, Entity target)
     {
-        float dashDuration = caster.entityType == EntityType.Player ? 0.3f : 0.25f;
+        float dashDuration = skill.displacementDuration;
         float stopOffset   = caster.entityType == EntityType.Player ? 1.5f : 1.2f;
 
         Vector3 startPos = caster.transform.position;
@@ -1409,7 +1409,7 @@ public class SkillSystem : MonoBehaviour
                 AudioSource.PlayClipAtPoint(skill.soundEffect, v.transform.position);
         }
 
-        float dashDuration = 0.25f;
+        float dashDuration = skill.displacementDuration;
         float stopOffset   = 1.2f;
         var   starts = new Vector3[victims.Count];
         var   ends   = new Vector3[victims.Count];
@@ -1508,7 +1508,7 @@ public class SkillSystem : MonoBehaviour
                 AudioSource.PlayClipAtPoint(skill.soundEffect, v.transform.position);
         }
 
-        float dashDuration = 0.25f;
+        float dashDuration = skill.displacementDuration;
         var   starts = new Vector3[victims.Count];
         var   ends   = new Vector3[victims.Count];
         var   agents = new UnityEngine.AI.NavMeshAgent[victims.Count];

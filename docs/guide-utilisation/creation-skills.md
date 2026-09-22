@@ -113,8 +113,11 @@ pas de correction automatique.
 `targetType` réévalué à la NOUVELLE position) · `Pull`/`Push` AU DÉPART, avant le trajet animé.
 
 **Champs additionnels** : `displacementDistance` (`DashSelf`/`TeleportSelf` + `GroundTarget`/
-`Cone`, `Push` toujours) · `teleportBehindTarget` (`TeleportSelf` + `Target` uniquement, coché =
-derrière) · `bringsAllies` (`TeleportSelf` uniquement, emmène les alliés proches).
+`Cone`, `Push` toujours) · `displacementDuration` (`DashSelf`/`Pull`/`Push` — durée du trajet
+animé en secondes, défaut 0.3 ; `TeleportSelf`/`SwapPosition` sont instantanés, pas concernés ;
+plus petit = plus rapide/nerveux, plus grand = plus lent/lourd) · `teleportBehindTarget`
+(`TeleportSelf` + `Target` uniquement, coché = derrière) · `bringsAllies` (`TeleportSelf`
+uniquement, emmène les alliés proches).
 
 **Interruption & résistance** : un CC dur (Stun/Shocked/Freeze/Knockback/Fear) qui atterrit
 PENDANT un `DashSelf` en cours l'interrompt à la position courante — `TeleportSelf`/

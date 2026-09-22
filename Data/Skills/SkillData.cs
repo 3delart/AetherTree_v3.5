@@ -242,6 +242,16 @@ public class SkillData : ScriptableObject
         DisplacementType.Push, Header = "⑥ Distance de déplacement")]
     public float displacementDistance = 5f;
 
+    [Tooltip("Durée du trajet animé en secondes — DashSelf/Pull/Push uniquement (TeleportSelf/" +
+             "SwapPosition sont instantanés, pas de trajet). Remplace l'ancienne constante en " +
+             "dur (0.3s joueur / 0.25s Mob) — même durée pour tout le monde désormais, réglable " +
+             "par skill. Plus petit = plus rapide/percutant (ex: 0.15 pour un dash nerveux), plus " +
+             "grand = plus lent/lourd (ex: 0.6 pour une charge de brute).")]
+    [Range(0.05f, 2f)]
+    [ShowIf(nameof(displacementType), DisplacementType.DashSelf, DisplacementType.Pull,
+        DisplacementType.Push, Header = "⑥ Durée du trajet")]
+    public float displacementDuration = 0.3f;
+
     [Tooltip("TeleportSelf + targetType=Target uniquement : coché = atterrit DERRIÈRE la cible " +
              "(côté vers lequel elle tourne le dos — blink-backstab), décoché = DEVANT elle " +
              "(côté qu'elle regarde). Calculé par rapport au FACING DE LA CIBLE, pas du caster. " +
