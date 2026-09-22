@@ -114,6 +114,20 @@ public class MobData : ScriptableObject
     public float leashMultiplier = 6f;
     public float patrolRadius    = 10f;
 
+    // ── Animations locomotion ──────────────────────────────────
+    // Consommées par CombatEntityAnimatorController — swap par-dessus les 3 placeholders
+    // (PLACEHOLDER_Idle/Walk/Chase) du Animator Controller PARTAGÉ entre tous les Mob/PNJ (voir
+    // docs/guide-utilisation/creation-mob.md § Animator). Chaque mob garde ses propres clips,
+    // liés à SON rig — seul le graphe/Controller est mutualisé, jamais les clips eux-mêmes.
+    [Header("Animations locomotion")]
+    [Tooltip("Anim jouée à l'arrêt hors combat.")]
+    public AnimationClip idleClip;
+    [Tooltip("Anim de déplacement en Patrol (déambulation).")]
+    public AnimationClip walkClip;
+    [Tooltip("Anim de déplacement en Engage (poursuite/combat rapproché) — distincte de Walk\n" +
+             "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController.")]
+    public AnimationClip chaseClip;
+
     // ── Cycle jour/nuit ───────────────────────────────────────
     [Header("Cycle Jour/Nuit")]
     [Tooltip("Si true, ce mob n'apparaît que la nuit (§18.1 / §20)")]
@@ -136,6 +150,14 @@ public class MobData : ScriptableObject
     public List<OnHitReceivedEffectEntry> onHitReceivedEffects = new List<OnHitReceivedEffectEntry>();
     [Header("Effets On-Hit infligés")]
     public List<OnHitDealtEffectEntry> onHitDealtEffects = new List<OnHitDealtEffectEntry>();
+
+    // ── Résistances aux debuffs ────────────────────────────────
+    [Header("Résistances aux debuffs (innées, indépendantes de tout équipement)")]
+    [Tooltip("Même mécanisme que la résistance équipement du joueur (DebuffResistanceEntry) — " +
+             "un Mob n'a pas d'équipement, ce champ le remplace. resistChance = 1 sur un " +
+             "DebuffType = immunité totale (ex: boss raciné, immunisé au CC dur — voir " +
+             "DebuffType.Displacement pour l'immunité au Pull/Push/SwapPosition).")]
+    public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
 
     // ── Visuel ────────────────────────────────────────────────
     [Header("Visuel")]
@@ -195,6 +217,13 @@ public class MobData : ScriptableObject
             isNocturnal = true;
             Debug.LogWarning($"[MobData] {mobName} : mobType Nocturnal → isNocturnal forcé à true.");
         }
+
+        // Sans ces 3 clips, CombatEntityAnimatorController retombe sur les placeholders du
+        // Controller partagé — une anim faite pour un AUTRE rig (souvent T-pose/désarticulé).
+        if (idleClip == null || walkClip == null || chaseClip == null)
+            Debug.LogWarning($"[MobData] {mobName} : idleClip/walkClip/chaseClip incomplet(s) — " +
+                              "ce mob affichera l'anim placeholder du Controller partagé (faite " +
+                              "pour un autre rig) tant que les 3 clips ne sont pas assignés.");
     }
 #endif
 }

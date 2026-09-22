@@ -174,6 +174,21 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public MobAIType aiType = MobAIType.Aggressive;
 
+    // ── Animations locomotion ──────────────────────────────────
+    // Consommées par CombatEntityAnimatorController — même mécanisme que MobData (voir son
+    // commentaire). Groupé sous canFight : un PNJ non combattant n'a pas de NavMeshAgent, donc
+    // pas de Walk/Chase à distinguer (voir Awake() — _agent n'existe que si canFight).
+    [Tooltip("Anim jouée à l'arrêt hors combat.")]
+    [ShowIf(nameof(canFight), true, Header = "Animations locomotion (canFight)")]
+    public AnimationClip idleClip;
+    [Tooltip("Anim de déplacement en Patrol (déambulation).")]
+    [ShowIf(nameof(canFight), true)]
+    public AnimationClip walkClip;
+    [Tooltip("Anim de déplacement en Engage (poursuite/combat rapproché) — distincte de Walk\n" +
+             "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController.")]
+    [ShowIf(nameof(canFight), true)]
+    public AnimationClip chaseClip;
+
     // ── Critique ──────────────────────────────────────────────
     [Tooltip("Chance de critique [0..1]. Poussé sur Entity via SetCritChance().")]
     [ShowIf(nameof(canFight), true)]
@@ -188,6 +203,14 @@ public class PNJData : ScriptableObject
     [Header("Effets On-Hit infligés")]
     [ShowIf(nameof(canFight), true)]
     public List<OnHitDealtEffectEntry> onHitDealtEffects = new List<OnHitDealtEffectEntry>();
+
+    // ── Résistances aux debuffs — actives même hors canFight, même raison que
+    // onHitReceivedEffects ci-dessus (un PNJ non-combattant peut quand même être attaqué) ──
+    [Header("Résistances aux debuffs (innées, indépendantes de tout équipement)")]
+    [Tooltip("Même mécanisme que la résistance équipement du joueur (DebuffResistanceEntry) — " +
+             "un PNJ n'a pas d'équipement, ce champ le remplace. resistChance = 1 sur un " +
+             "DebuffType = immunité totale.")]
+    public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
 
     // =========================================================
     // VALIDATION EDITOR
@@ -205,6 +228,13 @@ public class PNJData : ScriptableObject
         if (canFight && !canDie)
             Debug.LogWarning($"[PNJData] {pnjName} : canFight = true mais canDie = false — " +
                              "ce PNJ peut attaquer mais est invulnérable. Intentionnel ?");
+
+        // Sans ces 3 clips, CombatEntityAnimatorController retombe sur les placeholders du
+        // Controller partagé — une anim faite pour un AUTRE rig (souvent T-pose/désarticulé).
+        if (canFight && (idleClip == null || walkClip == null || chaseClip == null))
+            Debug.LogWarning($"[PNJData] {pnjName} : idleClip/walkClip/chaseClip incomplet(s) — " +
+                              "ce PNJ affichera l'anim placeholder du Controller partagé (faite " +
+                              "pour un autre rig) tant que les 3 clips ne sont pas assignés.");
     }
 #endif
 }

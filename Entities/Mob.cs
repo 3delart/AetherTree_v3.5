@@ -25,7 +25,8 @@ using System.Collections.Generic;
 [RequireComponent(typeof(CapsuleCollider))]
 [RequireComponent(typeof(SkillSystem))]
 [RequireComponent(typeof(CombatAIController))]
-public class Mob : Entity, ICombatAIProfile
+[RequireComponent(typeof(CombatEntityAnimatorController))]
+public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
 {
     [Header("Data")]
     public MobData data;
@@ -36,7 +37,7 @@ public class Mob : Entity, ICombatAIProfile
     private   CombatAIController _combatAI;
     private   Vector3            aggroPos;
 
-    // Exposé pour MobAnimatorController — voir CombatAIController pour le sens de chaque état.
+    // Exposé pour CombatEntityAnimatorController — voir CombatAIController pour le sens de chaque état.
     public CombatAIState CurrentState => _combatAI.CurrentState;
 
     // ── enemyList — GDD v3.5 §3.3 ────────────────────────────
@@ -62,7 +63,7 @@ public class Mob : Entity, ICombatAIProfile
 
     public bool IsDashing { get; set; } = false;
 
-    private MobAnimatorController _animatorController;
+    private CombatEntityAnimatorController _animatorController;
 
     private System.Action onDeathCallback;
 
@@ -83,7 +84,7 @@ public class Mob : Entity, ICombatAIProfile
         base.Awake();
         agent               = GetComponent<NavMeshAgent>();
         _skillSystem        = GetComponent<SkillSystem>();
-        _animatorController = GetComponent<MobAnimatorController>();
+        _animatorController = GetComponent<CombatEntityAnimatorController>();
         _combatAI           = GetComponent<CombatAIController>();
         spawnPos = transform.position;
         aggroPos = spawnPos;
@@ -134,7 +135,14 @@ public class Mob : Entity, ICombatAIProfile
         // ── Résistances élémentaires — profil fixe du SO ─────
         foreach (ElementType e in System.Enum.GetValues(typeof(ElementType)))
             SetElementalResistance(e, data.GetElementalResistance(e));
- 
+
+        // ── Résistances aux debuffs — innées, indépendantes de l'équipement (les Mobs n'en ont
+        // pas). CharacterStats.ApplyDebuffResistances() est strictement réservée au Player, donc
+        // sans ce câblage statusEffects._debuffResistances resterait TOUJOURS vide pour un Mob.
+        if (data.debuffResistances != null)
+            foreach (var entry in data.debuffResistances)
+                statusEffects.SetDebuffResistance(entry.debuffType, entry.resistChance);
+
         // ── Snapshot — base pour buffs/debuffs ────────────────
         SnapshotBaseStats();
     }
@@ -293,8 +301,15 @@ public class Mob : Entity, ICombatAIProfile
         RequestRecalculate();
     }
 
-    /// <summary>Reçoit l'Animation Event relayé par MobAnimatorController.OnSkillHitFrame.</summary>
+    /// <summary>Reçoit l'Animation Event relayé par CombatEntityAnimatorController.OnSkillHitFrame.</summary>
     public void OnAnimationHitEvent(int hitIndex = 0) => _combatAI.OnAnimationHitEvent(hitIndex);
+
+    // =========================================================
+    // ICombatAnimatorProfile — voir World/CombatEntityAnimatorController.cs
+    // =========================================================
+    public AnimationClip IdleClip  => data?.idleClip;
+    public AnimationClip WalkClip  => data?.walkClip;
+    public AnimationClip ChaseClip => data?.chaseClip;
 
     // =========================================================
     // DÉGÂTS — aggro + contributions

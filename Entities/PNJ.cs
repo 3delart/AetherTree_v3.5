@@ -49,7 +49,7 @@ using System.Collections.Generic;
 // =============================================================
 
 [RequireComponent(typeof(SkillSystem))]
-public class PNJ : Entity, ICombatAIProfile
+public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 {
     // ── Data ──────────────────────────────────────────────────
     [Header("Data PNJ (assigner ici)")]
@@ -82,11 +82,15 @@ public class PNJ : Entity, ICombatAIProfile
     private List<Entity>    enemyList = new List<Entity>();
     private HashSet<Entity> aggroSet  = new HashSet<Entity>();
 
-    private PNJAnimatorController _animatorController;
+    private CombatEntityAnimatorController _animatorController;
 
-    /// <summary>Exposé pour un éventuel consommateur externe (aucun aujourd'hui) — PNJ n'a pas
-    /// besoin d'un CurrentState comme Mob, PNJAnimatorController ne lit que Speed.</summary>
+    /// <summary>Exposé pour un éventuel consommateur externe (aucun aujourd'hui).</summary>
     public CombatAIController CombatAI => _combatAI;
+
+    /// <summary>Exposé pour CombatEntityAnimatorController (IsChasing) — même rôle que
+    /// Mob.CurrentState. Patrol par défaut si le PNJ n'est pas canFight (pas de CombatAIController
+    /// dans ce cas).</summary>
+    public CombatAIState CurrentState => _combatAI != null ? _combatAI.CurrentState : CombatAIState.Patrol;
 
     // =========================================================
     // INITIALISATION
@@ -121,27 +125,40 @@ public class PNJ : Entity, ICombatAIProfile
 
         base.Awake();
 
+        // Résistances aux debuffs — innées, indépendantes de l'équipement (les PNJ n'en ont
+        // pas). Même raison que Mob.ApplyData() : CharacterStats.ApplyDebuffResistances() est
+        // strictement réservée au Player. APRÈS base.Awake() — statusEffects n'est initialisée
+        // que là (Entity.Awake()).
+        if (data != null && data.debuffResistances != null)
+            foreach (var entry in data.debuffResistances)
+                statusEffects.SetDebuffResistance(entry.debuffType, entry.resistChance);
+
         // Fige le snapshot — RequestRecalculate() repartira de ces valeurs
         SnapshotBaseStats();
 
         LoadKnownPlayersFromPrefs();
 
         // Cache des composants combat
-        _skillSystem        = GetComponent<SkillSystem>();
-        _animatorController = GetComponent<PNJAnimatorController>();
+        _skillSystem = GetComponent<SkillSystem>();
         _spawnPos    = transform.position;
 
         if (data != null && data.canFight)
         {
-            // Ajouté dynamiquement, pas via [RequireComponent] sur la classe — un PNJ non
-            // combattant (civil, décoratif) ne doit jamais se voir forcer un NavMeshAgent par la
-            // chaîne de RequireComponent de CombatAIController. `_agent` est relu APRÈS
-            // AddComponent, PAS avant — CombatAIController requiert NavMeshAgent
-            // ([RequireComponent]), donc si le prefab n'en portait pas déjà un (il le devrait,
-            // même exigence qu'avant cette migration), Unity en ajoute un par défaut à l'instant
-            // de cet AddComponent ; lire _agent avant ce point l'aurait laissé null, et
-            // Initialize() aurait reçu ce null au lieu du NavMeshAgent réellement présent sur le
-            // GameObject — trouvé en relisant ce plan avant exécution.
+            // CombatEntityAnimatorController ET CombatAIController sont ajoutés dynamiquement ici,
+            // PAS via [RequireComponent] sur la classe PNJ — un PNJ non combattant (marchand,
+            // décoratif...) ne doit JAMAIS se voir forcer un Animator/NavMeshAgent (trouvé en test
+            // manuel : "Creating missing Animator component" sur un PNJ Cuisinier sans la moindre
+            // notion de combat). `_agent` est relu APRÈS AddComponent<CombatAIController>, PAS
+            // avant — CombatAIController requiert NavMeshAgent ([RequireComponent]), donc si le
+            // prefab n'en portait pas déjà un (il le devrait, même exigence qu'avant cette
+            // migration), Unity en ajoute un par défaut à l'instant de cet AddComponent ; lire
+            // _agent avant ce point l'aurait laissé null, et Initialize() aurait reçu ce null au
+            // lieu du NavMeshAgent réellement présent sur le GameObject — trouvé en relisant ce
+            // plan avant exécution.
+            _animatorController = GetComponent<CombatEntityAnimatorController>();
+            if (_animatorController == null)
+                _animatorController = gameObject.AddComponent<CombatEntityAnimatorController>();
+
             _combatAI = gameObject.AddComponent<CombatAIController>();
             _agent    = GetComponent<NavMeshAgent>();
             _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
@@ -586,8 +603,15 @@ public class PNJ : Entity, ICombatAIProfile
         return closest;
     }
 
-    /// <summary>Reçoit l'Animation Event relayé par PNJAnimatorController.OnSkillHitFrame.</summary>
+    /// <summary>Reçoit l'Animation Event relayé par CombatEntityAnimatorController.OnSkillHitFrame.</summary>
     public void OnAnimationHitEvent(int hitIndex = 0) => _combatAI?.OnAnimationHitEvent(hitIndex);
+
+    // =========================================================
+    // ICombatAnimatorProfile — voir World/CombatEntityAnimatorController.cs
+    // =========================================================
+    public AnimationClip IdleClip  => data?.idleClip;
+    public AnimationClip WalkClip  => data?.walkClip;
+    public AnimationClip ChaseClip => data?.chaseClip;
 
     // =========================================================
     // ICombatAIProfile — voir spec §5bis pour le détail de chaque membre
