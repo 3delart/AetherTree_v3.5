@@ -46,7 +46,7 @@
 | `effectType` | `Damage` (dégâts phys+élem) / `Buff` (StatusEffects uniquement) / `Debuff` (StatusEffects uniquement) / `Other` (drain, téléport, invocation, dash… voir `specialEffect`). Conditionne quels champs suivants s'affichent (ShowIf). |
 | `cooldown` | En secondes. Posé au moment de la **résolution**, pas du clic (voir sections par type plus bas — sauf exception Combo/steps intermédiaires). |
 | `castTime` | 0 = instantané (Normal/MultiHit/Combo) ; > 0 = Canalisation. Voir section dédiée. |
-| `specialEffect` | Actif seulement si `effectType = Other` — Pull/Push/SwapPosition/PullAoE/PushAoE/GatherAoE/Vortex/TeleportSelf/TeleportTarget/DrainHP/DrainMana/Summon/Interrupt. Champs additionnels (`pullPushForce`, `drainHealRatio`, `summonMobData`…) apparaissent selon la valeur choisie. |
+| `specialEffect` | Actif seulement si `effectType = Other` — DrainHP/DrainMana/Summon/Interrupt uniquement (le déplacement — Pull/Push/SwapPosition/Téléportation/Dash — vit maintenant dans `displacementType`, ⑥bis ci-dessous, composable avec N'IMPORTE QUEL `effectType`). Champs additionnels (`drainHealRatio`, `summonMobData`…) apparaissent selon la valeur choisie. |
 
 **Dégâts physiques** (actif si `effectType = Damage` ou `Other`) :
 
@@ -71,8 +71,10 @@
 
 `aoeFaction` (Enemies/Allies/Everyone — qui peut être touché) s'applique à tous les types ci-dessous sauf `Self`. `projectileSpeed` ne sert qu'à la trajectoire (⑦, vitesse de déplacement du point/cône) — le visuel du projectile en mouvement, lui, c'est `vfxTrajectory` (⑨), pas un champ séparé (`projectilePrefab` a été supprimé, mort/jamais lu).
 
-**`targetType` — les 8 possibilités, aucune n'est redondante malgré des géométries qui se
-ressemblent :**
+**`targetType` — les 6 possibilités, aucune n'est redondante malgré des géométries qui se
+ressemblent. Le déplacement (Dash/Téléportation/Pull/Push/Swap, ex-`Dash_Target`/
+`Dash_Direction`) est maintenant un modificateur composable (`displacementType`, ⑥bis) plutôt
+qu'un `targetType` séparé :**
 
 | `targetType` | Cible verrouillée ? | Portée / zone | Comportement | Cas d'usage typique |
 |---|---|---|---|---|
@@ -82,11 +84,46 @@ ressemblent :**
 | `AoE_Target` | **Oui** | `aoeRadius`, centré sur la **cible** | Sphère autour de la cible verrouillée (pas autour de toi). | Impact qui éclabousse autour d'un ennemi. |
 | `GroundTarget` | Non (point au sol, visé à la souris) | `aoeRadius`, centré sur le point cliqué | Sphère à un point choisi au sol. + `isTrajectory` : voyage vers ce point (mur/vague qui avance vers où tu cliques) — `stopAtFirstHit` disponible pareil que `Target`. | Météore, zone posée au sol, ou mur de feu qui voyage vers la souris. |
 | `Cone` | Non, **visé à la souris** | `range` (portée), `coneHalfAngle` (demi-angle en degrés) | Éventail devant le caster, orienté vers la souris (priorité à la cible engagée/sélectionnée si il y en a une) — touche tout ce qui est dans l'angle ET la portée. | Souffle, attaque en arc dirigée par le joueur. |
-| `Dash_Target` | **Oui** | — (offset d'arrêt fixe côté code) | Le **CASTER** se déplace jusqu'à la cible (s'arrête juste avant). Ne fait AUCUN dégât par lui-même — c'est un déplacement pur. | Charge/gap-closer vers une cible. |
-| `Dash_Direction` | Non | `range` (distance du dash, défaut 6) | Le **CASTER** se déplace en ligne droite dans sa direction de face. Ne fait aucun dégât par lui-même. | Esquive/dash directionnel. |
 
 `Target`/`GroundTarget`/`AoE_Target`/`Cone` peuvent en plus
 devenir des trajectoires mobiles (hitbox qui voyage/s'élargit) via `isTrajectory` — voir ⑦.
+
+### ⑥bis Déplacement
+
+`displacementType` — composable avec N'IMPORTE QUEL `effectType` (Damage/Buff/Debuff/Other),
+contrairement à l'ancien `specialEffect` qui n'existait que si `effectType = Other` (impossible
+d'avoir un skill "dash + dégâts"). **Mutuellement exclusif avec `isTrajectory`/`hasDelayedImpact`**
+(warning Console si les deux sont cochés — deux mécanismes de "quelque chose se déplace"
+concurrents).
+
+| `displacementType` | `Target` | `GroundTarget` | `Cone` | `AoE_Self` |
+|---|---|---|---|---|
+| `DashSelf` | Fonce jusqu'à la cible verrouillée, stoppe avant elle. | Fonce vers le point cliqué, plafonné à `displacementDistance` si le point est plus loin. | Fonce dans la direction souris, sur `displacementDistance`. | — |
+| `TeleportSelf` | Téléportation instantanée devant/derrière la cible (`teleportBehindTarget`, calculé par rapport au FACING de la cible), jamais dessus. | Téléportation instantanée au point cliqué, plafonnée à `displacementDistance`. | Téléportation instantanée dans la direction souris, sur `displacementDistance` (blink). | — |
+| `Pull` | Tire la cible verrouillée vers le caster. | Sélectionne tout dans `aoeRadius` du point cliqué (filtré `aoeFaction`), tire TOUT vers ce point (Regroupement). | Sélectionne tout dans l'éventail (direction souris), tire tout vers le caster. | Sélectionne tout dans `aoeRadius` du caster, resserre tout vers le caster. |
+| `Push` | Repousse la cible loin du caster, sur `displacementDistance`. | Sélectionne tout dans `aoeRadius` du point cliqué, repousse loin de CE POINT (explosion sur place), sur `displacementDistance`. | Repousse l'éventail loin du caster, sur `displacementDistance`. | Repousse tout autour de soi, loin du caster, sur `displacementDistance`. |
+| `SwapPosition` | Caster et cible échangent leurs places, instantanément. | — | — | — |
+
+Cases vides : pas de sens géométrique (on ne fonce/téléporte pas "sur soi-même" ; `SwapPosition`
+a besoin d'exactement une entité, aucun sens en zone). Warning Console si configuré quand même,
+pas de correction automatique.
+
+**Timing des dégâts/effets** : `DashSelf` au contact (à l'arrivée pour `Target`, en route pour
+`GroundTarget`/`Cone`) · `TeleportSelf`/`SwapPosition` à l'arrivée/l'échange (instantané,
+`targetType` réévalué à la NOUVELLE position) · `Pull`/`Push` AU DÉPART, avant le trajet animé.
+
+**Champs additionnels** : `displacementDistance` (`DashSelf`/`TeleportSelf` + `GroundTarget`/
+`Cone`, `Push` toujours) · `teleportBehindTarget` (`TeleportSelf` + `Target` uniquement, coché =
+derrière) · `bringsAllies` (`TeleportSelf` uniquement, emmène les alliés proches).
+
+**Interruption & résistance** : un CC dur (Stun/Shocked/Freeze/Knockback/Fear) qui atterrit
+PENDANT un `DashSelf` en cours l'interrompt à la position courante — `TeleportSelf`/
+`SwapPosition` sont instantanés, pas de fenêtre à interrompre. L'ÉTAT de CC actuel de la cible
+d'un `Pull`/`Push`/`SwapPosition` ne bloque JAMAIS le déplacement (une cible stun ne peut pas
+résister) — mais sa RÉSISTANCE ÉQUIPEMENT/INNÉE (`DebuffType.Displacement`, même mécanisme que
+les autres debuffs, roulé indépendamment par cible en zone) le peut. Un `MobData`/`PNJData` avec
+`debuffResistances = [{ Displacement, 1.0 }]` est immunisé (ex: boss raciné) — voir
+`onHitReceivedEffects`/`onHitDealtEffects` pour le même genre de champ sur ces deux SO.
 
 ### ⑦ Zone à impact différé / Trajectoire mobile
 
@@ -268,25 +305,38 @@ Un debuff **DoT** (dégâts sur la durée) se construit pareil, avec `dbf_poison
 `statusEffects` sur n'importe quel skill `Damage` (le DoT s'ajoute en plus des dégâts directs du
 coup), pas besoin d'un skill `effectType = Debuff` dédié pour ça.
 
-### Effet spécial (`effectType = Other`)
+### Déplacement (`displacementType`)
 
-Ni dégâts classiques ni statusEffect pur — `specialEffect` pilote un comportement dédié.
-Exemple : `skl_grappin` (tire la cible vers le caster).
+Composable avec N'IMPORTE QUEL `effectType` — voir ⑥bis pour la matrice complète.
+Exemple : `skl_grappin` (tire la cible vers le caster, aucun dégât).
 
 | Champ | Valeur |
 |---|---|
-| `effectType` | Other |
-| `specialEffect` | Pull |
-| `pullPushForce` | 6 |
+| `effectType` | Other (ou Damage si le grappin doit aussi faire mal — les deux marchent) |
+| `displacementType` | Pull |
 | `targetType` | Target |
 | `range` | 8 |
 | `damageMultiplier` | 0 (pas de dégâts, juste le déplacement) |
 | `cooldown` | 12 |
 
-Autres `specialEffect` disponibles suivant le même principe (un seul champ dédié apparaît selon
-le choix) : `Push`/`SwapPosition`/`PullAoE`/`PushAoE`/`GatherAoE`/`Vortex` (déplacement),
-`TeleportSelf`/`TeleportTarget`, `DrainHP` (+ `drainHealRatio`, ex: 0.5 = 50% des dégâts infligés
-rendus en soin) / `DrainMana`, `Summon` (+ `summonMobData`/`summonDuration`), `Interrupt`.
+Exemple "fonce dans le tas" (Dash + dégâts AoE sur le trajet) :
+
+| Champ | Valeur |
+|---|---|
+| `effectType` | Damage |
+| `displacementType` | DashSelf |
+| `targetType` | Cone (fonce dans la direction souris) |
+| `displacementDistance` | 8 |
+| `aoeRadius` | 1.5 (largeur du sweep pendant le trajet) |
+| `damageMultiplier` | 1.2 |
+
+### Effet spécial (`effectType = Other`)
+
+Ni dégâts classiques ni statusEffect pur — `specialEffect` pilote un comportement dédié (hors
+déplacement, voir ⑥bis).
+
+Valeurs disponibles : `DrainHP` (+ `drainHealRatio`, ex: 0.5 = 50% des dégâts infligés rendus en
+soin) / `DrainMana`, `Summon` (+ `summonMobData`/`summonDuration`), `Interrupt`.
 
 ---
 
