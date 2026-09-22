@@ -27,7 +27,7 @@
 
 ## Champs de base
 
-> Numérotation alignée sur les headers Inspector réels de `SkillData.cs` (① à ⑩) — si tu vois un
+> Numérotation alignée sur les headers Inspector réels de `SkillData.cs` (① à ⑬) — si tu vois un
 > autre numéro dans l'Inspector qu'ici, le fichier a bougé, se fier à l'Inspector.
 
 ### ① Identité
@@ -39,16 +39,17 @@
 | `tags` | Liste de `SkillTag` (Stun, DoT, Mobilite, Combo…) — informatif, utilisé pour le filtrage `SkillLibraryUI` et par `UnlockManager`. |
 | `skillType` | `BasicAttack` (slot 0 uniquement) / `Active` (slots 1-8) / `Ultimate` (slot 9). |
 
-### ③ Effet principal (+ Effet spécial, Dégâts physiques, Éléments)
+### ③ Effet principal
 
 | Champ | Rôle |
 |---|---|
-| `effectType` | `Damage` (dégâts phys+élem) / `Buff` (StatusEffects uniquement) / `Debuff` (StatusEffects uniquement) / `Other` (drain, téléport, invocation, dash… voir `specialEffect`). Conditionne quels champs suivants s'affichent (ShowIf). |
+| `effectType` | `Damage` (dégâts phys+élem) / `Buff` (StatusEffects uniquement) / `Debuff` (StatusEffects uniquement) / `Other` (drain, invocation… voir `specialEffect`, ⑪). Conditionne quels champs suivants s'affichent (ShowIf). |
 | `cooldown` | En secondes. Posé au moment de la **résolution**, pas du clic (voir sections par type plus bas — sauf exception Combo/steps intermédiaires). |
 | `castTime` | 0 = instantané (Normal/MultiHit/Combo) ; > 0 = Canalisation. Voir section dédiée. |
-| `specialEffect` | Actif seulement si `effectType = Other` — DrainHP/DrainMana/Summon/Interrupt uniquement (le déplacement — Pull/Push/SwapPosition/Téléportation/Dash — vit maintenant dans `displacementType`, ⑥bis ci-dessous, composable avec N'IMPORTE QUEL `effectType`). Champs additionnels (`drainHealRatio`, `summonMobData`…) apparaissent selon la valeur choisie. |
 
-**Dégâts physiques** (actif si `effectType = Damage` ou `Other`) :
+### ④ Dégâts
+
+**Ratios physiques** (actif si `effectType = Damage` ou `Other`) :
 
 | Champ | Rôle |
 |---|---|
@@ -59,21 +60,22 @@
 
 `elements` (liste — vide = skill neutre, 1 = élémentaire simple, 2+ = combo élémentaire) + `elementalMultiplier` (0 à 5, ignoré si `elements` est vide).
 
-### ④ Exécution avancée
+### ⑤ Exécution avancée
 
 `executionType` (Normal/MultiHit/ComboSequence — voir sections dédiées plus bas), `hitSteps` (MultiHit uniquement), `comboSteps`/`comboWindowDuration`/`comboStepInterval` (Combo uniquement). Disponible pour les **3 `skillType`** (`BasicAttack`/`Active`/`Ultimate` — ils ne diffèrent que par leur slot SkillBar, aucune restriction d'exécution entre eux) si `effectType = Damage`/`Other` — n'a pas de sens pour un Buff/Debuff pur.
 
-### ⑤ Coût
+### ⑥ Coût
 
 `manaCost` / `hpCost` / `goldCost` — dépensés au **lancement** (pas à la résolution).
 
-### ⑥ Ciblage & Portée
+### ⑦ Ciblage
 
-`aoeFaction` (Enemies/Allies/Everyone — qui peut être touché) s'applique à tous les types ci-dessous sauf `Self`. `projectileSpeed` ne sert qu'à la trajectoire (⑦, vitesse de déplacement du point/cône) — le visuel du projectile en mouvement, lui, c'est `vfxTrajectory` (⑨), pas un champ séparé (`projectilePrefab` a été supprimé, mort/jamais lu).
+`targetType` (voir table ci-dessous) et `aoeFaction` (Enemies/Allies/Everyone — qui peut être
+touché) s'applique à tous les types ci-dessous sauf `Self`.
 
 **`targetType` — les 6 possibilités, aucune n'est redondante malgré des géométries qui se
 ressemblent. Le déplacement (Dash/Téléportation/Pull/Push/Swap, ex-`Dash_Target`/
-`Dash_Direction`) est maintenant un modificateur composable (`displacementType`, ⑥bis) plutôt
+`Dash_Direction`) est maintenant un modificateur composable (`displacementType`, ⑨) plutôt
 qu'un `targetType` séparé :**
 
 | `targetType` | Cible verrouillée ? | Portée / zone | Comportement | Cas d'usage typique |
@@ -86,15 +88,28 @@ qu'un `targetType` séparé :**
 | `Cone` | Non, **visé à la souris** | `range` (portée), `coneHalfAngle` (demi-angle en degrés) | Éventail devant le caster, orienté vers la souris (priorité à la cible engagée/sélectionnée si il y en a une) — touche tout ce qui est dans l'angle ET la portée. | Souffle, attaque en arc dirigée par le joueur. |
 
 `Target`/`GroundTarget`/`AoE_Target`/`Cone` peuvent en plus
-devenir des trajectoires mobiles (hitbox qui voyage/s'élargit) via `isTrajectory` — voir ⑦.
+devenir des trajectoires mobiles (hitbox qui voyage/s'élargit) via `isTrajectory` — voir ⑩.
 
-### ⑥bis Déplacement
+### ⑧ Portée
+
+`range` (distance max de ciblage — `Target`/`Cone`), `aoeRadius` (rayon de zone — `AoE_Self`/
+`AoE_Target`/`GroundTarget`), `coneHalfAngle` (demi-angle en degrés — `Cone` uniquement),
+`projectileSpeed` (vitesse de la trajectoire — `isTrajectory`, ⑩ — le visuel du projectile en
+mouvement, lui, c'est `vfxTrajectory`, ⑫, pas un champ séparé ici).
+
+### ⑨ Déplacement
 
 `displacementType` — composable avec N'IMPORTE QUEL `effectType` (Damage/Buff/Debuff/Other),
 contrairement à l'ancien `specialEffect` qui n'existait que si `effectType = Other` (impossible
-d'avoir un skill "dash + dégâts"). **Mutuellement exclusif avec `isTrajectory`/`hasDelayedImpact`**
-(warning Console si les deux sont cochés — deux mécanismes de "quelque chose se déplace"
-concurrents).
+d'avoir un skill "dash + dégâts"). **Mutuellement exclusif avec `isTrajectory`** (warning Console
+si les deux sont cochés — deux mécanismes de "quelque chose se déplace" concurrents : l'un
+déplace une entité, l'autre une hitbox). **`hasDelayedImpact` (⑩) est en revanche pleinement
+composable avec `displacementType`** (depuis le 2026-09-22) : les 5 verbes plantent en plus une
+zone classique au point d'arrivée du déplacement (destination pour DashSelf/TeleportSelf/
+SwapPosition, anchor pour Pull, origine pour Push) — double dégât voulu, exactement comme la
+combinaison `isTrajectory` + `hasDelayedImpact` sur Target/GroundTarget/Cone. `zoneFollowsAnchor`
+n'est PAS honoré pour une zone plantée par un déplacement (toujours un point fixe, jamais suivi
+d'entité).
 
 | `displacementType` | `Target` | `GroundTarget` | `Cone` | `AoE_Self` |
 |---|---|---|---|---|
@@ -111,13 +126,18 @@ pas de correction automatique.
 **Timing des dégâts/effets** : `DashSelf` au contact (à l'arrivée pour `Target`, en route pour
 `GroundTarget`/`Cone`) · `TeleportSelf`/`SwapPosition` à l'arrivée/l'échange (instantané,
 `targetType` réévalué à la NOUVELLE position) · `Pull`/`Push` AU DÉPART, avant le trajet animé.
+Si `hasDelayedImpact` est coché, le timer `impactDelay` démarre au MÊME moment que ce dégât
+immédiat (pas après la fin du trajet animé) — voir ci-dessus.
 
 **Champs additionnels** : `displacementDistance` (`DashSelf`/`TeleportSelf` + `GroundTarget`/
 `Cone`, `Push` toujours) · `displacementDuration` (`DashSelf`/`Pull`/`Push` — durée du trajet
 animé en secondes, défaut 0.3 ; `TeleportSelf`/`SwapPosition` sont instantanés, pas concernés ;
 plus petit = plus rapide/nerveux, plus grand = plus lent/lourd) · `teleportBehindTarget`
-(`TeleportSelf` + `Target` uniquement, coché = derrière) · `bringsAllies` (`TeleportSelf`
-uniquement, emmène les alliés proches).
+(`TeleportSelf` + `Target` uniquement, coché = derrière) · `bringsAlong` (`TeleportSelf`
+uniquement, `TeleportBringFaction` — `None` défaut/caster seul, `Allies` emmène les alliés
+proches, `Enemies` emmène les ennemis proches (control-tp — les arrache de leur position),
+`Everyone` emmène tout le monde à proximité, sans distinction — rayon = `aoeRadius` autour de la
+position ORIGINE, même décalage relatif appliqué à chaque passager).
 
 **Interruption & résistance** : un CC dur (Stun/Shocked/Freeze/Knockback/Fear) qui atterrit
 PENDANT un `DashSelf` en cours l'interrompt à la position courante — `TeleportSelf`/
@@ -128,7 +148,7 @@ les autres debuffs, roulé indépendamment par cible en zone) le peut. Un `MobDa
 `debuffResistances = [{ Displacement, 1.0 }]` est immunisé (ex: boss raciné) — voir
 `onHitReceivedEffects`/`onHitDealtEffects` pour le même genre de champ sur ces deux SO.
 
-### ⑦ Zone à impact différé / Trajectoire mobile
+### ⑩ Zone à impact différé / Trajectoire mobile
 
 Deux modes de résolution, tous deux optionnels :
 
@@ -161,11 +181,16 @@ tout sur son passage, PUIS laisse une zone de flammes au sol à l'endroit cliqu�
 
 En `Box`, `aoeRadius` ne sert plus à rien (remplacé par `trajectoryWidth`/`trajectoryDepth`).
 
-### ⑧ Effets secondaires
+### ⑪ Effet spécial & secondaire
+
+`specialEffect` — actif seulement si `effectType = Other` — `DrainHP`/`DrainMana`/`Summon`/
+`Interrupt` uniquement (le déplacement — Pull/Push/SwapPosition/Téléportation/Dash — vit dans
+`displacementType`, ⑨, composable avec N'IMPORTE QUEL `effectType`). Champs additionnels
+(`drainHealRatio`, `summonMobData`…) apparaissent selon la valeur choisie.
 
 `statusEffects` — liste de `BuffData`/`DebuffData` + % de chance, déclenchés à l'usage. Un skill `Buff`/`Debuff` pur n'a QUE ça comme effet (pas de dégâts).
 
-### ⑨ Visuel
+### ⑫ Visuel
 
 `icon`, `vfxCast`, `vfxTrajectory` (`isTrajectory` uniquement), `vfxZoneMarker` (`hasDelayedImpact` uniquement), `vfxImpact`, et les animations :
 
@@ -177,7 +202,7 @@ En `Box`, `aoeRadius` ne sert plus à rien (remplacé par `trajectoryWidth`/`tra
 Détails de synchronisation (Animation Event, timing, verrous) : voir les sections par type
 ci-dessous.
 
-### ⑩ Son
+### ⑬ Son
 
 `soundEffect` (ou celui du coup de base pour un MultiHit — chaque `HitStep` peut avoir le sien, sinon hérite de celui-ci).
 
@@ -310,7 +335,7 @@ coup), pas besoin d'un skill `effectType = Debuff` dédié pour ça.
 
 ### Déplacement (`displacementType`)
 
-Composable avec N'IMPORTE QUEL `effectType` — voir ⑥bis pour la matrice complète.
+Composable avec N'IMPORTE QUEL `effectType` — voir ⑨ pour la matrice complète.
 Exemple : `skl_grappin` (tire la cible vers le caster, aucun dégât).
 
 | Champ | Valeur |
@@ -335,8 +360,8 @@ Exemple "fonce dans le tas" (Dash + dégâts AoE sur le trajet) :
 
 ### Effet spécial (`effectType = Other`)
 
-Ni dégâts classiques ni statusEffect pur — `specialEffect` pilote un comportement dédié (hors
-déplacement, voir ⑥bis).
+Ni dégâts classiques ni statusEffect pur — `specialEffect` (⑪) pilote un comportement dédié (hors
+déplacement, voir ⑨).
 
 Valeurs disponibles : `DrainHP` (+ `drainHealRatio`, ex: 0.5 = 50% des dégâts infligés rendus en
 soin) / `DrainMana`, `Summon` (+ `summonMobData`/`summonDuration`), `Interrupt`.

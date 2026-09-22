@@ -87,6 +87,14 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// <summary>Exposé pour un éventuel consommateur externe (aucun aujourd'hui).</summary>
     public CombatAIController CombatAI => _combatAI;
 
+    /// <summary>Miroir de Mob.IsDashing — posé par les routines de verbe de SkillSystem.
+    /// StartDisplacement() pendant tout déplacement animé (DashSelf/Pull/Push) où ce PNJ est
+    /// caster OU victime, pour empêcher _combatAI.Tick() de reprendre le contrôle du transform
+    /// (agent NavMesh désactivé) pendant que la coroutine le Lerp manuellement. Sans ce flag,
+    /// un PNJ canFight se battrait avec sa propre IA pour la position pendant le trajet — même
+    /// bug que Mob avant l'ajout de IsDashing.</summary>
+    public bool IsDashing { get; set; } = false;
+
     /// <summary>Exposé pour CombatEntityAnimatorController (IsChasing) — même rôle que
     /// Mob.CurrentState. Patrol par défaut si le PNJ n'est pas canFight (pas de CombatAIController
     /// dans ce cas).</summary>
@@ -195,6 +203,12 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         _combatAI.PollChannelInterrupt();
 
         RefreshEnemyList();
+
+        // IsDashing — voir sa doc ci-dessus. Même position relative que Mob.Update() : après
+        // RefreshEnemyList(), avant le freeze CC (un déplacement en cours n'a pas besoin d'être
+        // interrompu par le check CC, la coroutine de SkillSystem gère déjà sa propre
+        // interruption CC pour DashSelf — voir IsHardCCd).
+        if (IsDashing) return;
 
         // Stun/Sleep — CC dur, GDD §3.1.1.1 : "bloque TOUTES les actions". PNJ n'avait AUCUN
         // freeze sur CC dur avant cette migration (contrairement à Mob.Update()) — un Garde stun

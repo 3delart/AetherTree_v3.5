@@ -7,18 +7,21 @@ using System.Collections.Generic;
 // Path : Assets/Scripts/Data/Skills/SkillData.cs
 // AetherTree GDD v3.5 — Section 4
 //
-// Ordre Inspector :
+// Ordre Inspector (réorganisé 2026-09-22 — dégâts/effets/déplacement chacun leur section,
+// plus de fourre-tout — voir demande Florian) :
 //   ① Identité           — nom, description, tags, skillType
 //   ② Compatibilité arme
-//   ③ Effet principal    — effectType, cooldown, castTime, effet spécial (Other), dégâts
-//                           physiques, éléments & multiplicateur élémentaire
-//   ④ Exécution avancée  — Normal / MultiHit (hitSteps) / ComboSequence (comboSteps)
-//   ⑤ Coût               — mana, HP, gold
-//   ⑥ Ciblage & Portée   — targetType, range, aoeRadius, coneHalfAngle, aoeFaction
-//   ⑦ Zone à impact différé / Trajectoire mobile — hasDelayedImpact, isTrajectory
-//   ⑧ Effets secondaires (StatusEffects SO)
-//   ⑨ Visuel             — icon, vfx*, animations
-//   ⑩ Son                — soundEffect
+//   ③ Effet principal    — effectType, cooldown, castTime UNIQUEMENT
+//   ④ Dégâts             — ratios physiques + éléments & multiplicateur élémentaire
+//   ⑤ Exécution avancée  — Normal / MultiHit (hitSteps) / ComboSequence (comboSteps)
+//   ⑥ Coût               — mana, HP, gold
+//   ⑦ Ciblage            — targetType, aoeFaction (QUI est touché)
+//   ⑧ Portée             — range, aoeRadius, coneHalfAngle, projectileSpeed (COMBIEN loin/large)
+//   ⑨ Déplacement        — displacementType et tous ses champs (jamais caché dans Ciblage/Portée)
+//   ⑩ Zone à impact différé / Trajectoire mobile — hasDelayedImpact, isTrajectory
+//   ⑪ Effet spécial & secondaire — specialEffect (Other) + statusEffects (BuffData/DebuffData)
+//   ⑫ Visuel             — icon, vfx*, animations
+//   ⑬ Son                — soundEffect
 //
 // Calcul des dégâts (GDD §6.2) :
 //   Physique  — baseDamage * damageMultiplier * ratio → réduit par défense
@@ -77,36 +80,18 @@ public class SkillData : ScriptableObject
              "Damage → inflige des dégâts physiques + élémentaires\n" +
              "Buff   → applique uniquement des buffs (via StatusEffects)\n" +
              "Debuff → applique uniquement des debuffs (via StatusEffects)\n" +
-             "Other  → effet spécial (drain, téléport, invocation...)")]
+             "Other  → effet spécial (drain, téléport, invocation...) — voir ⑪")]
     public SkillEffectType effectType       = SkillEffectType.Damage;
     public float           cooldown         = 1f;
     public float           castTime         = 0f;
 
-    // ── Effet spécial (si effectType == Other) ────────────────
-    [Tooltip("Effet spécial appliqué par ce skill.\nActif uniquement si effectType = Other.")]
-    [ShowIf(nameof(effectType), SkillEffectType.Other, Header = "③ Effet spécial (si effectType = Other)")]
-    public SkillSpecialEffect specialEffect = SkillSpecialEffect.None;
-
-    [Tooltip("Ratio des dégâts restitués en soin (DrainHP). Ex: 0.5 = 50% des dégâts soignés.")]
-    [Range(0f, 1f)]
-    [ShowIf(nameof(specialEffect), SkillSpecialEffect.DrainHP)]
-    public float drainHealRatio = 0.5f;
-
-    [Tooltip("MobData à invoquer (Summon uniquement).")]
-    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
-    public MobData summonMobData;
-
-    [Tooltip("Durée de vie de l'invocation en secondes. 0 = permanent jusqu'à la mort.")]
-    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
-    public float summonDuration = 30f;
-
-    // ── ③ Dégâts physiques — Damage ou Other (ex: DrainHP) uniquement ──────
-    // Jamais utilisés pour Buff/Debuff (aucun calcul de dégâts ne les lit,
-    // voir SkillSystem.ApplyEffectType/CalculateDamage).
+    // ── ④ Dégâts — physiques + élémentaires, Damage ou Other (ex: DrainHP) uniquement.
+    // Jamais utilisés pour Buff/Debuff (aucun calcul de dégâts ne les lit, voir
+    // SkillSystem.ApplyEffectType/CalculateDamage).
     [Tooltip("Multiplicateur global sur les dégâts physiques.\n" +
              "Ex: 1.0 = dégâts normaux | 2.0 = double dégâts physiques")]
     [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
-        Header = "③ Ratios de dégâts physiques (somme doit = 1.0)")]
+        Header = "④ Dégâts — Ratios physiques (somme doit = 1.0)")]
     public float damageMultiplier = 1f;
 
     [Tooltip("Part des dégâts réduite par la défense Mêlée de la cible.\n" +
@@ -127,11 +112,10 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float damageMagicRatio  = 0f;
 
-    // ── ③ Éléments — Damage ou Other (ex: DrainHP) uniquement ─────────────
     [Tooltip("Vide = Neutre pur (pas de dégâts élémentaires)\n" +
              "1 élément = skill élémentaire\n" +
              "2+ éléments = skill combo élémentaire")]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other, Header = "③ Éléments")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other, Header = "④ Éléments")]
     public List<ElementType> elements = new List<ElementType>();
 
     [Range(0f, 5f)]
@@ -144,7 +128,7 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
     public float elementalMultiplier = 1f;
 
-    // ── ④ Exécution avancée — les 3 skillType (BasicAttack/Active/Ultimate ne diffèrent QUE
+    // ── ⑤ Exécution avancée — les 3 skillType (BasicAttack/Active/Ultimate ne diffèrent QUE
     // par leur slot SkillBar, voir SkillType — aucune raison de restreindre MultiHit/Combo à
     // Active seul). Damage ou Other uniquement (jamais Buff/Debuff, pas de sens à multi-hit/
     // comboter un soin ou un buff pur avec ce mécanisme).
@@ -152,7 +136,7 @@ public class SkillData : ScriptableObject
              "MultiHit      → une activation, N hits en séquence (hitSteps)\n" +
              "ComboSequence → N appuis successifs sur le même slot (comboSteps)")]
     [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
-        Header = "④ Exécution avancée")]
+        Header = "⑤ Exécution avancée")]
     public SkillExecutionType executionType = SkillExecutionType.Normal;
 
     [Tooltip("MultiHit uniquement — liste des hits avec leurs stats propres.\n" +
@@ -178,8 +162,8 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
     public float comboStepInterval = 0f;
 
-    // ── ⑤ Coût ────────────────────────────────────────────────
-    [Header("⑤ Coût")]
+    // ── ⑥ Coût ────────────────────────────────────────────────
+    [Header("⑥ Coût")]
     [Tooltip("Coût en mana.")]
     public float manaCost = 0f;
     [Tooltip("Coût en HP.")]
@@ -187,19 +171,10 @@ public class SkillData : ScriptableObject
     [Tooltip("Coût en gold.")]
     public int   goldCost = 0;
 
-    // ── ⑥ Ciblage & Portée ────────────────────────────────────
-    [Header("⑥ Ciblage & Portée")]
-    public TargetType targetType      = TargetType.Target;
-    public float      range           = 2.5f;
-    public float      aoeRadius       = 0f;
-    public float      projectileSpeed = 15f;
-
-    [Tooltip("Demi-angle du cône EN DEGRÉS (pas un %) — ex: 45 = éventail de 90° total\n" +
-             "(45° de chaque côté de la direction visée). Champ dédié — aoeRadius garde son\n" +
-             "sens habituel (rayon en mètres) pour ce targetType, pas de double-emploi.")]
-    [Range(1f, 180f)]
-    [ShowIf(nameof(targetType), TargetType.Cone, Header = "⑥ Cône (targetType = Cone)")]
-    public float coneHalfAngle = 45f;
+    // ── ⑦ Ciblage — QUI est touché (targetType + filtre allié/ennemi). La distance/taille vit
+    // en ⑧ Portée, séparée exprès (deux questions différentes : qui, et jusqu'où/combien large).
+    [Header("⑦ Ciblage")]
+    public TargetType targetType = TargetType.Target;
 
     [Tooltip("Qui peut être touché par ce skill — AoE ou non (Target y compris,\n" +
              "pas seulement les zones).\n" +
@@ -211,14 +186,28 @@ public class SkillData : ScriptableObject
         TargetType.Cone, TargetType.Target, DisplayName = "Cible")]
     public SkillAoeFaction aoeFaction = SkillAoeFaction.Enemies;
 
-    // ── ⑥ Déplacement — composable avec effectType (Damage/Buff/Debuff/Other), CONTRAIREMENT à
+    // ── ⑧ Portée — COMBIEN loin/large (distance/rayon/angle). Le "qui" vit en ⑦ Ciblage.
+    [Header("⑧ Portée")]
+    public float range           = 2.5f;
+    public float aoeRadius       = 0f;
+    public float projectileSpeed = 15f;
+
+    [Tooltip("Demi-angle du cône EN DEGRÉS (pas un %) — ex: 45 = éventail de 90° total\n" +
+             "(45° de chaque côté de la direction visée). Champ dédié — aoeRadius garde son\n" +
+             "sens habituel (rayon en mètres) pour ce targetType, pas de double-emploi.")]
+    [Range(1f, 180f)]
+    [ShowIf(nameof(targetType), TargetType.Cone, Header = "⑧ Cône (targetType = Cone)")]
+    public float coneHalfAngle = 45f;
+
+    // ── ⑨ Déplacement — composable avec effectType (Damage/Buff/Debuff/Other), CONTRAIREMENT à
     // l'ancien specialEffect qui n'existait que si effectType = Other (impossible de combiner
-    // "fonce dans le tas" = déplacement + dégâts). Voir DisplacementType ci-dessous.
-    [Tooltip("Aucun (défaut) | DashSelf (le caster fonce, trajet animé ~0.25-0.3s, dégâts aux " +
-             "entités croisées) | TeleportSelf (le caster se téléporte, instantané) | Pull " +
-             "(attire une/des cible(s) vers le caster ou un point) | Push (repousse une/des " +
-             "cible(s) loin d'une origine) | SwapPosition (caster et cible échangent leurs " +
-             "places, instantané).\n" +
+    // "fonce dans le tas" = déplacement + dégâts). Section TOP-LEVEL à part entière — plus
+    // jamais caché comme sous-section de Ciblage/Portée (raté par Florian en test, trouvé le
+    // 2026-09-22). Voir DisplacementType ci-dessous.
+    [Tooltip("Aucun (défaut) | DashSelf (le caster fonce, trajet animé, dégâts aux entités " +
+             "croisées) | TeleportSelf (le caster se téléporte, instantané) | Pull (attire une/" +
+             "des cible(s) vers le caster ou un point) | Push (repousse une/des cible(s) loin " +
+             "d'une origine) | SwapPosition (caster et cible échangent leurs places, instantané).\n" +
              "Mutuellement exclusif avec isTrajectory/hasDelayedImpact (deux mécanismes de " +
              "\"quelque chose se déplace\" concurrents) — voir OnValidate, avertissement " +
              "seulement (isTrajectory/hasDelayedImpact utilisent déjà leur unique AndField pour " +
@@ -226,10 +215,10 @@ public class SkillData : ScriptableObject
              "Chaque verbe ne supporte qu'un sous-ensemble de targetType (voir guide de création " +
              "de skills pour la matrice complète) — combinaison non supportée = warning " +
              "OnValidate, pas de correction automatique.")]
-    [Header("⑥ Déplacement")]
+    [Header("⑨ Déplacement")]
     public DisplacementType displacementType = DisplacementType.None;
 
-    [Tooltip("Distance de déplacement RÉELLE — distincte de range (qui gate la portée de " +
+    [Tooltip("Distance de déplacement RÉELLE — distincte de range (⑧, qui gate la portée de " +
              "CIBLAGE, jusqu'où tu peux cliquer/viser). Plafonne jusqu'où tu voyages/pousses " +
              "réellement dans cette direction, même si le point ciblé est plus loin (permet un " +
              "dash \"court\" même en visant loin).\n" +
@@ -239,17 +228,16 @@ public class SkillData : ScriptableObject
              "destination est toujours un point déjà déterminé : la position du caster ou le " +
              "point cliqué).")]
     [ShowIf(nameof(displacementType), DisplacementType.DashSelf, DisplacementType.TeleportSelf,
-        DisplacementType.Push, Header = "⑥ Distance de déplacement")]
+        DisplacementType.Push, Header = "⑨ Distance de déplacement")]
     public float displacementDistance = 5f;
 
     [Tooltip("Durée du trajet animé en secondes — DashSelf/Pull/Push uniquement (TeleportSelf/" +
-             "SwapPosition sont instantanés, pas de trajet). Remplace l'ancienne constante en " +
-             "dur (0.3s joueur / 0.25s Mob) — même durée pour tout le monde désormais, réglable " +
-             "par skill. Plus petit = plus rapide/percutant (ex: 0.15 pour un dash nerveux), plus " +
-             "grand = plus lent/lourd (ex: 0.6 pour une charge de brute).")]
+             "SwapPosition sont instantanés, pas de trajet). Plus petit = plus rapide/percutant " +
+             "(ex: 0.15 pour un dash nerveux), plus grand = plus lent/lourd (ex: 0.6 pour une " +
+             "charge de brute).")]
     [Range(0.05f, 2f)]
     [ShowIf(nameof(displacementType), DisplacementType.DashSelf, DisplacementType.Pull,
-        DisplacementType.Push, Header = "⑥ Durée du trajet")]
+        DisplacementType.Push, Header = "⑨ Durée du trajet")]
     public float displacementDuration = 0.3f;
 
     [Tooltip("TeleportSelf + targetType=Target uniquement : coché = atterrit DERRIÈRE la cible " +
@@ -259,16 +247,17 @@ public class SkillData : ScriptableObject
              "pas calculé dynamiquement.")]
     [ShowIf(nameof(displacementType), DisplacementType.TeleportSelf,
         AndField = nameof(targetType), AndValue = TargetType.Target,
-        Header = "⑥ Téléportation derrière la cible")]
+        Header = "⑨ Téléportation derrière la cible")]
     public bool teleportBehindTarget = true;
 
-    [Tooltip("TeleportSelf uniquement : coché = les alliés dans aoeRadius de la position ORIGINE " +
-             "du caster sont téléportés au même décalage relatif près de la destination. " +
-             "Décoché (défaut) = caster seul.")]
-    [ShowIf(nameof(displacementType), DisplacementType.TeleportSelf, Header = "⑥ Emmène les alliés")]
-    public bool bringsAllies = false;
+    [Tooltip("TeleportSelf uniquement : qui est emmené en plus du caster, parmi les entités dans " +
+             "aoeRadius (⑧) de la position ORIGINE — téléportées au même décalage relatif près de " +
+             "la destination. None (défaut) = caster seul. Enemies permet un \"control-tp\" (ex: " +
+             "arracher un ennemi de sa position pour le jeter ailleurs avec toi).")]
+    [ShowIf(nameof(displacementType), DisplacementType.TeleportSelf, Header = "⑨ Emmène avec soi")]
+    public TeleportBringFaction bringsAlong = TeleportBringFaction.None;
 
-    // ── ⑦ Zone à impact différé / Trajectoire mobile ───────────
+    // ── ⑩ Zone à impact différé / Trajectoire mobile ───────────
     [Tooltip("Transforme la résolution de ce skill en zone au sol à impact différé — au lieu de\n" +
              "résoudre les dégâts immédiatement au point de résolution existant (fin d'anim / fin\n" +
              "de canalisation), une zone se plante à cet endroit et les dégâts n'appliquent qu'après\n" +
@@ -283,7 +272,7 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(targetType), TargetType.Self, TargetType.AoE_Self, TargetType.Target,
         TargetType.GroundTarget, TargetType.AoE_Target, TargetType.Cone,
         AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
-        Header = "⑦ Zone à impact différé")]
+        Header = "⑩ Zone à impact différé")]
     public bool hasDelayedImpact = false;
 
     [Tooltip("Délai en secondes entre le plantage de la zone (résolution existante) et le premier\n" +
@@ -324,7 +313,7 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Target,
         TargetType.AoE_Target, TargetType.Cone,
         AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
-        Header = "⑦ Trajectoire mobile")]
+        Header = "⑩ Trajectoire mobile")]
     public bool isTrajectory = false;
 
     [Tooltip("Si coché, le sweep s'arrête au PREMIER ennemi touché (comme l'ancien Skillshot —\n" +
@@ -333,7 +322,7 @@ public class SkillData : ScriptableObject
              "Si combiné à hasDelayedImpact, la zone différée se plante au POINT D'ARRÊT réel, pas " +
              "à la destination d'origine.")]
     [ShowIf(nameof(targetType), TargetType.Target, TargetType.GroundTarget,
-        AndField = nameof(isTrajectory), AndValue = true, Header = "⑦ Arrêt au premier hit")]
+        AndField = nameof(isTrajectory), AndValue = true, Header = "⑩ Arrêt au premier hit")]
     public bool stopAtFirstHit = false;
 
     [Tooltip("Forme de la hitbox qui voyage — ignoré pour Cone (toujours un éventail angulaire,\n" +
@@ -345,7 +334,7 @@ public class SkillData : ScriptableObject
              "         (ou l'inverse), selon le VFX. Hauteur fixe (interne, généreuse) — pas de\n" +
              "         variation de hauteur nécessaire au combat (entités ~même niveau au sol).")]
     [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Target, TargetType.AoE_Target,
-        AndField = nameof(isTrajectory), AndValue = true, Header = "⑦ Forme de trajectoire")]
+        AndField = nameof(isTrajectory), AndValue = true, Header = "⑩ Forme de trajectoire")]
     public TrajectoryShape trajectoryShape = TrajectoryShape.Sphere;
 
     [Tooltip("Largeur totale de la boîte (axe horizontal, perpendiculaire au trajet). Box uniquement.")]
@@ -369,11 +358,28 @@ public class SkillData : ScriptableObject
              "suivre).")]
     [ShowIf(nameof(targetType), TargetType.Self, TargetType.AoE_Self, TargetType.Target,
         TargetType.AoE_Target, AndField = nameof(hasDelayedImpact), AndValue = true,
-        Header = "⑦ Zone qui suit")]
+        Header = "⑩ Zone qui suit")]
     public bool zoneFollowsAnchor = false;
 
-    // ── ⑧ Effets secondaires (StatusEffects SO) ───────────────
-    [Header("⑧ Effets secondaires (BuffData / DebuffData + chance)")]
+    // ── ⑪ Effet spécial (si effectType == Other) & Effets secondaires ─────
+    [Tooltip("Effet spécial appliqué par ce skill.\nActif uniquement si effectType = Other.")]
+    [ShowIf(nameof(effectType), SkillEffectType.Other, Header = "⑪ Effet spécial (si effectType = Other)")]
+    public SkillSpecialEffect specialEffect = SkillSpecialEffect.None;
+
+    [Tooltip("Ratio des dégâts restitués en soin (DrainHP). Ex: 0.5 = 50% des dégâts soignés.")]
+    [Range(0f, 1f)]
+    [ShowIf(nameof(specialEffect), SkillSpecialEffect.DrainHP)]
+    public float drainHealRatio = 0.5f;
+
+    [Tooltip("MobData à invoquer (Summon uniquement).")]
+    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
+    public MobData summonMobData;
+
+    [Tooltip("Durée de vie de l'invocation en secondes. 0 = permanent jusqu'à la mort.")]
+    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
+    public float summonDuration = 30f;
+
+    [Header("⑪ Effets secondaires (BuffData / DebuffData + chance)")]
     [Tooltip("Effets déclenchés à l'utilisation du skill.\n" +
              "Glisse un BuffData ou DebuffData + règle la chance.\n\n" +
              "Ex: Skill Damage + Burn 30% → dégâts + chance de brûlure\n" +
@@ -381,8 +387,8 @@ public class SkillData : ScriptableObject
              "Ex: Skill Debuff pur → glisse un DebuffData Poison à 100%")]
     public List<StatusEffectEntry> statusEffects = new List<StatusEffectEntry>();
 
-    // ── ⑨ Visuel ───────────────────────────────────────────────
-    [Header("⑨ Visuel")]
+    // ── ⑫ Visuel ───────────────────────────────────────────────
+    [Header("⑫ Visuel")]
     public Sprite     icon;
 
     [Tooltip("VFX spawné à la position du caster AU LANCEMENT (pentacle aux pieds, glow aux\n" +
@@ -421,8 +427,8 @@ public class SkillData : ScriptableObject
              "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
     public AnimationClip channelAnimation;
 
-    // ── ⑩ Son ──────────────────────────────────────────────────
-    [Header("⑩ Son")]
+    // ── ⑬ Son ──────────────────────────────────────────────────
+    [Header("⑬ Son")]
     public AudioClip  soundEffect;
 
     // ── Helpers ───────────────────────────────────────────────
@@ -593,17 +599,20 @@ public class SkillData : ScriptableObject
                               $"{executionType} — combinaison non gérée, la trajectoire ne " +
                               "fonctionne qu'avec executionType = Normal (instant ou canalisé).", this);
 
-        // displacementType et isTrajectory/hasDelayedImpact sont deux mécanismes de "quelque
-        // chose se déplace" concurrents — jamais de sens de les cumuler. Pas de [ShowIf] possible
-        // ici (isTrajectory/hasDelayedImpact utilisent déjà leur unique AndField pour
-        // executionType == Normal, voir Utils/ShowIfAttribute.cs — AllowMultiple = false),
-        // avertissement seulement.
-        if (displacementType != DisplacementType.None && (isTrajectory || hasDelayedImpact))
+        // displacementType et isTrajectory sont deux mécanismes de "quelque chose se déplace"
+        // concurrents (l'un déplace une entité, l'autre une hitbox) — jamais de sens de les
+        // cumuler. Pas de [ShowIf] possible ici (isTrajectory utilise déjà son unique AndField
+        // pour executionType == Normal, voir Utils/ShowIfAttribute.cs — AllowMultiple = false),
+        // avertissement seulement. hasDelayedImpact N'EST PLUS dans cette liste (2026-09-22,
+        // demande Florian) — planter une zone au point d'arrivée d'un déplacement n'a AUCUN
+        // conflit mécanique (contrairement à isTrajectory) : les 5 routines de verbe de
+        // StartDisplacement() plantent la zone elles-mêmes via PlantZoneAt() une fois leur
+        // déplacement résolu (voir SkillSystem.cs).
+        if (displacementType != DisplacementType.None && isTrajectory)
             Debug.LogWarning($"[SkillData:{name}] displacementType = {displacementType} avec " +
-                              $"isTrajectory = {isTrajectory} et/ou hasDelayedImpact = " +
-                              $"{hasDelayedImpact} — combinaison non supportée, deux mécanismes " +
-                              "de déplacement concurrents sur le même skill. Décoche isTrajectory/" +
-                              "hasDelayedImpact ou remets displacementType sur None.", this);
+                              $"isTrajectory = true — combinaison non supportée, deux mécanismes " +
+                              "de déplacement concurrents sur le même skill. Décoche isTrajectory " +
+                              "ou remets displacementType sur None.", this);
 
         // Symétrique du warning isTrajectory && executionType != Normal déjà en place — le
         // déplacement est silencieusement ignoré sur les mêmes chemins (combo step, MultiHit,
@@ -714,6 +723,17 @@ public enum DisplacementType
     Pull           = 3,  // Attire une/des cible(s) vers le caster ou un point
     Push           = 4,  // Repousse une/des cible(s) loin d'une origine
     SwapPosition   = 5,  // Caster et cible échangent leurs places, instantané
+}
+
+/// <summary>Qui le caster emmène avec lui lors d'un TeleportSelf — voir SkillSystem.PassesAoeFilter
+/// (None n'a pas d'équivalent dans SkillAoeFaction, qui est toujours "actif" ailleurs — ici
+/// "personne" est le défaut, donc un enum séparé plutôt qu'une réutilisation directe).</summary>
+public enum TeleportBringFaction
+{
+    None     = 0,  // Le caster se téléporte seul (défaut — ancien bringsAllies = false)
+    Allies   = 1,  // Emmène les alliés proches (ancien bringsAllies = true)
+    Enemies  = 2,  // Emmène les ennemis proches (control-tp — les arrache de leur position)
+    Everyone = 3,  // Emmène tout le monde à proximité, sans distinction
 }
 
 // =============================================================

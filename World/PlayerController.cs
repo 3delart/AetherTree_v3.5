@@ -53,6 +53,13 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMovement()
     {
+        // Agent désactivé — SkillSystem le fait pendant un DashSelf/Pull/Push/etc. en cours
+        // (StartDisplacement, voir Combat/SkillSystem.cs) pour garder le contrôle exclusif du
+        // transform le temps du trajet animé. SetDestination() sur un agent désactivé lève une
+        // exception Unity ("Agent not on NavMesh") — sans ce garde, tenir une touche de
+        // déplacement pendant que le joueur lance son propre DashSelf plantait ici.
+        if (_agent == null || !_agent.enabled) return;
+
         var fx = _player?.statusEffects;
 
         // Stun, Freeze, Root ou Knockback (mini-stun) — bloque le mouvement

@@ -336,6 +336,17 @@ public class SkillSystem : MonoBehaviour
                 anchorEntity = target;
         }
 
+        PlantZoneAt(skill, caster, position, anchorEntity);
+    }
+
+    /// <summary>Plante une zone à impact différé à une position déjà résolue par l'appelant —
+    /// utilisée par PlantDelayedZone() (skill hasDelayedImpact "pur") ET par les 5 routines de
+    /// verbe de StartDisplacement() (skill displacementType + hasDelayedImpact combinés, ex:
+    /// TeleportSelf qui plante une zone au point d'arrivée). Host temporaire pour Mob/PNJ (le
+    /// caster peut mourir/être détruit avant que impactDelay+zoneDuration ne s'écoule), `this`
+    /// pour Player (jamais détruit) — voir DelayedZoneRoutine.</summary>
+    private void PlantZoneAt(SkillData skill, Entity caster, Vector3 position, Entity anchorEntity)
+    {
         GameObject marker = skill.vfxZoneMarker != null
             ? Instantiate(skill.vfxZoneMarker, position, Quaternion.identity)
             : null;
@@ -347,11 +358,6 @@ public class SkillSystem : MonoBehaviour
         if (marker != null && anchorEntity != null)
             marker.transform.SetParent(anchorEntity.transform);
 
-        // Mob/PNJ : Destroy(gameObject, délai de corpse) sur le caster tuerait cette coroutine
-        // avant qu'elle atteigne son propre nettoyage si impactDelay+zoneDuration dépasse ce
-        // délai — délègue à un host temporaire qui survit indépendamment du caster, détruit
-        // lui-même en fin de routine. Le chemin Player (jamais détruit) reste inchangé, tourne
-        // sur `this` comme aujourd'hui.
         SkillSystem host = caster.entityType == EntityType.Player
             ? this
             : new GameObject($"DelayedZoneHost_{skill.name}").AddComponent<SkillSystem>();
@@ -1210,7 +1216,7 @@ public class SkillSystem : MonoBehaviour
 
         var agent = caster.GetComponent<UnityEngine.AI.NavMeshAgent>();
         if (agent != null) agent.enabled = false;
-        if (caster is Mob dashMob) dashMob.IsDashing = true;
+        SetDashing(caster, true);
 
         var   alreadyHit = new HashSet<Entity>();
         float radius     = skill.aoeRadius > 0f ? skill.aoeRadius : 0.5f;
@@ -1253,7 +1259,7 @@ public class SkillSystem : MonoBehaviour
         if (caster != null)
         {
             if (!interrupted) caster.transform.position = destination;
-            if (caster is Mob endMob) endMob.IsDashing = false;
+            SetDashing(caster, false);
             if (agent != null) agent.enabled = true;
 
             if (!sweepEnRoute && !interrupted && !caster.isDead && target != null && !target.isDead)
@@ -1267,6 +1273,13 @@ public class SkillSystem : MonoBehaviour
                 if (skill.soundEffect != null)
                     AudioSource.PlayClipAtPoint(skill.soundEffect, target.transform.position);
             }
+
+            // hasDelayedImpact : plante en plus une zone classique au point d'arrivée réel (même
+            // position que le caster, interrompu ou non) — double dégât voulu, comme la combinaison
+            // isTrajectory+hasDelayedImpact (voir TrajectoryRoutine). anchorEntity: null — le
+            // caster ne "suit" pas sa propre zone, elle reste fixe où il a atterri.
+            if (!caster.isDead && skill.hasDelayedImpact)
+                PlantZoneAt(skill, caster, caster.transform.position, null);
         }
     }
 
@@ -1317,21 +1330,28 @@ public class SkillSystem : MonoBehaviour
 
         WarpNow(caster, destination);
 
-        // bringsAllies : téléporte aussi les alliés proches de la position ORIGINE, au même
-        // décalage relatif vers la destination.
-        if (skill.bringsAllies)
+        // bringsAlong : téléporte aussi les entités de la faction choisie, proches de la position
+        // ORIGINE, au même décalage relatif vers la destination. None (défaut) = caster seul.
+        if (skill.bringsAlong != TeleportBringFaction.None)
         {
+            SkillAoeFaction faction = skill.bringsAlong switch
+            {
+                TeleportBringFaction.Allies   => SkillAoeFaction.Allies,
+                TeleportBringFaction.Enemies  => SkillAoeFaction.Enemies,
+                _                              => SkillAoeFaction.Everyone,
+            };
             Vector3 delta = destination - startPos;
             Collider[] cols = Physics.OverlapSphere(startPos, skill.aoeRadius > 0f ? skill.aoeRadius : 5f);
             foreach (Collider col in cols)
             {
-                Entity ally = col.GetComponentInParent<Entity>();
-                if (ally == null || ally == caster || ally.isDead) continue;
-                if (!IsAlly(caster, ally)) continue;
+                Entity passenger = col.GetComponentInParent<Entity>();
+                if (passenger == null || passenger == caster || passenger.isDead) continue;
+                if (!PassesAoeFilter(faction, caster, passenger)) continue;
+                if (ResistsDisplacement(passenger)) continue;
 
-                Vector3 allyDest = ally.transform.position + delta;
-                if (!TryClampToNavMesh(allyDest, out allyDest)) continue;
-                WarpNow(ally, allyDest);
+                Vector3 passengerDest = passenger.transform.position + delta;
+                if (!TryClampToNavMesh(passengerDest, out passengerDest)) continue;
+                WarpNow(passenger, passengerDest);
             }
         }
 
@@ -1350,6 +1370,11 @@ public class SkillSystem : MonoBehaviour
             Instantiate(skill.vfxImpact, caster.transform.position, Quaternion.identity);
         if (skill.soundEffect != null)
             AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+
+        // hasDelayedImpact : plante en plus une zone classique au point d'arrivée — double
+        // dégât voulu, même idiome que DashSelf/isTrajectory ci-dessus/ci-dessous.
+        if (skill.hasDelayedImpact)
+            PlantZoneAt(skill, caster, destination, null);
     }
 
     // =========================================================
@@ -1396,6 +1421,14 @@ public class SkillSystem : MonoBehaviour
         }
 
         victims.RemoveAll(v => ResistsDisplacement(v));
+
+        // hasDelayedImpact : plante une zone au point de regroupement (anchor) même si personne
+        // n'a été attiré au premier passage — même idiome "whiff total plante quand même" que
+        // TrajectoryRoutine — AVANT le early-exit victims.Count == 0 ci-dessous, sinon un Pull
+        // qui rate tout le monde perdrait aussi sa zone.
+        if (skill.hasDelayedImpact)
+            PlantZoneAt(skill, caster, anchor, null);
+
         if (victims.Count == 0) yield break;
 
         foreach (Entity v in victims)
@@ -1430,7 +1463,18 @@ public class SkillSystem : MonoBehaviour
 
             agents[i] = v.GetComponent<UnityEngine.AI.NavMeshAgent>();
             if (agents[i] != null) agents[i].enabled = false;
-            if (v is Mob vm) vm.IsDashing = true;
+            SetDashing(v, true);
+            // Verrouille l'input WASD si la victime est le Player — PlayerController.Update()
+            // gate déjà tout mouvement sur isKnockedBack (voir son check ligne ~59), mais rien
+            // ne le posait jusqu'ici pour un Pull/Push : sans lui, une victime Player qui tient
+            // une touche de déplacement se battrait avec le Lerp de cette routine pour la
+            // position pendant tout le trajet. Sans risque pour Mob/PNJ (déjà couverts par
+            // IsDashing+agent désactivé, ce verrou est juste redondant pour eux) — et sans
+            // risque de s'auto-interrompre comme le ferait le CASTER d'un DashSelf (IsHardCCd
+            // lit aussi isKnockedBack, mais IsHardCCd n'est jamais consulté sur une VICTIME de
+            // Pull/Push, seulement sur le caster d'un DashSelf — voir sa doc). Timer auto-géré,
+            // se relâche tout seul après dashDuration.
+            v.statusEffects?.ApplyKnockbackStun(dashDuration);
         }
 
         float elapsed = 0f;
@@ -1448,7 +1492,7 @@ public class SkillSystem : MonoBehaviour
         for (int i = 0; i < victims.Count; i++)
         {
             if (victims[i] == null) continue;
-            if (victims[i] is Mob endMob) endMob.IsDashing = false;
+            SetDashing(victims[i], false);
             if (!victims[i].isDead)
             {
                 victims[i].transform.position = ends[i];
@@ -1495,6 +1539,12 @@ public class SkillSystem : MonoBehaviour
         }
 
         victims.RemoveAll(v => ResistsDisplacement(v));
+
+        // hasDelayedImpact : plante une zone au point d'origine (même sans victime — voir Pull)
+        // — les entités repoussées quittent la zone, mais d'autres peuvent s'y aventurer ensuite.
+        if (skill.hasDelayedImpact)
+            PlantZoneAt(skill, caster, origin, null);
+
         if (victims.Count == 0) yield break;
 
         foreach (Entity v in victims)
@@ -1525,7 +1575,18 @@ public class SkillSystem : MonoBehaviour
 
             agents[i] = v.GetComponent<UnityEngine.AI.NavMeshAgent>();
             if (agents[i] != null) agents[i].enabled = false;
-            if (v is Mob vm) vm.IsDashing = true;
+            SetDashing(v, true);
+            // Verrouille l'input WASD si la victime est le Player — PlayerController.Update()
+            // gate déjà tout mouvement sur isKnockedBack (voir son check ligne ~59), mais rien
+            // ne le posait jusqu'ici pour un Pull/Push : sans lui, une victime Player qui tient
+            // une touche de déplacement se battrait avec le Lerp de cette routine pour la
+            // position pendant tout le trajet. Sans risque pour Mob/PNJ (déjà couverts par
+            // IsDashing+agent désactivé, ce verrou est juste redondant pour eux) — et sans
+            // risque de s'auto-interrompre comme le ferait le CASTER d'un DashSelf (IsHardCCd
+            // lit aussi isKnockedBack, mais IsHardCCd n'est jamais consulté sur une VICTIME de
+            // Pull/Push, seulement sur le caster d'un DashSelf — voir sa doc). Timer auto-géré,
+            // se relâche tout seul après dashDuration.
+            v.statusEffects?.ApplyKnockbackStun(dashDuration);
         }
 
         float elapsed = 0f;
@@ -1543,7 +1604,7 @@ public class SkillSystem : MonoBehaviour
         for (int i = 0; i < victims.Count; i++)
         {
             if (victims[i] == null) continue;
-            if (victims[i] is Mob endMob) endMob.IsDashing = false;
+            SetDashing(victims[i], false);
             if (!victims[i].isDead)
             {
                 victims[i].transform.position = ends[i];
@@ -1578,6 +1639,13 @@ public class SkillSystem : MonoBehaviour
             Instantiate(skill.vfxImpact, targetDest, Quaternion.identity);
         if (skill.soundEffect != null)
             AudioSource.PlayClipAtPoint(skill.soundEffect, casterDest);
+
+        // hasDelayedImpact : plante en plus une zone classique là où le caster atterrit (côté
+        // choisi arbitrairement — un swap a deux points d'arrivée, l'ancienne position du caster
+        // et celle de la cible ; le caster reste le repère par convention, même choix que
+        // DashSelf/TeleportSelf ci-dessus).
+        if (skill.hasDelayedImpact)
+            PlantZoneAt(skill, caster, casterDest, null);
     }
 
     // =========================================================
@@ -1700,6 +1768,16 @@ public class SkillSystem : MonoBehaviour
     {
         var fx = entity.statusEffects;
         return fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed || fx.isKnockedBack || fx.isFeared);
+    }
+
+    /// <summary>Pose IsDashing sur Mob ET PNJ (les deux seuls types qui l'exposent — pas
+    /// d'interface commune, Entity ne le porte pas) pendant un trajet animé de déplacement
+    /// (DashSelf/Pull/Push), caster ou victime. Player n'a pas besoin de ce flag (aucune IA à
+    /// mettre en pause pendant le trajet).</summary>
+    private static void SetDashing(Entity entity, bool value)
+    {
+        if (entity is Mob mob) mob.IsDashing = value;
+        else if (entity is PNJ pnj) pnj.IsDashing = value;
     }
 
     // =========================================================
