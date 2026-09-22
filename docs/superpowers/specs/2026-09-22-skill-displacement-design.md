@@ -41,6 +41,8 @@ public enum DisplacementType
     TeleportSelf = 2,   // le caster se téléporte (instantané, pas de trajet)
     Pull         = 3,   // attire une/des cible(s) vers le caster ou un point
     Push         = 4,   // repousse une/des cible(s) loin d'une origine
+    SwapPosition = 5,   // caster et cible échangent leurs places (instantané, targetType=Target
+                         // uniquement — voir §2ter, absorbe SkillSpecialEffect.SwapPosition)
 }
 
 public DisplacementType displacementType = DisplacementType.None;
@@ -157,6 +159,50 @@ séparées `caster.entityType == EntityType.Player ? ... : ...`). Le point 2 ci-
 totale avec comment `isTrajectory`/`hasDelayedImpact` ont déjà été câblés aux 4 points d'entrée
 lors du chantier TargetType, pas une extension optionnelle.
 
+## §2ter — Suppression de l'ancien système `SkillSpecialEffect` de déplacement
+
+Trouvé en re-relecture du code (pas dans le radar du brainstorming initial) : `SkillData.
+specialEffect` (actif seulement si `effectType = Other` — exactement le problème de composition
+identifié en intro, "fonce dans le tas" est impossible avec cette architecture) a DÉJÀ un système
+de déplacement fonctionnel, pas des stubs : `SkillSpecialEffect.Pull/Push/SwapPosition/PullAoE/
+PushAoE/GatherAoE/Vortex/TeleportSelf/TeleportTarget` + un champ `pullPushForce`, branchés sur
+`Combat/DisplacementUtils.cs` (`WarpToNavMesh`/`WarpEntity`/`ApplyDisplacementAoE`/`GatherAoE`)
+et sur 9 `case` dans `SkillSystem.ApplySpecialEffect()`.
+
+**Décision Florian : supprimer cet ancien système, garder le nouveau design (§1-§8) tel quel** —
+notamment l'aspect ANIMÉ (Lerp ~0.25-0.3s, pas le `Warp` instantané de l'existant) et le filtre
+`aoeFaction` (l'existant n'a AUCUN filtre allié/ennemi sur `ApplyDisplacementAoE`/`GatherAoE` —
+juste un `layerMask` Player/Mob, le même bug de friendly-fire déjà corrigé ailleurs le
+2026-09-04, voir mémoire roadmap — ne pas le réintroduire). Seul ajout au design : `SwapPosition`
+existait déjà et marche, absorbé dans `DisplacementType` (§1, valeur 5) plutôt que réécrit —
+c'était le seul verbe manquant à notre discussion.
+
+**Vérifié : 0 asset n'utilise `specialEffect` 1 à 13 (TOUTES les valeurs)** — suppression pure
+sans migration, même principe que Skillshot/LineTarget/Direction lors du chantier précédent.
+
+**Ce qui est supprimé :**
+- `SkillSpecialEffect.Pull/Push/SwapPosition/PullAoE/PushAoE/GatherAoE/Vortex/TeleportSelf/
+  TeleportTarget` (ordinaux 1-9) — retirés de l'enum. `DrainHP/DrainMana/Summon/Interrupt`
+  (ordinaux 10-13, sans lien avec le déplacement) RESTENT mais sont renumérotés 1-4 (0 asset les
+  utilise non plus, vérifié — renumérotation propre plutôt que garder un trou, même choix
+  stylistique que le chantier précédent pour un enum entièrement vidé de son contenu obsolète).
+- Champ `SkillData.pullPushForce` (ligne ~90-92) — plus aucun `SkillSpecialEffect` ne le
+  référence une fois les 6 valeurs qui l'utilisaient supprimées. Remplacé par
+  `displacementDistance` (§1).
+- Les 9 `case` correspondants dans `SkillSystem.ApplySpecialEffect()` (lignes ~1493-1576) —
+  `DrainHP`/`DrainMana`/`Summon`/`Interrupt` restent, inchangés à part leur ordinal.
+
+**Ce qui est RÉUTILISÉ (pas supprimé)** : `DisplacementUtils.WarpToNavMesh(Entity, Vector3)`
+(clamp `NavMesh.SamplePosition` + `agent.Warp`/fallback `transform.position`) reste la bonne
+primitive pour les verbes VRAIMENT instantanés (`TeleportSelf`, `SwapPosition`) — pas besoin de
+réécrire cette logique. Pour les verbes ANIMÉS (`DashSelf`/`Pull`/`Push`), sa logique de clamp
+(`NavMesh.SamplePosition`) doit être extraite/réutilisée pour valider la destination AVANT de
+lancer le Lerp (le `Warp` immédiat de la méthode telle quelle ne convient pas à un trajet animé
+frame par frame) — détail d'extraction laissé au plan. `WarpEntity`/`ApplyDisplacementAoE`/
+`GatherAoE` (les 3 helpers instant-only, sans filtre `aoeFaction`) deviennent du code mort une
+fois leurs 9 appelants supprimés — à supprimer aussi, le nouveau système les remplace
+entièrement (animé + filtré, pas juste "pas d'usage restant").
+
 ## §3 — Matrice verbe × targetType
 
 Chaque verbe ne supporte qu'un sous-ensemble de `targetType` (masqué via `[ShowIf]`, même idiome
@@ -168,13 +214,15 @@ que `stopAtFirstHit`) :
 | **TeleportSelf** | Téléportation instantanée devant/derrière la cible (`teleportBehindTarget`), jamais dessus — calculé par rapport au FACING de la CIBLE (`target.transform.forward`), pas du caster : "derrière" = du côté vers lequel la cible tourne le dos (le classique blink-backstab), "devant" = du côté qu'elle regarde. | Téléportation instantanée au point cliqué, plafonnée à `displacementDistance`. | Téléportation instantanée dans la direction souris, sur `displacementDistance` (blink). | — |
 | **Pull** | Tire la cible verrouillée vers le caster (stoppe avant lui, même logique de `stopOffset` que Dash). | Sélectionne tout ce qui est dans `aoeRadius` du point cliqué (filtré par `aoeFaction`), tire TOUT vers ce point — c'est le "Regroupement". | Sélectionne tout dans l'éventail (angle `coneHalfAngle`, direction souris), tire tout vers le caster (même `stopOffset` que la colonne Target — jamais littéralement sur/dans le caster). | Sélectionne tout dans `aoeRadius` du caster, resserre tout vers le caster (même `stopOffset`, utile pour cluster une zone avant un gros AoE). | 
 | **Push** | Repousse la cible verrouillée loin du caster, sur `displacementDistance`. | Sélectionne tout dans `aoeRadius` du point cliqué, repousse loin de CE POINT (effet "explosion sur place"), sur `displacementDistance`. | Repousse tout l'éventail loin du caster, sur `displacementDistance`. | Repousse tout ce qui est dans `aoeRadius` du caster, loin de lui, sur `displacementDistance`. |
+| **SwapPosition** | Caster et cible verrouillée échangent leurs places, instantanément (les DEUX positions sont clampées `NavMesh` indépendamment — voir §2ter). | — | — | — |
 
-Cases vides (`AoE_Target` pour tous les verbes, `AoE_Self` pour Dash/Teleport) : pas de sens
-géométrique (on ne fonce/téléporte pas "sur soi-même" ; `AoE_Target` duplique `GroundTarget`
-centré sur une entité plutôt qu'un point, jugé pas assez distinct pour être supporté dès cette
-1ère passe) — non affichées côté Inspector, warning `OnValidate` si `displacementType` est actif
-dessus quand même (même idiome que les combos non supportés déjà en place pour
-`isTrajectory`/`hasDelayedImpact`).
+Cases vides (`AoE_Target` pour tous les verbes, `AoE_Self` pour Dash/Teleport, TOUT sauf `Target`
+pour `SwapPosition`) : pas de sens géométrique (on ne fonce/téléporte pas "sur soi-même" ;
+`AoE_Target` duplique `GroundTarget` centré sur une entité plutôt qu'un point, jugé pas assez
+distinct pour être supporté dès cette 1ère passe ; `SwapPosition` a besoin d'exactement UNE
+entité avec qui échanger, aucun sens en zone) — non affichées côté Inspector, warning
+`OnValidate` si `displacementType` est actif dessus quand même (même idiome que les combos non
+supportés déjà en place pour `isTrajectory`/`hasDelayedImpact`).
 
 ## §4 — Timing des dégâts/effets
 
@@ -188,6 +236,9 @@ dessus quand même (même idiome que les combos non supportés déjà en place p
   deux verbes symétriques). La cible encaisse l'effet avant même d'avoir fini son trajet vers le
   caster.
 - **Push** : au DÉPART (tu frappes, la cible s'envole ensuite).
+- **SwapPosition** : à l'échange (instantané) — les `targetType`/zones dépendant de la position
+  (ex: un `AoE_Self` combiné, si un jour autorisé) seraient réévalués aux NOUVELLES positions,
+  même logique que `TeleportSelf`.
 
 ## §5 — Interruption & résistance au CC
 
@@ -232,7 +283,7 @@ concrètement qu'à `DashSelf` (pas de fenêtre multi-frame à interrompre pour 
   cercle autour du point exact) pour éviter la superposition visuelle exacte de plusieurs
   modèles — coût de calcul négligeable.
 
-## §7 — Résistance au déplacement forcé (Pull/Push) — équipement ET Mob/PNJ innée
+## §7 — Résistance au déplacement forcé (Pull/Push/SwapPosition) — équipement ET Mob/PNJ innée
 
 Réutilise le système de résistance aux debuffs déjà fonctionnel (`DebuffResistanceEntry
 { debuffType, resistChance }` sur les équipements → agrégé par `CharacterStats.
@@ -240,17 +291,18 @@ ApplyDebuffResistances()` → stocké dans `StatusEffectSystem._debuffResistance
 `TryApplyDebuff()`), plutôt que de dupliquer toute cette plomberie.
 
 **`DebuffType`** (`Data/StatusEffect/StatusEffectData.cs`) gagne UNE seule valeur en fin d'enum
-(ordinal safety respecté, dernier ordinal actuel = `HpDrain = 21`) — Pull et Push partagent la
-même résistance, pas de distinction par verbe (un équipement "anti-déplacement forcé" protège des
-deux à la fois, pas la peine de gérer 2 entrées séparées côté designer) :
+(ordinal safety respecté, dernier ordinal actuel = `HpDrain = 21`) — Pull, Push ET SwapPosition
+partagent la même résistance, pas de distinction par verbe (un équipement "anti-déplacement
+forcé" protège des trois à la fois, pas la peine de gérer plusieurs entrées séparées côté
+designer) :
 
 ```csharp
-Displacement = 22, // Résistance au déplacement forcé — Pull ET Push (SkillData.DisplacementType)
-                    // partagent cette même clé, pas de distinction par verbe. Clé de résistance
-                    // PURE, aucun DebuffData n'utilise jamais ce type, jamais appliqué comme un
-                    // vrai debuff (pas de durée, pas de statusEffects.isXxx). Juste un point
-                    // d'entrée dans le système de résistance équipement existant pour éviter de
-                    // le dupliquer.
+Displacement = 22, // Résistance au déplacement forcé — Pull, Push ET SwapPosition
+                    // (SkillData.DisplacementType) partagent cette même clé, pas de distinction
+                    // par verbe. Clé de résistance PURE, aucun DebuffData n'utilise jamais ce
+                    // type, jamais appliqué comme un vrai debuff (pas de durée, pas de
+                    // statusEffects.isXxx). Juste un point d'entrée dans le système de
+                    // résistance équipement existant pour éviter de le dupliquer.
 ```
 
 **Côté équipement** : aucun changement de code nécessaire — `DebuffResistanceEntry` accepte déjà
@@ -259,9 +311,11 @@ toutes les entrées peu importe le type). Le designer ajoute juste une entrée
 `{ debuffType: Displacement, resistChance: 0.1 }` sur un équipement comme pour n'importe quel
 autre debuff.
 
-**Côté `SkillSystem`** : au moment où un Pull/Push s'active sur une cible (voir §4, "au départ"),
-rouler la résistance AVANT d'appliquer le déplacement — même pattern exact que
-`StatusEffectSystem.TryApplyDebuff()` :
+**Côté `SkillSystem`** : au moment où un Pull/Push/SwapPosition s'active sur une cible (voir §4,
+"au départ"/"à l'échange"), rouler la résistance AVANT d'appliquer le déplacement — même pattern
+exact que `StatusEffectSystem.TryApplyDebuff()`. Pour `SwapPosition` spécifiquement : si la cible
+résiste, l'échange COMPLET est annulé (ni le caster ni la cible ne bougent) — pas de swap
+"à moitié" où un seul des deux se déplace :
 
 ```csharp
 float resistance = target.statusEffects.GetDebuffResistance(DebuffType.Displacement);
@@ -319,10 +373,9 @@ construire de système d'immunité séparé. Retiré du hors-scope, voir §8 mis
   "hors scope" : aucun système de ce type n'existe encore dans le code (les Donjons/boss, roadmap
   item 8, ne sont pas bâtis), donc aucun `MobData` de boss n'existe encore pour le configurer —
   mais le champ est prêt dès ce chantier-ci.
-  Prévu pour plus tard, pas ce chantier.
-- **Swap de position** (caster et cible échangent leurs places) — pas mentionné par Florian dans
-  ce chantier, pas dans la matrice §3. Pourrait se brancher plus tard comme variante de
-  `TeleportSelf` si besoin, sans casser l'architecture actuelle.
+- ~~Swap de position~~ — **ajouté au design** (§1 `DisplacementType.SwapPosition`, §2ter, §3, §4)
+  après découverte que `SkillSpecialEffect.SwapPosition` existait déjà en code fonctionnel —
+  absorbé plutôt que laissé hors scope.
 - **Direction de Push arbitraire** (pousser dans une direction fixe indépendante du caster/point)
   — la matrice §3 couvre "loin du caster" et "loin du point cliqué" uniquement, jugé suffisant
   pour la 1ère passe.
@@ -332,8 +385,9 @@ construire de système d'immunité séparé. Retiré du hors-scope, voir §8 mis
 Pas de framework de test automatisé (comme tout le reste du projet) — vérification par
 compilation + grep + Play Mode manuel par Florian, même méthode que le chantier TargetType. Points
 clés à couvrir dans le plan d'implémentation :
-1. Les 4 verbes × leurs colonnes supportées dans la matrice §3 (16 combinaisons à couvrir,
-   4 cases vides par design).
+1. Les 5 verbes × leurs colonnes supportées dans la matrice §3 (20 cellules, 15 combinaisons
+   réellement supportées à couvrir, 5 vides par design — `AoE_Self` pour DashSelf/TeleportSelf,
+   les 3 colonnes non-`Target` pour `SwapPosition`).
 2. Migration de `skl_loup_special_test.asset` (Dash_Target → `targetType=Target` +
    `displacementType=DashSelf`).
 3. CC interrompt bien un DashSelf en cours (caster) ; ne bloque PAS un Pull/Push sur la cible.
@@ -356,3 +410,11 @@ clés à couvrir dans le plan d'implémentation :
     avoir lieu. Vérifier aussi qu'un Mob SANS entrée `debuffResistances` se fait bien Pull/Push
     normalement (pas de régression — liste vide = aucune résistance, comportement identique à
     avant ce chantier).
+11. `SwapPosition` (§2ter/§3) sur un skill de test `targetType=Target` : caster et cible
+    échangent bien leurs places, les deux nouvelles positions sont valides (NavMesh), aucun des
+    deux ne se retrouve dans un mur/hors-mesh.
+12. Grep de non-régression sur l'ancien système supprimé (§2ter) : `grep -rn
+    "SkillSpecialEffect\.\(Pull\|Push\|SwapPosition\|PullAoE\|PushAoE\|GatherAoE\|Vortex\|
+    TeleportSelf\|TeleportTarget\)" --include=*.cs .` depuis `Assets/Scripts` → aucune sortie
+    attendue (le nouveau `DisplacementType.SwapPosition` est un type/enum différent, pas
+    concerné par ce grep scopé à `SkillSpecialEffect.`).
