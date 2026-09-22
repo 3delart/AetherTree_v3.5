@@ -137,11 +137,16 @@ nouvelle garde, le Dash actuel ne le fait pas aujourd'hui (`DashToTarget`/`DashI
 vérifient que `caster.isDead`). `TeleportSelf` étant instantané, cette garde ne s'applique
 concrètement qu'à `DashSelf` (pas de fenêtre multi-frame à interrompre pour un snap).
 
-**La CIBLE d'un Pull/Push** : aucune résistance — un Pull/Push s'applique MÊME si la cible est
-elle-même sous hard CC (stun/fear/etc). Cohérent narrativement (une cible stun est justement
-impuissante à résister) et évite une exception spéciale. Seule une future immunité au déplacement
-forcé dédiée (type tank raciné) pourrait bloquer ça — n'existe pas encore, comme l'immunité CC
-boss (voir §7), à construire avec le système Donjons plus tard si besoin.
+**La CIBLE d'un Pull/Push — deux mécanismes distincts, pas à confondre** :
+- Son ÉTAT de CC actuel (stun/fear/etc) ne bloque JAMAIS un Pull/Push — s'applique même sur une
+  cible déjà stun. Cohérent narrativement (une cible stun est justement impuissante à résister)
+  et évite une exception spéciale.
+- Sa RÉSISTANCE ÉQUIPEMENT (chance %, voir §7) PEUT bloquer un Pull/Push — même mécanisme que la
+  résistance aux debuffs classiques, roulé une fois à l'activation.
+
+Seule une future immunité au déplacement forcé dédiée à un ARCHÉTYPE de mob (type boss raciné,
+indépendant de tout équipement) reste hors scope — voir §8, à construire avec le système Donjons
+plus tard si besoin.
 
 ## §6 — Validité de destination & mouvement des entités déplacées
 
@@ -167,11 +172,54 @@ boss (voir §7), à construire avec le système Donjons plus tard si besoin.
   cercle autour du point exact) pour éviter la superposition visuelle exacte de plusieurs
   modèles — coût de calcul négligeable.
 
-## §7 — Hors scope (explicitement)
+## §7 — Résistance équipement au déplacement forcé (Pull/Push)
 
-- **Immunité CC/déplacement forcé pour les boss** — aucun système d'immunité CC n'existe encore
-  dans le code (les Donjons/boss, roadmap item 8, ne sont pas bâtis). Prévu pour plus tard, pas
-  ce chantier.
+Réutilise le système de résistance aux debuffs déjà fonctionnel (`DebuffResistanceEntry
+{ debuffType, resistChance }` sur les équipements → agrégé par `CharacterStats.
+ApplyDebuffResistances()` → stocké dans `StatusEffectSystem._debuffResistances` → roulé dans
+`TryApplyDebuff()`), plutôt que de dupliquer toute cette plomberie pour 2 catégories seulement.
+
+**`DebuffType`** (`Data/StatusEffect/StatusEffectData.cs`) gagne 2 valeurs en fin d'enum (ordinal
+safety respecté, dernier ordinal actuel = `HpDrain = 21`) :
+
+```csharp
+Pull = 22, // Résistance au déplacement forcé "Pull" (SkillData.DisplacementType) — clé de
+           // résistance PURE, aucun DebuffData n'utilise jamais ce type, jamais appliqué comme
+           // un vrai debuff (pas de durée, pas de statusEffects.isXxx). Juste un point d'entrée
+           // dans le système de résistance équipement existant pour éviter de le dupliquer.
+Push = 23, // Idem pour Push.
+```
+
+**Côté équipement** : aucun changement de code nécessaire — `DebuffResistanceEntry` accepte déjà
+n'importe quel `DebuffType`, l'agrégation dans `CharacterStats` est déjà générique (boucle sur
+toutes les entrées peu importe le type). Le designer ajoute juste une entrée
+`{ debuffType: Pull, resistChance: 0.1 }` sur un équipement comme pour n'importe quel autre
+debuff.
+
+**Côté `SkillSystem`** : au moment où un Pull/Push s'active sur une cible (voir §4, "au départ"),
+rouler la résistance AVANT d'appliquer le déplacement — même pattern exact que
+`StatusEffectSystem.TryApplyDebuff()` :
+
+```csharp
+float resistance = target.statusEffects.GetDebuffResistance(DebuffType.Pull); // ou .Push
+if (resistance > 0f && Random.value < resistance)
+{
+    // résisté — aucun déplacement, aucun dégât/effet associé (même traitement qu'un debuff résisté)
+    return;
+}
+```
+
+Un jet INDÉPENDANT par cible dans un Pull/Push en zone (pas un jet partagé pour tout le groupe) —
+même principe que `RemoveDebuffsByChance`/`RemoveBuffsByChance` du système Dispel/Purify
+(§CC/status-effect semantics, mémoire roadmap) : chaque cible résiste ou non indépendamment des
+autres.
+
+## §8 — Hors scope (explicitement)
+
+- **Immunité CC/déplacement forcé pour les boss** (un flag d'ARCHÉTYPE mob, indépendant de
+  l'équipement — pas la résistance % équipement du §7, qui EST dans le scope) — aucun système de
+  ce type n'existe encore dans le code (les Donjons/boss, roadmap item 8, ne sont pas bâtis).
+  Prévu pour plus tard, pas ce chantier.
 - **Swap de position** (caster et cible échangent leurs places) — pas mentionné par Florian dans
   ce chantier, pas dans la matrice §3. Pourrait se brancher plus tard comme variante de
   `TeleportSelf` si besoin, sans casser l'architecture actuelle.
@@ -193,3 +241,6 @@ clés à couvrir dans le plan d'implémentation :
 5. `bringsAllies` embarque bien les alliés proches à la téléportation, avec le bon décalage
    relatif.
 6. Étalement visuel d'un Pull en zone sur plusieurs cibles (pas de stack exact).
+7. Résistance équipement (§7) : une cible avec une entrée `DebuffResistanceEntry` sur `Pull`/
+   `Push` résiste bien avec la bonne fréquence statistique ; un Pull/Push en zone roule
+   indépendamment par cible (pas un seul jet partagé).
