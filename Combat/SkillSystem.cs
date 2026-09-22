@@ -15,7 +15,7 @@ using System.Collections.Generic;
 //
 // Target nullable par design :
 //   Self / AoE_Self / GroundTarget / Cone → target null autorisée
-//   Target / AoE_Target / Dash_Target      → target requise
+//   Target / AoE_Target                    → target requise
 //
 // Points d'entrée :
 //   Execute(skill, caster, target)
@@ -30,14 +30,19 @@ using System.Collections.Generic;
 //   Target        → monocible sur Entity requise. + isTrajectory : perce jusqu'à la cible
 //                   (stopAtFirstHit pour s'arrêter au 1er hit).
 //   AoE_Target    → zone autour de la cible
-//   Dash_Target   → dash vers la cible puis dégâts
 //   Self          → buff/heal sur le caster
 //   AoE_Self      → zone autour du caster
 //   GroundTarget  → zone autour d'un point au sol (SetGroundTargetPoint), visé souris.
 //                   + isTrajectory : voyage vers ce point (stopAtFirstHit possible).
 //   Cone          → cône en éventail devant le caster, visé souris (SetSkillDirection via
 //                   TargetingSystem.ResolveDirection())
-//   Dash_Direction → dash vers un point directionnel (SetSkillDirection ou forward)
+//
+// StartDisplacement(skill, caster, target) — point d'entrée séparé, bypass complet de
+// DispatchByTargetType (même principe que StartTrajectory/PlantDelayedZone), pour tout skill
+// displacementType != None (DashSelf/TeleportSelf/Pull/Push/SwapPosition — voir sa doc dédiée
+// plus bas dans ce fichier). Absorbe l'ancien Dash_Target/Dash_Direction (TargetType) ET l'ancien
+// SkillSpecialEffect de déplacement (Pull/Push/SwapPosition/PullAoE/PushAoE/GatherAoE/Vortex/
+// TeleportSelf/TeleportTarget, tous deux supprimés).
 //
 // MultiHit (GDD §7.1) :
 //   Hit initial = skill parent, puis chaque HitStep en coroutine.
@@ -47,7 +52,7 @@ using System.Collections.Generic;
 //   SetGroundTargetPoint(point) appelé par TargetingSystem avant Execute().
 //   Remis à null après utilisation.
 //
-// Cone / Dash_Direction :
+// Cone :
 //   SetSkillDirection(dir) appelé par SkillBar avant Execute()/StartTrajectory()
 //   pour les skills directionnels. Remis à null après utilisation.
 // =============================================================
@@ -135,13 +140,6 @@ public class SkillSystem : MonoBehaviour
             ? target.transform.position
             : _groundTargetPoint ?? caster.transform.position;
 
-        // Dash_Target/Dash_Direction résolvent leurs dégâts en coroutine, ~0.25-0.3s APRÈS ce
-        // point (le temps du dash) — DashToTarget()/DashInDirection() jouent maintenant
-        // vfxImpact/soundEffect elles-mêmes, au moment RÉEL du coup, pour ne pas les jouer trop
-        // tôt ici (trouvé lors de l'audit VFX du 2026-09-12).
-        bool isDash = skill.targetType == TargetType.Dash_Target
-                   || skill.targetType == TargetType.Dash_Direction;
-
         // ── Dispatch selon executionType ─────────────────────
         if (skill.executionType == SkillExecutionType.MultiHit
             && skill.hitSteps != null && skill.hitSteps.Count > 0)
@@ -157,12 +155,60 @@ public class SkillSystem : MonoBehaviour
         }
 
         // ── VFX & Son ────────────────────────────────────────
-        if (!isDash)
+        // displacementType != None (DashSelf inclus) ne passe plus jamais par Execute()/
+        // ResolveExecute() — StartDisplacement() joue son propre vfxImpact/soundEffect au bon
+        // moment dans chaque routine de verbe. Plus besoin de garde ici.
+        if (skill.vfxImpact != null)
+            Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
+        if (skill.soundEffect != null)
+            AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+    }
+
+    /// <summary>Point d'entrée unique pour tout skill displacementType != None (DashSelf/
+    /// TeleportSelf/Pull/Push/SwapPosition) — bypass complet de DispatchByTargetType(), même
+    /// principe que StartTrajectory()/PlantDelayedZone(). Bookkeeping Player identique à
+    /// ResolveExecute() (skill DÉJÀ lancé par SkillBar/CombatAIController — mana/anim/
+    /// BeginSkillUse déjà faits au lancement).</summary>
+    public void StartDisplacement(SkillData skill, Entity caster, Entity target)
+    {
+        if (skill == null || caster == null || caster.isDead) return;
+
+        if (caster.entityType == EntityType.Player && caster is Player player)
         {
-            if (skill.vfxImpact != null)
-                Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
-            if (skill.soundEffect != null)
-                AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+            player.ResolveSkillUse(skill, target);
+
+            GameEventBus.Publish(new SkillUsedEvent
+            {
+                skill          = skill,
+                target         = target,
+                caster         = player,
+                primaryElement = skill.PrimaryElement,
+                isCombo        = skill.elements != null && skill.elements.Count >= 2,
+                locationID     = player.currentZoneID,
+                isInParty      = false,
+            });
+        }
+
+        if (target is Mob mobTarget && caster is Player attackerPlayer)
+            mobTarget.RegisterLastSkill(attackerPlayer, skill);
+
+        switch (skill.displacementType)
+        {
+            case DisplacementType.DashSelf:
+                StartCoroutine(DashSelfRoutine(skill, caster, target));
+                break;
+            case DisplacementType.TeleportSelf:
+                TeleportSelfNow(skill, caster, target);
+                break;
+            case DisplacementType.Pull:
+                StartCoroutine(PullRoutine(skill, caster, target));
+                break;
+            case DisplacementType.Push:
+                StartCoroutine(PushRoutine(skill, caster, target));
+                break;
+            case DisplacementType.SwapPosition:
+                SwapPositionNow(skill, caster, target);
+                break;
         }
     }
 
@@ -208,20 +254,15 @@ public class SkillSystem : MonoBehaviour
             ? target.transform.position
             : _groundTargetPoint ?? caster.transform.position;
 
-        // Dash_Target/Dash_Direction jouent leur propre vfxImpact/soundEffect en coroutine —
-        // même raison que Execute() ci-dessus.
-        bool isDash = skill.targetType == TargetType.Dash_Target
-                   || skill.targetType == TargetType.Dash_Direction;
-
         DispatchByTargetType(skill, caster, target);
 
-        if (!isDash)
-        {
-            if (skill.vfxImpact != null)
-                Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
-            if (skill.soundEffect != null)
-                AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
-        }
+        // displacementType != None (DashSelf inclus) ne passe plus jamais par Execute()/
+        // ResolveExecute() — StartDisplacement() joue son propre vfxImpact/soundEffect au bon
+        // moment dans chaque routine de verbe. Plus besoin de garde ici.
+        if (skill.vfxImpact != null)
+            Instantiate(skill.vfxImpact, vfxPos, Quaternion.identity);
+        if (skill.soundEffect != null)
+            AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
     }
 
     /// <summary>Résout un skill `hasDelayedImpact` DÉJÀ lancé par SkillBar (mana/anim/
@@ -905,13 +946,6 @@ public class SkillSystem : MonoBehaviour
                     LogMissingTarget(skill, caster);
                 break;
 
-            case TargetType.Dash_Target:
-                if (target != null && !target.isDead && PassesAoeFilter(skill.aoeFaction, caster, target))
-                    StartCoroutine(DashToTarget(skill, caster, target));
-                else
-                    LogMissingTarget(skill, caster);
-                break;
-
             // ── Pas de target Entity ──────────────────────────
             case TargetType.Self:
                 ExecuteOnSelf(skill, caster);
@@ -927,10 +961,6 @@ public class SkillSystem : MonoBehaviour
 
             case TargetType.Cone:
                 ExecuteCone(skill, caster);
-                break;
-
-            case TargetType.Dash_Direction:
-                StartCoroutine(DashInDirection(skill, caster));
                 break;
 
             default:
@@ -1134,48 +1164,102 @@ public class SkillSystem : MonoBehaviour
     }
 
     // =========================================================
-    // DASH TARGET — le caster fonce vers la cible
+    // DASH SELF — le caster fonce (Target/GroundTarget/Cone)
+    // Target : dégâts UNIQUEMENT à l'arrivée sur la cible verrouillée (comportement DashToTarget
+    // historique, inchangé). GroundTarget/Cone : sweep par frame, touche tout ce qui est croisé
+    // (comportement DashInDirection historique, inchangé).
     // =========================================================
 
-    private IEnumerator DashToTarget(SkillData skill, Entity caster, Entity target)
+    private IEnumerator DashSelfRoutine(SkillData skill, Entity caster, Entity target)
     {
         float dashDuration = caster.entityType == EntityType.Player ? 0.3f : 0.25f;
         float stopOffset   = caster.entityType == EntityType.Player ? 1.5f : 1.2f;
 
-        float   elapsed  = 0f;
         Vector3 startPos = caster.transform.position;
-        Vector3 endPos   = target.transform.position
-                         - (target.transform.position - startPos).normalized * stopOffset;
+        Vector3 destination;
+        bool    sweepEnRoute;
+
+        if (skill.targetType == TargetType.Target)
+        {
+            if (target == null || target.isDead) { LogMissingTarget(skill, caster); yield break; }
+            destination = target.transform.position
+                        - (target.transform.position - startPos).normalized * stopOffset;
+            sweepEnRoute = false;
+        }
+        else if (skill.targetType == TargetType.GroundTarget)
+        {
+            Vector3 point = _groundTargetPoint ?? startPos;
+            _groundTargetPoint = null;
+            Vector3 toPoint = point - startPos;
+            float   dist    = toPoint.magnitude;
+            destination = dist > skill.displacementDistance
+                ? startPos + toPoint.normalized * skill.displacementDistance
+                : point;
+            sweepEnRoute = true;
+        }
+        else // Cone
+        {
+            Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
+            _skillDirection = null;
+            destination = startPos + dir * skill.displacementDistance;
+            sweepEnRoute = true;
+        }
+
+        if (!TryClampToNavMesh(destination, out destination)) yield break;
 
         var agent = caster.GetComponent<UnityEngine.AI.NavMeshAgent>();
         if (agent != null) agent.enabled = false;
-
         if (caster is Mob dashMob) dashMob.IsDashing = true;
+
+        var   alreadyHit = new HashSet<Entity>();
+        float radius     = skill.aoeRadius > 0f ? skill.aoeRadius : 0.5f;
+        float elapsed    = 0f;
+        bool  interrupted = false;
 
         while (elapsed < dashDuration)
         {
             if (caster == null || caster.isDead) yield break;
-            caster.transform.position = Vector3.Lerp(startPos, endPos, elapsed / dashDuration);
+            if (IsHardCCd(caster)) { interrupted = true; break; }
+
+            caster.transform.position = Vector3.Lerp(startPos, destination, elapsed / dashDuration);
+
+            if (sweepEnRoute)
+            {
+                Collider[] cols = Physics.OverlapSphere(caster.transform.position, radius);
+                foreach (Collider col in cols)
+                {
+                    Entity entity = col.GetComponentInParent<Entity>();
+                    if (entity == null || entity == caster || entity.isDead) continue;
+                    if (alreadyHit.Contains(entity)) continue;
+                    if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+
+                    alreadyHit.Add(entity);
+                    ApplyEffectType(skill, caster, entity);
+                    ApplyStatusEffects(skill, caster, entity);
+                    CheckKill(entity);
+
+                    if (skill.vfxImpact != null)
+                        Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
+                    if (skill.soundEffect != null)
+                        AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+                }
+            }
+
             elapsed += Time.deltaTime;
             yield return null;
         }
 
         if (caster != null)
         {
-            caster.transform.position = endPos;
             if (caster is Mob endMob) endMob.IsDashing = false;
             if (agent != null) agent.enabled = true;
 
-            if (!caster.isDead && target != null && !target.isDead)
+            if (!sweepEnRoute && !interrupted && !caster.isDead && target != null && !target.isDead)
             {
                 ApplyEffectType(skill, caster, target);
                 ApplyStatusEffects(skill, caster, target);
                 CheckKill(target);
 
-                // vfxImpact/soundEffect joués ICI, au moment RÉEL du coup — Execute()/
-                // ResolveExecute() ne les jouent plus pour Dash_Target (voir leur propre
-                // commentaire), sinon ils partaient immédiatement au clic, ~0.3s avant l'arrivée
-                // du dash (trouvé lors de l'audit VFX du 2026-09-12).
                 if (skill.vfxImpact != null)
                     Instantiate(skill.vfxImpact, target.transform.position, Quaternion.identity);
                 if (skill.soundEffect != null)
@@ -1185,72 +1269,293 @@ public class SkillSystem : MonoBehaviour
     }
 
     // =========================================================
-    // DASH DIRECTION — dash en ligne droite dans une direction
-    // Applique l'effet sur toutes les entités traversées.
+    // TELEPORT SELF — le caster se téléporte instantanément (Target/GroundTarget/Cone)
     // =========================================================
 
-    private IEnumerator DashInDirection(SkillData skill, Entity caster)
+    private void TeleportSelfNow(SkillData skill, Entity caster, Entity target)
     {
-        Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
-        _skillDirection = null;
-
-        float dashDuration = caster.entityType == EntityType.Player ? 0.3f : 0.25f;
-        float dashDistance = skill.range > 0f ? skill.range : 6f;
-
         Vector3 startPos = caster.transform.position;
-        Vector3 endPos   = startPos + dir * dashDistance;
+        Vector3 destination;
 
-        // Vérifie si la destination est sur le NavMesh
-        if (UnityEngine.AI.NavMesh.SamplePosition(endPos, out UnityEngine.AI.NavMeshHit navHit, dashDistance, UnityEngine.AI.NavMesh.AllAreas))
-            endPos = navHit.position;
-
-        var agent = caster.GetComponent<UnityEngine.AI.NavMeshAgent>();
-        if (agent != null) agent.enabled = false;
-
-        if (caster is Mob dashMob) dashMob.IsDashing = true;
-
-        float   elapsed   = 0f;
-        float   radius    = skill.aoeRadius > 0f ? skill.aoeRadius : 0.5f;
-        var     alreadyHit = new HashSet<Entity>();
-
-        while (elapsed < dashDuration)
+        if (skill.targetType == TargetType.Target)
         {
-            if (caster == null || caster.isDead) yield break;
+            if (target == null || target.isDead) { LogMissingTarget(skill, caster); return; }
+            // teleportBehindTarget calculé par rapport au FACING DE LA CIBLE, pas du caster —
+            // "derrière" = du côté vers lequel elle tourne le dos (blink-backstab).
+            Vector3 offsetDir = skill.teleportBehindTarget
+                ? -target.transform.forward
+                :  target.transform.forward;
+            destination = target.transform.position + offsetDir.normalized * 1.5f;
+        }
+        else if (skill.targetType == TargetType.GroundTarget)
+        {
+            Vector3 point = _groundTargetPoint ?? startPos;
+            _groundTargetPoint = null;
+            Vector3 toPoint = point - startPos;
+            float   dist    = toPoint.magnitude;
+            destination = dist > skill.displacementDistance
+                ? startPos + toPoint.normalized * skill.displacementDistance
+                : point;
+        }
+        else // Cone
+        {
+            Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
+            _skillDirection = null;
+            destination = startPos + dir * skill.displacementDistance;
+        }
 
-            Vector3 prev = caster.transform.position;
-            caster.transform.position = Vector3.Lerp(startPos, endPos, elapsed / dashDuration);
+        if (!TryClampToNavMesh(destination, out destination)) return;
 
-            // Détecte les entités traversées frame par frame
-            Collider[] cols = Physics.OverlapSphere(caster.transform.position, radius);
+        WarpNow(caster, destination);
+
+        // bringsAllies : téléporte aussi les alliés proches de la position ORIGINE, au même
+        // décalage relatif vers la destination.
+        if (skill.bringsAllies)
+        {
+            Vector3 delta = destination - startPos;
+            Collider[] cols = Physics.OverlapSphere(startPos, skill.aoeRadius > 0f ? skill.aoeRadius : 5f);
             foreach (Collider col in cols)
             {
-                Entity entity = col.GetComponentInParent<Entity>();
-                if (entity == null || entity == caster || entity.isDead) continue;
-                if (alreadyHit.Contains(entity)) continue;
+                Entity ally = col.GetComponentInParent<Entity>();
+                if (ally == null || ally == caster || ally.isDead) continue;
+                if (!IsAlly(caster, ally)) continue;
 
-                alreadyHit.Add(entity);
-                ApplyEffectType(skill, caster, entity);
-                ApplyStatusEffects(skill, caster, entity);
-                CheckKill(entity);
-
-                // vfxImpact/soundEffect joués ICI, par entité touchée, au moment RÉEL du coup —
-                // même raison que DashToTarget ci-dessus.
-                if (skill.vfxImpact != null)
-                    Instantiate(skill.vfxImpact, entity.transform.position, Quaternion.identity);
-                if (skill.soundEffect != null)
-                    AudioSource.PlayClipAtPoint(skill.soundEffect, entity.transform.position);
+                Vector3 allyDest = ally.transform.position + delta;
+                if (!TryClampToNavMesh(allyDest, out allyDest)) continue;
+                WarpNow(ally, allyDest);
             }
+        }
 
+        // Dégâts/effets résolus À LA NOUVELLE POSITION — targetType réévalué après le saut (spec
+        // §4 : un AoE_Self téléporté au milieu d'un groupe frappe ce qui l'entoure après le
+        // saut, pas avant). Réutilise DispatchByTargetType tel quel : le déplacement a déjà eu
+        // lieu, ce switch ne fait plus que le dégât/l'effet normal du skill.
+        DispatchByTargetType(skill, caster, target);
+
+        if (skill.vfxImpact != null)
+            Instantiate(skill.vfxImpact, caster.transform.position, Quaternion.identity);
+        if (skill.soundEffect != null)
+            AudioSource.PlayClipAtPoint(skill.soundEffect, caster.transform.position);
+    }
+
+    // =========================================================
+    // PULL — attire une/des cible(s) vers le caster ou un point (Target/GroundTarget/Cone/AoE_Self)
+    // Dégâts/effets appliqués AU DÉPART (spec §4), avant le trajet animé.
+    // =========================================================
+
+    private IEnumerator PullRoutine(SkillData skill, Entity caster, Entity target)
+    {
+        List<Entity> victims = new List<Entity>();
+        Vector3 anchor;
+        bool    exactLanding; // GroundTarget : atterrit pile sur le point (étalé). Sinon :
+                               // s'arrête à stopOffset de l'ancre (jamais dans le caster).
+
+        if (skill.targetType == TargetType.Target)
+        {
+            if (target == null || target.isDead) { LogMissingTarget(skill, caster); yield break; }
+            victims.Add(target);
+            anchor = caster.transform.position;
+            exactLanding = false;
+        }
+        else if (skill.targetType == TargetType.GroundTarget)
+        {
+            Vector3 point = _groundTargetPoint ?? caster.transform.position;
+            _groundTargetPoint = null;
+            anchor = point;
+            victims = SelectZoneEntities(skill, caster, anchor, skill.aoeRadius);
+            exactLanding = true;
+        }
+        else if (skill.targetType == TargetType.Cone)
+        {
+            Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
+            _skillDirection = null;
+            anchor = caster.transform.position;
+            victims = SelectConeEntities(skill, caster, dir);
+            exactLanding = false;
+        }
+        else // AoE_Self
+        {
+            anchor = caster.transform.position;
+            victims = SelectZoneEntities(skill, caster, anchor, skill.aoeRadius);
+            exactLanding = false;
+        }
+
+        victims.RemoveAll(v => ResistsDisplacement(v));
+        if (victims.Count == 0) yield break;
+
+        foreach (Entity v in victims)
+        {
+            ApplyEffectType(skill, caster, v);
+            ApplyStatusEffects(skill, caster, v);
+            CheckKill(v);
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, v.transform.position, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, v.transform.position);
+        }
+
+        float dashDuration = 0.25f;
+        float stopOffset   = 1.2f;
+        var   starts = new Vector3[victims.Count];
+        var   ends   = new Vector3[victims.Count];
+        var   agents = new UnityEngine.AI.NavMeshAgent[victims.Count];
+
+        for (int i = 0; i < victims.Count; i++)
+        {
+            Entity v = victims[i];
+            starts[i] = v.transform.position;
+
+            Vector3 personalAnchor = anchor + SpreadOffset(i, victims.Count);
+            Vector3 toAnchor = personalAnchor - starts[i];
+            float   dist     = toAnchor.magnitude;
+            Vector3 dir      = dist > 0.001f ? toAnchor.normalized : Vector3.zero;
+            float   travel   = exactLanding ? dist : Mathf.Max(0f, dist - stopOffset);
+            Vector3 dest     = starts[i] + dir * travel;
+            TryClampToNavMesh(dest, out ends[i]);
+
+            agents[i] = v.GetComponent<UnityEngine.AI.NavMeshAgent>();
+            if (agents[i] != null) agents[i].enabled = false;
+            if (v is Mob vm) vm.IsDashing = true;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < dashDuration)
+        {
+            for (int i = 0; i < victims.Count; i++)
+            {
+                if (victims[i] == null || victims[i].isDead) continue;
+                victims[i].transform.position = Vector3.Lerp(starts[i], ends[i], elapsed / dashDuration);
+            }
             elapsed += Time.deltaTime;
             yield return null;
         }
 
-        if (caster != null)
+        for (int i = 0; i < victims.Count; i++)
         {
-            caster.transform.position = endPos;
-            if (caster is Mob endMob) endMob.IsDashing = false;
-            if (agent != null) agent.enabled = true;
+            if (victims[i] == null) continue;
+            if (!victims[i].isDead) victims[i].transform.position = ends[i];
+            if (victims[i] is Mob endMob) endMob.IsDashing = false;
+            if (agents[i] != null) agents[i].enabled = true;
         }
+    }
+
+    // =========================================================
+    // PUSH — repousse une/des cible(s) loin d'une origine (Target/GroundTarget/Cone/AoE_Self)
+    // Dégâts/effets appliqués AU DÉPART (spec §4), avant le trajet animé.
+    // =========================================================
+
+    private IEnumerator PushRoutine(SkillData skill, Entity caster, Entity target)
+    {
+        List<Entity> victims = new List<Entity>();
+        Vector3 origin;
+
+        if (skill.targetType == TargetType.Target)
+        {
+            if (target == null || target.isDead) { LogMissingTarget(skill, caster); yield break; }
+            victims.Add(target);
+            origin = caster.transform.position;
+        }
+        else if (skill.targetType == TargetType.GroundTarget)
+        {
+            Vector3 point = _groundTargetPoint ?? caster.transform.position;
+            _groundTargetPoint = null;
+            origin = point;
+            victims = SelectZoneEntities(skill, caster, origin, skill.aoeRadius);
+        }
+        else if (skill.targetType == TargetType.Cone)
+        {
+            Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
+            _skillDirection = null;
+            origin = caster.transform.position;
+            victims = SelectConeEntities(skill, caster, dir);
+        }
+        else // AoE_Self
+        {
+            origin = caster.transform.position;
+            victims = SelectZoneEntities(skill, caster, origin, skill.aoeRadius);
+        }
+
+        victims.RemoveAll(v => ResistsDisplacement(v));
+        if (victims.Count == 0) yield break;
+
+        foreach (Entity v in victims)
+        {
+            ApplyEffectType(skill, caster, v);
+            ApplyStatusEffects(skill, caster, v);
+            CheckKill(v);
+            if (skill.vfxImpact != null)
+                Instantiate(skill.vfxImpact, v.transform.position, Quaternion.identity);
+            if (skill.soundEffect != null)
+                AudioSource.PlayClipAtPoint(skill.soundEffect, v.transform.position);
+        }
+
+        float dashDuration = 0.25f;
+        var   starts = new Vector3[victims.Count];
+        var   ends   = new Vector3[victims.Count];
+        var   agents = new UnityEngine.AI.NavMeshAgent[victims.Count];
+
+        for (int i = 0; i < victims.Count; i++)
+        {
+            Entity v = victims[i];
+            starts[i] = v.transform.position;
+
+            Vector3 dir = starts[i] - origin;
+            dir = dir.sqrMagnitude > 0.001f ? dir.normalized : caster.transform.forward;
+            Vector3 dest = starts[i] + dir * skill.displacementDistance;
+            TryClampToNavMesh(dest, out ends[i]);
+
+            agents[i] = v.GetComponent<UnityEngine.AI.NavMeshAgent>();
+            if (agents[i] != null) agents[i].enabled = false;
+            if (v is Mob vm) vm.IsDashing = true;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < dashDuration)
+        {
+            for (int i = 0; i < victims.Count; i++)
+            {
+                if (victims[i] == null || victims[i].isDead) continue;
+                victims[i].transform.position = Vector3.Lerp(starts[i], ends[i], elapsed / dashDuration);
+            }
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        for (int i = 0; i < victims.Count; i++)
+        {
+            if (victims[i] == null) continue;
+            if (!victims[i].isDead) victims[i].transform.position = ends[i];
+            if (victims[i] is Mob endMob) endMob.IsDashing = false;
+            if (agents[i] != null) agents[i].enabled = true;
+        }
+    }
+
+    // =========================================================
+    // SWAP POSITION — caster et cible échangent leurs places, instantanément (Target uniquement)
+    // Résisté = échange COMPLET annulé (spec §7) — jamais de swap "à moitié".
+    // =========================================================
+
+    private void SwapPositionNow(SkillData skill, Entity caster, Entity target)
+    {
+        if (target == null || target.isDead) { LogMissingTarget(skill, caster); return; }
+
+        if (ResistsDisplacement(target)) return;
+
+        Vector3 casterPos = caster.transform.position;
+        Vector3 targetPos = target.transform.position;
+
+        if (!TryClampToNavMesh(targetPos, out Vector3 casterDest)) return;
+        if (!TryClampToNavMesh(casterPos, out Vector3 targetDest)) return;
+
+        WarpNow(caster, casterDest);
+        WarpNow(target, targetDest);
+
+        DispatchByTargetType(skill, caster, target);
+
+        if (skill.vfxImpact != null)
+            Instantiate(skill.vfxImpact, targetDest, Quaternion.identity);
+        if (skill.soundEffect != null)
+            AudioSource.PlayClipAtPoint(skill.soundEffect, casterDest);
     }
 
     // =========================================================
@@ -1275,6 +1580,104 @@ public class SkillSystem : MonoBehaviour
         if (filter == SkillAoeFaction.Everyone) return true;
         bool ally = IsAlly(caster, other);
         return filter == SkillAoeFaction.Allies ? ally : !ally;
+    }
+
+    // =========================================================
+    // DÉPLACEMENT — helpers partagés par StartDisplacement() et ses 5 routines de verbe
+    // =========================================================
+
+    /// <summary>Résistance équipement/Mob/PNJ (DebuffType.Displacement, spec §7) — jet
+    /// INDÉPENDANT par cible. True = résisté, aucun déplacement/dégât ne doit avoir lieu sur
+    /// cette entité.</summary>
+    private static bool ResistsDisplacement(Entity target)
+    {
+        if (target?.statusEffects == null) return false;
+        float resistance = target.statusEffects.GetDebuffResistance(DebuffType.Displacement);
+        return resistance > 0f && Random.value < resistance;
+    }
+
+    /// <summary>Clampe une destination sur le NavMesh sans déplacer quoi que ce soit — extrait de
+    /// DisplacementUtils.WarpToNavMesh (qui warp directement, ne convient pas à un trajet animé
+    /// frame par frame). Retourne false si aucun point valide n'est trouvé dans le rayon
+    /// (l'appelant doit alors annuler le déplacement plutôt que d'utiliser une destination hors
+    /// mesh).</summary>
+    private static bool TryClampToNavMesh(Vector3 destination, out Vector3 clamped)
+    {
+        if (UnityEngine.AI.NavMesh.SamplePosition(destination, out var hit, 5f, UnityEngine.AI.NavMesh.AllAreas))
+        {
+            clamped = hit.position;
+            return true;
+        }
+        clamped = destination;
+        return false;
+    }
+
+    /// <summary>Warp NavMesh-safe partagé par TeleportSelf/SwapPosition (verbes instantanés) —
+    /// `destination` doit déjà être clampée via TryClampToNavMesh avant l'appel.</summary>
+    private static void WarpNow(Entity entity, Vector3 destination)
+    {
+        var agent = entity.GetComponent<UnityEngine.AI.NavMeshAgent>();
+        if (agent != null && agent.enabled && agent.isOnNavMesh)
+            agent.Warp(destination);
+        else
+            entity.transform.position = destination;
+    }
+
+    /// <summary>Sélectionne les entités dans un rayon autour d'un centre, filtrées aoeFaction,
+    /// excluant systématiquement le caster (jamais de Pull/Push sur soi-même). Utilisée par
+    /// GroundTarget/AoE_Self pour Pull/Push.</summary>
+    private List<Entity> SelectZoneEntities(SkillData skill, Entity caster, Vector3 center, float radius)
+    {
+        var result = new List<Entity>();
+        Collider[] hits = Physics.OverlapSphere(center, radius);
+        foreach (Collider col in hits)
+        {
+            Entity entity = col.GetComponentInParent<Entity>();
+            if (entity == null || entity == caster || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+            result.Add(entity);
+        }
+        return result;
+    }
+
+    /// <summary>Sélectionne les entités dans l'éventail devant le caster — même filtre angulaire
+    /// exact que ExecuteCone(). Utilisée par Cone pour Pull/Push.</summary>
+    private List<Entity> SelectConeEntities(SkillData skill, Entity caster, Vector3 dir)
+    {
+        var result = new List<Entity>();
+        float range     = skill.range         > 0f ? skill.range         : 5f;
+        float halfAngle = skill.coneHalfAngle > 0f ? skill.coneHalfAngle : 45f;
+        Collider[] cols = Physics.OverlapSphere(caster.transform.position, range);
+        foreach (Collider col in cols)
+        {
+            Entity entity = col.GetComponentInParent<Entity>();
+            if (entity == null || entity == caster || entity.isDead) continue;
+            if (!PassesAoeFilter(skill.aoeFaction, caster, entity)) continue;
+            Vector3 toEntity = (entity.transform.position - caster.transform.position).normalized;
+            if (Vector3.Angle(dir, toEntity) > halfAngle) continue;
+            result.Add(entity);
+        }
+        return result;
+    }
+
+    /// <summary>Étale les entités d'un Pull en zone sur un petit cercle autour du point exact —
+    /// évite la superposition visuelle si plusieurs entités atterrissent au même endroit (spec
+    /// §6).</summary>
+    private static Vector3 SpreadOffset(int index, int total, float radius = 0.6f)
+    {
+        if (total <= 1) return Vector3.zero;
+        float angle = index * (360f / total) * Mathf.Deg2Rad;
+        return new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius;
+    }
+
+    /// <summary>Hard CC — même set exact que le gate de SkillBar.TryUseSlot() (Stun/Shocked/
+    /// Freeze/Knockback/Fear). Utilisé pour interrompre un DashSelf en cours (spec §5) — PAS
+    /// pour bloquer un Pull/Push sur sa cible, qui s'applique toujours peu importe l'état de CC
+    /// actuel de la cible (voir StartDisplacement, décision explicite).</summary>
+    private static bool IsHardCCd(Entity entity)
+    {
+        var fx = entity.statusEffects;
+        return fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed || fx.isKnockedBack || fx.isFeared);
     }
 
     // =========================================================
@@ -1486,95 +1889,8 @@ public class SkillSystem : MonoBehaviour
             return;
         }
 
-        Vector3 casterPos = caster.transform.position;
-
         switch (skill.specialEffect)
         {
-            case SkillSpecialEffect.Pull:
-                if (target == null) return;
-                DisplacementUtils.WarpEntity(target, casterPos, skill.pullPushForce, towards: true);
-                FloatingText.Spawn("PULL", target.transform.position, Color.yellow, 1.8f);
-                break;
-
-            case SkillSpecialEffect.Push:
-                if (target == null) return;
-                DisplacementUtils.WarpEntity(target, casterPos, skill.pullPushForce, towards: false);
-                FloatingText.Spawn("PUSH", target.transform.position, Color.yellow, 1.8f);
-                break;
-
-            case SkillSpecialEffect.SwapPosition:
-                if (target == null) return;
-                Vector3 origCaster = casterPos;
-                Vector3 origTarget = target.transform.position;
-                DisplacementUtils.WarpToNavMesh(caster, origTarget);
-                DisplacementUtils.WarpToNavMesh(target, origCaster);
-                FloatingText.Spawn("SWAP", origTarget, Color.yellow, 1.8f);
-                break;
-
-            case SkillSpecialEffect.PullAoE:
-            {
-                Vector3 center = ResolveAoECenter(skill, caster);
-                string  layer  = caster.entityType == EntityType.Mob ? "Mob" : "Player";
-                int count = DisplacementUtils.ApplyDisplacementAoE(
-                    center, skill.aoeRadius, skill.pullPushForce,
-                    towardsCenter: true, caster: caster,
-                    layerMask: ~LayerMask.GetMask(layer));
-                FloatingText.Spawn($"PULL ×{count}", center, Color.yellow, 1.8f);
-                break;
-            }
-
-            case SkillSpecialEffect.PushAoE:
-            {
-                Vector3 center = ResolveAoECenter(skill, caster);
-                string  layer  = caster.entityType == EntityType.Mob ? "Mob" : "Player";
-                int count = DisplacementUtils.ApplyDisplacementAoE(
-                    center, skill.aoeRadius, skill.pullPushForce,
-                    towardsCenter: false, caster: caster,
-                    layerMask: ~LayerMask.GetMask(layer));
-                FloatingText.Spawn($"PUSH ×{count}", center, Color.yellow, 1.8f);
-                break;
-            }
-
-            case SkillSpecialEffect.GatherAoE:
-            {
-                Vector3 center = ResolveAoECenter(skill, caster);
-                string  layer  = caster.entityType == EntityType.Mob ? "Mob" : "Player";
-                int count = DisplacementUtils.GatherAoE(
-                    center, skill.aoeRadius, caster,
-                    layerMask: ~LayerMask.GetMask(layer));
-                FloatingText.Spawn($"GATHER ×{count}", center, Color.magenta, 1.8f);
-                break;
-            }
-
-            case SkillSpecialEffect.Vortex:
-            {
-                Vector3 center = ResolveAoECenter(skill, caster);
-                string  layer  = caster.entityType == EntityType.Mob ? "Mob" : "Player";
-                int count = DisplacementUtils.ApplyDisplacementAoE(
-                    center, skill.aoeRadius, skill.pullPushForce,
-                    towardsCenter: true, caster: caster,
-                    layerMask: ~LayerMask.GetMask(layer));
-                FloatingText.Spawn($"VORTEX ×{count}", center, Color.cyan, 1.8f);
-                break;
-            }
-
-            case SkillSpecialEffect.TeleportSelf:
-            {
-                Vector3 dest = _groundTargetPoint ?? (target != null
-                    ? target.transform.position
-                    : casterPos);
-                _groundTargetPoint = null;
-                DisplacementUtils.WarpToNavMesh(caster, dest);
-                FloatingText.Spawn("TELEPORT", dest, Color.cyan, 1.8f);
-                break;
-            }
-
-            case SkillSpecialEffect.TeleportTarget:
-                if (target == null) return;
-                DisplacementUtils.WarpToNavMesh(target, casterPos);
-                FloatingText.Spawn("TELEPORT", target.transform.position, Color.cyan, 1.8f);
-                break;
-
             case SkillSpecialEffect.DrainHP:
             {
                 if (target == null || target.isDead) return;
@@ -1602,7 +1918,7 @@ public class SkillSystem : MonoBehaviour
                 }
 
                 FloatingText.Spawn($"-{Mathf.RoundToInt(dmg)}",    target.transform.position, Color.red,   1.8f);
-                FloatingText.Spawn($"+{Mathf.RoundToInt(healed)}", casterPos,                 Color.green, 1.8f);
+                FloatingText.Spawn($"+{Mathf.RoundToInt(healed)}", caster.transform.position, Color.green, 1.8f);
                 CheckKill(target);
                 break;
             }
@@ -1633,13 +1949,6 @@ public class SkillSystem : MonoBehaviour
     // =========================================================
     // UTILITAIRES
     // =========================================================
-
-    private Vector3 ResolveAoECenter(SkillData skill, Entity caster)
-    {
-        if (skill.targetType == TargetType.GroundTarget && _groundTargetPoint.HasValue)
-            return _groundTargetPoint.Value;
-        return caster.transform.position;
-    }
 
     /// <summary>
     /// Désélectionne la cible morte côté TargetingSystem.
