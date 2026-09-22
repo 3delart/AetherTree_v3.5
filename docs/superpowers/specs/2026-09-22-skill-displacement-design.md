@@ -64,13 +64,18 @@ public bool teleportBehindTarget = true;
 public bool bringsAllies = false;
 ```
 
-`[ShowIf]` : `displacementDistance` masqué sauf pour les combos qui en ont réellement besoin —
-`DashSelf`/`TeleportSelf` + `GroundTarget`/`Cone` (pas `Target`, qui utilise le `stopOffset`
-existant, pas de plafond de distance), et `Push` sur TOUTES ses colonnes supportées (`Target`/
-`GroundTarget`/`Cone`/`AoE_Self`, toujours). `Pull` ne l'utilise jamais (voir §3 — sa destination
-est toujours un point déjà déterminé : la position du caster ou le point cliqué, jamais
-plafonnée). `teleportBehindTarget`/`bringsAllies` masqués hors `DisplacementType.TeleportSelf`
-(et `teleportBehindTarget` en plus hors `targetType = Target`).
+`[ShowIf]` : condition idéale de `displacementDistance` = "(`DashSelf`/`TeleportSelf` ET
+`GroundTarget`/`Cone`) OU `Push` (toutes colonnes)" — pas exprimable avec un seul `AndField`
+(`Utils/ShowIfAttribute.cs`, `AllowMultiple = false`). Simplification pragmatique : `[ShowIf(
+nameof(displacementType), DisplacementType.DashSelf, DisplacementType.TeleportSelf,
+DisplacementType.Push)]`, SANS `AndField` sur `targetType` — le champ reste visible (mais non lu
+par le code) pour `DashSelf`/`TeleportSelf` + `Target` (qui utilisent `stopOffset`, pas de
+plafond de distance) ; sur-affichage mineur accepté plutôt qu'une condition inexprimable. `Pull`
+ne l'affiche jamais (absent de la liste — voir §3, sa destination est toujours un point déjà
+déterminé). `teleportBehindTarget` : `[ShowIf(nameof(displacementType),
+DisplacementType.TeleportSelf, AndField = nameof(targetType), AndValue = TargetType.Target)]`
+(tient dans le seul `AndField` disponible, une seule valeur des deux côtés). `bringsAllies` :
+`[ShowIf(nameof(displacementType), DisplacementType.TeleportSelf)]`, pas d'`AndField` nécessaire.
 
 `aoeFaction` (déjà existant, `Enemies`/`Allies`/`Everyone`) se réutilise tel quel pour la
 sélection des cibles Pull/Push en zone — aucun nouveau champ de filtre nécessaire.
@@ -109,8 +114,12 @@ physiquement se déplace) et `isTrajectory` (une hitbox virtuelle voyage) sont d
 logique pour `hasDelayedImpact` (zone plantée) : rien dans la matrice §3 n'en a besoin. Un
 `displacementType != None` avec `isTrajectory` OU `hasDelayedImpact` coché déclenche un warning
 `OnValidate`, même idiome que les autres combos incompatibles déjà en place dans `SkillData.cs`
-(`hasDelayedImpactSupportedTargetType`, etc.) — `[ShowIf]` masque `isTrajectory`/
-`hasDelayedImpact` dès que `displacementType != None`.
+(`hasDelayedImpactSupportedTargetType`, etc.) — **avertissement seulement, PAS de `[ShowIf]`** :
+`isTrajectory`/`hasDelayedImpact` utilisent déjà leur unique slot `AndField`/`AndValue` pour
+`executionType == Normal` (voir `Utils/ShowIfAttribute.cs` — `AllowMultiple = false`, un seul
+`AndField` possible par champ), donc masquer EN PLUS sur `displacementType == None` n'est pas
+faisable avec l'attribut actuel. Même idiome que tous les autres combos incompatibles du
+fichier : le champ reste visible, seul un warning Console prévient le designer.
 
 **2. Priorité de dispatch — `displacementType` vérifié EN PREMIER.** Les 4 points d'entrée qui
 implémentent déjà la chaîne `if (isTrajectory) ... else if (hasDelayedImpact) ... else Execute`
@@ -220,9 +229,11 @@ Cases vides (`AoE_Target` pour tous les verbes, `AoE_Self` pour Dash/Teleport, T
 pour `SwapPosition`) : pas de sens géométrique (on ne fonce/téléporte pas "sur soi-même" ;
 `AoE_Target` duplique `GroundTarget` centré sur une entité plutôt qu'un point, jugé pas assez
 distinct pour être supporté dès cette 1ère passe ; `SwapPosition` a besoin d'exactement UNE
-entité avec qui échanger, aucun sens en zone) — non affichées côté Inspector, warning
-`OnValidate` si `displacementType` est actif dessus quand même (même idiome que les combos non
-supportés déjà en place pour `isTrajectory`/`hasDelayedImpact`).
+entité avec qui échanger, aucun sens en zone). **Pas de `[ShowIf]` possible ici** — `targetType`
+est UN SEUL champ partagé par les 6 valeurs, pas un champ par verbe à masquer conditionnellement ;
+l'enforcement est un warning `OnValidate` si `displacementType` + `targetType` forment une
+combinaison non supportée (même idiome que les autres combos incompatibles déjà en place pour
+`isTrajectory`/`hasDelayedImpact`), pas une correction automatique.
 
 ## §4 — Timing des dégâts/effets
 
