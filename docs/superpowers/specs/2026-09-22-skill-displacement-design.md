@@ -95,6 +95,68 @@ son `targetType` (qui reste `Target`, déjà au bon ordinal 0 — seul le retrai
 l'enum compte comme suppression pure, sans renumérotation des survivants cette fois puisqu'ils
 étaient déjà en tête de l'ancien enum).
 
+## §2bis — Intégration au dispatch existant
+
+Trouvé en re-relecture de la spec contre le code réel (`SkillSystem.cs`/`SkillBar.cs`/
+`CombatAIController.cs`) — la spec ne disait nulle part OÙ `displacementType` se branche dans la
+chaîne de dispatch déjà établie par le chantier TargetType. Trois décisions, dans l'ordre :
+
+**1. Mutuellement exclusif avec `isTrajectory`/`hasDelayedImpact`.** `DashSelf` (le caster
+physiquement se déplace) et `isTrajectory` (une hitbox virtuelle voyage) sont deux mécanismes de
+"quelque chose se déplace" concurrents sur le même skill — aucun sens de les cumuler. Même
+logique pour `hasDelayedImpact` (zone plantée) : rien dans la matrice §3 n'en a besoin. Un
+`displacementType != None` avec `isTrajectory` OU `hasDelayedImpact` coché déclenche un warning
+`OnValidate`, même idiome que les autres combos incompatibles déjà en place dans `SkillData.cs`
+(`hasDelayedImpactSupportedTargetType`, etc.) — `[ShowIf]` masque `isTrajectory`/
+`hasDelayedImpact` dès que `displacementType != None`.
+
+**2. Priorité de dispatch — `displacementType` vérifié EN PREMIER.** Les 4 points d'entrée qui
+implémentent déjà la chaîne `if (isTrajectory) ... else if (hasDelayedImpact) ... else Execute`
+(`SkillBar.ResolveInstant()`, `SkillBar.ResolveChannel()`, `CombatAIController.
+ResolvePendingHit()`, `CombatAIController.ResolveChannelCast()`) gagnent un nouveau premier
+palier :
+
+```csharp
+if (skill.displacementType != DisplacementType.None)
+    SkillSystem.Instance?.StartDisplacement(skill, caster, target);
+else if (skill.isTrajectory)
+    SkillSystem.Instance?.StartTrajectory(skill, caster, target);
+else if (skill.hasDelayedImpact)
+    SkillSystem.Instance?.PlantDelayedZone(skill, caster, target);
+else
+    SkillSystem.Instance?.Execute(skill, caster, target); // ou ResolveExecute selon le call site
+```
+
+**3. `DispatchByTargetType()` redevient pur — plus de special-case `Dash_Target`/
+`Dash_Direction`.** Aujourd'hui son `switch` court-circuite `ExecuteOnTarget()` pour appeler
+`DashToTarget()` sur `case TargetType.Dash_Target`. Ça casse structurellement une fois l'absorption
+faite (§2) : `Target` sert maintenant À LA FOIS aux skills normaux ET aux skills `DashSelf` +
+`Target`, le special-case ne peut plus se brancher sur `targetType` seul. Avec `displacementType`
+vérifié EN AMONT (point 2 ci-dessus), `DispatchByTargetType()` n'est JAMAIS atteint pour un skill
+de déplacement — les 2 cases `Dash_Target`/`Dash_Direction` sont supprimées du switch, qui
+redevient un pur dispatcher "pas de déplacement", exactement son rôle avant que Dash n'y soit
+greffé.
+
+**Nouveau point d'entrée `StartDisplacement(SkillData, Entity caster, Entity target)`** (nom
+proposé, le plan choisit le nom définitif) : joue le même rôle que `StartTrajectory()`/
+`PlantDelayedZone()` — bypass complet de `DispatchByTargetType()`, sélection de cible/zone et
+calcul de destination selon `targetType` (réutilise le filtre `PassesAoeFilter`/`OverlapSphere`
+déjà en place dans `ExecuteAoESelf`/`ExecuteGroundTarget`, et le filtre angulaire déjà en place
+dans `ExecuteCone` pour les colonnes `Cone` de Pull/Push), résistance équipement (§7) pour
+Pull/Push, déplacement effectif (Lerp + `NavMesh.SamplePosition` + agent désactivé pour
+DashSelf/Pull/Push, snap instantané pour TeleportSelf), puis `ApplyEffectType`/
+`ApplyStatusEffects`/`CheckKill` au timing décrit en §4. Remplace `DashToTarget()`/
+`DashInDirection()` (qui gèrent aujourd'hui exactement l'ancien couple `Dash_Target`/
+`Dash_Direction`) plutôt que de les garder à côté — leur logique de Lerp/NavMesh/`agent.enabled`/
+`Mob.IsDashing` est le point de départ, généralisée aux 4 verbes.
+
+**Côté Mob/PNJ — même câblage, pas juste côté joueur.** Vérifié : les Mobs utilisent déjà
+`Dash_Target` aujourd'hui (`DashToTarget()`/`DashInDirection()` ont des constantes de durée/offset
+séparées `caster.entityType == EntityType.Player ? ... : ...`). Le point 2 ci-dessus modifie donc
+`CombatAIController.ResolvePendingHit()`/`ResolveChannelCast()` EN PLUS de `SkillBar` — parité
+totale avec comment `isTrajectory`/`hasDelayedImpact` ont déjà été câblés aux 4 points d'entrée
+lors du chantier TargetType, pas une extension optionnelle.
+
 ## §3 — Matrice verbe × targetType
 
 Chaque verbe ne supporte qu'un sous-ensemble de `targetType` (masqué via `[ShowIf]`, même idiome
@@ -247,3 +309,10 @@ clés à couvrir dans le plan d'implémentation :
 7. Résistance équipement (§7) : une cible avec une entrée `DebuffResistanceEntry` sur
    `Displacement` résiste bien un Pull ET un Push avec la bonne fréquence statistique ; un
    Pull/Push en zone roule indépendamment par cible (pas un seul jet partagé).
+8. Côté Mob/PNJ (§2bis) : un Mob avec un skill `displacementType` configuré (Dash/Teleport/Pull/
+   Push) l'exécute correctement via `CombatAIController`, pas juste côté joueur — au minimum
+   confirmer que `skl_loup_special_test.asset` (le loup migré) fonctionne toujours en jeu après
+   la migration.
+9. Combo interdit `displacementType` + `isTrajectory`/`hasDelayedImpact` : configurer volontairement
+   les deux sur un skill de test, vérifier que le warning `OnValidate` apparaît bien dans la
+   Console.
