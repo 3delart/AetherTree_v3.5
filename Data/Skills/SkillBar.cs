@@ -430,8 +430,7 @@ public class SkillBar : MonoBehaviour
         // ── Vérification portée pour les skills qui nécessitent une cible ──
         // Inclut tous les TargetType nécessitant une Entity valide au cast.
         bool needsTarget = skill.targetType == TargetType.Target
-                        || skill.targetType == TargetType.AoE_Target
-                        || skill.targetType == TargetType.Dash_Target;
+                        || skill.targetType == TargetType.AoE_Target;
 
         if (needsTarget)
         {
@@ -577,12 +576,18 @@ public class SkillBar : MonoBehaviour
         if (skill.targetType == TargetType.Cone)
             SkillSystem.Instance?.SetSkillDirection(TargetingSystem.Instance.ResolveDirection());
 
-        // isTrajectory vérifié EN PREMIER — un skill Cone/Target/GroundTarget avec les deux flags
+        // displacementType vérifié EN PREMIER — mutuellement exclusif avec isTrajectory/
+        // hasDelayedImpact (voir SkillData.OnValidate), jamais les deux en même temps sur un
+        // skill correctement configuré, mais l'ordre compte pour un skill mal configuré : le
+        // déplacement prend le dessus plutôt que d'être silencieusement ignoré.
+        if (skill.displacementType != DisplacementType.None)
+            SkillSystem.Instance?.StartDisplacement(skill, _player, target);
+        // isTrajectory vérifié ENSUITE — un skill Cone/Target/GroundTarget avec les deux flags
         // cochés (combo autorisé, voir SkillData.isTrajectory) doit passer par StartTrajectory(),
         // qui plante lui-même la zone différée en plus du dégât immédiat. Priorité inversée sans
         // risque pour tout le reste : un skill qui n'a qu'un seul des deux flags actif se
         // comporte identiquement peu importe l'ordre des checks.
-        if (skill.isTrajectory)
+        else if (skill.isTrajectory)
             SkillSystem.Instance?.StartTrajectory(skill, _player, target);
         else if (skill.hasDelayedImpact)
             SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);
@@ -761,8 +766,10 @@ public class SkillBar : MonoBehaviour
         if (skill.targetType == TargetType.Cone)
             SkillSystem.Instance?.SetSkillDirection(TargetingSystem.Instance.ResolveDirection());
 
-        // Ordre inversé — voir commentaire équivalent dans SkillBar.ResolveInstant().
-        if (skill.isTrajectory)
+        // Même ordre de priorité que SkillBar.ResolveInstant().
+        if (skill.displacementType != DisplacementType.None)
+            SkillSystem.Instance?.StartDisplacement(skill, _player, target);
+        else if (skill.isTrajectory)
             SkillSystem.Instance?.StartTrajectory(skill, _player, target);
         else if (skill.hasDelayedImpact)
             SkillSystem.Instance?.PlantDelayedZone(skill, _player, target);

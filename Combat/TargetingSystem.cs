@@ -437,7 +437,6 @@ public class TargetingSystem : MonoBehaviour
             }
 
             case TargetType.Cone:
-            case TargetType.Dash_Direction:
             {
                 SkillSystem.Instance.SetSkillDirection(ResolveDirection());
                 SkillSystem.Instance.Execute(skill, player, null);
@@ -446,7 +445,6 @@ public class TargetingSystem : MonoBehaviour
 
             case TargetType.Target:
             case TargetType.AoE_Target:
-            case TargetType.Dash_Target:
             {
                 Entity target = engagedTarget ?? selectedTarget;
                 if (target == null || target.isDead)

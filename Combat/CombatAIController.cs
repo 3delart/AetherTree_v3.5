@@ -471,12 +471,16 @@ public class CombatAIController : MonoBehaviour
         }
         else
         {
-            // isTrajectory vérifié EN PREMIER — un skill Cone/Target/GroundTarget avec les deux flags
+            // displacementType vérifié EN PREMIER — voir commentaire équivalent dans
+            // SkillBar.ResolveInstant().
+            if (skill.displacementType != DisplacementType.None)
+                _skillSystem?.StartDisplacement(skill, _owner, target);
+            // isTrajectory vérifié ENSUITE — un skill Cone/Target/GroundTarget avec les deux flags
             // cochés (combo autorisé, voir SkillData.isTrajectory) doit passer par
             // StartTrajectory(), qui plante lui-même la zone différée en plus du dégât immédiat.
             // Priorité inversée sans risque pour tout le reste : un skill qui n'a qu'un seul des
             // deux flags actif se comporte identiquement peu importe l'ordre des checks.
-            if (skill.isTrajectory)
+            else if (skill.isTrajectory)
                 _skillSystem?.StartTrajectory(skill, _owner, target);
             else if (skill.hasDelayedImpact)
                 _skillSystem?.PlantDelayedZone(skill, _owner, target);
@@ -526,8 +530,10 @@ public class CombatAIController : MonoBehaviour
 
         EndChannelCastState();
 
-        // Ordre inversé — voir commentaire équivalent dans ResolvePendingHit().
-        if (skill.isTrajectory)
+        // Même ordre de priorité — voir commentaire équivalent dans ResolvePendingHit().
+        if (skill.displacementType != DisplacementType.None)
+            _skillSystem?.StartDisplacement(skill, _owner, target);
+        else if (skill.isTrajectory)
             _skillSystem?.StartTrajectory(skill, _owner, target);
         else if (skill.hasDelayedImpact)
             _skillSystem?.PlantDelayedZone(skill, _owner, target);
