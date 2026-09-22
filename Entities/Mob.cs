@@ -139,12 +139,22 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // ── Résistances aux debuffs — innées, indépendantes de l'équipement (les Mobs n'en ont
         // pas). CharacterStats.ApplyDebuffResistances() est strictement réservée au Player, donc
         // sans ce câblage statusEffects._debuffResistances resterait TOUJOURS vide pour un Mob.
-        if (data.debuffResistances != null)
-            foreach (var entry in data.debuffResistances)
-                statusEffects.SetDebuffResistance(entry.debuffType, entry.resistChance);
+        ApplyInnateDebuffResistances();
 
         // ── Snapshot — base pour buffs/debuffs ────────────────
         SnapshotBaseStats();
+    }
+
+    /// <summary>Pousse data.debuffResistances dans statusEffects — appelée depuis ApplyData()
+    /// (spawn) ET OnReturnToPatrol() (celui-ci fait un ResetDebuffResistances() qui viderait
+    /// définitivement les résistances innées sans cette ré-application — bug trouvé en review
+    /// finale : un boss configuré immunisé au déplacement/CC redevenait vulnérable après son
+    /// premier leash).</summary>
+    private void ApplyInnateDebuffResistances()
+    {
+        if (data == null || data.debuffResistances == null) return;
+        foreach (var entry in data.debuffResistances)
+            statusEffects.SetDebuffResistance(entry.debuffType, entry.resistChance);
     }
 
     // =========================================================
@@ -298,6 +308,7 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         totalDamageTaken = 0f;
         lastSkillByAttacker.Clear();
         statusEffects?.ResetDebuffResistances();
+        ApplyInnateDebuffResistances();
         RequestRecalculate();
     }
 

@@ -201,7 +201,7 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(targetType), TargetType.Cone, Header = "⑥ Cône (targetType = Cone)")]
     public float coneHalfAngle = 45f;
 
-    [Tooltip("Qui peut être touché par ce skill — AoE ou non (Target/Dash_Target y compris,\n" +
+    [Tooltip("Qui peut être touché par ce skill — AoE ou non (Target y compris,\n" +
              "pas seulement les zones).\n" +
              "Enemies  → seulement les ennemis du caster (dégâts classiques)\n" +
              "Allies   → seulement les alliés du caster (soin/buff, inclut le caster lui-même\n" +
@@ -594,6 +594,16 @@ public class SkillData : ScriptableObject
                               $"{hasDelayedImpact} — combinaison non supportée, deux mécanismes " +
                               "de déplacement concurrents sur le même skill. Décoche isTrajectory/" +
                               "hasDelayedImpact ou remets displacementType sur None.", this);
+
+        // Symétrique du warning isTrajectory && executionType != Normal déjà en place — le
+        // déplacement est silencieusement ignoré sur les mêmes chemins (combo step, MultiHit,
+        // cast passif) puisqu'aucun d'eux n'atteint StartDisplacement().
+        if (displacementType != DisplacementType.None && executionType != SkillExecutionType.Normal)
+            Debug.LogWarning($"[SkillData:{name}] displacementType = {displacementType} avec " +
+                              $"executionType = {executionType} — combinaison non gérée, le " +
+                              "déplacement ne fonctionne qu'avec executionType = Normal (instant " +
+                              "ou canalisé), StartDisplacement() n'est jamais atteint depuis le " +
+                              "dispatch MultiHit/ComboSequence normal.", this);
 
         // Combos targetType non supportés par verbe (voir matrice complète dans le guide de
         // création de skills) — même idiome que les warnings hasDelayedImpact/isTrajectory

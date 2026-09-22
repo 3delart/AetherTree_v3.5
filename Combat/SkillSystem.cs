@@ -1182,6 +1182,7 @@ public class SkillSystem : MonoBehaviour
         if (skill.targetType == TargetType.Target)
         {
             if (target == null || target.isDead) { LogMissingTarget(skill, caster); yield break; }
+            if (!PassesAoeFilter(skill.aoeFaction, caster, target)) yield break;
             destination = target.transform.position
                         - (target.transform.position - startPos).normalized * stopOffset;
             sweepEnRoute = false;
@@ -1251,6 +1252,7 @@ public class SkillSystem : MonoBehaviour
 
         if (caster != null)
         {
+            if (!interrupted) caster.transform.position = destination;
             if (caster is Mob endMob) endMob.IsDashing = false;
             if (agent != null) agent.enabled = true;
 
@@ -1276,6 +1278,12 @@ public class SkillSystem : MonoBehaviour
     {
         Vector3 startPos = caster.transform.position;
         Vector3 destination;
+        Vector3? coneDir = null; // Cone uniquement — _skillDirection est consommée ci-dessous
+                                  // pour calculer la destination du blink, mais ExecuteCone() en
+                                  // a besoin À NOUVEAU après le saut pour orienter le dégât dans
+                                  // la même direction, sinon elle retombe sur caster.transform.
+                                  // forward (potentiellement périmé, la téléportation ne tourne
+                                  // pas le caster) — bug trouvé en review finale.
 
         if (skill.targetType == TargetType.Target)
         {
@@ -1301,6 +1309,7 @@ public class SkillSystem : MonoBehaviour
         {
             Vector3 dir = _skillDirection?.normalized ?? caster.transform.forward;
             _skillDirection = null;
+            coneDir = dir;
             destination = startPos + dir * skill.displacementDistance;
         }
 
@@ -1325,6 +1334,11 @@ public class SkillSystem : MonoBehaviour
                 WarpNow(ally, allyDest);
             }
         }
+
+        // Cone : _skillDirection re-posée juste avant le dispatch (consommée plus haut pour le
+        // blink, ExecuteCone() en a besoin à nouveau — voir la note sur coneDir ci-dessus).
+        if (coneDir.HasValue)
+            _skillDirection = coneDir;
 
         // Dégâts/effets résolus À LA NOUVELLE POSITION — targetType réévalué après le saut (spec
         // §4 : un AoE_Self téléporté au milieu d'un groupe frappe ce qui l'entoure après le
@@ -1353,6 +1367,7 @@ public class SkillSystem : MonoBehaviour
         if (skill.targetType == TargetType.Target)
         {
             if (target == null || target.isDead) { LogMissingTarget(skill, caster); yield break; }
+            if (!PassesAoeFilter(skill.aoeFaction, caster, target)) yield break;
             victims.Add(target);
             anchor = caster.transform.position;
             exactLanding = false;
@@ -1362,7 +1377,7 @@ public class SkillSystem : MonoBehaviour
             Vector3 point = _groundTargetPoint ?? caster.transform.position;
             _groundTargetPoint = null;
             anchor = point;
-            victims = SelectZoneEntities(skill, caster, anchor, skill.aoeRadius);
+            victims = SelectZoneEntities(skill, caster, anchor, skill.aoeRadius > 0f ? skill.aoeRadius : 5f);
             exactLanding = true;
         }
         else if (skill.targetType == TargetType.Cone)
@@ -1376,7 +1391,7 @@ public class SkillSystem : MonoBehaviour
         else // AoE_Self
         {
             anchor = caster.transform.position;
-            victims = SelectZoneEntities(skill, caster, anchor, skill.aoeRadius);
+            victims = SelectZoneEntities(skill, caster, anchor, skill.aoeRadius > 0f ? skill.aoeRadius : 5f);
             exactLanding = false;
         }
 
@@ -1433,9 +1448,12 @@ public class SkillSystem : MonoBehaviour
         for (int i = 0; i < victims.Count; i++)
         {
             if (victims[i] == null) continue;
-            if (!victims[i].isDead) victims[i].transform.position = ends[i];
             if (victims[i] is Mob endMob) endMob.IsDashing = false;
-            if (agents[i] != null) agents[i].enabled = true;
+            if (!victims[i].isDead)
+            {
+                victims[i].transform.position = ends[i];
+                if (agents[i] != null) agents[i].enabled = true;
+            }
         }
     }
 
@@ -1452,6 +1470,7 @@ public class SkillSystem : MonoBehaviour
         if (skill.targetType == TargetType.Target)
         {
             if (target == null || target.isDead) { LogMissingTarget(skill, caster); yield break; }
+            if (!PassesAoeFilter(skill.aoeFaction, caster, target)) yield break;
             victims.Add(target);
             origin = caster.transform.position;
         }
@@ -1460,7 +1479,7 @@ public class SkillSystem : MonoBehaviour
             Vector3 point = _groundTargetPoint ?? caster.transform.position;
             _groundTargetPoint = null;
             origin = point;
-            victims = SelectZoneEntities(skill, caster, origin, skill.aoeRadius);
+            victims = SelectZoneEntities(skill, caster, origin, skill.aoeRadius > 0f ? skill.aoeRadius : 5f);
         }
         else if (skill.targetType == TargetType.Cone)
         {
@@ -1472,7 +1491,7 @@ public class SkillSystem : MonoBehaviour
         else // AoE_Self
         {
             origin = caster.transform.position;
-            victims = SelectZoneEntities(skill, caster, origin, skill.aoeRadius);
+            victims = SelectZoneEntities(skill, caster, origin, skill.aoeRadius > 0f ? skill.aoeRadius : 5f);
         }
 
         victims.RemoveAll(v => ResistsDisplacement(v));
@@ -1524,9 +1543,12 @@ public class SkillSystem : MonoBehaviour
         for (int i = 0; i < victims.Count; i++)
         {
             if (victims[i] == null) continue;
-            if (!victims[i].isDead) victims[i].transform.position = ends[i];
             if (victims[i] is Mob endMob) endMob.IsDashing = false;
-            if (agents[i] != null) agents[i].enabled = true;
+            if (!victims[i].isDead)
+            {
+                victims[i].transform.position = ends[i];
+                if (agents[i] != null) agents[i].enabled = true;
+            }
         }
     }
 
