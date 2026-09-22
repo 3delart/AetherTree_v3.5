@@ -203,12 +203,10 @@ concrètement qu'à `DashSelf` (pas de fenêtre multi-frame à interrompre pour 
 - Son ÉTAT de CC actuel (stun/fear/etc) ne bloque JAMAIS un Pull/Push — s'applique même sur une
   cible déjà stun. Cohérent narrativement (une cible stun est justement impuissante à résister)
   et évite une exception spéciale.
-- Sa RÉSISTANCE ÉQUIPEMENT (chance %, voir §7) PEUT bloquer un Pull/Push — même mécanisme que la
-  résistance aux debuffs classiques, roulé une fois à l'activation.
-
-Seule une future immunité au déplacement forcé dédiée à un ARCHÉTYPE de mob (type boss raciné,
-indépendant de tout équipement) reste hors scope — voir §8, à construire avec le système Donjons
-plus tard si besoin.
+- Sa RÉSISTANCE (chance %, voir §7 — équipement pour un Player, `debuffResistances` inné pour un
+  Mob/PNJ) PEUT bloquer un Pull/Push — même mécanisme que la résistance aux debuffs classiques,
+  roulé une fois à l'activation. `resistChance: 1.0` sur `Displacement` = immunité garantie,
+  couvre déjà le cas "boss raciné" (voir §7).
 
 ## §6 — Validité de destination & mouvement des entités déplacées
 
