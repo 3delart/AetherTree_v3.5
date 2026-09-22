@@ -177,31 +177,34 @@ plus tard si besoin.
 Réutilise le système de résistance aux debuffs déjà fonctionnel (`DebuffResistanceEntry
 { debuffType, resistChance }` sur les équipements → agrégé par `CharacterStats.
 ApplyDebuffResistances()` → stocké dans `StatusEffectSystem._debuffResistances` → roulé dans
-`TryApplyDebuff()`), plutôt que de dupliquer toute cette plomberie pour 2 catégories seulement.
+`TryApplyDebuff()`), plutôt que de dupliquer toute cette plomberie.
 
-**`DebuffType`** (`Data/StatusEffect/StatusEffectData.cs`) gagne 2 valeurs en fin d'enum (ordinal
-safety respecté, dernier ordinal actuel = `HpDrain = 21`) :
+**`DebuffType`** (`Data/StatusEffect/StatusEffectData.cs`) gagne UNE seule valeur en fin d'enum
+(ordinal safety respecté, dernier ordinal actuel = `HpDrain = 21`) — Pull et Push partagent la
+même résistance, pas de distinction par verbe (un équipement "anti-déplacement forcé" protège des
+deux à la fois, pas la peine de gérer 2 entrées séparées côté designer) :
 
 ```csharp
-Pull = 22, // Résistance au déplacement forcé "Pull" (SkillData.DisplacementType) — clé de
-           // résistance PURE, aucun DebuffData n'utilise jamais ce type, jamais appliqué comme
-           // un vrai debuff (pas de durée, pas de statusEffects.isXxx). Juste un point d'entrée
-           // dans le système de résistance équipement existant pour éviter de le dupliquer.
-Push = 23, // Idem pour Push.
+Displacement = 22, // Résistance au déplacement forcé — Pull ET Push (SkillData.DisplacementType)
+                    // partagent cette même clé, pas de distinction par verbe. Clé de résistance
+                    // PURE, aucun DebuffData n'utilise jamais ce type, jamais appliqué comme un
+                    // vrai debuff (pas de durée, pas de statusEffects.isXxx). Juste un point
+                    // d'entrée dans le système de résistance équipement existant pour éviter de
+                    // le dupliquer.
 ```
 
 **Côté équipement** : aucun changement de code nécessaire — `DebuffResistanceEntry` accepte déjà
 n'importe quel `DebuffType`, l'agrégation dans `CharacterStats` est déjà générique (boucle sur
 toutes les entrées peu importe le type). Le designer ajoute juste une entrée
-`{ debuffType: Pull, resistChance: 0.1 }` sur un équipement comme pour n'importe quel autre
-debuff.
+`{ debuffType: Displacement, resistChance: 0.1 }` sur un équipement comme pour n'importe quel
+autre debuff.
 
 **Côté `SkillSystem`** : au moment où un Pull/Push s'active sur une cible (voir §4, "au départ"),
 rouler la résistance AVANT d'appliquer le déplacement — même pattern exact que
 `StatusEffectSystem.TryApplyDebuff()` :
 
 ```csharp
-float resistance = target.statusEffects.GetDebuffResistance(DebuffType.Pull); // ou .Push
+float resistance = target.statusEffects.GetDebuffResistance(DebuffType.Displacement);
 if (resistance > 0f && Random.value < resistance)
 {
     // résisté — aucun déplacement, aucun dégât/effet associé (même traitement qu'un debuff résisté)
@@ -241,6 +244,6 @@ clés à couvrir dans le plan d'implémentation :
 5. `bringsAllies` embarque bien les alliés proches à la téléportation, avec le bon décalage
    relatif.
 6. Étalement visuel d'un Pull en zone sur plusieurs cibles (pas de stack exact).
-7. Résistance équipement (§7) : une cible avec une entrée `DebuffResistanceEntry` sur `Pull`/
-   `Push` résiste bien avec la bonne fréquence statistique ; un Pull/Push en zone roule
-   indépendamment par cible (pas un seul jet partagé).
+7. Résistance équipement (§7) : une cible avec une entrée `DebuffResistanceEntry` sur
+   `Displacement` résiste bien un Pull ET un Push avec la bonne fréquence statistique ; un
+   Pull/Push en zone roule indépendamment par cible (pas un seul jet partagé).
