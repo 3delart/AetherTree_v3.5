@@ -234,7 +234,7 @@ plus tard si besoin.
   cercle autour du point exact) pour éviter la superposition visuelle exacte de plusieurs
   modèles — coût de calcul négligeable.
 
-## §7 — Résistance équipement au déplacement forcé (Pull/Push)
+## §7 — Résistance au déplacement forcé (Pull/Push) — équipement ET Mob/PNJ innée
 
 Réutilise le système de résistance aux debuffs déjà fonctionnel (`DebuffResistanceEntry
 { debuffType, resistChance }` sur les équipements → agrégé par `CharacterStats.
@@ -279,11 +279,48 @@ même principe que `RemoveDebuffsByChance`/`RemoveBuffsByChance` du système Dis
 (§CC/status-effect semantics, mémoire roadmap) : chaque cible résiste ou non indépendamment des
 autres.
 
+**Résistance INNÉE Mob/PNJ (demande Florian, trouvé en relisant §8 — comble un vrai trou de
+symétrie, pas juste un nice-to-have)** : `CharacterStats.ApplyDebuffResistances()` est aujourd'hui
+STRICTEMENT réservée au joueur (`private void ApplyDebuffResistances(Player player)`, lit
+`player.equippedWeaponInstance`/etc) — un Mob n'a pas d'équipement, donc `Mob`/`PNJ` n'appellent
+JAMAIS cette méthode. Concrètement : `StatusEffectSystem._debuffResistances` reste TOUJOURS vide
+pour un Mob/PNJ aujourd'hui, `GetDebuffResistance()` y retourne toujours `0`, quel que soit le
+`DebuffType`. Sans correction, un Mob/PNJ ne peut donc résister à AUCUN debuff (Stun/Fear/Silence/
+etc — pas juste `Displacement`), et surtout ne peut jamais résister à un Pull/Push lancé par un
+Player — la résistance §7 ne protégerait que le sens "Player poussé/tiré par un Mob", jamais
+l'inverse.
+
+**Fix** : `MobData`/`PNJData` gagnent un nouveau champ, même type que l'équipement, même endroit
+que les champs `onHitReceivedEffects`/`onHitDealtEffects` déjà présents sur les deux (`Data/Mobs/
+MobData.cs:150-152`, `Data/PNJ/PNJData.cs:202-205`) :
+
+```csharp
+[Tooltip("Résistances aux debuffs INNÉES de cette espèce/ce PNJ — indépendantes de tout " +
+         "équipement (les Mobs/PNJ n'en portent pas). Même mécanisme que la résistance " +
+         "équipement du joueur : resistChance = 1 sur Displacement/Stun/etc = immunité totale " +
+         "(ex: boss raciné, immunisé au CC dur).")]
+public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
+```
+
+Câblé au même endroit que le reste des stats dérivées de `MobData` — `Mob.ApplyData()`
+(`Entities/Mob.cs`, appelée depuis `Awake()`, juste après les autres `SetXxx()`) et l'équivalent
+côté `PNJ.Awake()` — via une simple boucle `foreach (var entry in data.debuffResistances)
+statusEffects.SetDebuffResistance(entry.debuffType, entry.resistChance);`. Aucun changement à
+`TryApplyDebuff()`/`GetDebuffResistance()` : ils lisent déjà le même dictionnaire, peu importe qui
+l'a rempli (équipement joueur ou données Mob/PNJ).
+
+**Conséquence directe** : ceci RÉSOUT le point "Immunité boss" qui était en §8 (hors scope) —
+`resistChance: 1.0` sur `Displacement` (et n'importe quel autre `DebuffType`, Stun/Fear/etc) dans
+le `MobData` d'un boss = immunité GARANTIE (`Random.value < 1.0` est toujours vrai), sans
+construire de système d'immunité séparé. Retiré du hors-scope, voir §8 mis à jour.
+
 ## §8 — Hors scope (explicitement)
 
-- **Immunité CC/déplacement forcé pour les boss** (un flag d'ARCHÉTYPE mob, indépendant de
-  l'équipement — pas la résistance % équipement du §7, qui EST dans le scope) — aucun système de
-  ce type n'existe encore dans le code (les Donjons/boss, roadmap item 8, ne sont pas bâtis).
+- ~~Immunité CC/déplacement forcé pour les boss~~ — **résolu par §7** (résistance innée Mob/PNJ,
+  `resistChance: 1.0` = immunité garantie). Reste un point d'attention pour le PLAN, pas un vrai
+  "hors scope" : aucun système de ce type n'existe encore dans le code (les Donjons/boss, roadmap
+  item 8, ne sont pas bâtis), donc aucun `MobData` de boss n'existe encore pour le configurer —
+  mais le champ est prêt dès ce chantier-ci.
   Prévu pour plus tard, pas ce chantier.
 - **Swap de position** (caster et cible échangent leurs places) — pas mentionné par Florian dans
   ce chantier, pas dans la matrice §3. Pourrait se brancher plus tard comme variante de
@@ -316,3 +353,8 @@ clés à couvrir dans le plan d'implémentation :
 9. Combo interdit `displacementType` + `isTrajectory`/`hasDelayedImpact` : configurer volontairement
    les deux sur un skill de test, vérifier que le warning `OnValidate` apparaît bien dans la
    Console.
+10. Résistance innée Mob/PNJ (§7) : configurer `debuffResistances = [{ Displacement, 1.0 }]` sur
+    un `MobData` de test, lui lancer un Pull/Push depuis le joueur → aucun déplacement ne doit
+    avoir lieu. Vérifier aussi qu'un Mob SANS entrée `debuffResistances` se fait bien Pull/Push
+    normalement (pas de régression — liste vide = aucune résistance, comportement identique à
+    avant ce chantier).
