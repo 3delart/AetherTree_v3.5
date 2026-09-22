@@ -88,6 +88,14 @@ public enum DebuffType
                 // mal placé (Dispel est un effet négatif sur cible ennemie, pas un buff).
     HpDrain    = 21, // Vol de vie progressif — dégâts/s sur la cible (TakeDamage, respecte
                 // défense/résistances) reversés en soin au lanceur du debuff (§3.1.1.1)
+
+    Displacement = 22, // Résistance au déplacement forcé — Pull, Push ET SwapPosition
+                // (SkillData.DisplacementType) partagent cette même clé, pas de distinction par
+                // verbe. Clé de résistance PURE, aucun DebuffData n'utilise jamais ce type,
+                // jamais appliqué comme un vrai debuff (pas de durée, pas de
+                // statusEffects.isXxx) — juste un point d'entrée dans le système de résistance
+                // équipement/Mob/PNJ existant (voir SkillSystem.StartDisplacement,
+                // MobData/PNJData.debuffResistances).
 }
 
 // ── Enums buff ────────────────────────────────────────────────
