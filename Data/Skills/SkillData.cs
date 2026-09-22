@@ -87,10 +87,6 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(effectType), SkillEffectType.Other, Header = "③ Effet spécial (si effectType = Other)")]
     public SkillSpecialEffect specialEffect = SkillSpecialEffect.None;
 
-    [Tooltip("Force du déplacement pour Pull/Push/PullAoE/PushAoE/GatherAoE/Vortex.\nDistance en unités world.")]
-    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Pull, SkillSpecialEffect.Push, SkillSpecialEffect.PullAoE, SkillSpecialEffect.PushAoE, SkillSpecialEffect.GatherAoE, SkillSpecialEffect.Vortex)]
-    public float pullPushForce = 5f;
-
     [Tooltip("Ratio des dégâts restitués en soin (DrainHP). Ex: 0.5 = 50% des dégâts soignés.")]
     [Range(0f, 1f)]
     [ShowIf(nameof(specialEffect), SkillSpecialEffect.DrainHP)]
@@ -212,8 +208,55 @@ public class SkillData : ScriptableObject
              "           s'il est dans la zone pour un AoE — ex: Purify de zone)\n" +
              "Everyone → tout le monde, sans distinction")]
     [ShowIf(nameof(targetType), TargetType.AoE_Self, TargetType.AoE_Target, TargetType.GroundTarget,
-        TargetType.Cone, TargetType.Target, TargetType.Dash_Target, DisplayName = "Cible")]
+        TargetType.Cone, TargetType.Target, DisplayName = "Cible")]
     public SkillAoeFaction aoeFaction = SkillAoeFaction.Enemies;
+
+    // ── ⑥ Déplacement — composable avec effectType (Damage/Buff/Debuff/Other), CONTRAIREMENT à
+    // l'ancien specialEffect qui n'existait que si effectType = Other (impossible de combiner
+    // "fonce dans le tas" = déplacement + dégâts). Voir DisplacementType ci-dessous.
+    [Tooltip("Aucun (défaut) | DashSelf (le caster fonce, trajet animé ~0.25-0.3s, dégâts aux " +
+             "entités croisées) | TeleportSelf (le caster se téléporte, instantané) | Pull " +
+             "(attire une/des cible(s) vers le caster ou un point) | Push (repousse une/des " +
+             "cible(s) loin d'une origine) | SwapPosition (caster et cible échangent leurs " +
+             "places, instantané).\n" +
+             "Mutuellement exclusif avec isTrajectory/hasDelayedImpact (deux mécanismes de " +
+             "\"quelque chose se déplace\" concurrents) — voir OnValidate, avertissement " +
+             "seulement (isTrajectory/hasDelayedImpact utilisent déjà leur unique AndField pour " +
+             "executionType, pas de ShowIf possible en plus).\n" +
+             "Chaque verbe ne supporte qu'un sous-ensemble de targetType (voir guide de création " +
+             "de skills pour la matrice complète) — combinaison non supportée = warning " +
+             "OnValidate, pas de correction automatique.")]
+    [Header("⑥ Déplacement")]
+    public DisplacementType displacementType = DisplacementType.None;
+
+    [Tooltip("Distance de déplacement RÉELLE — distincte de range (qui gate la portée de " +
+             "CIBLAGE, jusqu'où tu peux cliquer/viser). Plafonne jusqu'où tu voyages/pousses " +
+             "réellement dans cette direction, même si le point ciblé est plus loin (permet un " +
+             "dash \"court\" même en visant loin).\n" +
+             "Utilisée par DashSelf/TeleportSelf + Cone (direction souris) et GroundTarget " +
+             "(plafond si le point cliqué est plus loin) ; ignorée pour Target (utilise l'offset " +
+             "d'arrêt existant, pas de plafond). Toujours utilisée par Push. Jamais par Pull (sa " +
+             "destination est toujours un point déjà déterminé : la position du caster ou le " +
+             "point cliqué).")]
+    [ShowIf(nameof(displacementType), DisplacementType.DashSelf, DisplacementType.TeleportSelf,
+        DisplacementType.Push, Header = "⑥ Distance de déplacement")]
+    public float displacementDistance = 5f;
+
+    [Tooltip("TeleportSelf + targetType=Target uniquement : coché = atterrit DERRIÈRE la cible " +
+             "(côté vers lequel elle tourne le dos — blink-backstab), décoché = DEVANT elle " +
+             "(côté qu'elle regarde). Calculé par rapport au FACING DE LA CIBLE, pas du caster. " +
+             "Toujours à côté, jamais SUR la cible. Choix figé par skill (décision designer), " +
+             "pas calculé dynamiquement.")]
+    [ShowIf(nameof(displacementType), DisplacementType.TeleportSelf,
+        AndField = nameof(targetType), AndValue = TargetType.Target,
+        Header = "⑥ Téléportation derrière la cible")]
+    public bool teleportBehindTarget = true;
+
+    [Tooltip("TeleportSelf uniquement : coché = les alliés dans aoeRadius de la position ORIGINE " +
+             "du caster sont téléportés au même décalage relatif près de la destination. " +
+             "Décoché (défaut) = caster seul.")]
+    [ShowIf(nameof(displacementType), DisplacementType.TeleportSelf, Header = "⑥ Emmène les alliés")]
+    public bool bringsAllies = false;
 
     // ── ⑦ Zone à impact différé / Trajectoire mobile ───────────
     [Tooltip("Transforme la résolution de ce skill en zone au sol à impact différé — au lieu de\n" +
@@ -539,6 +582,52 @@ public class SkillData : ScriptableObject
             Debug.LogWarning($"[SkillData:{name}] isTrajectory = true avec executionType = " +
                               $"{executionType} — combinaison non gérée, la trajectoire ne " +
                               "fonctionne qu'avec executionType = Normal (instant ou canalisé).", this);
+
+        // displacementType et isTrajectory/hasDelayedImpact sont deux mécanismes de "quelque
+        // chose se déplace" concurrents — jamais de sens de les cumuler. Pas de [ShowIf] possible
+        // ici (isTrajectory/hasDelayedImpact utilisent déjà leur unique AndField pour
+        // executionType == Normal, voir Utils/ShowIfAttribute.cs — AllowMultiple = false),
+        // avertissement seulement.
+        if (displacementType != DisplacementType.None && (isTrajectory || hasDelayedImpact))
+            Debug.LogWarning($"[SkillData:{name}] displacementType = {displacementType} avec " +
+                              $"isTrajectory = {isTrajectory} et/ou hasDelayedImpact = " +
+                              $"{hasDelayedImpact} — combinaison non supportée, deux mécanismes " +
+                              "de déplacement concurrents sur le même skill. Décoche isTrajectory/" +
+                              "hasDelayedImpact ou remets displacementType sur None.", this);
+
+        // Combos targetType non supportés par verbe (voir matrice complète dans le guide de
+        // création de skills) — même idiome que les warnings hasDelayedImpact/isTrajectory
+        // ci-dessus : avertissement seulement, pas de correction automatique. displacementType
+        // masqué dans l'Inspector uniquement par targetType == Target pour SwapPosition (voir
+        // Step 6) ; les autres combos non supportés restent silencieusement actifs sans ce
+        // check.
+        bool displacementSupportedTargetType = displacementType switch
+        {
+            DisplacementType.None         => true,
+            DisplacementType.DashSelf     => targetType == TargetType.Target
+                                           || targetType == TargetType.GroundTarget
+                                           || targetType == TargetType.Cone,
+            DisplacementType.TeleportSelf => targetType == TargetType.Target
+                                           || targetType == TargetType.GroundTarget
+                                           || targetType == TargetType.Cone,
+            DisplacementType.Pull         => targetType == TargetType.Target
+                                           || targetType == TargetType.GroundTarget
+                                           || targetType == TargetType.Cone
+                                           || targetType == TargetType.AoE_Self,
+            DisplacementType.Push         => targetType == TargetType.Target
+                                           || targetType == TargetType.GroundTarget
+                                           || targetType == TargetType.Cone
+                                           || targetType == TargetType.AoE_Self,
+            DisplacementType.SwapPosition => targetType == TargetType.Target,
+            _                              => true,
+        };
+        if (!displacementSupportedTargetType)
+            Debug.LogWarning($"[SkillData:{name}] displacementType = {displacementType} avec " +
+                              $"targetType = {targetType} — combinaison non supportée pour ce " +
+                              "verbe (voir la matrice verbe×targetType dans le guide de création " +
+                              "de skills). Le déplacement se lancera quand même au runtime, " +
+                              "traité avec un fallback générique potentiellement pas celui " +
+                              "voulu.", this);
     }
 #endif
 }
@@ -572,8 +661,7 @@ public enum ModifierType  { Flat = 0, Percent = 1 }
 
 public enum TargetType
 {
-    Target = 0, Self = 1, AoE_Self = 2, AoE_Target = 3,
-    GroundTarget = 4, Cone = 5, Dash_Target = 6, Dash_Direction = 7,
+    Target = 0, Self = 1, AoE_Self = 2, AoE_Target = 3, GroundTarget = 4, Cone = 5,
 }
 
 /// <summary>Forme de la hitbox mobile d'un skill isTrajectory — voir SkillData.trajectoryShape.
@@ -592,6 +680,22 @@ public enum SkillAoeFaction
     Everyone = 2,   // Touche tout le monde dans la zone, sans distinction
 }
 
+/// <summary>
+/// Type de déplacement composable du skill — indépendant de effectType/targetType.
+/// Distinct de l'ancien SkillSpecialEffect (Pull/Push/etc. qui n'existaient que si effectType=Other).
+/// DisplacementType est combinable avec tout effectType : Damage (dégâts + déplacement),
+/// Buff/Debuff (buff/debuff + déplacement), Other.
+/// </summary>
+public enum DisplacementType
+{
+    None           = 0,  // Pas de déplacement
+    DashSelf       = 1,  // Le caster fonce, trajet animé (~0.25-0.3s), dégâts aux entités croisées
+    TeleportSelf   = 2,  // Le caster se téléporte, instantané
+    Pull           = 3,  // Attire une/des cible(s) vers le caster ou un point
+    Push           = 4,  // Repousse une/des cible(s) loin d'une origine
+    SwapPosition   = 5,  // Caster et cible échangent leurs places, instantané
+}
+
 // =============================================================
 // SKILL SPECIAL EFFECTS
 // =============================================================
@@ -599,30 +703,20 @@ public enum SkillSpecialEffect
 {
     None           = 0,  // Pas d'effet spécial (valeur par défaut)
 
-    // ── Déplacement cible unique ──────────────────────────────
-    Pull           = 1,  // Attire la cible vers le caster
-    Push           = 2,  // Repousse la cible loin du caster
-    SwapPosition   = 3,  // Échange la position caster ↔ cible
-
-    // ── Déplacement zone ──────────────────────────────────────
-    PullAoE        = 4,  // Attire toutes les entités de la zone vers le caster
-    PushAoE        = 5,  // Repousse toutes les entités de la zone
-    GatherAoE      = 6,  // Regroupe toutes les entités vers le centre de la zone
-    Vortex         = 7,  // Attire en spirale vers un point (= GatherAoE + Slow)
-
-    // ── Téléportation ─────────────────────────────────────────
-    TeleportSelf   = 8,  // Téléporte le caster vers la cible / point au sol
-    TeleportTarget = 9,  // Téléporte la cible vers le caster
-
     // ── Drain / Transfert ─────────────────────────────────────
-    DrainHP        = 10, // Vol de HP : dégâts sur cible → soin caster (drainHealRatio)
-    DrainMana      = 11, // Vol de Mana : vide la cible, rend le caster
+    DrainHP        = 1, // Vol de HP : dégâts sur cible → soin caster (drainHealRatio)
+    DrainMana      = 2, // Vol de Mana : vide la cible, rend le caster
 
     // ── Invocation ────────────────────────────────────────────
-    Summon         = 12, // Invoque un mob allié (summonMobData) — TODO phase suivante
+    Summon         = 3, // Invoque un mob allié (summonMobData) — TODO phase suivante
 
     // ── Divers ────────────────────────────────────────────────
-    Interrupt      = 13, // Annule le cast en cours de la cible — TODO phase suivante
+    Interrupt      = 4, // Annule le cast en cours de la cible — TODO phase suivante
+
+    // Pull/Push/SwapPosition/PullAoE/PushAoE/GatherAoE/Vortex/TeleportSelf/TeleportTarget
+    // (ordinaux 1-9) supprimés — absorbés par SkillData.DisplacementType, composable avec
+    // n'importe quel effectType (Damage/Buff/Debuff/Other), contrairement à specialEffect qui
+    // n'existe que si effectType = Other. 0 asset ne les utilisait (vérifié Step 1).
 }
 
 public enum SkillTag
