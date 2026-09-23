@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 // =============================================================
 // INSTANCESESSION.CS — Session privée pour Donjon/Combat à Vague/Événements
@@ -36,6 +37,13 @@ public class InstanceSession : MonoBehaviour
     // Capturé à Enter() — la map d'où le joueur vient, pour y revenir à la sortie.
     private string _returnMapName;
 
+    // ── Entrée en attente — voir docs/superpowers/specs/2026-09-23-donjon-entry-flow-design.md ──
+    public IInstanceConfig PendingInstance { get; private set; }
+    public List<Player>    Participants    { get; private set; } = new List<Player>();
+    public bool            IsLeader        { get; private set; }
+
+    private HashSet<string> _metTriggerIDs = new HashSet<string>();
+
     private void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
@@ -66,6 +74,7 @@ public class InstanceSession : MonoBehaviour
         }
 
         CurrentInstance = config;
+        _metTriggerIDs.Clear();
         LivesRemaining  = config.LivesPerPlayer;
         CurrentOutcome  = InstanceOutcome.InProgress;
         _returnMapName  = SceneLoader.Instance.CurrentMap;
@@ -73,6 +82,45 @@ public class InstanceSession : MonoBehaviour
         SceneLoader.Instance.LoadMapWithSpawn(config.SceneName);
         return true;
     }
+
+    /// <summary>Posé par la consommation de l'item d'entrée (ConsoBarUI, voir Task 2) — n'appelle
+    /// PAS Enter(), prépare seulement l'état qu'un portail gaté (RequiresDungeonEntry) consommera
+    /// au franchissement. Refuse si une instance est déjà en cours (CurrentInstance != null) pour
+    /// éviter de corrompre l'état actif avec une nouvelle entrée en attente par-dessus.</summary>
+    public bool ArmEntry(IInstanceConfig config)
+    {
+        if (config == null || CurrentInstance != null) return false;
+        PendingInstance = config;
+        IsLeader        = true;
+        Participants    = new List<Player> { FindObjectOfType<Player>() };
+        return true;
+    }
+
+    /// <summary>Appelé par Portal (gateType = RequiresDungeonEntry) au moment du franchissement
+    /// du portail gaté — consomme l'entrée en attente et démarre réellement l'instance via
+    /// Enter() (méthode existante, inchangée). Retourne false si aucune entrée n'était en
+    /// attente (le portail ne devrait normalement jamais appeler ceci sans avoir déjà vérifié
+    /// PendingInstance != null via CanCross(), mais reste défensif).</summary>
+    public bool ConsumePendingEntry()
+    {
+        if (PendingInstance == null) return false;
+        IInstanceConfig config = PendingInstance;
+        PendingInstance = null;
+        return Enter(config);
+    }
+
+    /// <summary>Marque un trigger de donjon (mini-boss tué, levier actionné) comme acquis pour
+    /// LE RUN EN COURS UNIQUEMENT — jamais persisté, remis à zéro à chaque Enter() (voir Step 4).
+    /// Câblage réel (quel Mob.Die() appelle ceci) hors scope de ce chantier, voir spec §4
+    /// Non-objectifs — cette méthode existe pour que Portal.CanCross() (Task 5) ait quelque chose
+    /// à lire, le contenu qui l'appellera vraiment viendra avec un futur donjon réel.</summary>
+    public void NotifyTriggerMet(string triggerID)
+    {
+        if (string.IsNullOrEmpty(triggerID)) return;
+        _metTriggerIDs.Add(triggerID);
+    }
+
+    public bool IsTriggerMet(string triggerID) => _metTriggerIDs.Contains(triggerID);
 
     /// <summary>Appelé par Player.Die() (voir Task 6) quand une instance est active — remplace
     /// entièrement le flux de mort normal (RespawnSystem/DeathScreenUI) tant qu'une session est
