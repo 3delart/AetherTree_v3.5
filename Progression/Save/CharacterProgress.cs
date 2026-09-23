@@ -318,6 +318,9 @@ public class CharacterProgress
 
     // ⑪ Jauge élémentaire
     public List<SavedElementAffinity> elementAffinities = new List<SavedElementAffinity>();
+    // Part de fenêtre encore "vide" au moment de la sauvegarde — voir ElementalSystem._emptyWeight.
+    // Défaut 0 : correct pour les vieilles saves d'avant ce champ (fenêtre déjà pleine à l'époque).
+    public float elementEmptyWeight = 0f;
 
     // ⑫ Progression conditions en cours
     public List<SavedConditionProgress> conditionProgresses = new List<SavedConditionProgress>();

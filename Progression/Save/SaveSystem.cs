@@ -102,7 +102,6 @@ public class SaveSystem : MonoBehaviour
             if (player != null)
             {
                 Save(player);
-                Debug.Log("[SAVE] 💾 Autosave");
             }
         }
     }
@@ -158,15 +157,6 @@ public class SaveSystem : MonoBehaviour
         try
         {
             File.WriteAllText(CharacterSavePath, json);
-            int itemCount = progress.weapons.Count + progress.armors.Count + progress.helmets.Count +
-                            progress.gloves.Count + progress.boots.Count + progress.jewelry.Count +
-                            progress.spirits.Count + progress.consumables.Count + progress.resources.Count +
-                            progress.gems.Count + progress.runes.Count + progress.cosmeticHeads.Count +
-                            progress.cosmeticBodies.Count + progress.talismans.Count;
-            Debug.Log($"[SAVE] ✅ Personnage → {CharacterSavePath}\n" +
-                      $"Niv.{progress.level} | XP:{progress.xpCombat} | " +
-                      $"Items:{itemCount} | Quêtes:{progress.quests.Count} | " +
-                      $"Mails:{progress.mails.Count} | Aeris:{progress.aeris}");
         }
         catch (Exception e)
         {
@@ -196,9 +186,6 @@ public class SaveSystem : MonoBehaviour
         try
         {
             File.WriteAllText(AccountSavePath, json);
-            Debug.Log($"[SAVE] ✅ Compte → {AccountSavePath} " +
-                      $"({account.accountCountersList.Count} compteurs, " +
-                      $"{account.unlockedAccountConditionIDs.Count} conditions compte)");
         }
         catch (Exception e)
         {
@@ -258,10 +245,6 @@ public class SaveSystem : MonoBehaviour
 
             // Restaure compteurs et conditions compte dans UnlockManager
             UnlockManager.Instance?.LoadAccountProgress(account);
-
-            Debug.Log($"[LOAD] ✅ Compte chargé — " +
-                      $"{account.accountCountersList?.Count ?? 0} compteurs, " +
-                      $"{account.unlockedAccountConditionIDs?.Count ?? 0} conditions compte.");
         }
         catch (Exception e)
         {
@@ -590,6 +573,7 @@ public class SaveSystem : MonoBehaviour
                     element = t.ToString(),
                     weight  = aff * elemental.GetWindowSize() });
         }
+        p.elementEmptyWeight = elemental.GetEmptyWeight();
     }
 
     // ── Mails ─────────────────────────────────────────────────
@@ -850,8 +834,6 @@ public class SaveSystem : MonoBehaviour
 
             MailboxSystem.Instance.RestoreMail(mail);
         }
-
-        Debug.Log($"[LOAD] ✅ {savedMails.Count} mail(s) restauré(s).");
     }
 
     // ── Restauration items ────────────────────────────────────
@@ -899,7 +881,7 @@ public class SaveSystem : MonoBehaviour
 
         var elemental = player.GetElementalSystem();
         if (elemental != null && p.elementAffinities != null && p.elementAffinities.Count > 0)
-            elemental.LoadAffinities(p.elementAffinities);
+            elemental.LoadAffinities(p.elementAffinities, p.elementEmptyWeight);
 
         if (SceneLoader.Instance != null && !string.IsNullOrEmpty(p.lastMap)
             && p.lastMap != SceneLoader.Instance.CurrentMap)
@@ -918,12 +900,6 @@ public class SaveSystem : MonoBehaviour
         GameEventBus.Publish(new StatsChangedEvent { player = player });
         InventoryUI.Instance?.RefreshGrid();
         CharacterPanelUI.Instance?.Refresh();
-
-        int itemCount = p.weapons.Count + p.armors.Count + p.helmets.Count + p.gloves.Count + p.boots.Count +
-                        p.jewelry.Count + p.spirits.Count + p.consumables.Count + p.resources.Count +
-                        p.gems.Count + p.runes.Count + p.cosmeticHeads.Count + p.cosmeticBodies.Count + p.talismans.Count;
-        Debug.Log($"[LOAD] ✅ Items:{itemCount} | Quêtes:{p.quests?.Count ?? 0} | " +
-                  $"Mails:{p.mails?.Count ?? 0}");
     }
 
     /// <summary>Restaure les 14 catégories d'items — chacune via son propre chemin,

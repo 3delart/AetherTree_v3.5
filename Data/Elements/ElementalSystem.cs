@@ -123,10 +123,15 @@ public class ElementalSystem : MonoBehaviour
     // =========================================================
 
     /// <summary>
-    /// Restaure les affinités depuis la sauvegarde.
+    /// Restaure les affinités depuis la sauvegarde. `emptyWeight` est la part de fenêtre
+    /// encore "vide" au moment de la sauvegarde (voir _emptyWeight) — sans elle, Renormalize()
+    /// étire les poids sauvés sur TOUTE la fenêtre, faisant sauter un perso tout juste entamé
+    /// (ex: Neutral 1.6/515) directement rang 5 au rechargement. Défaut 0f pour les vieilles
+    /// saves d'avant ce champ — correct pour elles car leur fenêtre était déjà pleine à l'époque
+    /// (plus de départ "Neutral 100% gratuit", voir InitNeutralWindow).
     /// Appelé par SaveSystem après un chargement.
     /// </summary>
-    public void LoadAffinities(List<SavedElementAffinity> affinities)
+    public void LoadAffinities(List<SavedElementAffinity> affinities, float emptyWeight = 0f)
     {
         if (_player == null) _player = GetComponent<Player>();
         RecomputeWindowSize(_player != null ? _player.level : 1);
@@ -137,8 +142,7 @@ public class ElementalSystem : MonoBehaviour
             return;
         }
 
-        // Un perso déjà sauvegardé a une vraie répartition — plus d'état "vide" à représenter.
-        _emptyWeight = 0f;
+        _emptyWeight = Mathf.Max(0f, emptyWeight);
 
         foreach (ElementType t in Enum.GetValues(typeof(ElementType)))
         {
@@ -646,6 +650,11 @@ public class ElementalSystem : MonoBehaviour
     public int   GetTotalCasts()   => _totalCasts;
     public float GetTotalWeight()  => _windowSize;
     public float GetWindowSize()   => _windowSize;
+
+    /// <summary>Part de la fenêtre encore "vide" (jamais attribuée à un élément) — à persister
+    /// telle quelle à la sauvegarde, sinon LoadAffinities/Renormalize l'assume à 0 et étire les
+    /// poids sauvés sur toute la fenêtre au rechargement.</summary>
+    public float GetEmptyWeight() => _emptyWeight;
 
     /// <summary>
     /// Snapshot des affinités courantes pour la sauvegarde.
