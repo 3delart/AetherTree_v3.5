@@ -191,10 +191,20 @@ public class InstanceSession : MonoBehaviour
     {
         yield return new WaitForSeconds(exitDelay);
 
-        if (!string.IsNullOrEmpty(_returnMapName))
-            SceneLoader.Instance?.LoadMapWithSpawn(_returnMapName);
+        // Succès → retour à la map d'où le joueur est entré (ex: une salle d'attente devant le
+        // donjon — franchissable à nouveau tout de suite pour un re-run). Échec → pas de "petit
+        // aller-retour", direct au point de respawn du monde ouvert (SceneLoader.startMap —
+        // aucun système de ville/palier de respawn distinct n'existe encore, décision Florian
+        // 2026-09-23 : réutiliser startMap plutôt qu'inventer un tracking de "vraie origine
+        // monde ouvert" à travers plusieurs sauts de portails).
+        string destinationMap = CurrentOutcome == InstanceOutcome.Failure
+            ? SceneLoader.Instance?.startMap
+            : _returnMapName;
+
+        if (!string.IsNullOrEmpty(destinationMap))
+            SceneLoader.Instance?.LoadMapWithSpawn(destinationMap);
         else
-            Debug.LogWarning("[INSTANCE] _returnMapName vide — expulsion sans rechargement de map.");
+            Debug.LogWarning("[INSTANCE] Aucune map de destination valide — expulsion sans rechargement de map.");
 
         // Une sortie sur Failure laisse le joueur isDead (Player.Die() a court-circuité
         // RespawnSystem.TriggerDeath() — voir OnPlayerDeath()) : il faut le ranimer ici,
