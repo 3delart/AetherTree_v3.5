@@ -184,7 +184,7 @@ private HashSet<string> _metTriggerIDs = new HashSet<string>();
 /// juste prépare l'état que le portail gaté consommera. Toujours [joueur local] en solo.</summary>
 public bool ArmEntry(IInstanceConfig config)
 {
-    if (config == null) return false;
+    if (config == null || CurrentInstance != null) return false; // déjà dans un run actif
     PendingInstance = config;
     IsLeader        = true;
     Participants    = new List<Player> { FindObjectOfType<Player>() };
