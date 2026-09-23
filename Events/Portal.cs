@@ -21,6 +21,14 @@ using System.Collections;
 //
 //   Collider Trigger sur le GO.
 // =============================================================
+public enum PortalGateType
+{
+    None                 = 0, // Comportement actuel — libre, aucun changement pour l'existant
+    RequiresDungeonEntry = 1, // InstanceSession.PendingInstance valide pour ce portail précis
+    RequiresTierUnlock   = 2, // Player.HasUnlockedTier(targetTier)
+    RequiresTrigger      = 3, // InstanceSession.IsTriggerMet(requiredTriggerID)
+}
+
 public class Portal : MonoBehaviour
 {
     [Header("Identité")]
@@ -44,6 +52,24 @@ public class Portal : MonoBehaviour
     [Tooltip("Délai avant téléportation (secondes)")]
     public float teleportDelay = 0.5f;
 
+    [Header("Verrou")]
+    [Tooltip("None = libre (comportement actuel, inchangé). Les 3 autres valeurs bloquent le " +
+             "franchissement tant que leur condition n'est pas remplie.")]
+    public PortalGateType gateType = PortalGateType.None;
+
+    [Tooltip("InstanceID du donjon attendu — doit matcher IInstanceConfig.InstanceID de la " +
+             "config actuellement en attente (InstanceSession.PendingInstance).")]
+    [ShowIf(nameof(gateType), PortalGateType.RequiresDungeonEntry)]
+    public string linkedInstanceID = "";
+
+    [Tooltip("Palier requis débloqué (Player.HasUnlockedTier).")]
+    [ShowIf(nameof(gateType), PortalGateType.RequiresTierUnlock)]
+    public int targetTier = 2;
+
+    [Tooltip("triggerID requis acquis pendant le run en cours (InstanceSession.IsTriggerMet).")]
+    [ShowIf(nameof(gateType), PortalGateType.RequiresTrigger)]
+    public string requiredTriggerID = "";
+
     private static float _cooldownTimer = 0f;
     private bool _teleporting  = false;
 
@@ -63,11 +89,49 @@ public class Portal : MonoBehaviour
         if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;
     }
 
+    private bool CanCross(Player player)
+    {
+        switch (gateType)
+        {
+            case PortalGateType.None:
+                return true;
+            case PortalGateType.RequiresDungeonEntry:
+                return InstanceSession.Instance != null
+                    && InstanceSession.Instance.PendingInstance != null
+                    && InstanceSession.Instance.PendingInstance.InstanceID == linkedInstanceID;
+            case PortalGateType.RequiresTierUnlock:
+                return player != null && player.HasUnlockedTier(targetTier);
+            case PortalGateType.RequiresTrigger:
+                return InstanceSession.Instance != null
+                    && InstanceSession.Instance.IsTriggerMet(requiredTriggerID);
+            default:
+                return true;
+        }
+    }
+
     private void OnTriggerEnter(Collider other)
     {
-        if (other.GetComponent<Player>() == null) return;
+        Player player = other.GetComponent<Player>();
+        if (player == null) return;
         if (_cooldownTimer > 0f) return;
         if (_teleporting) return;
+
+        if (!CanCross(player))
+        {
+            Debug.Log($"[PORTAL] {portalID} — franchissement bloqué (gateType = {gateType}).");
+            return;
+        }
+
+        if (gateType == PortalGateType.RequiresDungeonEntry)
+        {
+            // L'entrée en donjon ne suit pas le chemin normal targetMap/targetPortalID — la
+            // vraie destination vient de la config résolue par InstanceSession, pas de ce champ.
+            bool entered = InstanceSession.Instance != null && InstanceSession.Instance.ConsumePendingEntry();
+            if (!entered)
+                Debug.LogWarning($"[PORTAL] {portalID} — ConsumePendingEntry() a échoué malgré CanCross() vrai.");
+            return;
+        }
+
         StartCoroutine(TeleportRoutine());
     }
 
