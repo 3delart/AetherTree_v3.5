@@ -25,12 +25,6 @@ using System.Collections.Generic;
 [CreateAssetMenu(fileName = "hlm_", menuName = "AetherTree/Inventaire/Equipement/HelmetData")]
 public class HelmetData : EquipmentDataBase
 {
-    // ── Condition ─────────────────────────────────────────────
-    [Header("Condition")]
-    [Tooltip("Condition de déblocage optionnelle — certains casques ne s'obtiennent\n" +
-             "que via une condition in-game (IConditionChecker). Null = toujours disponible.")]
-    public ConditionEntry unlockCondition;
-
     // ── Défense mêlée — rollée, PAS de rareté/upgrade sur ce slot ──
     [Header("Défense mêlée (rollée — pas de rareté/upgrade sur ce slot)")]
     public float baseMeleeDefense = 0f;

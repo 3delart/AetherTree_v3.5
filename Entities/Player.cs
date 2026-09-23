@@ -784,7 +784,6 @@ public class Player : Entity
         if (recipe == null || unlockedRecipes.Contains(recipe)) return;
         unlockedRecipes.Add(recipe);
         CraftJournalUI.Instance?.RefreshIfOpen();
-        Debug.Log($"[PLAYER] Recette débloquée : {recipe.name}");
     }
 
         // ── AJOUTER RefreshSlot0() ────────────────────────────────
@@ -817,7 +816,6 @@ public class Player : Entity
                 if (unarmedSkill != null)
                 {
                     SkillBar.Instance.SetSkillAtSlot(0, unarmedSkill);
-                    Debug.Log("[PLAYER] Slot 0 → UnArmedSkill (aucune arme équipée).");
                     return;
                 }
             }
@@ -858,7 +856,6 @@ public class Player : Entity
         if (chosen != null)
         {
             SkillBar.Instance.SetSkillAtSlot(0, chosen);
-            Debug.Log($"[PLAYER] Slot 0 → {chosen.name} ({family}).");
         }
         // Si chosen == null ici c'est que le registry n'est pas encore prêt (Awake trop tôt).
         // SetStartingSkillBar() s'en occupe un frame après Start(), pas de warning parasite.
@@ -1312,7 +1309,6 @@ public class Player : Entity
         currentMana = maxMana;
 
         RefreshTitle();
-        Debug.Log($"[PLAYER] Level up → {newLevel} | StatPoints disponibles : {statPoints?.availablePoints}");
     }
 
     public void AddCombatXP(int amount)

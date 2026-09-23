@@ -145,7 +145,6 @@ public class CraftSystem : MonoBehaviour
             if (r != null) allRecipes.Add(r);
         }
         UnityEditor.EditorUtility.SetDirty(this);
-        Debug.Log($"[CRAFT] Auto-fill : {allRecipes.Count} recettes trouvées.");
     }
 #endif
 }

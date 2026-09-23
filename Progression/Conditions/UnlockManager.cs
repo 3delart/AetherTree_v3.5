@@ -661,7 +661,6 @@ public class UnlockManager : MonoBehaviour
             if (c != null) allConditions.Add(c);
         }
         UnityEditor.EditorUtility.SetDirty(this);
-        Debug.Log($"[UNLOCK] Auto-fill : {allConditions.Count} conditions trouvées.");
     }
 #endif
 }
