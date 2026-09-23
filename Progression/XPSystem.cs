@@ -82,17 +82,33 @@ public class XPSystem : MonoBehaviour
             if (Mathf.Abs(p.level - e.mobLevel) > MAX_LEVEL_GAP) continue;
             if (p.equippedSpiritInstances == null || p.equippedSpiritInstances.Count == 0) continue;
 
-            SpiritInstance spirit = p.equippedSpiritInstances[0];
-            int boosted = Mathf.Max(1, Mathf.RoundToInt(1 * (1f + p.SpiritXpBonusPercent)));
+            SpiritInstance spirit  = p.equippedSpiritInstances[0];
+            const int      baseXp  = 1;
+            int            boosted = Mathf.Max(1, RollFractionalAmount(baseXp * (1f + p.SpiritXpBonusPercent)));
+            int            bonus   = boosted - baseXp;
             bool leveledUp = spirit.AddXP(boosted);
             if (leveledUp)
                 p.RequestRecalculate();
+
+            Debug.Log($"[XP] {p.entityName} — Esprit {spirit.data?.name} : {baseXp} XP brut + {bonus} bonus ({p.SpiritXpBonusPercent:P0}) = {boosted} total.");
         }
     }
 
     // =========================================================
     // DISTRIBUTION XP
     // =========================================================
+
+    /// <summary>Arrondi probabiliste — nécessaire pour GiveSpiritXP où la base (1) est trop
+    /// petite pour qu'un bonus % survive à un Mathf.RoundToInt classique (1 × 1.25 = 1.25,
+    /// arrondit TOUJOURS vers 1, le bonus disparaît intégralement à chaque kill, jamais
+    /// accumulé). Ex: 1.25 → 75% de chance de 1, 25% de chance de 2 — moyenne exacte sur
+    /// beaucoup de tirages, au lieu d'un arrondi qui perd la fraction à chaque fois.</summary>
+    private int RollFractionalAmount(float exact)
+    {
+        int   whole = Mathf.FloorToInt(exact);
+        float frac  = exact - whole;
+        return whole + (UnityEngine.Random.value < frac ? 1 : 0);
+    }
 
     private void GiveCombatXP(Player target, int amount)
     {
@@ -101,12 +117,16 @@ public class XPSystem : MonoBehaviour
         // Bonus talisman (XPBonus, ex: +20%) — appliqué ici pour que le texte flottant
         // affiche déjà le montant boosté, pas le montant brut de la LootTable.
         int boosted = Mathf.RoundToInt(amount * (1f + target.XPBonusPercent));
+        int bonus   = boosted - amount;
         target.AddCombatXP(boosted);
 
+        string label = bonus > 0 ? $"+{boosted} XP (+{bonus} XP bonus)" : $"+{boosted} XP";
         FloatingText.Spawn(
-            $"+{boosted} XP",
+            label,
             target.transform.position + UnityEngine.Vector3.up * 2f,
             UnityEngine.Color.cyan);
+
+        Debug.Log($"[XP] {target.entityName} : {amount} XP brut + {bonus} bonus ({target.XPBonusPercent:P0}) = {boosted} total.");
     }
 
     // =========================================================

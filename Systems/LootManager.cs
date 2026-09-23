@@ -125,7 +125,10 @@ public class LootManager : MonoBehaviour
         }
 
         int boosted = Mathf.RoundToInt(amount * (1f + winner.GoldBonusPercent));
+        int bonus   = boosted - amount;
         AerisSystem.Instance.Add(boosted);
-        Debug.Log($"[LOOT] {winner.entityName} a reçu {boosted} Aeris ({mobName}).");
+
+        string label = bonus > 0 ? $"{boosted} Aeris (+{bonus} Aeris bonus)" : $"{boosted} Aeris";
+        Debug.Log($"[LOOT] {winner.entityName} a reçu {label} ({mobName}) — {amount} brut, bonus {winner.GoldBonusPercent:P0}.");
     }
 }

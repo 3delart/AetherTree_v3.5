@@ -236,6 +236,16 @@ public class TooltipSystem : MonoBehaviour
     public TextMeshProUGUI resourceValueText;
     public TextMeshProUGUI resourceDescText;
 
+    // TALISMAN
+    [Header("Talisman Panel")]
+    public GameObject      talismanPanel;
+    public Image           talismanIcon;
+    public TextMeshProUGUI talismanNameText;
+    public TextMeshProUGUI talismanLevelText;
+    public TextMeshProUGUI talismanBuffText;
+    public TextMeshProUGUI talismanDurationText;
+    public TextMeshProUGUI talismanDescText;
+
     // ⑬ STATUS EFFECT
     [Header("⑬ Status Effect Panel")]
     public GameObject      statusEffectPanel;
@@ -267,7 +277,8 @@ public class TooltipSystem : MonoBehaviour
         {
             weaponPanel, armorPanel, helmetPanel, glovesPanel, bootsPanel,
             jewelryPanel, spiritPanel, runePanel, gemPanel,
-            skillPanel, permanentSkillPanel, passiveSkillPanel, consumablePanel, resourcePanel, statusEffectPanel
+            skillPanel, permanentSkillPanel, passiveSkillPanel, consumablePanel, resourcePanel, statusEffectPanel,
+            talismanPanel
         };
         HideTooltip();
         _player = FindObjectOfType<Player>();
@@ -291,6 +302,7 @@ public class TooltipSystem : MonoBehaviour
         else if (item.GemInstance        != null) ShowGem(item.GemInstance);
         else if (item.ConsumableInstance != null) ShowConsumable(item.ConsumableInstance);
         else if (item.ResourceInstance   != null) ShowResource(item.ResourceInstance);
+        else if (item.TalismanInstance   != null) ShowTalisman(item.TalismanInstance);
     }
 
     // =========================================================
@@ -618,6 +630,27 @@ public class TooltipSystem : MonoBehaviour
         SetText(resourceQuantityText, $"Quantité : {r.quantity} / {r.MaxStack}");
         SetText(resourceValueText,    $"Valeur : {r.SellPrice} a");
         SetText(resourceDescText,     FormatDesc(r.data?.description?.Get(LocalizationManager.CurrentLanguage)));
+        Show();
+    }
+
+    // =========================================================
+    // TALISMAN
+    // =========================================================
+
+    private void ShowTalisman(TalismanInstance t)
+    {
+        ShowOnly(talismanPanel);
+        SetIcon(talismanIcon, t.Icon);
+        SetText(talismanNameText, t.TalismanName);
+        SetText(talismanLevelText, t.data != null ? LevelTag(t.RequiredLevel) : "");
+        SetText(talismanBuffText, t.data?.buffToApply != null
+            ? t.data.buffToApply.description.Get(LocalizationManager.CurrentLanguage)
+            : "");
+        int minutesLeft = Mathf.CeilToInt(t.RemainingSeconds / 60f);
+        SetText(talismanDurationText, t.IsActivated
+            ? $"Temps restant : {minutesLeft} min"
+            : $"Durée totale : {minutesLeft} min (démarre à l'équipement)");
+        SetText(talismanDescText, FormatDesc(t.data?.description?.Get(LocalizationManager.CurrentLanguage)));
         Show();
     }
 
