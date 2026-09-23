@@ -54,12 +54,13 @@ public class InstanceSession : MonoBehaviour
     // API PUBLIQUE
     // =========================================================
 
-    /// <summary>Point d'entrée unique — consommé par le câblage de ConsumableData.DungeonStone
-    /// (voir Task 5). Charge la scène de l'activité via SceneLoader (qui résout lui-même
+    /// <summary>Point d'entrée unique — appelé par ConsumePendingEntry() quand un Portal gaté
+    /// (gateType = RequiresDungeonEntry) est franchi, pas directement par la consommation de
+    /// l'item. Charge la scène de l'activité via SceneLoader (qui résout lui-même
     /// PlayerSpawnPoint au chargement — voir SceneLoader.LoadMapWithSpawn) et initialise les
     /// vies depuis la config. Retourne false sans rien modifier (CurrentInstance/LivesRemaining
     /// non touchés) si la config ou la scène est invalide, ou si SceneLoader est absent/déjà en
-    /// train de charger — l'appelant (ConsoBarUI) ne doit consommer l'item que sur true.</summary>
+    /// train de charger.</summary>
     public bool Enter(IInstanceConfig config)
     {
         if (config == null || string.IsNullOrEmpty(config.SceneName))
@@ -83,37 +84,60 @@ public class InstanceSession : MonoBehaviour
         return true;
     }
 
-    /// <summary>Posé par la consommation de l'item d'entrée (ConsoBarUI, voir Task 2) — n'appelle
-    /// PAS Enter(), prépare seulement l'état qu'un portail gaté (RequiresDungeonEntry) consommera
-    /// au franchissement. Refuse si une instance est déjà en cours (CurrentInstance != null) pour
-    /// éviter de corrompre l'état actif avec une nouvelle entrée en attente par-dessus.</summary>
+    /// <summary>Posé par la consommation de l'item d'entrée (voir ConsoBarUI.TryUseSlot) —
+    /// n'appelle PAS Enter(), prépare seulement l'état qu'un portail gaté (RequiresDungeonEntry)
+    /// consommera au franchissement. Refuse si une instance est déjà en cours
+    /// (CurrentInstance != null) pour éviter de corrompre l'état actif avec une nouvelle entrée
+    /// en attente par-dessus, si la config est invalide (SceneName vide — mirror de la
+    /// validation d'Enter(), pour ne pas consommer l'item pour une config qui échouera de toute
+    /// façon), ou si une entrée est DÉJÀ en attente (sinon un second arme silencieusement écrase
+    /// le premier — 2 items consommés pour une seule entrée utilisable). Voir CancelPendingEntry()
+    /// pour sortir de cet état sans être bloqué.</summary>
     public bool ArmEntry(IInstanceConfig config)
     {
-        if (config == null || CurrentInstance != null) return false;
+        if (config == null || string.IsNullOrEmpty(config.SceneName) || CurrentInstance != null) return false;
+        if (PendingInstance != null)
+        {
+            Debug.LogWarning($"[INSTANCE] ArmEntry refusé — une entrée est déjà en attente ({PendingInstance.InstanceID}). Annuler d'abord via CancelPendingEntry().");
+            return false;
+        }
         PendingInstance = config;
         IsLeader        = true;
         Participants    = new List<Player> { FindObjectOfType<Player>() };
         return true;
     }
 
-    /// <summary>Appelé par Portal (gateType = RequiresDungeonEntry) au moment du franchissement
-    /// du portail gaté — consomme l'entrée en attente et démarre réellement l'instance via
-    /// Enter() (méthode existante, inchangée). Retourne false si aucune entrée n'était en
-    /// attente (le portail ne devrait normalement jamais appeler ceci sans avoir déjà vérifié
-    /// PendingInstance != null via CanCross(), mais reste défensif).</summary>
+    /// <summary>Annule l'entrée en attente — l'item d'entrée n'est PAS rendu (pas d'UX de groupe
+    /// soignée pour ce passage). Appelable depuis un futur bouton "quitter le groupe".</summary>
+    public void CancelPendingEntry()
+    {
+        PendingInstance = null;
+        IsLeader        = false;
+        Participants.Clear();
+    }
+
+    /// <summary>Appelé par Portal.CanCross() / OnTriggerEnter (gateType = RequiresDungeonEntry) au
+    /// moment du franchissement du portail gaté — consomme l'entrée en attente et démarre
+    /// réellement l'instance via Enter() (méthode existante, inchangée). PendingInstance n'est
+    /// nullifié qu'APRÈS un Enter() réussi : si Enter() échoue (SceneName invalide, SceneLoader
+    /// occupé), l'entrée reste en attente et peut être retentée au lieu d'être perdue
+    /// définitivement. Retourne false si aucune entrée n'était en attente (le portail ne devrait
+    /// normalement jamais appeler ceci sans avoir déjà vérifié PendingInstance != null via
+    /// CanCross(), mais reste défensif) ou si Enter() échoue.</summary>
     public bool ConsumePendingEntry()
     {
         if (PendingInstance == null) return false;
         IInstanceConfig config = PendingInstance;
+        if (!Enter(config)) return false;
         PendingInstance = null;
-        return Enter(config);
+        return true;
     }
 
     /// <summary>Marque un trigger de donjon (mini-boss tué, levier actionné) comme acquis pour
-    /// LE RUN EN COURS UNIQUEMENT — jamais persisté, remis à zéro à chaque Enter() (voir Step 4).
-    /// Câblage réel (quel Mob.Die() appelle ceci) hors scope de ce chantier, voir spec §4
-    /// Non-objectifs — cette méthode existe pour que Portal.CanCross() (Task 5) ait quelque chose
-    /// à lire, le contenu qui l'appellera vraiment viendra avec un futur donjon réel.</summary>
+    /// LE RUN EN COURS UNIQUEMENT — jamais persisté, remis à zéro à chaque Enter(). Câblage réel
+    /// (quel Mob.Die() appelle ceci) hors scope de ce chantier, voir spec §4 Non-objectifs —
+    /// cette méthode existe pour que Portal.CanCross() ait quelque chose à lire, le contenu qui
+    /// l'appellera vraiment viendra avec un futur donjon réel.</summary>
     public void NotifyTriggerMet(string triggerID)
     {
         if (string.IsNullOrEmpty(triggerID)) return;
@@ -122,9 +146,9 @@ public class InstanceSession : MonoBehaviour
 
     public bool IsTriggerMet(string triggerID) => _metTriggerIDs.Contains(triggerID);
 
-    /// <summary>Appelé par Player.Die() (voir Task 6) quand une instance est active — remplace
-    /// entièrement le flux de mort normal (RespawnSystem/DeathScreenUI) tant qu'une session est
-    /// en cours.</summary>
+    /// <summary>Appelé par Player.Die() dans Entities/Player.cs quand une instance est active —
+    /// remplace entièrement le flux de mort normal (RespawnSystem/DeathScreenUI) tant qu'une
+    /// session est en cours.</summary>
     public void OnPlayerDeath()
     {
         if (CurrentInstance == null || CurrentOutcome != InstanceOutcome.InProgress) return;
@@ -181,5 +205,7 @@ public class InstanceSession : MonoBehaviour
             RespawnSystem.Instance?.Revive(1f, 1f);
 
         CurrentInstance = null;
+        IsLeader        = false;
+        Participants.Clear();
     }
 }

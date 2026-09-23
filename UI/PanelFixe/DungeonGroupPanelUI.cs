@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections.Generic;
 
 // =============================================================
 // DUNGEONGROUPPANELUI.CS — Panel groupe donjon (raid-style)
@@ -16,10 +17,18 @@ using TMPro;
 // futur groupe réel sans réécriture.
 //
 // SETUP HIERARCHY (exemple) :
-//   DungeonGroupPanelUI (racine — SetActive piloté par ce script)
-//     ├── HeaderText            (TMP — nom du donjon)
-//     ├── ParticipantRowsParent (Transform — 1 ligne instanciée par participant)
-//     └── FooterText            (TMP — vies restantes)
+//   DungeonGroupPanel (script ici — TOUJOURS actif, ne jamais désactiver)
+//     └── PanelRoot            (← panelRoot, SetActive piloté par ce script)
+//           ├── HeaderText
+//           ├── ParticipantRowsParent
+//           └── FooterText
+//
+// IMPORTANT : panelRoot doit être un ENFANT distinct du GameObject qui porte ce
+// script, JAMAIS le même GameObject. Si panelRoot == gameObject, le premier
+// Update() sans instance active/en attente appelle panelRoot.SetActive(false)
+// sur SOI-MÊME — Unity arrête alors d'appeler Update() sur ce composant pour de
+// bon (aucun code du projet ne le réactive), le panel est brické de façon
+// permanente. Voir garde dans Awake().
 // =============================================================
 
 public class DungeonGroupPanelUI : MonoBehaviour
@@ -27,7 +36,9 @@ public class DungeonGroupPanelUI : MonoBehaviour
     public static DungeonGroupPanelUI Instance { get; private set; }
 
     [Header("Racine")]
-    [Tooltip("GameObject affiché/caché selon qu'une entrée est en attente ou active.")]
+    [Tooltip("GameObject affiché/caché selon qu'une entrée est en attente ou active. DOIT être " +
+             "un enfant distinct du GameObject portant ce script — jamais le même GameObject " +
+             "(voir garde en Awake()).")]
     public GameObject panelRoot;
 
     [Header("Header")]
@@ -42,10 +53,23 @@ public class DungeonGroupPanelUI : MonoBehaviour
     [Header("Footer")]
     public TextMeshProUGUI footerText;
 
+    private List<GameObject> _rows = new List<GameObject>();
+
     private void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+
+        if (panelRoot == gameObject)
+        {
+            Debug.LogError("[DungeonGroupPanelUI] panelRoot est configuré sur le MÊME GameObject " +
+                "que ce script — panelRoot.SetActive(false) désactiverait ce composant lui-même, " +
+                "ce qui arrête Update() DÉFINITIVEMENT (rien ne le réactive ailleurs dans le " +
+                "projet). panelRoot doit être un enfant distinct que ce script toggle. Voir le " +
+                "commentaire SETUP HIERARCHY en tête de fichier. panelRoot mis à null pour éviter " +
+                "l'auto-désactivation silencieuse.");
+            panelRoot = null;
+        }
     }
 
     private void Update()
@@ -74,18 +98,35 @@ public class DungeonGroupPanelUI : MonoBehaviour
         }
     }
 
+    // Réconcilie _rows avec session.Participants au lieu de tout détruire/reconstruire chaque
+    // frame (pattern établi par PlayerInfosPanel.RefreshEffects) — évite le churn GC permanent
+    // pendant toute la durée d'un run, et le risque de MissingReferenceException si
+    // participantRowPrefab est un template vivant sous participantRowsParent dans la scène.
     private void RefreshParticipants(InstanceSession session)
     {
         if (participantRowsParent == null || participantRowPrefab == null) return;
 
-        for (int i = participantRowsParent.childCount - 1; i >= 0; i--)
-            Destroy(participantRowsParent.GetChild(i).gameObject);
+        var participants = session.Participants;
 
-        foreach (var participant in session.Participants)
+        // Instancier les lignes manquantes
+        while (_rows.Count < participants.Count)
+            _rows.Add(Instantiate(participantRowPrefab, participantRowsParent));
+
+        // Détruire le surplus
+        while (_rows.Count > participants.Count)
         {
-            if (participant == null) continue;
+            int last = _rows.Count - 1;
+            Destroy(_rows[last]);
+            _rows.RemoveAt(last);
+        }
 
-            GameObject row = Instantiate(participantRowPrefab, participantRowsParent);
+        // Mettre à jour chaque ligne en place
+        for (int i = 0; i < participants.Count; i++)
+        {
+            var participant = participants[i];
+            GameObject row = _rows[i];
+            if (participant == null || row == null) continue;
+
             TextMeshProUGUI[] texts = row.GetComponentsInChildren<TextMeshProUGUI>();
             if (texts.Length > 0)
             {

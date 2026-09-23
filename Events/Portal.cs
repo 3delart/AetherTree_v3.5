@@ -98,6 +98,7 @@ public class Portal : MonoBehaviour
             case PortalGateType.RequiresDungeonEntry:
                 return InstanceSession.Instance != null
                     && InstanceSession.Instance.PendingInstance != null
+                    && !string.IsNullOrEmpty(linkedInstanceID)
                     && InstanceSession.Instance.PendingInstance.InstanceID == linkedInstanceID;
             case PortalGateType.RequiresTierUnlock:
                 return player != null && player.HasUnlockedTier(targetTier);
