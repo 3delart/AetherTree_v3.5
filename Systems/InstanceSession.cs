@@ -19,6 +19,8 @@ using System.Collections;
 // de run, expulsion vers la map d'où le joueur est entré.
 // =============================================================
 
+public enum InstanceOutcome { InProgress, Success, Failure }
+
 public class InstanceSession : MonoBehaviour
 {
     public static InstanceSession Instance { get; private set; }
@@ -47,10 +49,21 @@ public class InstanceSession : MonoBehaviour
     /// <summary>Point d'entrée unique — consommé par le câblage de ConsumableData.DungeonStone
     /// (voir Task 5). Charge la scène de l'activité via SceneLoader (qui résout lui-même
     /// PlayerSpawnPoint au chargement — voir SceneLoader.LoadMapWithSpawn) et initialise les
-    /// vies depuis la config.</summary>
-    public void Enter(IInstanceConfig config)
+    /// vies depuis la config. Retourne false sans rien modifier (CurrentInstance/LivesRemaining
+    /// non touchés) si la config ou la scène est invalide, ou si SceneLoader est absent/déjà en
+    /// train de charger — l'appelant (ConsoBarUI) ne doit consommer l'item que sur true.</summary>
+    public bool Enter(IInstanceConfig config)
     {
-        if (config == null || SceneLoader.Instance == null) return;
+        if (config == null || string.IsNullOrEmpty(config.SceneName))
+        {
+            Debug.LogWarning("[INSTANCE] Enter() refusé — config nulle ou SceneName vide.");
+            return false;
+        }
+        if (SceneLoader.Instance == null || SceneLoader.Instance.IsLoading)
+        {
+            Debug.LogWarning("[INSTANCE] Enter() refusé — SceneLoader indisponible ou chargement en cours.");
+            return false;
+        }
 
         CurrentInstance = config;
         LivesRemaining  = config.LivesPerPlayer;
@@ -58,6 +71,7 @@ public class InstanceSession : MonoBehaviour
         _returnMapName  = SceneLoader.Instance.CurrentMap;
 
         SceneLoader.Instance.LoadMapWithSpawn(config.SceneName);
+        return true;
     }
 
     /// <summary>Appelé par Player.Die() (voir Task 6) quand une instance est active — remplace
@@ -104,9 +118,20 @@ public class InstanceSession : MonoBehaviour
     private IEnumerator ExitAfterDelay()
     {
         yield return new WaitForSeconds(exitDelay);
-        SceneLoader.Instance?.LoadMapWithSpawn(_returnMapName);
+
+        if (!string.IsNullOrEmpty(_returnMapName))
+            SceneLoader.Instance?.LoadMapWithSpawn(_returnMapName);
+        else
+            Debug.LogWarning("[INSTANCE] _returnMapName vide — expulsion sans rechargement de map.");
+
+        // Une sortie sur Failure laisse le joueur isDead (Player.Die() a court-circuité
+        // RespawnSystem.TriggerDeath() — voir OnPlayerDeath()) : il faut le ranimer ici,
+        // sinon il reste bloqué mort en permanence. Une sortie sur Success ne doit PAS
+        // toucher un joueur vivant.
+        var player = FindObjectOfType<Player>();
+        if (player != null && player.isDead)
+            RespawnSystem.Instance?.Revive(1f, 1f);
+
         CurrentInstance = null;
     }
 }
-
-public enum InstanceOutcome { InProgress, Success, Failure }

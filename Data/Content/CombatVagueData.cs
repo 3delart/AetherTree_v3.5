@@ -61,7 +61,7 @@ public class CombatVagueData : ScriptableObject, IInstanceConfig
     public string displayName = "";
     [Tooltip("Nom de la scène Unity de cet événement.")]
     public string sceneName = "";
-    [Tooltip("dungeonID du ConsumableData requis pour entrer — même mécanisme que DungeonStone.")]
+    [Tooltip("itemID du ConsumableData (DungeonStone) requis pour entrer — même mécanisme que DungeonStone.")]
     public string entryItemID = "";
 
     // ── Affectation par tranche (multijoueur — sans effet en solo) ──

@@ -1022,7 +1022,7 @@ public class Player : Entity
                 cause     = ElementType.Neutral,
                 killer    = null,
                 hpAtDeath = currentHP,
-                context   = DeathContext.OpenWorld,
+                context   = DeathContext.Dungeon,
             });
             InstanceSession.Instance.OnPlayerDeath();
             return;

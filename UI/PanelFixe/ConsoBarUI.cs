@@ -101,7 +101,12 @@ public class ConsoBarUI : MonoBehaviour
                 Debug.LogWarning($"[ConsoBarUI] Pierre de donjon '{data.dungeonID}' introuvable dans DungeonRegistry.");
                 return;
             }
-            InstanceSession.Instance?.Enter(dungeon);
+            bool entered = InstanceSession.Instance != null && InstanceSession.Instance.Enter(dungeon);
+            if (!entered)
+            {
+                Debug.LogWarning($"[ConsoBarUI] Entrée en instance échouée pour '{data.dungeonID}' — item non consommé.");
+                return;
+            }
             instance.Remove(1);
             if (instance.IsEmpty)
             {

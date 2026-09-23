@@ -51,7 +51,7 @@ public class DungeonData : ScriptableObject, IInstanceConfig
     [Header("Accès")]
     [Tooltip("Capacité max — Classique : 15 (voir GDD §14.2.3). Sans effet observable en solo.")]
     public int maxPlayers = 15;
-    [Tooltip("dungeonID du ConsumableData (DungeonStone) requis pour entrer.")]
+    [Tooltip("itemID du ConsumableData (DungeonStone) requis pour entrer.")]
     public string entryItemID = "";
 
     // ── Structure ─────────────────────────────────────────────
