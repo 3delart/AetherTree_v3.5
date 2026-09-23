@@ -127,6 +127,9 @@ public class MobData : ScriptableObject
     [Tooltip("Anim de déplacement en Engage (poursuite/combat rapproché) — distincte de Walk\n" +
              "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController.")]
     public AnimationClip chaseClip;
+    [Tooltip("Anim de mort — jouée une fois via PlayDeath() avant Destroy(gameObject). Optionnel :\n" +
+             "si null, aucune anim n'est jouée (comportement actuel inchangé), voir Mob.Die().")]
+    public AnimationClip deathClip;
 
     // ── Cycle jour/nuit ───────────────────────────────────────
     [Header("Cycle Jour/Nuit")]

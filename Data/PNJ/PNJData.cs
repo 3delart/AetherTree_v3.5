@@ -188,6 +188,11 @@ public class PNJData : ScriptableObject
              "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController.")]
     [ShowIf(nameof(canFight), true)]
     public AnimationClip chaseClip;
+    [Tooltip("Anim de mort — jouée une fois via PlayDeath() avant le début de la séquence de\n" +
+             "respawn (masquage renderers/collider). Optionnel : si null, aucune anim n'est jouée\n" +
+             "et aucun délai n'est ajouté — voir PNJ.RespawnCoroutine().")]
+    [ShowIf(nameof(canFight), true)]
+    public AnimationClip deathClip;
 
     // ── Critique ──────────────────────────────────────────────
     [Tooltip("Chance de critique [0..1]. Poussé sur Entity via SetCritChance().")]

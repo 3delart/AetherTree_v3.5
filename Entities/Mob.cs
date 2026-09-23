@@ -321,6 +321,7 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public AnimationClip IdleClip  => data?.idleClip;
     public AnimationClip WalkClip  => data?.walkClip;
     public AnimationClip ChaseClip => data?.chaseClip;
+    public AnimationClip DeathClip => data?.deathClip;
 
     // =========================================================
     // DÉGÂTS — aggro + contributions
@@ -469,7 +470,13 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         });
 
         onDeathCallback?.Invoke();
-        Destroy(gameObject, 3f);
+
+        // Anim de mort jouée AVANT Destroy — la fenêtre de corpse fixe de 3s (existante) reste
+        // toujours garantie, simplement étendue de la durée du clip s'il y en a un (décision
+        // Florian : jamais moins de 3s, même sans deathClip assigné — comportement identique à
+        // avant ce chantier dans ce cas).
+        float deathAnimLength = _animatorController?.PlayDeath(data?.deathClip) ?? 0f;
+        Destroy(gameObject, deathAnimLength + 3f);
     }
 
     // =========================================================

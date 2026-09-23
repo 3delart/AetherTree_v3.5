@@ -626,6 +626,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public AnimationClip IdleClip  => data?.idleClip;
     public AnimationClip WalkClip  => data?.walkClip;
     public AnimationClip ChaseClip => data?.chaseClip;
+    public AnimationClip DeathClip => data?.deathClip;
 
     // =========================================================
     // ICombatAIProfile — voir spec §5bis pour le détail de chaque membre
@@ -688,6 +689,16 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
     private IEnumerator RespawnCoroutine()
     {
+        // Anim de mort jouée AVANT le masquage instantané existant — AJOUTÉE par-dessus
+        // respawnDelay (jamais carvée dedans, décision Florian) : le corps reste visible en
+        // train de jouer l'anim pendant deathAnimLength secondes, PUIS la séquence
+        // masquage/attente respawnDelay/réapparition démarre, strictement inchangée. Sans
+        // deathClip assigné, PlayDeath() retourne 0f et ce bloc est un no-op total — comportement
+        // actuel préservé à l'identique.
+        float deathAnimLength = _animatorController?.PlayDeath(data?.deathClip) ?? 0f;
+        if (deathAnimLength > 0f)
+            yield return new WaitForSeconds(deathAnimLength);
+
         foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = false;
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
         if (_agent != null) _agent.enabled = false;

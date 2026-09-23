@@ -1028,6 +1028,7 @@ public class Player : Entity
             // Pas de ClearAllEffects() explicite ici : base.Die() (Entity.Die()) le fait déjà
             // inconditionnellement — un appel ici serait redondant.
             base.Die();
+            animatorController?.PlayDeath();
             GameEventBus.Publish(new PlayerDeathEvent
             {
                 cause     = ElementType.Neutral,
@@ -1046,6 +1047,7 @@ public class Player : Entity
             statusEffects.TryConsumeRevive(out reviveDelay, out reviveHP, out reviveMana);
 
         base.Die();
+        animatorController?.PlayDeath();
         GameEventBus.Publish(new PlayerDeathEvent
         {
             cause     = ElementType.Neutral,

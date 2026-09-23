@@ -25,6 +25,11 @@ public class PlayerAnimatorController : MonoBehaviour
     private const string SpeedParam       = "Speed";
     private const string InCombatParam    = "InCombat";
     private const string AttackState      = "Attack";
+    // Death est un state SÉPARÉ d'Attack — pas de transition de sortie automatique, il doit
+    // tenir la pose indéfiniment jusqu'à ce que le joueur soit revive (contrairement à Attack qui
+    // retourne seul à la locomotion). Configuré manuellement dans l'Animator Controller par
+    // Florian, même graphe que Attack.
+    private const string DeathState       = "Death";
     private const string CancelActionTrigger = "CancelAction";
 
     [Header("Attack (override)")]
@@ -34,6 +39,16 @@ public class PlayerAnimatorController : MonoBehaviour
              "indexe par référence au clip D'ORIGINE du state, pas par nom de state — sans cette\n" +
              "référence exacte, l'override ne peut pas savoir quel slot remplacer.")]
     [SerializeField] private AnimationClip attackPlaceholderClip;
+
+    [Header("Death (override)")]
+    [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"Death\" dans le\n" +
+             "Animator Controller (placeholder dédié, même principe que attackPlaceholderClip\n" +
+             "ci-dessus — sert de clé pour l'indexeur AnimatorOverrideController).")]
+    [SerializeField] private AnimationClip deathPlaceholderClip;
+    [Tooltip("Clip de mort réel du joueur — UN SEUL clip pour tout le personnage (contrairement à\n" +
+             "Attack qui varie par skill), joué via PlayDeath() sans paramètre. Optionnel : si\n" +
+             "null, PlayDeath() ne fait rien (pas d'anim de mort tant qu'il n'est pas assigné).")]
+    [SerializeField] private AnimationClip deathClip;
 
     private Animator                   _animator;
     private AnimatorOverrideController _overrideController;
@@ -70,21 +85,26 @@ public class PlayerAnimatorController : MonoBehaviour
         _animator.SetBool(InCombatParam, _player != null && _player.CombatActive);
     }
 
-    private void PlayOverrideClip(AnimationClip clip)
+    /// <summary>Échange le clip d'un slot placeholder puis relance le state associé depuis le
+    /// début — généralisé pour servir Attack (placeholder/state réutilisés à chaque cast) ET
+    /// Death (placeholder/state séparés, un seul clip fixe, joués une seule fois à la mort).
+    /// placeholderSlotKey DOIT être le clip D'ORIGINE du slot (clé de l'indexeur
+    /// AnimatorOverrideController, pas le clip de destination).</summary>
+    private void PlayOverrideClip(AnimationClip clip, AnimationClip placeholderSlotKey, string stateName)
     {
-        if (clip == null || _overrideController == null || attackPlaceholderClip == null) return;
+        if (clip == null || _overrideController == null || placeholderSlotKey == null) return;
 
-        // Indexation par référence au clip D'ORIGINE (attackPlaceholderClip), pas par nom
-        // de state — voir le commentaire sur le champ ci-dessus.
-        _overrideController[attackPlaceholderClip] = clip;
+        // Indexation par référence au clip D'ORIGINE du slot, pas par nom de state — voir les
+        // commentaires sur attackPlaceholderClip/deathPlaceholderClip ci-dessus.
+        _overrideController[placeholderSlotKey] = clip;
 
-        // Reset du trigger CancelAction avant de rejouer le state Attack — sinon un
+        // Reset du trigger CancelAction avant de rejouer le state — sinon un
         // trigger posé par CancelChannel() qui n'a jamais trouvé de transition à
         // consommer (ex: l'Animator était déjà revenu en locomotion) resterait en
         // attente et se déclencherait au prochain re-entré dans Attack, coupant net
         // un skill qui n'a rien à voir avec l'interrupt précédent.
         _animator.ResetTrigger(CancelActionTrigger);
-        _animator.Play(AttackState, 0, 0f);
+        _animator.Play(stateName, 0, 0f);
     }
 
     /// <summary>
@@ -93,12 +113,20 @@ public class PlayerAnimatorController : MonoBehaviour
     /// Ne fait rien si le skill n'a pas d'attackAnimation assignée (ex: buff pur) ou si
     /// le Controller n'est pas encore prêt.
     /// </summary>
-    public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip);
+    public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip, attackPlaceholderClip, AttackState);
 
     /// <summary>Joue l'animation de canalisation d'un skill (castTime > 0) — même mécanisme
     /// d'échange que PlayAttack (override du state "Attack" réutilisable). Appelé par
     /// SkillBar.StartChannel().</summary>
-    public void PlayChannel(AnimationClip clip) => PlayOverrideClip(clip);
+    public void PlayChannel(AnimationClip clip) => PlayOverrideClip(clip, attackPlaceholderClip, AttackState);
+
+    /// <summary>Joue l'animation de mort du joueur — échange le clip du state "Death" séparé
+    /// (jamais réutilisé par Attack/Channel) avec le deathClip fixe assigné en Inspector, puis le
+    /// lance depuis le début. Sans paramètre (contrairement à PlayAttack/PlayChannel) : un seul
+    /// clip pour tout le personnage, pas un clip par skill — voir le commentaire sur deathClip.
+    /// No-op si deathClip n'est pas assigné. Appelé par Player.Die() (branches donjon ET open
+    /// world).</summary>
+    public void PlayDeath() => PlayOverrideClip(deathClip, deathPlaceholderClip, DeathState);
 
     /// <summary>Coupe net l'anim de canalisation en cours — déclenche le trigger qui force le
     /// retour à la locomotion, ne laisse jamais le clip jouer jusqu'au bout après un interrupt.

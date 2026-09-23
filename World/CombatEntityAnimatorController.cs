@@ -35,6 +35,7 @@ public interface ICombatAnimatorProfile
     AnimationClip IdleClip  { get; }
     AnimationClip WalkClip  { get; }
     AnimationClip ChaseClip { get; }
+    AnimationClip DeathClip { get; }
     CombatAIState CurrentState { get; }
     void OnAnimationHitEvent(int hitIndex);
 }
@@ -49,10 +50,15 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
     private const string PlaceholderWalkName   = "PLACEHOLDER_Walk";
     private const string PlaceholderChaseName  = "PLACEHOLDER_Chase";
     private const string PlaceholderAttackName = "PLACEHOLDER_Attack";
+    private const string PlaceholderDeathName  = "PLACEHOLDER_Death";
 
     private const string SpeedParam          = "Speed";
     private const string IsChasingParam      = "IsChasing";
     private const string AttackState         = "Attack";
+    // Death est un state SÉPARÉ d'Attack — pas de transition automatique de sortie (contrairement
+    // à Attack), il doit tenir la pose jusqu'à Destroy(gameObject) (Mob) ou jusqu'au respawn (PNJ).
+    // Configuré manuellement dans le Controller partagé par Florian, même graphe que Attack.
+    private const string DeathState          = "Death";
     private const string CancelActionTrigger = "CancelAction";
 
     private Animator                   _animator;
@@ -64,6 +70,7 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
     private AnimationClip _walkPlaceholder;
     private AnimationClip _chasePlaceholder;
     private AnimationClip _attackPlaceholder;
+    private AnimationClip _deathPlaceholder;
 
     private void Awake()
     {
@@ -104,9 +111,13 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
                 case PlaceholderWalkName:   _walkPlaceholder   = pair.Key; break;
                 case PlaceholderChaseName:  _chasePlaceholder  = pair.Key; break;
                 case PlaceholderAttackName: _attackPlaceholder = pair.Key; break;
+                case PlaceholderDeathName:  _deathPlaceholder  = pair.Key; break;
             }
         }
 
+        // _deathPlaceholder volontairement EXCLU de ce garde-fou — Florian ajoute le state/clip
+        // Death au Controller partagé après ce chantier ; tant que ce n'est pas fait, PlayDeath()
+        // no-op silencieusement (voir son early-return), pas de warning bruyant à chaque Awake.
         if (_idlePlaceholder == null || _walkPlaceholder == null ||
             _chasePlaceholder == null || _attackPlaceholder == null)
             Debug.LogWarning("[CombatEntityAnimatorController] Un ou plusieurs placeholders " +
@@ -145,27 +156,44 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
         _animator.SetBool(IsChasingParam, _profile != null && _profile.CurrentState == CombatAIState.Engage);
     }
 
-    private void PlayOverrideClip(AnimationClip clip)
+    /// <summary>Échange le clip d'un slot placeholder puis relance le state associé depuis le
+    /// début — généralisé pour servir Attack (placeholder/state réutilisés à chaque cast) ET
+    /// Death (placeholder/state séparés, joués une seule fois à la mort). placeholderSlotKey
+    /// DOIT être le clip D'ORIGINE du slot (clé de l'indexeur AnimatorOverrideController, pas
+    /// le clip de destination) — voir ResolvePlaceholders().</summary>
+    private void PlayOverrideClip(AnimationClip clip, AnimationClip placeholderSlotKey, string stateName)
     {
-        if (clip == null || _overrideController == null || _attackPlaceholder == null) return;
-        _overrideController[_attackPlaceholder] = clip;
+        if (clip == null || _overrideController == null || placeholderSlotKey == null) return;
+        _overrideController[placeholderSlotKey] = clip;
 
-        // Reset du trigger CancelAction avant de rejouer le state Attack — sinon un trigger posé
-        // par CancelChannel() qui n'a jamais trouvé de transition à consommer (ex: l'Animator
-        // était déjà revenu en locomotion) resterait en attente et se déclencherait au prochain
+        // Reset du trigger CancelAction avant de rejouer le state — sinon un trigger posé par
+        // CancelChannel() qui n'a jamais trouvé de transition à consommer (ex: l'Animator était
+        // déjà revenu en locomotion) resterait en attente et se déclencherait au prochain
         // re-entré dans Attack, coupant net un skill qui n'a rien à voir avec l'interrupt
         // précédent — même protection que PlayerAnimatorController.cs.
         _animator.ResetTrigger(CancelActionTrigger);
-        _animator.Play(AttackState, 0, 0f);
+        _animator.Play(stateName, 0, 0f);
     }
 
     /// <summary>Joue l'animation d'un skill — échange le clip du state "Attack" réutilisable
     /// puis relance ce state depuis le début. Appelé par Mob.StartPendingHit()/PNJ équivalent.</summary>
-    public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip);
+    public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip, _attackPlaceholder, AttackState);
 
     /// <summary>Joue l'animation de canalisation d'un skill (castTime > 0) — même mécanisme
     /// d'échange que PlayAttack (réutilise le state "Attack", pas de state séparé).</summary>
-    public void PlayChannel(AnimationClip clip) => PlayOverrideClip(clip);
+    public void PlayChannel(AnimationClip clip) => PlayOverrideClip(clip, _attackPlaceholder, AttackState);
+
+    /// <summary>Joue l'animation de mort — échange le clip du state "Death" séparé (jamais
+    /// réutilisé par autre chose, contrairement à Attack/Channel) puis le lance depuis le début.
+    /// No-op si aucun deathClip n'est assigné sur le MobData/PNJData (skip silencieux, pas
+    /// d'erreur) — retourne la longueur du clip pour laisser l'appelant (Mob.Die()/
+    /// PNJ.RespawnCoroutine()) calculer son propre délai sans dupliquer cette logique.</summary>
+    public float PlayDeath(AnimationClip clip)
+    {
+        if (clip == null) return 0f;
+        PlayOverrideClip(clip, _deathPlaceholder, DeathState);
+        return clip.length;
+    }
 
     /// <summary>Coupe net l'anim de canalisation en cours — déclenche le trigger qui force le
     /// retour à la locomotion.</summary>
