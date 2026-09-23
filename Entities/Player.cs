@@ -1008,6 +1008,26 @@ public class Player : Entity
 
     protected override void Die()
     {
+        // Une instance active court-circuite TOUT le flux de mort normal, Revive inclus — le
+        // GDD est explicite sur au moins 2 des 3 activités (Déblocage/Vagues : "aucune
+        // résurrection possible"), et la cohérence entre les 3 types passe par une seule règle
+        // (voir InstanceSession.OnPlayerDeath()) plutôt qu'une exception par activité.
+        if (InstanceSession.Instance != null && InstanceSession.Instance.CurrentInstance != null)
+        {
+            // Pas de ClearAllEffects() explicite ici : base.Die() (Entity.Die()) le fait déjà
+            // inconditionnellement — un appel ici serait redondant.
+            base.Die();
+            GameEventBus.Publish(new PlayerDeathEvent
+            {
+                cause     = ElementType.Neutral,
+                killer    = null,
+                hpAtDeath = currentHP,
+                context   = DeathContext.OpenWorld,
+            });
+            InstanceSession.Instance.OnPlayerDeath();
+            return;
+        }
+
         // Consommé AVANT base.Die() — celui-ci wipe tous les effets actifs via
         // ClearAllEffects(), Revive y compris s'il n'est pas déjà retiré ici.
         float reviveDelay = 0f, reviveHP = 0f, reviveMana = 0f;
