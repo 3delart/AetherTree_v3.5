@@ -70,8 +70,23 @@ public class Portal : MonoBehaviour
     [ShowIf(nameof(gateType), PortalGateType.RequiresTrigger)]
     public string requiredTriggerID = "";
 
+    [Header("Verrou — visuel (optionnel)")]
+    [Tooltip("Affiché quand CanCross() est actuellement faux — ex: barrière fermée, porte " +
+             "scellée. Null = pas de feedback visuel de verrou (comportement silencieux d'avant " +
+             "ce chantier). Sans effet si gateType = None (jamais verrouillé, jamais affiché).")]
+    public GameObject lockedVisual;
+
+    [Tooltip("Affiché quand CanCross() est actuellement vrai. Null = pas de feedback visuel " +
+             "supplémentaire à l'état ouvert. Skin visuelle différente selon gateType à assigner " +
+             "toi-même par instance de portail (3 thèmes : libre / lock générique — palier ET " +
+             "trigger, ils partagent le même skin lock→ouvert — / entrée de donjon) — le code " +
+             "ici ne connaît que \"actuellement ouvert ou non\", il ne choisit jamais quel prefab " +
+             "utiliser, c'est un choix de contenu fait dans l'Éditeur.")]
+    public GameObject openVisual;
+
     private static float _cooldownTimer = 0f;
     private bool _teleporting  = false;
+    private Player _localPlayer; // résolu paresseusement, réutilisé pour le check visuel par frame
 
     private void Start()
     {
@@ -87,6 +102,25 @@ public class Portal : MonoBehaviour
     private void Update()
     {
         if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;
+
+        RefreshLockVisual();
+    }
+
+    /// <summary>Bascule lockedVisual/openVisual selon l'état courant de CanCross() — poll par
+    /// frame comme le reste des panels UI du projet (ConsoBarUI/PlayerInfosPanel), pas d'event
+    /// dédié pour ce premier passage. Skip total si gateType = None (jamais verrouillé, rien à
+    /// représenter) ou si aucun des deux GameObjects n'est assigné (pas de feedback configuré
+    /// pour ce portail — comportement d'avant ce chantier, silencieux).</summary>
+    private void RefreshLockVisual()
+    {
+        if (gateType == PortalGateType.None) return;
+        if (lockedVisual == null && openVisual == null) return;
+
+        if (_localPlayer == null) _localPlayer = FindObjectOfType<Player>();
+        bool open = CanCross(_localPlayer);
+
+        if (lockedVisual != null) lockedVisual.SetActive(!open);
+        if (openVisual   != null) openVisual.SetActive(open);
     }
 
     private bool CanCross(Player player)
