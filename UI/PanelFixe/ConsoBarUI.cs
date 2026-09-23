@@ -77,8 +77,8 @@ public class ConsoBarUI : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.F3)) TryUseSlot(2);
     }
 
-    /// <summary>Utilise le consommable du slot — Potion (heal HP/Mana + buff) seule
-    /// implémentée pour l'instant ; DungeonStone/TeleportItem/Other pas encore câblés.</summary>
+    /// <summary>Utilise le consommable du slot — Potion/Food (heal HP/Mana + buff) et
+    /// DungeonStone (entrée en instance) implémentés ; TeleportItem/Other pas encore câblés.</summary>
     public void TryUseSlot(int index)
     {
         if (index < 0 || index >= _slotUIs.Length || _slotUIs[index] == null) return;
@@ -92,6 +92,32 @@ public class ConsoBarUI : MonoBehaviour
         if (_player == null || _player.isDead) return;
 
         var data = instance.data;
+
+        if (data.consumableType == ConsumableType.DungeonStone)
+        {
+            var dungeon = DungeonRegistry.Instance?.Resolve(data.dungeonID);
+            if (dungeon == null)
+            {
+                Debug.LogWarning($"[ConsoBarUI] Pierre de donjon '{data.dungeonID}' introuvable dans DungeonRegistry.");
+                return;
+            }
+            InstanceSession.Instance?.Enter(dungeon);
+            instance.Remove(1);
+            if (instance.IsEmpty)
+            {
+                var wrapper = InventorySystem.Instance?.GetAllItems().Find(i => i.ConsumableInstance == instance);
+                if (wrapper != null) InventorySystem.Instance.RemoveItem(wrapper);
+                slot.SetConsoInstance(null);
+            }
+            else
+            {
+                slot.UpdateQuantity(instance.quantity);
+            }
+            InventorySystem.Instance?.OnInventoryChanged?.Invoke();
+            InventoryUI.Instance?.RefreshGrid();
+            return;
+        }
+
         if (data.consumableType != ConsumableType.Potion && data.consumableType != ConsumableType.Food)
         {
             Debug.Log($"[ConsoBarUI] {data.consumableType} pas encore implémenté à l'usage.");

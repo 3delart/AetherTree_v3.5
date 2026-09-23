@@ -160,6 +160,12 @@ public class InstanceSession : MonoBehaviour
 }
 ```
 
+> **Correction (voir plan d'implémentation, Task 5)** : `Enter()` ne prend pas de paramètre
+> `Vector3 respawnPoint` — `SceneLoader.LoadMapWithSpawn()` résout `PlayerSpawnPoint` lui-même
+> une fois la scène chargée, et le respawn en cours de run réutilise `SceneLoader.
+> ReloadCurrentMap()` plutôt qu'un warp manuel. Voir `Systems/InstanceSession.cs` pour le code
+> réel.
+
 ### 4.2 Nouveau fichier : `Data/Content/DungeonData.cs`
 
 Codifie GDD §14.2.3 tel quel :
