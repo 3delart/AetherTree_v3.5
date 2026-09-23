@@ -322,6 +322,9 @@ public class CharacterProgress
     // Défaut 0 : correct pour les vieilles saves d'avant ce champ (fenêtre déjà pleine à l'époque).
     public float elementEmptyWeight = 0f;
 
+    // Paliers débloqués via Donjon de Déblocage — voir Player.HasUnlockedTier.
+    public List<int> unlockedTiers = new List<int>();
+
     // ⑫ Progression conditions en cours
     public List<SavedConditionProgress> conditionProgresses = new List<SavedConditionProgress>();
 

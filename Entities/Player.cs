@@ -117,6 +117,9 @@ public class Player : Entity
     /// CraftSystem.GrantBaseRecipes(), Unlocked via ConditionReward/UnlockRecipe().</summary>
     [HideInInspector] public List<RecipeData> unlockedRecipes = new List<RecipeData>();
 
+    /// <summary>Paliers débloqués via Donjon de Déblocage — voir GDD §14.3.4 et HasUnlockedTier().</summary>
+    [HideInInspector] public List<int> unlockedTiers = new List<int>();
+
     /// <summary>
     /// Les 3 passifs RÉELLEMENT actifs (slots P1/P2/P3 de la PassifBar, GDD §7.5 —
     /// "assignés hors combat"), choisis parmi unlockedPassives. Seuls ceux-ci sont
@@ -206,6 +209,7 @@ public class Player : Entity
         if (unlockedPermanents       == null) unlockedPermanents       = new List<PermanentSkillData>();
         if (unlockedPassives         == null) unlockedPassives         = new List<PassiveSkillData>();
         if (unlockedRecipes          == null) unlockedRecipes          = new List<RecipeData>();
+        if (unlockedTiers            == null) unlockedTiers            = new List<int>();
         if (equippedPassives         == null || equippedPassives.Length != 3) equippedPassives = new PassiveSkillData[3];
 
         activityCounter    = GetComponent<ActivityCounter>();
@@ -785,6 +789,13 @@ public class Player : Entity
         unlockedRecipes.Add(recipe);
         CraftJournalUI.Instance?.RefreshIfOpen();
     }
+
+    /// <summary>Un palier est débloqué par la réussite de son Donjon de Déblocage — voir GDD
+    /// §14.3.4. Cette méthode ne fait QUE lire le flag ; rien n'écrit encore dedans (ça viendra
+    /// avec le futur chantier Donjon de Déblocage), donc HasUnlockedTier renvoie toujours false
+    /// pour l'instant tant qu'aucun contenu réel n'existe — c'est le comportement attendu, pas
+    /// un bug de ce chantier.</summary>
+    public bool HasUnlockedTier(int tier) => unlockedTiers.Contains(tier);
 
         // ── AJOUTER RefreshSlot0() ────────────────────────────────
     /// <summary>

@@ -337,6 +337,9 @@ public class SaveSystem : MonoBehaviour
             foreach (var recipe in player.unlockedRecipes)
                 if (recipe != null) progress.unlockedRecipeNames.Add(recipe.name);
 
+        if (player.unlockedTiers != null)
+            progress.unlockedTiers = new List<int>(player.unlockedTiers);
+
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
             for (int i = 0; i < 10; i++)
@@ -706,6 +709,9 @@ public class SaveSystem : MonoBehaviour
                 var recipe = FindSOByName<RecipeData>(name);
                 if (recipe != null) player.UnlockRecipe(recipe);
             }
+
+        if (p.unlockedTiers != null)
+            player.unlockedTiers = new List<int>(p.unlockedTiers);
 
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
