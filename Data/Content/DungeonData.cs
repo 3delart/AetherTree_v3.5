@@ -10,8 +10,9 @@ using System.Collections.Generic;
 // classes séparées (les deux partagent toute la structure GDD, seules les
 // valeurs par défaut de livesPerPlayer/deathLimit/bossType diffèrent, voir
 // §14.3.3 "Règles Spécifiques" du GDD). Pas de contenu réel de salle dans
-// ce chantier (spawners/triggers/lockedUntil pas encore ajoutés à
-// DungeonMapData) — voir docs/superpowers/specs/2026-09-23-instance-
+// ce chantier (spawners/lockedUntil pas encore ajoutés à DungeonMapData —
+// triggers ajouté par le chantier donjon-entry-flow, reste déclaratif, voir
+// DungeonTrigger.cs) — voir docs/superpowers/specs/2026-09-23-instance-
 // system-design.md §3 Non-objectifs.
 // =============================================================
 
@@ -31,6 +32,10 @@ public class DungeonMapData
     public string displayName;
     [Tooltip("true = salle de boss.")]
     public bool   isBossRoom;
+    [Tooltip("Conditions de déverrouillage disponibles dans cette salle — déclaratif pour " +
+             "l'instant, le verrou réel d'un portail se configure sur Portal.requiredTriggerID " +
+             "(une string), pas lu automatiquement depuis cette liste.")]
+    public List<DungeonTrigger> triggers = new List<DungeonTrigger>();
 }
 
 [CreateAssetMenu(fileName = "dgn_", menuName = "AetherTree/Contenu/DungeonData")]
