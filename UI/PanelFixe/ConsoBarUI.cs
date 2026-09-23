@@ -78,7 +78,9 @@ public class ConsoBarUI : MonoBehaviour
     }
 
     /// <summary>Utilise le consommable du slot — Potion/Food (heal HP/Mana + buff) et
-    /// DungeonStone (entrée en instance) implémentés ; TeleportItem/Other pas encore câblés.</summary>
+    /// DungeonStone (arme une entrée en attente, voir InstanceSession.ArmEntry — le vrai
+    /// chargement de l'instance a lieu au franchissement d'un portail gaté, pas ici)
+    /// implémentés ; TeleportItem/Other pas encore câblés.</summary>
     public void TryUseSlot(int index)
     {
         if (index < 0 || index >= _slotUIs.Length || _slotUIs[index] == null) return;
@@ -101,10 +103,10 @@ public class ConsoBarUI : MonoBehaviour
                 Debug.LogWarning($"[ConsoBarUI] Pierre de donjon '{data.dungeonID}' introuvable dans DungeonRegistry.");
                 return;
             }
-            bool entered = InstanceSession.Instance != null && InstanceSession.Instance.Enter(dungeon);
-            if (!entered)
+            bool armed = InstanceSession.Instance != null && InstanceSession.Instance.ArmEntry(dungeon);
+            if (!armed)
             {
-                Debug.LogWarning($"[ConsoBarUI] Entrée en instance échouée pour '{data.dungeonID}' — item non consommé.");
+                Debug.LogWarning($"[ConsoBarUI] Entrée en attente refusée pour '{data.dungeonID}' — item non consommé.");
                 return;
             }
             instance.Remove(1);
