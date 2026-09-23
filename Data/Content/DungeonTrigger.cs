@@ -1,3 +1,5 @@
+using UnityEngine;
+
 // =============================================================
 // DUNGEONTRIGGER.CS — Condition de déverrouillage intra-donjon
 // Path : Assets/Scripts/Data/Content/DungeonTrigger.cs
