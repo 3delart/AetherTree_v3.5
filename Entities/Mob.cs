@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.AI;
+using System.Collections;
 using System.Collections.Generic;
 
 // =============================================================
@@ -30,7 +31,36 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
 {
     [Header("Data")]
     public MobData data;
-    public int     mobLevel = 1;
+    // Toujours piloté par minLevel/maxLevel (RollLevel(), voir plus bas) — plus un champ à éditer
+    // à la main, caché de l'Inspector pour ne pas laisser croire qu'on peut le taper directement
+    // (il serait de toute façon écrasé au premier Awake/respawn).
+    [HideInInspector] public int mobLevel = 1;
+
+    [Header("Niveau (mob placé à la main)")]
+    [Tooltip("Fourchette dans laquelle mobLevel est roulé à l'apparition/réapparition de CE mob — " +
+             "Min = Max (défaut) donne un niveau fixe. Une vraie fourchette (ex: 1-3) permet de " +
+             "placer la même espèce à des niveaux différents selon l'endroit de la map (ex: Loup " +
+             "1-3 près de la ville, 8-10 en zone dangereuse). Sans effet réel sur un mob instancié " +
+             "par SpawnManager, qui fixe mobLevel lui-même après l'instanciation.")]
+    [Min(1)] public int minLevel = 1;
+    [Min(1)] public int maxLevel = 1;
+
+    [Header("Respawn (mob placé à la main)")]
+    [Tooltip("Coché (défaut) = ce mob respawn tout seul, sur place, après sa mort (même patron " +
+             "que PNJ.RespawnCoroutine — corps masqué, pas détruit). Décoché = mort définitive " +
+             "tant que la scène ne recharge pas — à décocher pour un mob Objective (verrouille un " +
+             "portail : un respawn le reverrouillerait) ou un boss de donjon. Sans effet sur un " +
+             "mob instancié par SpawnManager, qui gère déjà son propre respawn de zone.")]
+    public bool  respawnEnabled = true;
+    public float respawnDelay   = 30f;
+
+    /// <summary>True si data est un MobDungeon en rôle Boss — sa mort déclenche
+    /// InstanceSession.OnBossKilled() (fin de run en Success), voir Die(). Dérivé de data, pas un
+    /// flag séparé à cocher par instance : un MobData en DungeonRole.Boss est boss PARTOUT où il
+    /// est placé (plus de réutilisation boss-ici/normal-ailleurs pour un même MobData — le prix
+    /// de n'avoir qu'un seul endroit où déclarer "ce mob est un boss").</summary>
+    public bool isDungeonBoss
+        => data != null && data.mobType == MobType.MobDungeon && data.dungeonRole == DungeonRole.Boss;
 
     protected NavMeshAgent agent;
     protected Vector3      spawnPos;
@@ -88,8 +118,17 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         _combatAI           = GetComponent<CombatAIController>();
         spawnPos = transform.position;
         aggroPos = spawnPos;
+        RollLevel();
         ApplyData();
         _combatAI.Initialize(this, agent, _skillSystem, this, _animatorController, spawnPos);
+    }
+
+    /// <summary>Roule mobLevel dans [minLevel, maxLevel] — TOUJOURS (mobLevel n'est plus un champ
+    /// éditable à la main, voir HideInInspector). Min = Max donne trivialement un niveau fixe,
+    /// pas de cas particulier à gérer. Appelé à l'Awake ET à chaque respawn (RespawnCoroutine).</summary>
+    private void RollLevel()
+    {
+        mobLevel = Random.Range(minLevel, maxLevel + 1);
     }
 
        private void ApplyData()
@@ -152,9 +191,18 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// premier leash).</summary>
     private void ApplyInnateDebuffResistances()
     {
-        if (data == null || data.debuffResistances == null) return;
-        foreach (var entry in data.debuffResistances)
-            statusEffects.SetDebuffResistance(entry.debuffType, entry.resistChance);
+        if (data == null) return;
+
+        // allDebuffResistance : tout-en-un pour les boss à grande échelle (World Boss/Invasion),
+        // appliqué à CHAQUE DebuffType d'abord — debuffResistances (ci-dessous) écrase ensuite un
+        // type précis si besoin (ex: Displacement à 100% par-dessus un 70% global).
+        if (data.allDebuffResistance > 0f)
+            foreach (DebuffType type in System.Enum.GetValues(typeof(DebuffType)))
+                statusEffects.SetDebuffResistance(type, data.allDebuffResistance);
+
+        if (data.debuffResistances != null)
+            foreach (var entry in data.debuffResistances)
+                statusEffects.SetDebuffResistance(entry.debuffType, entry.resistChance);
     }
 
     // =========================================================
@@ -404,6 +452,25 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
         this.enabled = false;
 
+        // ── Hook donjon — voir InstanceSession.OnBossKilled() ────
+        // Sans effet hors instance active (no-op si CurrentInstance est null — voir sa propre
+        // garde). Le verrou "tuer ce mob débloque ce portail" ne passe plus par ici — voir
+        // Portal.requiredMobs (référence directe à l'instance, plus de triggerID string à faire
+        // matcher à la main).
+        if (isDungeonBoss)
+        {
+            InstanceSession.Instance?.OnBossKilled(this);
+        }
+        else if (data != null && data.mobType == MobType.MobDungeon
+                 && InstanceSession.Exists && InstanceSession.Instance.CurrentInstance != null)
+        {
+            // Annonce de groupe — objectif de donjon rempli (mob non-boss), voir Florian, spec
+            // annonces 2026-09-29. InstanceSession.Exists (pas .Instance) : ne crée jamais de
+            // session juste pour ce check, un mob de donjon peut très bien mourir hors run actif
+            // (test en scène isolée, par exemple).
+            AnnoncePanel.Instance?.Announce($"{entityName} a été vaincu");
+        }
+
 
         // ── Calcul dégâts totaux ──────────────────────────────
         // totalDamageTaken (toute source) — PAS la somme de damageContributions (Player
@@ -476,7 +543,59 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // Florian : jamais moins de 3s, même sans deathClip assigné — comportement identique à
         // avant ce chantier dans ce cas).
         float deathAnimLength = _animatorController?.PlayDeath(data?.deathClip) ?? 0f;
-        Destroy(gameObject, deathAnimLength + 3f);
+
+        if (ShouldRespawn())
+            StartCoroutine(RespawnCoroutine(deathAnimLength));
+        else
+            Destroy(gameObject, deathAnimLength + 3f);
+    }
+
+    /// <summary>Garde-fou en plus de la case respawnEnabled : un mob de donjon (MobDungeon) en
+    /// rôle Objective/Special/Boss ne respawn JAMAIS, même si la case est restée cochée par
+    /// erreur (défaut = true depuis peu) — un Objective qui respawn reverrouillerait un portail
+    /// déjà ouvert (Portal.requiredMobs le reverrait "vivant"). Sans effet sur un mob normal
+    /// (MobType.Normal) ou un MobDungeon en rôle Normal, qui suivent respawnEnabled tel quel.</summary>
+    private bool ShouldRespawn()
+    {
+        if (!respawnEnabled) return false;
+        if (data != null && data.mobType == MobType.MobDungeon && data.dungeonRole != DungeonRole.Normal)
+            return false;
+        return true;
+    }
+
+    /// <summary>Respawn sur place — mob placé à la main (respawnEnabled coché), même patron que
+    /// PNJ.RespawnCoroutine : corps masqué (Renderer/Collider désactivés) plutôt que détruit, pour
+    /// que CETTE coroutine puisse continuer à tourner sur un GameObject vivant. Reroll mobLevel
+    /// dans [minLevel, maxLevel] à chaque réapparition (voir RollLevel).</summary>
+    private IEnumerator RespawnCoroutine(float deathAnimLength)
+    {
+        // Même fenêtre "corps au sol" que la mort définitive (3s mini) avant de masquer.
+        yield return new WaitForSeconds(deathAnimLength + 3f);
+
+        foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = false;
+        foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
+        agent.enabled = false;
+
+        yield return new WaitForSeconds(respawnDelay);
+
+        transform.position = spawnPos;
+        isDead              = false;
+        totalDamageTaken    = 0f;
+        damageContributions.Clear();
+        aggroSet.Clear();
+
+        RollLevel();
+        ApplyData(); // reroll stats pour le nouveau niveau, reset HP/Mana au passage
+
+        foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = true;
+        foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = true;
+        this.enabled  = true;
+        agent.enabled = true;
+        agent.Warp(spawnPos);
+        _combatAI.ResetCooldowns();
+        _combatAI.Initialize(this, agent, _skillSystem, this, _animatorController, spawnPos);
+
+        Debug.Log($"[MOB] {entityName} respawné (niveau {mobLevel}).");
     }
 
     // =========================================================

@@ -171,10 +171,19 @@ public class MobData : ScriptableObject
 
     // ── Résistances aux debuffs ────────────────────────────────
     [Header("Résistances aux debuffs (innées, indépendantes de tout équipement)")]
+    [Tooltip("Résistance appliquée à TOUS les DebuffType d'un coup (0 = désactivé) — pensé pour " +
+             "les boss à grande échelle (World Boss/Invasion) : \"70% à tous les debuffs\" sans " +
+             "lister chaque DebuffType un par un. Appliquée EN PREMIER, avant debuffResistances " +
+             "ci-dessous qui peut ensuite écraser un type précis à une valeur différente (ex: " +
+             "70% partout + Displacement à 100% pour un boss raciné/immunisé au CC dur).")]
+    [Range(0f, 1f)]
+    public float allDebuffResistance = 0f;
+
     [Tooltip("Même mécanisme que la résistance équipement du joueur (DebuffResistanceEntry) — " +
              "un Mob n'a pas d'équipement, ce champ le remplace. resistChance = 1 sur un " +
              "DebuffType = immunité totale (ex: boss raciné, immunisé au CC dur — voir " +
-             "DebuffType.Displacement pour l'immunité au Pull/Push/SwapPosition).")]
+             "DebuffType.Displacement pour l'immunité au Pull/Push/SwapPosition). Écrase " +
+             "allDebuffResistance ci-dessus pour le(s) type(s) listé(s) ici.")]
     public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
 
     // ── Visuel ────────────────────────────────────────────────
