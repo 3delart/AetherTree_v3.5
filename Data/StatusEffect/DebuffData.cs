@@ -17,6 +17,15 @@ public class DebuffData : StatusEffectData
     [Header("Type de debuff")]
     public DebuffType debuffType;
 
+    [Tooltip("Coché : ce debuff bloque une action fondamentale (mouvement ET/OU compétences) — " +
+             "Stun/Fear/Sleep/Shocked/Freeze/Root/Displacement. Décoché : affaiblit sans bloquer " +
+             "(Stats/Dot/Slow/HpDrain/ManaDrain/Silence/Prey/Dispel...). Sert de fallback de " +
+             "résistance sur les mobs à grande échelle (World Boss/Invasion) quand aucun override " +
+             "précis n'existe pour ce DebuffType — voir MobData.hardCCResistance/" +
+             "softDebuffResistance et StatusEffectSystem.TryApplyDebuff. Classe le debuff À SA " +
+             "CRÉATION, jamais besoin de toucher du code pour un futur ajout.")]
+    public bool isHardCC = false;
+
     // ── Dégâts sur la durée (Dot — Burn/Poison/Bleed gardés ici en ShowIf UNIQUEMENT
     // pour que les assets déjà créés avec ces types obsolètes gardent leurs champs
     // visibles/éditables ; ne plus jamais choisir ces 3 types sur un nouvel asset) ──
@@ -92,7 +101,7 @@ public class DebuffData : StatusEffectData
 #pragma warning restore CS0618
 
     // ── Drain de mana (ManaDrain) ─────────────────────────────
-    [Tooltip("Flat : mana drainé par seconde (valeur directe).\nPercent : % du MaxMana DU LANCEUR (pas de la cible) drainé par seconde\n(ex: 0.01 = 1%/s) — même principe que HpDrain, évite la disproportion sur\nles gros pools cible.")]
+    [Tooltip("Flat : mana drainé par seconde (valeur directe).\nPercent : % du MaxMana DE LA CIBLE drainé par seconde\n(ex: 0.01 = 1%/s) — symétrique quel que soit qui lance sur qui (corrigé\n2026-09-29, même convention que le DoT).")]
     [ShowIf(nameof(debuffType), DebuffType.ManaDrain, Header = "Drain de mana (ManaDrain)")]
     public ModifierType manaDrainModifier = ModifierType.Flat;
     [Tooltip("ManaDrain (§3.1.1.1) : mana drainé par seconde, reversé au lanceur du debuff.\nRéutilise damagePerSecond pour le tick — ce champ est un alias lisible.")]
@@ -100,7 +109,7 @@ public class DebuffData : StatusEffectData
     public float manaDrainPerSecond = 0f;
 
     // ── Drain de vie (HpDrain) ─────────────────────────────────
-    [Tooltip("Flat : dégâts vrais par seconde (valeur directe).\nPercent : % du MaxHP DU LANCEUR (pas de la cible) par seconde (ex: 0.01 = 1%/s)\n— évite la disproportion sur les boss à gros pool HP, scale avec la vraie\npuissance du lanceur (un tank plus tanky drain/soigne plus).")]
+    [Tooltip("Flat : dégâts vrais par seconde (valeur directe).\nPercent : % du MaxHP DE LA CIBLE par seconde (ex: 0.01 = 1%/s) — symétrique\nquel que soit qui lance sur qui (corrigé 2026-09-29, même convention que le\nDoT, remplace l'ancienne base LANCEUR du 2026-09-07 qui cassait dans le sens\nboss→joueur).")]
     [ShowIf(nameof(debuffType), DebuffType.HpDrain, Header = "Drain de vie (HpDrain)")]
     public ModifierType hpDrainModifier = ModifierType.Flat;
     [Tooltip("HpDrain : dégâts vrais par seconde infligés à la cible (ignore défense/résistances,\npeut tuer), reversés en soin identique au lanceur du debuff.")]
@@ -139,6 +148,32 @@ public class DebuffData : StatusEffectData
              "permet de composer plusieurs stats sur un seul debuff. Négatif automatiquement\n" +
              "(un debuff RETIRE, jamais besoin d'entrer une valeur négative).")]
     public List<StatLine> bonusStats = new List<StatLine>();
+
+    // ── Skills bloqués ─────────────────────────────────────────
+    [Header("Skills bloqués (optionnel)")]
+    [Tooltip("S'applique EN PLUS de l'effet principal, quel que soit debuffType — glisser ici " +
+             "le(s) SkillData que ce debuff rend injouables tant qu'il est actif (voir " +
+             "StatusEffectSystem.IsSkillBlocked / SkillBar.cs, même bloc que le check Silence). " +
+             "Ex : malus Aura bloquant le skill de capture de familier.")]
+    public List<SkillData> blockedSkills = new List<SkillData>();
+
+    // ── Familier ───────────────────────────────────────────────
+    [Header("Bloque l'équipement du familier (optionnel)")]
+    [Tooltip("Coché : le joueur ne peut pas équiper de familier tant que ce debuff est actif " +
+             "(\"le familier a honte de lui\" — Florian, 2026-09-29). PAS ENCORE CONSOMMÉ PAR " +
+             "AUCUN CODE — le système d'équipement de familier n'existe pas encore (Familier, " +
+             "roadmap #8). Champ préparé en avance, même logique que blockedSkills avant que " +
+             "skl_capture existe : le check réel (ex : Player.EquipFamiliar()) devra interroger " +
+             "\"le joueur a-t-il un debuff actif avec ce flag ?\" le jour où ce système est codé.")]
+    public bool blocksFamiliarEquip = false;
+
+    // ── Purify ───────────────────────────────────────────────
+    [Header("Non purifiable (optionnel)")]
+    [Tooltip("Coché : ce debuff ignore BuffType.Purified/Dispel (StatusEffectSystem." +
+             "RemoveDebuffsByChance) — ne peut être retiré que par sa propre logique de source " +
+             "(ex : malus Aura, retiré uniquement en franchissant un seuil, jamais par une potion " +
+             "de purification). Voir spec Prestige/Aura §2.3.")]
+    public bool immuneToPurify = false;
 
     public override StatusEffectInstance CreateInstance(Entity source)
         => new DebuffInstance(this, source);

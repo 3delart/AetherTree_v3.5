@@ -210,9 +210,11 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // allDebuffResistance : tout-en-un pour les boss à grande échelle (World Boss/Invasion),
         // appliqué à CHAQUE DebuffType d'abord — debuffResistances (ci-dessous) écrase ensuite un
         // type précis si besoin (ex: Displacement à 100% par-dessus un 70% global).
-        if (data.allDebuffResistance > 0f)
-            foreach (DebuffType type in System.Enum.GetValues(typeof(DebuffType)))
-                statusEffects.SetDebuffResistance(type, data.allDebuffResistance);
+        // hardCCResistance/softDebuffResistance : blanket par catégorie (DebuffData.isHardCC),
+        // lu directement par StatusEffectSystem.TryApplyDebuff comme fallback — voir cette
+        // méthode pour l'ordre de priorité exact face aux overrides précis ci-dessous.
+        statusEffects.SetHardCCResistance(data.hardCCResistance);
+        statusEffects.SetSoftDebuffResistance(data.softDebuffResistance);
 
         if (data.debuffResistances != null)
             foreach (var entry in data.debuffResistances)

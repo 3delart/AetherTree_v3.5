@@ -260,8 +260,12 @@ public class StatusEffectSystem : MonoBehaviour
     {
         if (debuff == null || _entity.isDead) return false;
 
-        // Vérification résistance
+        // Vérification résistance — override précis par DebuffType prioritaire (ex: Displacement
+        // à 100%), sinon fallback sur le blanket de catégorie du mob selon DebuffData.isHardCC
+        // (World Boss/Invasion — voir HardCCResistance/SoftDebuffResistance ci-dessus).
         float resistance = GetDebuffResistance(debuff.debuffType);
+        if (resistance <= 0f)
+            resistance = debuff.isHardCC ? HardCCResistance : SoftDebuffResistance;
         if (resistance > 0f && Random.value < resistance)
             return false;
 
@@ -976,8 +980,34 @@ public class StatusEffectSystem : MonoBehaviour
         // avant que Stats/Dot puissent avoir plus d'une instance).
         var snapshot = new List<(DebuffType Type, DebuffInstance Instance)>(AllDebuffInstances());
         foreach (var (type, instance) in snapshot)
-            if (Random.value < chance)
+            if (!instance.DebuffData.immuneToPurify && Random.value < chance)
                 ExpireDebuffInstance(type, instance);
+    }
+
+    /// <summary>Vrai si un debuff actif référence ce skill dans son DebuffData.blockedSkills —
+    /// voir SkillBar.cs (même bloc que le check isSilenced) pour l'utilisation au cast. Ex :
+    /// malus Aura bloquant le skill de capture de familier (voir spec Prestige/Aura §2.4).</summary>
+    public bool IsSkillBlocked(SkillData skill)
+    {
+        if (skill == null) return false;
+        foreach (var (_, instance) in AllDebuffInstances())
+            if (instance.DebuffData.blockedSkills != null && instance.DebuffData.blockedSkills.Contains(skill))
+                return true;
+        return false;
+    }
+
+    /// <summary>Retire l'instance de CE debuff précis (asset), pas "la première du type" —
+    /// symétrique de RemoveBuff(BuffData), même besoin pour les types stackable (Stats : les
+    /// 5 paliers de debuff Aura partagent DebuffType.Stats, voir Player.RefreshAuraDebuff).
+    /// Non-stackable : équivalent à retirer le type entier, juste plus précis.</summary>
+    public void RemoveDebuff(DebuffData data)
+    {
+        if (data == null) return;
+        if (_activeDebuffs.TryGetValue(data.debuffType, out var list))
+        {
+            var match = list.Find(i => i.data == data);
+            if (match != null) ExpireDebuffInstance(data.debuffType, match);
+        }
     }
 
     /// <summary>Dispel — même principe que RemoveDebuffsByChance, mais sur les buffs actifs de
@@ -1267,6 +1297,17 @@ public class StatusEffectSystem : MonoBehaviour
         => _debuffResistances.TryGetValue(type, out float v) ? v : 0f;
 
     public void ResetDebuffResistances() => _debuffResistances.Clear();
+
+    // ── Résistance "tout-en-un" par catégorie (World Boss/Invasion) — Florian, 2026-09-29 ──
+    // Catégorie posée sur l'ASSET (DebuffData.isHardCC), pas sur le DebuffType : un futur debuff
+    // se classe à sa création dans l'Inspector, jamais besoin de retoucher du code. Fallback
+    // UNIQUEMENT si aucune entrée précise n'existe pour ce DebuffType dans _debuffResistances
+    // (voir TryApplyDebuff) — un override explicite (ex: Displacement à 100%) reste prioritaire.
+    public float HardCCResistance     { get; private set; }
+    public float SoftDebuffResistance { get; private set; }
+
+    public void SetHardCCResistance(float value)     => HardCCResistance     = Mathf.Clamp01(value);
+    public void SetSoftDebuffResistance(float value) => SoftDebuffResistance = Mathf.Clamp01(value);
 
     // =========================================================
     // UI — données pour StatusEffectUI
