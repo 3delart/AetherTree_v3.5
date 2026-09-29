@@ -1682,7 +1682,16 @@ public class SkillSystem : MonoBehaviour
     private static bool ResistsDisplacement(Entity target)
     {
         if (target?.statusEffects == null) return false;
+
+        // Même ordre de priorité que StatusEffectSystem.TryApplyDebuff : override précis
+        // (debuffResistances = [{Displacement, X}]) prioritaire, sinon fallback sur le blanket
+        // Hard CC du mob — Displacement EST un CC dur (Florian, 2026-09-29), mais ne passe
+        // jamais par TryApplyDebuff (pas de DebuffData asset), donc pas de champ isHardCC à lire
+        // ici : direct sur HardCCResistance.
         float resistance = target.statusEffects.GetDebuffResistance(DebuffType.Displacement);
+        if (resistance <= 0f)
+            resistance = target.statusEffects.HardCCResistance;
+
         return resistance > 0f && Random.value < resistance;
     }
 
@@ -1827,6 +1836,24 @@ public class SkillSystem : MonoBehaviour
                 Color textColor = caster.entityType == EntityType.Player ? Color.cyan : Color.red;
                 FloatingText.Spawn(Mathf.RoundToInt(dmg).ToString(),
                     target.transform.position, textColor, heightOffset: 1.8f);
+
+                // ── Drain (isDrain) — vol de HP instantané au cast, 3 bases de calcul
+                // possibles (DrainValueMode). PercentDamage réutilise le dmg déjà
+                // calculé/esquivable ci-dessus, pas de recalcul séparé. Vol de mana / drain
+                // continu passent par un Buff/DebuffData sur le skill (manaDrainPerSecond/
+                // hpDrainPerSecond déjà existants sur DebuffData), pas ce bloc.
+                if (skill.isDrain)
+                {
+                    float healed = skill.drainValueMode switch
+                    {
+                        DrainValueMode.Flat               => skill.drainValue,
+                        DrainValueMode.PercentTargetMaxHP => target.MaxHP * skill.drainValue,
+                        DrainValueMode.PercentDamage       => dmg * skill.drainValue,
+                        _                                  => 0f,
+                    };
+                    caster.Heal(healed);
+                    FloatingText.Spawn($"+{Mathf.RoundToInt(healed)}", caster.transform.position, Color.green, 1.8f);
+                }
                 break;
             }
 
@@ -1983,61 +2010,27 @@ public class SkillSystem : MonoBehaviour
 
     private void ApplySpecialEffect(SkillData skill, Entity caster, Entity target)
     {
-        if (skill.specialEffect == SkillSpecialEffect.None)
+        // DrainHP retiré d'ici 2026-09-29 — déplacé dans ApplyEffectType/case Damage (voir
+        // SkillData.isDrain). DrainMana retiré entièrement (plus un cas dédié, voir
+        // manaDrainPerSecond sur DebuffData à la place). Cette méthode ne gère plus que
+        // otherSpecialEffect.
+        if (skill.otherSpecialEffect == OtherSpecialEffect.None)
         {
-            Debug.LogWarning($"[SKILL] {skill.name} ({caster.entityName}) : effectType=Other mais specialEffect=None.");
+            Debug.LogWarning($"[SKILL] {skill.name} ({caster.entityName}) : effectType=Other mais otherSpecialEffect=None.");
             return;
         }
 
-        switch (skill.specialEffect)
+        switch (skill.otherSpecialEffect)
         {
-            case SkillSpecialEffect.DrainHP:
-            {
-                if (target == null || target.isDead) return;
-                float dmg = CalculateDamage(skill, caster, target, out bool isCrit);
-
-                if (target is Mob mobDrn && caster is Player pDrn)
-                    mobDrn.RegisterLastSkill(pDrn, skill);
-
-                target.TakeDamage(dmg, skill.PrimaryElement, caster);
-                ApplyOnHitDealtEffects(caster, target, dmg);
-                float healed = dmg * skill.drainHealRatio;
-                caster.Heal(healed);
-
-                if (caster.entityType == EntityType.Player && caster is Player playerDrn)
-                {
-                    GameEventBus.Publish(new DamageDealtEvent
-                    {
-                        amount   = dmg,
-                        element  = skill.PrimaryElement,
-                        source   = playerDrn,
-                        target   = target,
-                        isCrit   = isCrit,
-                        isOneHit = target.isDead && dmg >= target.MaxHP,
-                    });
-                }
-
-                FloatingText.Spawn($"-{Mathf.RoundToInt(dmg)}",    target.transform.position, Color.red,   1.8f);
-                FloatingText.Spawn($"+{Mathf.RoundToInt(healed)}", caster.transform.position, Color.green, 1.8f);
-                CheckKill(target);
+            case OtherSpecialEffect.Capture:
+                Debug.Log($"[SKILL] Capture ({caster.entityName}) — TODO, dépend du système Familier (roadmap #8).");
                 break;
-            }
 
-            case SkillSpecialEffect.DrainMana:
-            {
-                if (target == null || target.isDead) return;
-                float stolen = target.CurrentMana * skill.drainHealRatio;
-                target.SpendMana(stolen);
-                caster.RecoverMana(stolen);
-                FloatingText.Spawn($"MANA -{Mathf.RoundToInt(stolen)}", target.transform.position, Color.blue, 1.8f);
-                break;
-            }
-
-            case SkillSpecialEffect.Summon:
+            case OtherSpecialEffect.Summon:
                 Debug.Log($"[SKILL] Summon ({caster.entityName}) — TODO (summonMobData={skill.summonMobData?.mobName ?? "null"}).");
                 break;
 
-            case SkillSpecialEffect.Interrupt:
+            case OtherSpecialEffect.Interrupt:
                 Debug.Log($"[SKILL] Interrupt ({caster.entityName}) — TODO.");
                 break;
         }
