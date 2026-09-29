@@ -134,6 +134,8 @@ public class WorldEventScheduler : MonoBehaviour
             mob.mobLevel = palier;
         }
 
+        AnnoncePanel.Instance?.Announce($"Le Boss Géant du Palier {palier} est apparu !");
+
         _resolved = false;
         mob?.OnDeath(() => OnBossResolved(palier, killed: true));
 
