@@ -14,6 +14,15 @@ using UnityEngine;
 // Si l'inventaire du gagnant est plein, l'item part en mail de
 // secours (MailboxSystem.SendLootOverflowMail) plutôt que d'être
 // perdu. L'Aeris n'a jamais ce problème (AerisSystem sans plafond).
+//
+// MobData.massEventRewards (World Boss/Invasion) change la règle ITEMS uniquement (Florian,
+// 2026-09-29) : chaque item droppé (LootEntry.dropChance déjà tiré indépendamment dans
+// RollAll(), inchangé) va à un joueur DIFFÉRENT parmi le pool restant — un joueur déjà gagnant
+// est retiré du tirage pour les items suivants, jamais 2 items au même joueur. Si le pool
+// s'épuise avant la fin des items droppés, les items en trop ne sont PAS attribués (pas de
+// bouclage/répétition — "tant pis"). L'Aeris n'est PAS concerné par cette règle (indépendant,
+// inchangé) — de toute façon un World Boss n'est pas censé en donner (aerisDropChance = 0 sur
+// son LootTable), donc la question ne se pose pas en pratique.
 // =============================================================
 
 public class LootManager : MonoBehaviour
@@ -61,10 +70,28 @@ public class LootManager : MonoBehaviour
 
         string mobName = e.mob.mobName;
 
-        foreach (InventoryItem item in roll.items)
+        if (e.mob.massEventRewards)
         {
-            Player winner = PickRandomEligible(rewardPool);
-            DeliverItem(winner, item, mobName);
+            // Un item par joueur max, tirage SANS remise — un gagnant est retiré du pool pour
+            // les items suivants. Pool épuisé avant la fin des items droppés → items restants
+            // non attribués, pas de bouclage (Florian, 2026-09-29 : "tant pis").
+            var remainingPool = new List<Player>(rewardPool);
+            foreach (InventoryItem item in roll.items)
+            {
+                if (remainingPool.Count == 0) break;
+                int index = Random.Range(0, remainingPool.Count);
+                Player winner = remainingPool[index];
+                remainingPool.RemoveAt(index);
+                DeliverItem(winner, item, mobName);
+            }
+        }
+        else
+        {
+            foreach (InventoryItem item in roll.items)
+            {
+                Player winner = PickRandomEligible(rewardPool);
+                DeliverItem(winner, item, mobName);
+            }
         }
 
         if (roll.aeris > 0)
