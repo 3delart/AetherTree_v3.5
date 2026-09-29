@@ -45,8 +45,8 @@ celui-ci pleinement résolu, aucun chevauchement possible) :
    §Niveau plus bas). `AnnoncePanel.Instance?.Announce(...)` avec le nom du palier.
 3. **Attente** — deuxième annonce à T-1min. À T-0 : compare `SceneManager.GetActiveScene().name`
    au `sceneName` de l'entrée `eligibleMaps` tirée.
-   - Match → instancie le boss au `WorldBossSpawnPoint` de la scène courante (voir plus bas),
-     passe en **Actif**.
+   - Match → instancie le boss à une position aléatoire sur le NavMesh de la scène courante (voir
+     §Position de spawn plus bas), passe en **Actif**.
    - Pas de match → rien ne spawn, retour direct à **Idle**, timer relancé immédiatement.
 4. **Actif** — boss vivant, référence gardée (`GameObject _aliveBoss`). Deux sorties :
    - **Mort** (`Mob.OnDeath(...)`, même patron que `SpawnManager.SpawnBoss` — callback posé au
@@ -108,13 +108,37 @@ public class WorldEventMapEntry
 pour `DungeonMapData.mapID`. Aujourd'hui : 2 entrées possibles (Map_01/palier 1, Map_02/palier 2
 — Map_02 est un plan vide, techniquement éligible mais sans contenu réel autour, tel quel).
 
-### `Events/WorldBossSpawnPoint.cs` — nouveau marker, un par map éligible
+### Position de spawn — n'importe où sur le NavMesh de la scène
 
-Simple composant Transform-only, même esprit que `MapSpawnPoint` mais sans zone/position
-aléatoire (le Boss Géant n'a pas besoin d'un tirage de position dans la map, juste UN point fixe
-désigné par le level designer). `WorldEventScheduler` le trouve via un
-`FindObjectOfType<WorldBossSpawnPoint>()` au moment du spawn (scène déjà active à ce stade, donc
-recherche fiable) — même mécanisme de lookup que `MapSpawnPoint.FindDefault()`.
+Florian : le Boss Géant doit pouvoir apparaître n'importe où sur la map, pas à un point fixe —
+et zéro configuration par map (pas de zone centre+taille à positionner à la main). Technique
+standard pour un point aléatoire sur un NavMesh entier :
+
+```csharp
+private static Vector3 GetRandomNavMeshPoint()
+{
+    var tri = NavMesh.CalculateTriangulation();
+    if (tri.indices.Length < 3) return Vector3.zero; // NavMesh vide/absent — voir §Gestion d'erreur
+
+    int triCount = tri.indices.Length / 3;
+    int t = Random.Range(0, triCount) * 3;
+    Vector3 a = tri.vertices[tri.indices[t]];
+    Vector3 b = tri.vertices[tri.indices[t + 1]];
+    Vector3 c = tri.vertices[tri.indices[t + 2]];
+
+    // Point barycentrique uniforme dans le triangle (méthode racine carrée — évite le biais
+    // vers un coin que donnerait une combinaison linéaire naïve de 2 valeurs aléatoires).
+    float r1 = Mathf.Sqrt(Random.value);
+    float r2 = Random.value;
+    return a * (1f - r1) + b * (r1 * (1f - r2)) + c * (r1 * r2);
+}
+```
+
+Pas de biais par aire de triangle pris en compte (un triangle a autant de chance d'être choisi
+qu'un autre, indépendamment de sa taille) — acceptable ici, ce n'est pas une distribution
+statistiquement critique, juste "un endroit surprise sur la map". `NavMesh.CalculateTriangulation()`
+reflète le NavMesh déjà baké de la scène ACTIVE au moment de l'appel (T-0, scène confirmée
+correspondre au palier tiré) — aucun marker/component à poser dans les scènes.
 
 ## Flux de données
 
@@ -128,7 +152,7 @@ WorldEventScheduler (Idle)
   → attend 1 min (T-0)
   → scène active == palier tiré ?
       NON → Idle (timer relancé)
-      OUI → Instantiate(boss.prefab) au WorldBossSpawnPoint, mob.mobLevel = palier,
+      OUI → Instantiate(boss.prefab) à un point aléatoire du NavMesh, mob.mobLevel = palier,
             mob.OnDeath(...) posé → Actif
   → [Actif] mort OU 30min écoulées → Idle (timer relancé), annonce de sortie
 ```
@@ -138,9 +162,9 @@ WorldEventScheduler (Idle)
 - `eligibleMaps` vide ou `worldBossData` non assigné → log warning, timer ne se relance jamais
   (pas de crash, juste un système inerte tant que Florian ne configure pas).
 - `possibleBosses` vide → même traitement, warning au moment du tirage.
-- `WorldBossSpawnPoint` introuvable dans la scène au moment du spawn (Florian a oublié de le
-  poser) → warning, event annulé pour cette occurrence, retour Idle, timer relancé (ne bloque pas
-  le système entier).
+- `NavMesh.CalculateTriangulation()` vide (scène sans NavMesh baké) au moment du spawn → warning,
+  event annulé pour cette occurrence, retour Idle, timer relancé (ne bloque pas le système
+  entier).
 - Boss sans `prefab` assigné sur son `MobData` → même garde déjà existante dans
   `SpawnManager.SpawnBoss` (`Debug.LogWarning`), même comportement ici.
 
@@ -149,13 +173,12 @@ WorldEventScheduler (Idle)
 1. Configurer `WorldEventScheduler` : `eligibleMaps` (Map_01+Map_02), `worldBossData` (au moins 1
    `MobData` avec `MobType = BossWorld`), `minInterval`/`maxInterval` réduits à quelques dizaines
    de secondes pour tester sans attendre.
-2. Poser un `WorldBossSpawnPoint` sur Map_01 et Map_02.
-3. Rester sur Map_01, attendre le cycle complet → vérifier annonce T-5/T-1, vérifier spawn UNIQUEMENT
+2. Rester sur Map_01, attendre le cycle complet → vérifier annonce T-5/T-1, vérifier spawn UNIQUEMENT
    si le palier tiré était celui de Map_01, vérifier absence de spawn + relance immédiate du timer
    sinon.
-4. Tuer le boss → vérifier annonce succès, XP/Aeris/Prestige/loot reçus normalement, timer relancé.
-5. Laisser un boss spawné sans le tuer 30 min (ou réduire temporairement le timeout pour tester) →
+3. Tuer le boss → vérifier annonce succès, XP/Aeris/Prestige/loot reçus normalement, timer relancé.
+4. Laisser un boss spawné sans le tuer 30 min (ou réduire temporairement le timeout pour tester) →
    vérifier despawn + annonce de sortie + timer relancé.
-6. Changer de scène (Map_01 → Map_02) pendant qu'un événement est en Attente (T-5 à T-0) → vérifier
+5. Changer de scène (Map_01 → Map_02) pendant qu'un événement est en Attente (T-5 à T-0) → vérifier
    que le check T-0 utilise bien la scène active AU MOMENT DU CHECK, pas celle du moment de la
    décision.
