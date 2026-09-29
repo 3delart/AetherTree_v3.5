@@ -45,7 +45,10 @@ public class LootManager : MonoBehaviour
 
     private void OnMobKilled(MobKilledEvent e)
     {
-        if (e.eligiblePlayers == null || e.eligiblePlayers.Count == 0) return;
+        // massEventRewards (MobData) : ≥1 dégât suffit (contributingPlayers) au lieu du seuil
+        // ≥10% (eligiblePlayers) — même raison que XPSystem.HandleMobKilled, voir Mob.Die().
+        var rewardPool = e.mob != null && e.mob.massEventRewards ? e.contributingPlayers : e.eligiblePlayers;
+        if (rewardPool == null || rewardPool.Count == 0) return;
 
         if (e.mob?.lootTable == null)
         {
@@ -60,13 +63,13 @@ public class LootManager : MonoBehaviour
 
         foreach (InventoryItem item in roll.items)
         {
-            Player winner = PickRandomEligible(e.eligiblePlayers);
+            Player winner = PickRandomEligible(rewardPool);
             DeliverItem(winner, item, mobName);
         }
 
         if (roll.aeris > 0)
         {
-            Player winner = PickRandomEligible(e.eligiblePlayers);
+            Player winner = PickRandomEligible(rewardPool);
             DeliverAeris(winner, roll.aeris, mobName);
         }
     }

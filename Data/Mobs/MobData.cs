@@ -6,16 +6,15 @@ using System.Collections.Generic;
 // Path : Assets/Scripts/Data/Mobs/MobData.cs
 // AetherTree GDD v3.5 — §3.3 / §3.3.1
 //
-// Principe de scaling (v3.5) :
-//   Les stats de base (lv1) + la valeur de croissance par niveau
-//   sont définies sur ce SO. MobStatCalculator applique les
-//   multiplicateurs MobType au runtime lors du spawn.
+// Principe de scaling :
+//   Les stats de base (lv1) + la valeur de croissance par niveau sont
+//   définies directement sur ce SO — statFinale = statBase + statParNiveau ×
+//   (level-1). Plus de multiplicateur par MobType (retiré 2026-09-24) : un
+//   boss a ses propres stats de base tapées à la main, pour un équilibrage
+//   direct sans facteur caché (voir MobStatCalculator.cs).
 //
-//   statFinale = (statBase + statParNiveau × (level-1)) × multMobType
-//
-//   Les résistances élémentaires et les multiplicateurs de défense
-//   (meleeDefMult, rangedDefMult, magicDefMult) sont des profils
-//   fixes — ils ne scalent pas avec le niveau.
+//   Les résistances élémentaires sont un profil fixe — elles ne scalent
+//   pas avec le niveau.
 // =============================================================
 
 [CreateAssetMenu(fileName = "mob_", menuName = "AetherTree/Mob/MobData")]
@@ -29,6 +28,14 @@ public class MobData : ScriptableObject
     public string    mobName = "Mob";
     public MobType   mobType = MobType.Normal;
     public MobAIType aiType  = MobAIType.Passive;
+
+    [Tooltip("Rôle en salle de donjon (Couloir) — Normal = respawn selon Mob.respawnEnabled de " +
+             "l'instance, comme n'importe quel mob. Objective/Special/Boss ne respawnent JAMAIS, " +
+             "même si Mob.respawnEnabled reste coché (garde en code, voir Mob.ShouldRespawn()) — " +
+             "un Objective qui respawn reverrouillerait un portail déjà ouvert " +
+             "(Portal.requiredMobs).")]
+    [ShowIf(nameof(mobType), MobType.MobDungeon)]
+    public DungeonRole dungeonRole = DungeonRole.Normal;
 
     // ── Élémentaire ───────────────────────────────────────────
     [Header("Élémentaire")]
@@ -140,6 +147,14 @@ public class MobData : ScriptableObject
     [Header("Loot")]
     public LootTable lootTable;
 
+    [Tooltip("Coché : XP/Prestige/loot vont à TOUT joueur ayant infligé ≥1 dégât " +
+             "(MobKilledEvent.contributingPlayers), pas seulement ceux ≥10% des dégâts totaux " +
+             "(eligiblePlayers, seuil normal). Pensé pour les boss à grande échelle (World Boss, " +
+             "Invasion) où atteindre 10% devient irréaliste avec des dizaines/centaines de " +
+             "participants simultanés — un seuil pensé pour un donjon 5 joueurs, pas un event " +
+             "monde. Laisser décoché pour tout le reste (dungeon, mobs normaux).")]
+    public bool massEventRewards = false;
+
     // ── Capture / Pet ─────────────────────────────────────────
     [Header("Capture")]
     [Tooltip("Si true, peut être capturé comme pet (§3.5)")]
@@ -187,11 +202,14 @@ public class MobData : ScriptableObject
         _                     => 0f,
     };
 
-    /// <summary>True si ce mob est un boss (BossZone, BossDungeon ou BossRaid).</summary>
+    /// <summary>True si ce mob est un boss — BossMap/BossWorld/BossInvasion (MobType), ou un boss
+    /// de donjon exprimé via MobType.MobDungeon + DungeonRole.Boss (voir plus bas, BossDungeon
+    /// retiré de MobType pour ne plus dupliquer cette information à deux endroits).</summary>
     public bool IsBoss()
-        => mobType == MobType.BossZone
-        || mobType == MobType.BossDungeon
-        || mobType == MobType.BossRaid;
+        => mobType == MobType.BossMap
+        || mobType == MobType.BossWorld
+        || mobType == MobType.BossInvasion
+        || (mobType == MobType.MobDungeon && dungeonRole == DungeonRole.Boss);
 
     /// <summary>True si ce mob est actif selon le cycle jour/nuit.</summary>
     public bool IsActiveAtTime(bool isNight)
@@ -209,18 +227,6 @@ public class MobData : ScriptableObject
         if (atkMaxPerLevel < atkMinPerLevel)
             atkMaxPerLevel = atkMinPerLevel;
 
-        if (mobType == MobType.Capturable && !isCapturable)
-        {
-            isCapturable = true;
-            Debug.LogWarning($"[MobData] {mobName} : mobType Capturable → isCapturable forcé à true.");
-        }
-
-        if (mobType == MobType.Nocturnal && !isNocturnal)
-        {
-            isNocturnal = true;
-            Debug.LogWarning($"[MobData] {mobName} : mobType Nocturnal → isNocturnal forcé à true.");
-        }
-
         // Sans ces 3 clips, CombatEntityAnimatorController retombe sur les placeholders du
         // Controller partagé — une anim faite pour un AUTRE rig (souvent T-pose/désarticulé).
         if (idleClip == null || walkClip == null || chaseClip == null)
@@ -232,15 +238,42 @@ public class MobData : ScriptableObject
 }
 
 // ── Type de mob ───────────────────────────────────────────────
+// Elite/BossRaid/Nocturnal/Capturable retirés (2026-09-24, demande Florian) — Elite jamais
+// utilisé en contenu, BossRaid = raid multijoueur parqué hors scope démo, Nocturnal/Capturable
+// dupliquaient les bools isNocturnal/isCapturable déjà présents sur MobData (indépendants de
+// mobType, utilisables sur N'IMPORTE QUEL type). Valeurs ordinales des membres CONSERVÉS
+// inchangées (2/3) — au moins un asset réel (mob_test, boss donjon test) a déjà mobType=3
+// sérialisé, une renumérotation l'aurait silencieusement retypé.
+// Plus de multiplicateur par valeur (retiré 2026-09-24, voir MobStatCalculator.cs) — chaque
+// valeur est une pure catégorie, les stats de chaque MobData sont tapées directement dessus.
+// MobDungeon ajouté (2026-09-28) sur l'ordinal 1, libéré par l'ancien Elite (jamais sérialisé
+// sur aucun asset réel, confirmé par grep) — sépare TOUS les mobs de donjon (normaux, objectifs,
+// spéciaux ET boss — voir DungeonRole) des mobs de monde ouvert (Normal). BossDungeon RETIRÉ le
+// même jour : un boss de donjon s'exprime maintenant via MobType.MobDungeon + DungeonRole.Boss,
+// pas par un MobType séparé — évite de dupliquer "c'est un boss de donjon" à deux endroits.
+// MIGRATION : tout asset qui avait mobType = BossDungeon (ordinal 3) doit être repassé à la main
+// sur MobType = MobDungeon + DungeonRole = Boss, sinon son mobType affiche une valeur vide dans
+// l'Inspector (l'ordinal 3 existe toujours dans le fichier, juste sans nom d'enum dessus).
 public enum MobType
 {
-    Normal      = 0,  // Mob standard
-    Elite       = 1,  // ×1.8 atk / ×2.0 def / ×4.0 HP
-    BossZone    = 2,  // ×2.5 atk / ×3.0 def / ×10.0 HP — erre en zone ouverte
-    BossDungeon = 3,  // ×3.0 atk / ×3.5 def / ×12.0 HP — fixe en donjon
-    BossRaid    = 4,  // ×4.0 atk / ×5.0 def / ×60.0 HP — fixe en raid
-    Nocturnal   = 5,  // Actif uniquement la nuit (§18.1 / §20)
-    Capturable  = 6,  // Peut devenir un pet (§3.5)
+    Normal       = 0,  // Mob standard, monde ouvert
+    MobDungeon   = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
+    BossMap      = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
+    BossWorld    = 4,  // Boss Géant (événement, spawn sur un palier random)
+    BossInvasion = 5,  // Boss de l'événement Invasion
+}
+
+// ── Rôle en salle de donjon (Couloir) ────────────────────────────
+// Boss = LE boss de donjon (remplace l'ancien MobType.BossDungeon, retiré) — ne respawn jamais,
+// comme Objective/Special. Ajouté en fin d'enum (ordinal 3) pour ne jamais renuméroter Normal/
+// Objective/Special déjà potentiellement sérialisés. Voir MobData.dungeonRole.
+public enum DungeonRole
+{
+    Normal    = 0, // Respawn selon Mob.respawnEnabled de l'instance placée, comme n'importe quel mob.
+    Objective = 1, // Requis par un Portal.requiredMobs — ne respawn jamais.
+    Special   = 2, // Mob unique/scénarisé — ne respawn jamais, sans être un objectif de portail.
+    Boss      = 3, // LE boss de cette salle — ne respawn jamais. Voir Mob.isDungeonBoss (instance
+                   // en scène) pour le déclenchement réel d'InstanceSession.OnBossKilled().
 }
 
 // ── IA du mob ─────────────────────────────────────────────────
