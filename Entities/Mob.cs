@@ -131,6 +131,20 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         mobLevel = Random.Range(minLevel, maxLevel + 1);
     }
 
+    /// <summary>À appeler par un spawner qui définit data/mobLevel APRÈS Instantiate() (ex:
+    /// SpawnManager.SpawnBoss(), WorldEventScheduler.SpawnAndWaitForResolution()) — Awake()
+    /// (via Instantiate) a déjà calculé les stats via ApplyData() AVANT que le spawner ait pu
+    /// assigner ces deux champs. Sans ce ré-appel explicite, mobLevel/data affichés changent mais
+    /// les VRAIES stats (HP/dégâts/résistances, y compris allDebuffResistance) restent celles du
+    /// tout premier calcul — souvent niveau 1 / data par défaut du prefab. Bug trouvé le
+    /// 2026-09-29 en vérifiant World Boss, corrigé ici pour les deux spawners.</summary>
+    public void InitializeSpawn(MobData newData, int level)
+    {
+        data     = newData;
+        mobLevel = level;
+        ApplyData();
+    }
+
        private void ApplyData()
     {
         if (data == null) return;

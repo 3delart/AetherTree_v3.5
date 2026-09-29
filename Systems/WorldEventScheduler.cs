@@ -128,11 +128,7 @@ public class WorldEventScheduler : MonoBehaviour
 
         _aliveBoss = Instantiate(bossData.prefab, spawnPos, Quaternion.identity);
         Mob mob = _aliveBoss.GetComponent<Mob>();
-        if (mob != null)
-        {
-            mob.data     = bossData;
-            mob.mobLevel = palier;
-        }
+        mob?.InitializeSpawn(bossData, palier);
 
         AnnoncePanel.Instance?.Announce($"Le Boss Géant est apparu sur le Palier {palier} !");
 
