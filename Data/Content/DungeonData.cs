@@ -149,7 +149,15 @@ public class DungeonData : ScriptableObject, IInstanceConfig
     private void OnValidate()
     {
         foreach (var map in maps)
+        {
             if (map.mapScene != null) map.mapID = map.mapScene.name;
+
+            if (map.bossMob != null &&
+                (map.bossMob.mobType != MobType.DungeonMob || map.bossMob.dungeonRole != DungeonRole.Boss))
+                Debug.LogWarning($"[DungeonData] {name} : {map.bossMob.mobName} a mobType = " +
+                    $"{map.bossMob.mobType}/dungeonRole = {map.bossMob.dungeonRole}, attendu " +
+                    "DungeonMob + DungeonRole.Boss pour bossMob.");
+        }
     }
 #endif
 }

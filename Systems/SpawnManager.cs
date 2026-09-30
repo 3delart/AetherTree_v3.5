@@ -99,6 +99,20 @@ public class SpawnManager : MonoBehaviour
     [Header("Zones de spawn — Ressources rares")]
     public List<ResourceSpawnZone> resourceZones = new List<ResourceSpawnZone>();
 
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        foreach (SpawnZone zone in zones)
+        {
+            if (zone.mobEntries == null) continue;
+            foreach (MobSpawnEntry entry in zone.mobEntries)
+                if (entry.mobData != null && entry.mobData.mobType != MobType.WorldBoss)
+                    Debug.LogWarning($"[SpawnManager] {zone.zoneName} : {entry.mobData.mobName} a mobType = " +
+                        $"{entry.mobData.mobType}, attendu WorldBoss pour un boss de map errant.");
+        }
+    }
+#endif
+
     // =========================================================
     // INIT
     // =========================================================
