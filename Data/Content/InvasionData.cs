@@ -73,13 +73,14 @@ public class InvasionData : WorldEventData
 
     public override IEnumerator RunEvent(WorldEventScheduler scheduler)
     {
-        if (possibleVariants == null || possibleVariants.Count == 0 || eligibleMaps == null || eligibleMaps.Count == 0)
+        if (possibleVariants == null || possibleVariants.Count == 0 ||
+            scheduler.eligibleMaps == null || scheduler.eligibleMaps.Count == 0)
         {
-            Debug.LogWarning("[InvasionData] possibleVariants/eligibleMaps vide — cycle ignoré.");
+            Debug.LogWarning("[InvasionData] possibleVariants vide ou WorldEventScheduler.eligibleMaps vide — cycle ignoré.");
             yield break;
         }
 
-        WorldEventMapEntry targetMap = PickRandomMap();
+        WorldEventMapEntry targetMap = scheduler.PickRandomMap();
         InvasionVariant    variant   = possibleVariants[Random.Range(0, possibleVariants.Count)];
 
         AnnoncePanel.Instance?.Announce(
@@ -192,8 +193,6 @@ public class InvasionData : WorldEventData
                 WarnIfNotInvasionTrash(variant.reinforcements);
             }
         }
-
-        SyncEligibleMapsSceneNames();
     }
 
     private void WarnIfNotInvasionTrash(List<InvasionMobEntry> entries)

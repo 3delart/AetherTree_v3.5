@@ -2,9 +2,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections;
 using System.Collections.Generic;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 // =============================================================
 // WORLDBOSSDATA.CS — Configuration de l'événement Boss Géant
@@ -50,13 +47,14 @@ public class WorldBossData : WorldEventData
 
     public override IEnumerator RunEvent(WorldEventScheduler scheduler)
     {
-        if (possibleBosses == null || possibleBosses.Count == 0 || eligibleMaps == null || eligibleMaps.Count == 0)
+        if (possibleBosses == null || possibleBosses.Count == 0 ||
+            scheduler.eligibleMaps == null || scheduler.eligibleMaps.Count == 0)
         {
-            Debug.LogWarning("[WorldBossData] possibleBosses/eligibleMaps vide — cycle ignoré.");
+            Debug.LogWarning("[WorldBossData] possibleBosses vide ou WorldEventScheduler.eligibleMaps vide — cycle ignoré.");
             yield break;
         }
 
-        WorldEventMapEntry targetMap = PickRandomMap();
+        WorldEventMapEntry targetMap = scheduler.PickRandomMap();
         WorldBossEntry     entry     = possibleBosses[Random.Range(0, possibleBosses.Count)];
 
         AnnoncePanel.Instance?.Announce(
@@ -145,8 +143,6 @@ public class WorldBossData : WorldEventData
                 if (entry.boss != null && entry.boss.mobType != MobType.EventGiantBoss)
                     Debug.LogWarning($"[WorldBossData] {name} : {entry.boss.mobName} a mobType = " +
                         $"{entry.boss.mobType}, attendu EventGiantBoss pour un Boss Géant.");
-
-        SyncEligibleMapsSceneNames();
     }
 #endif
 }

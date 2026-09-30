@@ -2,6 +2,9 @@ using UnityEngine;
 using UnityEngine.AI;
 using System.Collections;
 using System.Collections.Generic;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 // =============================================================
 // WORLDEVENTSCHEDULER.CS — Dispatcher générique d'événement mondial
@@ -9,16 +12,36 @@ using System.Collections.Generic;
 // Spec : docs/superpowers/specs/2026-09-30-world-event-generic-invasion-design.md
 //
 // Singleton global (DontDestroyOnLoad), même famille qu'InstanceSession/AerisSystem. Porte le
-// timer partagé + les 2 offsets d'annonce (T-5min/T-1min) — communs à TOUS les types
-// d'événements, jamais dupliqués sur chaque asset WorldEventData. Pur dispatcher : ne sait RIEN
-// de la mécanique interne de World Boss/Invasion, se contente de tirer un type au hasard dans
-// eventPool et de lui déléguer tout le reste via RunEvent().
+// timer partagé + les 2 offsets d'annonce (T-5min/T-1min) ET eligibleMaps — communs à TOUS les
+// types d'événements, jamais dupliqués sur chaque asset WorldEventData (Florian, 2026-09-30 : un
+// palier éligible à un event l'est pour N'IMPORTE QUEL type, pas un pool par asset). Pur
+// dispatcher : ne sait RIEN de la mécanique interne de World Boss/Invasion, se contente de tirer
+// un type au hasard dans eventPool et de lui déléguer tout le reste via RunEvent().
 //
 // Florian place ce composant à la main sous _Managers et glisse les assets dans eventPool —
 // l'auto-création (Instance ci-dessous) reste un filet de sécurité comme partout ailleurs dans
 // le projet, mais sortirait avec eventPool vide — système inerte tant que personne ne le
 // configure (voir RunCycle, garde de config).
 // =============================================================
+
+[System.Serializable]
+public class WorldEventMapEntry
+{
+#if UNITY_EDITOR
+    [Tooltip("Glisse la scène ici — sceneName se remplit automatiquement (voir " +
+             "WorldEventScheduler.OnValidate). Editor-only, n'existe pas en build : sceneName " +
+             "reste le champ réellement lu au runtime, même convention que Portal.targetMapScene/" +
+             "DungeonMapData.mapScene.")]
+    public SceneAsset mapScene;
+#endif
+    [HideInInspector] public string sceneName;
+
+    [Tooltip("Palier de CETTE scène — doit correspondre au MapInfo.palier posé dans la scène " +
+             "elle-même. Pas de lecture automatique possible (une scène non chargée n'a pas de " +
+             "MapInfo accessible) : à retaper ici à la main, une seule fois à la config.")]
+    public int palier;
+}
+
 public class WorldEventScheduler : MonoBehaviour
 {
     private static WorldEventScheduler _instance;
@@ -51,8 +74,16 @@ public class WorldEventScheduler : MonoBehaviour
              "InvasionData, ou tout futur type héritant de WorldEventData.")]
     public List<WorldEventData> eventPool = new List<WorldEventData>();
 
+    [Header("Paliers éligibles")]
+    [Tooltip("Partagé par TOUS les types d'événements — un palier éligible l'est pour n'importe " +
+             "quel type tiré, pas un pool séparé par asset.")]
+    public List<WorldEventMapEntry> eligibleMaps = new List<WorldEventMapEntry>();
+
     public float FirstWarningOffset  => firstWarningOffset;
     public float SecondWarningOffset => secondWarningOffset;
+
+    public WorldEventMapEntry PickRandomMap()
+        => (eligibleMaps == null || eligibleMaps.Count == 0) ? null : eligibleMaps[Random.Range(0, eligibleMaps.Count)];
 
     private void Awake()
     {
@@ -120,4 +151,16 @@ public class WorldEventScheduler : MonoBehaviour
         point = a * (1f - r1) + b * (r1 * (1f - r2)) + c * (r1 * r2);
         return true;
     }
+
+#if UNITY_EDITOR
+    // Synchronise sceneName depuis mapScene (SceneAsset, editor-only) à chaque édition — évite un
+    // sceneName tapé/copié à la main qui diverge silencieusement du vrai nom de scène après un
+    // renommage/déplacement de fichier .unity (même patron que DungeonData.OnValidate).
+    private void OnValidate()
+    {
+        if (eligibleMaps == null) return;
+        foreach (var entry in eligibleMaps)
+            if (entry.mapScene != null) entry.sceneName = entry.mapScene.name;
+    }
+#endif
 }
