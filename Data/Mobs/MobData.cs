@@ -147,14 +147,6 @@ public class MobData : ScriptableObject
     [Header("Loot")]
     public LootTable lootTable;
 
-    [Tooltip("Coché : XP/Prestige/loot vont à TOUT joueur ayant infligé ≥1 dégât " +
-             "(MobKilledEvent.contributingPlayers), pas seulement ceux ≥10% des dégâts totaux " +
-             "(eligiblePlayers, seuil normal). Pensé pour les boss à grande échelle (World Boss, " +
-             "Invasion) où atteindre 10% devient irréaliste avec des dizaines/centaines de " +
-             "participants simultanés — un seuil pensé pour un donjon 5 joueurs, pas un event " +
-             "monde. Laisser décoché pour tout le reste (dungeon, mobs normaux).")]
-    public bool massEventRewards = false;
-
     // ── Capture / Pet ─────────────────────────────────────────
     [Header("Capture")]
     [Tooltip("Si true, peut être capturé comme pet (§3.5)")]

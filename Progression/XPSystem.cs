@@ -53,24 +53,19 @@ public class XPSystem : MonoBehaviour
     {
         if (e.mob == null) return;
 
-        // massEventRewards (MobData) : ≥1 dégât suffit (contributingPlayers) au lieu du seuil
-        // ≥10% (eligiblePlayers) — un World Boss/Invasion à des dizaines de participants rendrait
-        // 10% des dégâts totaux irréaliste pour presque tout le monde, voir Mob.Die().
-        var rewardPool = e.mob.massEventRewards ? e.contributingPlayers : e.eligiblePlayers;
-
-        if (rewardPool != null && rewardPool.Count > 0)
+        if (e.eligiblePlayers != null && e.eligiblePlayers.Count > 0)
         {
             // XP depuis LootTable — source de vérité centralisée
             int xp = e.mob.lootTable?.xpReward ?? 0;
             if (xp > 0)
-                foreach (Player p in rewardPool)
+                foreach (Player p in e.eligiblePlayers)
                     GiveCombatXP(p, xp);
 
             // Prestige depuis LootTable — 0 par défaut, réservé aux boss/mobs notables
             // (voir spec Prestige/Aura §1.4).
             int prestige = e.mob.lootTable?.prestigeReward ?? 0;
             if (prestige > 0)
-                foreach (Player p in rewardPool)
+                foreach (Player p in e.eligiblePlayers)
                     p.AddPrestige(prestige);
         }
 
