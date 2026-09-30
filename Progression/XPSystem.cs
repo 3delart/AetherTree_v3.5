@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 // =============================================================
 // XPSYSTEM.CS — Gestion XP combat

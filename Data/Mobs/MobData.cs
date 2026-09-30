@@ -40,7 +40,7 @@ public class MobData : ScriptableObject
     [Tooltip("Rôle dans l'événement Invasion — Normal = mob de vague/renfort (trash), Boss = LE " +
              "boss de l'invasion (voir InvasionVariant.boss, Data/Content/InvasionData.cs). Même " +
              "patron que dungeonRole ci-dessus (un seul MobType, le rôle distingue trash/boss).")]
-    [ShowIf(nameof(mobType), MobType.MobInvasion)]
+    [ShowIf(nameof(mobType), MobType.EventMobInvasion)]
     public InvasionRole invasionRole = InvasionRole.Normal;
 
     // ── Élémentaire ───────────────────────────────────────────
@@ -216,15 +216,15 @@ public class MobData : ScriptableObject
         _                     => 0f,
     };
 
-    /// <summary>True si ce mob est un boss — BossMap/BossWorld (MobType), ou un boss de donjon/
-    /// invasion exprimé via MobType.MobDungeon + DungeonRole.Boss / MobType.MobInvasion +
-    /// InvasionRole.Boss (voir plus bas — BossDungeon et BossInvasion retirés de MobType pour ne
+    /// <summary>True si ce mob est un boss — BossMap/EventWorldBoss (MobType), ou un boss de
+    /// donjon/invasion exprimé via MobType.MobDungeon + DungeonRole.Boss / MobType.EventMobInvasion
+    /// + InvasionRole.Boss (voir plus bas — BossDungeon et BossInvasion retirés de MobType pour ne
     /// plus dupliquer cette information à deux endroits, même patron pour les deux).</summary>
     public bool IsBoss()
         => mobType == MobType.BossMap
-        || mobType == MobType.BossWorld
+        || mobType == MobType.EventWorldBoss
         || (mobType == MobType.MobDungeon && dungeonRole == DungeonRole.Boss)
-        || (mobType == MobType.MobInvasion && invasionRole == InvasionRole.Boss);
+        || (mobType == MobType.EventMobInvasion && invasionRole == InvasionRole.Boss);
 
     /// <summary>True si ce mob est actif selon le cycle jour/nuit.</summary>
     public bool IsActiveAtTime(bool isNight)
@@ -269,18 +269,23 @@ public class MobData : ScriptableObject
 // MIGRATION : tout asset qui avait mobType = BossDungeon (ordinal 3) doit être repassé à la main
 // sur MobType = MobDungeon + DungeonRole = Boss, sinon son mobType affiche une valeur vide dans
 // l'Inspector (l'ordinal 3 existe toujours dans le fichier, juste sans nom d'enum dessus).
-// MobInvasion (2026-09-30, demande Florian) couvre TOUT mob de l'événement Invasion (trash ET
-// boss) — même patron que MobDungeon/DungeonRole : un seul MobType, le rôle (InvasionRole)
+// EventMobInvasion (2026-09-30, demande Florian) couvre TOUT mob de l'événement Invasion (trash
+// ET boss) — même patron que MobDungeon/DungeonRole : un seul MobType, le rôle (InvasionRole)
 // distingue trash/boss. BossInvasion (ordinal 5, jamais sérialisé sur aucun asset réel — feature
 // Invasion tout juste créée ce même jour) est retiré, PAS renuméroté pour combler le trou : ordinal
 // 5 reste vacant, même discipline que l'ordinal 3 (ex-BossDungeon) plus bas.
+// BossWorld/MobInvasion renommés EventWorldBoss/EventMobInvasion le même jour (Florian : tout
+// MobType de mob d'ÉVÉNEMENT doit commencer par "Event") — renommage de nom d'enum uniquement,
+// ordinaux (4/6) inchangés, sans risque pour les assets déjà sérialisés (Unity stocke l'ordinal,
+// jamais le nom). BossMap n'est PAS renommé : ce n'est pas un mob d'événement (WorldEventScheduler),
+// juste un mini-boss qui erre en zone ouverte en permanence.
 public enum MobType
 {
-    Normal       = 0,  // Mob standard, monde ouvert
-    MobDungeon   = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
-    BossMap      = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
-    BossWorld    = 4,  // Boss Géant (événement, spawn sur un palier random)
-    MobInvasion  = 6,  // Tout mob de l'événement Invasion (vague/renfort/boss) — voir InvasionRole
+    Normal           = 0,  // Mob standard, monde ouvert
+    MobDungeon       = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
+    BossMap          = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
+    EventWorldBoss   = 4,  // Boss Géant (événement, spawn sur un palier random)
+    EventMobInvasion = 6,  // Tout mob de l'événement Invasion (vague/renfort/boss) — voir InvasionRole
 }
 
 // ── Rôle en salle de donjon (Couloir) ────────────────────────────

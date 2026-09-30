@@ -45,7 +45,7 @@ public class InvasionVariant
     [Tooltip("Repop en boucle sur le même timer tant que le boss reste vivant après son apparition.")]
     public List<InvasionMobEntry> reinforcements = new List<InvasionMobEntry>();
 
-    [Tooltip("Devrait avoir MobType = MobInvasion + InvasionRole = Boss.")]
+    [Tooltip("Devrait avoir MobType = EventMobInvasion + InvasionRole = Boss.")]
     public MobData   boss;
     public LootTable rewardTable;
 }
@@ -180,10 +180,10 @@ public class InvasionData : WorldEventData
             foreach (var variant in possibleVariants)
             {
                 if (variant.boss != null &&
-                    (variant.boss.mobType != MobType.MobInvasion || variant.boss.invasionRole != InvasionRole.Boss))
+                    (variant.boss.mobType != MobType.EventMobInvasion || variant.boss.invasionRole != InvasionRole.Boss))
                     Debug.LogWarning($"[InvasionData] {name} : {variant.boss.mobName} a mobType = " +
                         $"{variant.boss.mobType}/invasionRole = {variant.boss.invasionRole}, attendu " +
-                        "MobInvasion + InvasionRole.Boss pour un boss d'invasion.");
+                        "EventMobInvasion + InvasionRole.Boss pour un boss d'invasion.");
 
                 if (variant.waves != null)
                     foreach (var wave in variant.waves)
@@ -201,10 +201,10 @@ public class InvasionData : WorldEventData
         if (entries == null) return;
         foreach (var entry in entries)
             if (entry.mob != null &&
-                (entry.mob.mobType != MobType.MobInvasion || entry.mob.invasionRole != InvasionRole.Normal))
+                (entry.mob.mobType != MobType.EventMobInvasion || entry.mob.invasionRole != InvasionRole.Normal))
                 Debug.LogWarning($"[InvasionData] {name} : {entry.mob.mobName} a mobType = " +
                     $"{entry.mob.mobType}/invasionRole = {entry.mob.invasionRole}, attendu " +
-                    "MobInvasion + InvasionRole.Normal pour un mob de vague/renfort.");
+                    "EventMobInvasion + InvasionRole.Normal pour un mob de vague/renfort.");
     }
 #endif
 }
