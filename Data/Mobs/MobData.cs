@@ -26,7 +26,7 @@ public class MobData : ScriptableObject
              "(ex: \"mob_loup_gris\"). Ne JAMAIS afficher au joueur — voir mobName pour l'affichage.")]
     public string    mobID;
     public string    mobName = "Mob";
-    public MobType   mobType = MobType.Normal;
+    public MobType   mobType = MobType.WorldMob;
     public MobAIType aiType  = MobAIType.Passive;
 
     [Tooltip("Rôle en salle de donjon (Couloir) — Normal = respawn selon Mob.respawnEnabled de " +
@@ -34,13 +34,13 @@ public class MobData : ScriptableObject
              "même si Mob.respawnEnabled reste coché (garde en code, voir Mob.ShouldRespawn()) — " +
              "un Objective qui respawn reverrouillerait un portail déjà ouvert " +
              "(Portal.requiredMobs).")]
-    [ShowIf(nameof(mobType), MobType.MobDungeon)]
+    [ShowIf(nameof(mobType), MobType.DungeonMob)]
     public DungeonRole dungeonRole = DungeonRole.Normal;
 
     [Tooltip("Rôle dans l'événement Invasion — Normal = mob de vague/renfort (trash), Boss = LE " +
              "boss de l'invasion (voir InvasionVariant.boss, Data/Content/InvasionData.cs). Même " +
              "patron que dungeonRole ci-dessus (un seul MobType, le rôle distingue trash/boss).")]
-    [ShowIf(nameof(mobType), MobType.EventMobInvasion)]
+    [ShowIf(nameof(mobType), MobType.EventInvasionMob)]
     public InvasionRole invasionRole = InvasionRole.Normal;
 
     // ── Élémentaire ───────────────────────────────────────────
@@ -216,15 +216,15 @@ public class MobData : ScriptableObject
         _                     => 0f,
     };
 
-    /// <summary>True si ce mob est un boss — BossMap/EventWorldBoss (MobType), ou un boss de
-    /// donjon/invasion exprimé via MobType.MobDungeon + DungeonRole.Boss / MobType.EventMobInvasion
+    /// <summary>True si ce mob est un boss — WorldBoss/EventGiantBoss (MobType), ou un boss de
+    /// donjon/invasion exprimé via MobType.DungeonMob + DungeonRole.Boss / MobType.EventInvasionMob
     /// + InvasionRole.Boss (voir plus bas — BossDungeon et BossInvasion retirés de MobType pour ne
     /// plus dupliquer cette information à deux endroits, même patron pour les deux).</summary>
     public bool IsBoss()
-        => mobType == MobType.BossMap
-        || mobType == MobType.EventWorldBoss
-        || (mobType == MobType.MobDungeon && dungeonRole == DungeonRole.Boss)
-        || (mobType == MobType.EventMobInvasion && invasionRole == InvasionRole.Boss);
+        => mobType == MobType.WorldBoss
+        || mobType == MobType.EventGiantBoss
+        || (mobType == MobType.DungeonMob && dungeonRole == DungeonRole.Boss)
+        || (mobType == MobType.EventInvasionMob && invasionRole == InvasionRole.Boss);
 
     /// <summary>True si ce mob est actif selon le cycle jour/nuit.</summary>
     public bool IsActiveAtTime(bool isNight)
@@ -261,31 +261,36 @@ public class MobData : ScriptableObject
 // sérialisé, une renumérotation l'aurait silencieusement retypé.
 // Plus de multiplicateur par valeur (retiré 2026-09-24, voir MobStatCalculator.cs) — chaque
 // valeur est une pure catégorie, les stats de chaque MobData sont tapées directement dessus.
-// MobDungeon ajouté (2026-09-28) sur l'ordinal 1, libéré par l'ancien Elite (jamais sérialisé
+// DungeonMob ajouté (2026-09-28) sur l'ordinal 1, libéré par l'ancien Elite (jamais sérialisé
 // sur aucun asset réel, confirmé par grep) — sépare TOUS les mobs de donjon (normaux, objectifs,
-// spéciaux ET boss — voir DungeonRole) des mobs de monde ouvert (Normal). BossDungeon RETIRÉ le
-// même jour : un boss de donjon s'exprime maintenant via MobType.MobDungeon + DungeonRole.Boss,
+// spéciaux ET boss — voir DungeonRole) des mobs de monde ouvert (WorldMob). BossDungeon RETIRÉ le
+// même jour : un boss de donjon s'exprime maintenant via MobType.DungeonMob + DungeonRole.Boss,
 // pas par un MobType séparé — évite de dupliquer "c'est un boss de donjon" à deux endroits.
 // MIGRATION : tout asset qui avait mobType = BossDungeon (ordinal 3) doit être repassé à la main
-// sur MobType = MobDungeon + DungeonRole = Boss, sinon son mobType affiche une valeur vide dans
+// sur MobType = DungeonMob + DungeonRole = Boss, sinon son mobType affiche une valeur vide dans
 // l'Inspector (l'ordinal 3 existe toujours dans le fichier, juste sans nom d'enum dessus).
-// EventMobInvasion (2026-09-30, demande Florian) couvre TOUT mob de l'événement Invasion (trash
-// ET boss) — même patron que MobDungeon/DungeonRole : un seul MobType, le rôle (InvasionRole)
+// EventInvasionMob (2026-09-30, demande Florian) couvre TOUT mob de l'événement Invasion (trash
+// ET boss) — même patron que DungeonMob/DungeonRole : un seul MobType, le rôle (InvasionRole)
 // distingue trash/boss. BossInvasion (ordinal 5, jamais sérialisé sur aucun asset réel — feature
 // Invasion tout juste créée ce même jour) est retiré, PAS renuméroté pour combler le trou : ordinal
 // 5 reste vacant, même discipline que l'ordinal 3 (ex-BossDungeon) plus bas.
-// BossWorld/MobInvasion renommés EventWorldBoss/EventMobInvasion le même jour (Florian : tout
-// MobType de mob d'ÉVÉNEMENT doit commencer par "Event") — renommage de nom d'enum uniquement,
-// ordinaux (4/6) inchangés, sans risque pour les assets déjà sérialisés (Unity stocke l'ordinal,
-// jamais le nom). BossMap n'est PAS renommé : ce n'est pas un mob d'événement (WorldEventScheduler),
-// juste un mini-boss qui erre en zone ouverte en permanence.
+//
+// Renommage global (2026-09-30, demande Florian) — deux catégories nommées explicitement :
+// "World" = mob PERMANENT (monde ouvert), "Event" = mob d'un WorldEventScheduler (temporaire,
+// spawné puis résolu). Normal→WorldMob, BossMap→WorldBoss, MobDungeon→DungeonMob (PAS "World" —
+// un mob de donjon vit en instance, pas dans le monde ouvert, catégorie à part), BossWorld→
+// EventGiantBoss (PAS "EventWorldBoss" — collision de nom avec le nouveau WorldBoss (BossMap)
+// alors que ce sont deux mobs différents ; "GiantBoss" colle au DisplayName déjà utilisé partout,
+// "Boss Géant"), MobInvasion→EventInvasionMob. Renommage de noms d'enum uniquement, ordinaux
+// (0/1/2/4/6) tous inchangés — sans risque pour les assets déjà sérialisés (Unity stocke
+// l'ordinal, jamais le nom).
 public enum MobType
 {
-    Normal           = 0,  // Mob standard, monde ouvert
-    MobDungeon       = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
-    BossMap          = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
-    EventWorldBoss   = 4,  // Boss Géant (événement, spawn sur un palier random)
-    EventMobInvasion = 6,  // Tout mob de l'événement Invasion (vague/renfort/boss) — voir InvasionRole
+    WorldMob         = 0,  // Mob standard, monde ouvert, permanent
+    DungeonMob       = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
+    WorldBoss        = 2,  // ex-BossZone/BossMap — erre en zone ouverte en permanence (Palier 1, mini-boss)
+    EventGiantBoss   = 4,  // Boss Géant (WorldEventScheduler, spawn sur un palier random)
+    EventInvasionMob = 6,  // Tout mob de l'événement Invasion (vague/renfort/boss) — voir InvasionRole
 }
 
 // ── Rôle en salle de donjon (Couloir) ────────────────────────────

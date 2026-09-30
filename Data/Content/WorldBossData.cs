@@ -30,7 +30,7 @@ public class WorldBossData : WorldEventData
     [Header("Boss possibles")]
     [Tooltip("Un boss est tiré au hasard parmi ceux-ci à chaque événement Boss Géant. Chaque " +
              "entrée porte sa propre récompense d'événement (rewardTable) — jamais partagée " +
-             "entre plusieurs boss. Devrait avoir MobType = EventWorldBoss (juste un avertissement " +
+             "entre plusieurs boss. Devrait avoir MobType = EventGiantBoss (juste un avertissement " +
              "si un autre type est glissé ici, pas un blocage).")]
     public List<WorldBossEntry> possibleBosses = new List<WorldBossEntry>();
 
@@ -142,9 +142,9 @@ public class WorldBossData : WorldEventData
     {
         if (possibleBosses != null)
             foreach (var entry in possibleBosses)
-                if (entry.boss != null && entry.boss.mobType != MobType.EventWorldBoss)
+                if (entry.boss != null && entry.boss.mobType != MobType.EventGiantBoss)
                     Debug.LogWarning($"[WorldBossData] {name} : {entry.boss.mobName} a mobType = " +
-                        $"{entry.boss.mobType}, attendu EventWorldBoss pour un Boss Géant.");
+                        $"{entry.boss.mobType}, attendu EventGiantBoss pour un Boss Géant.");
 
         SyncEligibleMapsSceneNames();
     }

@@ -60,7 +60,7 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// est placé (plus de réutilisation boss-ici/normal-ailleurs pour un même MobData — le prix
     /// de n'avoir qu'un seul endroit où déclarer "ce mob est un boss").</summary>
     public bool isDungeonBoss
-        => data != null && data.mobType == MobType.MobDungeon && data.dungeonRole == DungeonRole.Boss;
+        => data != null && data.mobType == MobType.DungeonMob && data.dungeonRole == DungeonRole.Boss;
 
     protected NavMeshAgent agent;
     protected Vector3      spawnPos;
@@ -477,7 +477,7 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         {
             InstanceSession.Instance?.OnBossKilled(this);
         }
-        else if (data != null && data.mobType == MobType.MobDungeon
+        else if (data != null && data.mobType == MobType.DungeonMob
                  && InstanceSession.Exists && InstanceSession.Instance.CurrentInstance != null)
         {
             // Annonce de groupe — objectif de donjon rempli (mob non-boss), voir Florian, spec
@@ -566,15 +566,15 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
             Destroy(gameObject, deathAnimLength + 3f);
     }
 
-    /// <summary>Garde-fou en plus de la case respawnEnabled : un mob de donjon (MobDungeon) en
+    /// <summary>Garde-fou en plus de la case respawnEnabled : un mob de donjon (DungeonMob) en
     /// rôle Objective/Special/Boss ne respawn JAMAIS, même si la case est restée cochée par
     /// erreur (défaut = true depuis peu) — un Objective qui respawn reverrouillerait un portail
     /// déjà ouvert (Portal.requiredMobs le reverrait "vivant"). Sans effet sur un mob normal
-    /// (MobType.Normal) ou un MobDungeon en rôle Normal, qui suivent respawnEnabled tel quel.</summary>
+    /// (MobType.WorldMob) ou un DungeonMob en rôle Normal, qui suivent respawnEnabled tel quel.</summary>
     private bool ShouldRespawn()
     {
         if (!respawnEnabled) return false;
-        if (data != null && data.mobType == MobType.MobDungeon && data.dungeonRole != DungeonRole.Normal)
+        if (data != null && data.mobType == MobType.DungeonMob && data.dungeonRole != DungeonRole.Normal)
             return false;
         return true;
     }

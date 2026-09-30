@@ -11,9 +11,9 @@ using UnityEngine;
 // un boss n'est plus un mob "Normal" automatiquement mis à l'échelle, ses
 // stats de base sont tapées directement sur son propre MobData, pour un
 // contrôle d'équilibrage total sans facteur caché à recalculer mentalement.
-// MobType reste une catégorie (Normal/MobDungeon/BossMap/EventWorldBoss/
-// EventMobInvasion — un boss de donjon est MobDungeon + DungeonRole.Boss, un
-// boss d'invasion est EventMobInvasion + InvasionRole.Boss) lue par IsBoss()
+// MobType reste une catégorie (WorldMob/DungeonMob/WorldBoss/EventGiantBoss/
+// EventInvasionMob — un boss de donjon est DungeonMob + DungeonRole.Boss, un
+// boss d'invasion est EventInvasionMob + InvasionRole.Boss) lue par IsBoss()
 // et par d'autres systèmes (annonces, IA...), mais n'influence plus aucun
 // calcul de stat ici.
 //
