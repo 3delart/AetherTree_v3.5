@@ -231,7 +231,7 @@ public class CombatAIController : MonoBehaviour
 
         if (_isChanneling) { StopAgent(); return; }
 
-        float dist = Vector3.Distance(_owner.transform.position, target.transform.position);
+        float dist = GetEffectiveDistance(_owner.transform.position, target);
 
         if (dist > GetMaxSkillRange())
         {
@@ -397,7 +397,7 @@ public class CombatAIController : MonoBehaviour
             if (cd > 0f) continue;
 
             float range = skill.range > 0f ? skill.range : 2f;
-            if (Vector3.Distance(_owner.transform.position, target.transform.position) > range) continue;
+            if (GetEffectiveDistance(_owner.transform.position, target) > range) continue;
             if (skill.manaCost > 0f && !_owner.HasMana(skill.manaCost)) continue;
 
             if (skill.manaCost > 0f) _owner.SpendMana(skill.manaCost);
@@ -586,6 +586,21 @@ public class CombatAIController : MonoBehaviour
 
     /// <summary>Plus grande range configurée parmi BasicAttackSkill + SecondarySkills — décide
     /// quand ce owner arrête de s'approcher pour engager.</summary>
+    /// <summary>Distance effective vers une cible, ajustée du rayon (XZ) de son collider — même
+    /// correction que SkillBar.cs côté joueur (Florian, 2026-09-30) : sans ça, un mob continue
+    /// de s'approcher/pousser une cible à grand collider (World Boss, Invasion) alors qu'il est
+    /// déjà "en range" au sens pivot-à-pivot — jamais atteint ici puisque le collider de la
+    /// cible occupe déjà cette distance, d'où le mob qui colle/bouscule en continu (et casse une
+    /// canalisation côté joueur, sensible au moindre déplacement).</summary>
+    private float GetEffectiveDistance(Vector3 from, Entity target)
+    {
+        float dist = Vector3.Distance(from, target.transform.position);
+        Collider col = target.GetComponentInChildren<Collider>();
+        if (col != null)
+            dist -= Mathf.Max(col.bounds.extents.x, col.bounds.extents.z);
+        return dist;
+    }
+
     private float GetMaxSkillRange()
     {
         float max = _profile.BasicAttackSkill != null && _profile.BasicAttackSkill.range > 0f
