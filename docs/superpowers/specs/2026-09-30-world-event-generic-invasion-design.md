@@ -80,6 +80,16 @@ depuis hier) — c'est maintenant une classe partagée par tous les types d'év�
 spécifique à Boss Géant. Le plan d'implémentation doit RETIRER cette classe de
 `WorldBossData.cs` en même temps qu'il l'ajoute ici, pas la dupliquer dans les deux fichiers.
 
+**Amendement (2026-09-30, après implémentation)** — `eligibleMaps`/`WorldEventMapEntry`/
+`PickRandomMap()` ont ensuite déménagé UNE 2e FOIS, cette fois de `WorldEventData` vers
+`Systems/WorldEventScheduler.cs` directement (même raisonnement que le timer/les offsets déjà
+partagés : un palier éligible à un event ne dépend pas du type tiré — Florian, 2026-09-30). Le
+code ci-dessous montre l'état intermédiaire (juste après ce chantier), pas l'état final — voir
+commit `f454bba` pour le diff réel. `WorldBossData`/`InvasionData` lisent maintenant
+`scheduler.eligibleMaps`/`scheduler.PickRandomMap()` au lieu de `this.eligibleMaps`/
+`this.PickRandomMap()`, et `SyncEligibleMapsSceneNames()` (protected sur `WorldEventData`)
+disparaît, remplacée par un `OnValidate` propre à `WorldEventScheduler`.
+
 ```csharp
 using System.Linq;
 
