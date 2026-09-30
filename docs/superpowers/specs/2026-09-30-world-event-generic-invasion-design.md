@@ -240,18 +240,18 @@ récompense est sur l'event et non sur le mob") :
 **inchangé** — toujours calculé et publié sur chaque `MobKilledEvent`, `contributingPlayers`
 reste utilisé ailleurs (XP Esprit, GDD §5.8), seul son usage pour la fairness de masse est retiré.
 
-### `Data/Mobs/MobData.cs` — nouveau `MobType.EventMobInvasion` + `InvasionRole`
+### `Data/Mobs/MobData.cs` — nouveau `MobType.EventInvasionMob` + `InvasionRole`
 
-Même patron que `MobDungeon`/`DungeonRole` (voir ce même fichier) :
+Même patron que `DungeonMob`/`DungeonRole` (voir ce même fichier) :
 
 ```csharp
 public enum MobType
 {
-    Normal           = 0,
-    MobDungeon       = 1,
-    BossMap          = 2,
-    EventWorldBoss   = 4,   // NOUVEAU NOM (était BossWorld)
-    EventMobInvasion = 6,   // NOUVEAU — tout mob de l'événement Invasion (vague/renfort/boss),
+    WorldMob         = 0,
+    DungeonMob       = 1,
+    WorldBoss        = 2,
+    EventGiantBoss   = 4,
+    EventInvasionMob = 6,   // NOUVEAU — tout mob de l'événement Invasion (vague/renfort/boss),
                             // voir InvasionRole
 }
 
@@ -263,20 +263,28 @@ public enum InvasionRole
 ```
 
 **Correction post-relecture (2026-09-30)** — première version de ce design réutilisait
-`MobType.BossInvasion` (ordinal 5, déjà présent, jamais câblé) comme boss d'invasion, avec
-`EventMobInvasion` (nouveau, ordinal 6) pour le trash — pas de nouvel enum `InvasionRole`. Florian a
-demandé le même patron que `MobDungeon`/`DungeonRole` à la place : un seul `MobType.EventMobInvasion`
-pour TOUT mob de l'invasion, le rôle (`InvasionRole.Normal`/`Boss`) distingue trash/boss, exactement
-comme `dungeonRole` le fait pour `MobDungeon`. `BossInvasion` (ordinal 5) est retiré — jamais
+`MobType.BossInvasion` (ordinal 5, déjà présent, jamais câblé) comme boss d'invasion, avec un
+`MobType` dédié (ordinal 6) pour le trash — pas de nouvel enum `InvasionRole`. Florian a demandé
+le même patron que `MobDungeon`/`DungeonRole` à la place : un seul `MobType` pour TOUT mob de
+l'invasion, le rôle (`InvasionRole.Normal`/`Boss`) distingue trash/boss, exactement comme
+`dungeonRole` le fait pour les mobs de donjon. `BossInvasion` (ordinal 5) est retiré — jamais
 sérialisé sur aucun asset réel (l'Invasion vient d'être créée) — et PAS renuméroté pour combler le
 trou, même discipline que l'ordinal 3 vacant (ex-`BossDungeon`).
 
 **Deuxième correction (2026-09-30)** — Florian a ensuite demandé que TOUT `MobType` de mob
 d'ÉVÉNEMENT commence par `Event` : `BossWorld` → `EventWorldBoss`, `MobInvasion` → `EventMobInvasion`
-(renommage de nom d'enum uniquement, ordinaux 4/6 inchangés — sans risque pour les assets déjà
-sérialisés, Unity stocke l'ordinal, jamais le nom). `BossMap` n'est PAS renommé : ce n'est pas un
-mob d'événement (aucun lien avec `WorldEventScheduler`), juste un mini-boss permanent en zone
-ouverte.
+(renommage de nom d'enum uniquement, ordinaux 4/6 inchangés). `BossMap` n'était PAS renommé à cette
+étape : pas un mob d'événement (aucun lien avec `WorldEventScheduler`), juste un mini-boss permanent
+en zone ouverte.
+
+**Troisième correction (2026-09-30)** — Florian a ensuite étendu le renommage à TOUT l'enum, deux
+catégories explicites : `World` = mob PERMANENT (monde ouvert), `Event` = mob d'un
+`WorldEventScheduler` (temporaire). `Normal` → `WorldMob`, `BossMap` → `WorldBoss`, `MobDungeon` →
+`DungeonMob` (PAS `World` — un mob de donjon vit en instance, pas dans le monde ouvert, catégorie
+à part), `EventWorldBoss` → `EventGiantBoss` (PAS `EventWorldBoss` — collision de nom avec le
+nouveau `WorldBoss` (ex-`BossMap`), alors que ce sont deux mobs différents ; `EventGiantBoss` colle
+au `DisplayName` déjà utilisé partout, "Boss Géant"), `MobInvasion`/`EventMobInvasion` →
+`EventInvasionMob`. Renommage de noms d'enum uniquement, ordinaux (0/1/2/4/6) tous inchangés.
 
 ### `Data/Content/WorldBossData.cs` — perd le timer, gagne une récompense par boss
 
@@ -397,9 +405,9 @@ public class WorldBossData : WorldEventData
     {
         if (possibleBosses != null)
             foreach (var entry in possibleBosses)
-                if (entry.boss != null && entry.boss.mobType != MobType.EventWorldBoss)
+                if (entry.boss != null && entry.boss.mobType != MobType.EventGiantBoss)
                     Debug.LogWarning($"[WorldBossData] {name} : {entry.boss.mobName} a mobType = " +
-                        $"{entry.boss.mobType}, attendu EventWorldBoss pour un Boss Géant.");
+                        $"{entry.boss.mobType}, attendu EventGiantBoss pour un Boss Géant.");
 
         SyncEligibleMapsSceneNames();
     }
@@ -577,10 +585,10 @@ public class InvasionData : WorldEventData
             foreach (var variant in possibleVariants)
             {
                 if (variant.boss != null &&
-                    (variant.boss.mobType != MobType.EventMobInvasion || variant.boss.invasionRole != InvasionRole.Boss))
+                    (variant.boss.mobType != MobType.EventInvasionMob || variant.boss.invasionRole != InvasionRole.Boss))
                     Debug.LogWarning($"[InvasionData] {name} : {variant.boss.mobName} a mobType = " +
                         $"{variant.boss.mobType}/invasionRole = {variant.boss.invasionRole}, attendu " +
-                        "EventMobInvasion + InvasionRole.Boss pour un boss d'invasion.");
+                        "EventInvasionMob + InvasionRole.Boss pour un boss d'invasion.");
 
                 if (variant.waves != null)
                     foreach (var wave in variant.waves)
@@ -598,10 +606,10 @@ public class InvasionData : WorldEventData
         if (entries == null) return;
         foreach (var entry in entries)
             if (entry.mob != null &&
-                (entry.mob.mobType != MobType.EventMobInvasion || entry.mob.invasionRole != InvasionRole.Normal))
+                (entry.mob.mobType != MobType.EventInvasionMob || entry.mob.invasionRole != InvasionRole.Normal))
                 Debug.LogWarning($"[InvasionData] {name} : {entry.mob.mobName} a mobType = " +
                     $"{entry.mob.mobType}/invasionRole = {entry.mob.invasionRole}, attendu " +
-                    "EventMobInvasion + InvasionRole.Normal pour un mob de vague/renfort.");
+                    "EventInvasionMob + InvasionRole.Normal pour un mob de vague/renfort.");
     }
 #endif
 }
