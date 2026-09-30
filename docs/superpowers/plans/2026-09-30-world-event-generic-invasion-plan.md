@@ -292,14 +292,14 @@ git commit -m "revert: remove MobData.massEventRewards, superseded by event-leve
 
 ---
 
-### Task 2: `MobData.cs` — add `MobType.MobInvasion`
+### Task 2: `MobData.cs` — add `MobType.EventMobInvasion`
 
 **Files:**
 - Modify: `Data/Mobs/MobData.cs`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `MobType.MobInvasion` (ordinal 6) — Task 6's `InvasionData` documents that wave/reinforcement `MobData` entries should use this type (not enforced in code, matches the project's existing soft-validation convention for `MobType`/`DungeonRole` combinations).
+- Produces: `MobType.EventMobInvasion` (ordinal 6) — Task 6's `InvasionData` documents that wave/reinforcement `MobData` entries should use this type (not enforced in code, matches the project's existing soft-validation convention for `MobType`/`DungeonRole` combinations).
 
 - [ ] **Step 1: Add the new enum member**
 
@@ -311,7 +311,7 @@ public enum MobType
     Normal       = 0,  // Mob standard, monde ouvert
     MobDungeon   = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
     BossMap      = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
-    BossWorld    = 4,  // Boss Géant (événement, spawn sur un palier random)
+    EventWorldBoss    = 4,  // Boss Géant (événement, spawn sur un palier random)
     BossInvasion = 5,  // Boss de l'événement Invasion
 }
 ```
@@ -324,9 +324,9 @@ public enum MobType
     Normal       = 0,  // Mob standard, monde ouvert
     MobDungeon   = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
     BossMap      = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
-    BossWorld    = 4,  // Boss Géant (événement, spawn sur un palier random)
+    EventWorldBoss    = 4,  // Boss Géant (événement, spawn sur un palier random)
     BossInvasion = 5,  // Boss de l'événement Invasion — voir InvasionVariant.boss
-    MobInvasion  = 6,  // Mob de vague/renfort d'une Invasion (le trash, pas le boss) — voir
+    EventMobInvasion  = 6,  // Mob de vague/renfort d'une Invasion (le trash, pas le boss) — voir
                        // InvasionWave/InvasionVariant.reinforcements (Data/Content/InvasionData.cs)
 }
 ```
@@ -341,18 +341,25 @@ Open any `MobData` asset in the Inspector, open the `Mob Type` dropdown — conf
 
 **Amendement post-exécution (2026-09-30)** — après exécution de cette tâche telle quelle,
 Florian a demandé le même patron que `MobDungeon`/`DungeonRole` plutôt qu'un `MobType` séparé pour
-le boss : `BossInvasion` (ordinal 5) est retiré, `MobInvasion` (ordinal 6, inchangé) couvre
+le boss : `BossInvasion` (ordinal 5) est retiré, `EventMobInvasion` (ordinal 6, inchangé) couvre
 maintenant TOUT mob d'invasion (trash ET boss), distingués par un nouveau champ `invasionRole:
-InvasionRole` (`Normal`/`Boss`, `ShowIf(mobType, MobInvasion)`) sur `MobData`, et `IsBoss()` est
+InvasionRole` (`Normal`/`Boss`, `ShowIf(mobType, EventMobInvasion)`) sur `MobData`, et `IsBoss()` est
 mis à jour en conséquence. Voir commit `79e2952` (après le commit initial de cette tâche) pour le
 diff réel — non reflété dans le before/after ci-dessus, qui documente l'état intermédiaire tel
 qu'exécuté avant cet amendement.
+
+**Deuxième amendement (2026-09-30)** — Florian a ensuite demandé que tout `MobType` de mob
+d'événement commence par `Event` : `BossWorld` → `EventWorldBoss`, `MobInvasion` → `EventMobInvasion`
+(nom d'enum uniquement, ordinaux 4/6 inchangés). `BossMap` non renommé (pas un mob d'événement).
+Voir commit `f24862c` pour le diff réel (même commit qui a aussi corrigé un `using
+System.Collections.Generic;` manquant dans `XPSystem.cs`, trouvé par une erreur de compile de
+Florian après Task 3).
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add Data/Mobs/MobData.cs
-git commit -m "feat: add MobType.MobInvasion for Invasion wave/reinforcement mobs"
+git commit -m "feat: add MobType.EventMobInvasion for Invasion wave/reinforcement mobs"
 ```
 
 ---
@@ -756,7 +763,7 @@ public class WorldEventScheduler : MonoBehaviour
 
 - [ ] **Step 3: Read the current `WorldBossData.cs`**
 
-Read `Data/Content/WorldBossData.cs` in full (post-Task-4, `WorldEventMapEntry` already removed) — confirm the remaining `WorldBossData` class body still matches yesterday's shipped shape (`possibleBosses: List<MobData>`, `minInterval`/`maxInterval`/`firstWarningOffset`/`secondWarningOffset`/`despawnTimeout`, the `OnValidate` with the `MobType.BossWorld` warning + scene-name sync). This step replaces the entire remaining content.
+Read `Data/Content/WorldBossData.cs` in full (post-Task-4, `WorldEventMapEntry` already removed) — confirm the remaining `WorldBossData` class body still matches yesterday's shipped shape (`possibleBosses: List<MobData>`, `minInterval`/`maxInterval`/`firstWarningOffset`/`secondWarningOffset`/`despawnTimeout`, the `OnValidate` with the `MobType.EventWorldBoss` warning + scene-name sync). This step replaces the entire remaining content.
 
 - [ ] **Step 4: Replace the whole `WorldBossData.cs` file**
 
@@ -793,7 +800,7 @@ public class WorldBossData : WorldEventData
     [Header("Boss possibles")]
     [Tooltip("Un boss est tiré au hasard parmi ceux-ci à chaque événement Boss Géant. Chaque " +
              "entrée porte sa propre récompense d'événement (rewardTable) — jamais partagée " +
-             "entre plusieurs boss. Devrait avoir MobType = BossWorld (juste un avertissement " +
+             "entre plusieurs boss. Devrait avoir MobType = EventWorldBoss (juste un avertissement " +
              "si un autre type est glissé ici, pas un blocage).")]
     public List<WorldBossEntry> possibleBosses = new List<WorldBossEntry>();
 
@@ -905,9 +912,9 @@ public class WorldBossData : WorldEventData
     {
         if (possibleBosses != null)
             foreach (var entry in possibleBosses)
-                if (entry.boss != null && entry.boss.mobType != MobType.BossWorld)
+                if (entry.boss != null && entry.boss.mobType != MobType.EventWorldBoss)
                     Debug.LogWarning($"[WorldBossData] {name} : {entry.boss.mobName} a mobType = " +
-                        $"{entry.boss.mobType}, attendu BossWorld pour un Boss Géant.");
+                        $"{entry.boss.mobType}, attendu EventWorldBoss pour un Boss Géant.");
 
         SyncEligibleMapsSceneNames();
     }
@@ -1131,22 +1138,22 @@ public class InvasionData : WorldEventData
 
                 if (variant.waves != null)
                     foreach (var wave in variant.waves)
-                        WarnIfNotMobInvasion(wave.mobs);
+                        WarnIfNotEventMobInvasion(wave.mobs);
 
-                WarnIfNotMobInvasion(variant.reinforcements);
+                WarnIfNotEventMobInvasion(variant.reinforcements);
             }
         }
 
         SyncEligibleMapsSceneNames();
     }
 
-    private void WarnIfNotMobInvasion(List<InvasionMobEntry> entries)
+    private void WarnIfNotEventMobInvasion(List<InvasionMobEntry> entries)
     {
         if (entries == null) return;
         foreach (var entry in entries)
-            if (entry.mob != null && entry.mob.mobType != MobType.MobInvasion)
+            if (entry.mob != null && entry.mob.mobType != MobType.EventMobInvasion)
                 Debug.LogWarning($"[InvasionData] {name} : {entry.mob.mobName} a mobType = " +
-                    $"{entry.mob.mobType}, attendu MobInvasion pour un mob de vague/renfort.");
+                    $"{entry.mob.mobType}, attendu EventMobInvasion pour un mob de vague/renfort.");
     }
 #endif
 }
@@ -1154,9 +1161,9 @@ public class InvasionData : WorldEventData
 
 **Amendement post-exécution (2026-09-30)** — suite à l'amendement de Task 2 (`BossInvasion`
 retiré, `InvasionRole` ajouté), les checks `OnValidate` ci-dessus ont été mis à jour : `variant.boss`
-doit avoir `mobType == MobInvasion && invasionRole == InvasionRole.Boss` (au lieu de `mobType ==
-BossInvasion`), et les mobs de vague/renfort doivent avoir `mobType == MobInvasion && invasionRole
-== InvasionRole.Normal` (au lieu de juste `mobType == MobInvasion`) — `WarnIfNotMobInvasion` est
+doit avoir `mobType == EventMobInvasion && invasionRole == InvasionRole.Boss` (au lieu de `mobType ==
+BossInvasion`), et les mobs de vague/renfort doivent avoir `mobType == EventMobInvasion && invasionRole
+== InvasionRole.Normal` (au lieu de juste `mobType == EventMobInvasion`) — `WarnIfNotEventMobInvasion` est
 devenu `WarnIfNotInvasionTrash` en conséquence. Voir commit `79e2952` pour le diff réel.
 
 - [ ] **Step 2: Verify it compiles**
@@ -1169,7 +1176,7 @@ Wait for Unity to finish compiling — confirm no errors.
 
 - [ ] **Step 4: Verify the `OnValidate` mobType warnings**
 
-On the new asset, add one `InvasionVariant`, set its `boss` to any `MobData` whose `mobType`/`invasionRole` is NOT `MobInvasion`+`Boss` (e.g. leave it `Normal` mobType) — confirm a `[InvasionData] ... attendu MobInvasion + InvasionRole.Boss` warning appears in the Console immediately. Add one wave with one `InvasionMobEntry` whose `mob` isn't `MobInvasion`+`InvasionRole.Normal` — confirm the matching `attendu MobInvasion + InvasionRole.Normal` warning also appears. Fix both (or leave as a deliberate test artifact if you'll reconfigure real content in Task 7) — the point is confirming the warnings actually fire, not that the asset ends up correctly configured yet.
+On the new asset, add one `InvasionVariant`, set its `boss` to any `MobData` whose `mobType`/`invasionRole` is NOT `EventMobInvasion`+`Boss` (e.g. leave it `Normal` mobType) — confirm a `[InvasionData] ... attendu EventMobInvasion + InvasionRole.Boss` warning appears in the Console immediately. Add one wave with one `InvasionMobEntry` whose `mob` isn't `EventMobInvasion`+`InvasionRole.Normal` — confirm the matching `attendu EventMobInvasion + InvasionRole.Normal` warning also appears. Fix both (or leave as a deliberate test artifact if you'll reconfigure real content in Task 7) — the point is confirming the warnings actually fire, not that the asset ends up correctly configured yet.
 
 - [ ] **Step 5: Commit**
 
@@ -1188,7 +1195,7 @@ git commit -m "feat: add InvasionData — 5-wave + endless-reinforcement Invasio
 
 - [ ] **Step 1: Configure `WorldEventScheduler` under `_Managers`**
 
-On the existing `WorldEventScheduler` GameObject (placed yesterday): the old `Event Data` field is gone (replaced by `Event Pool`) — drag the existing `WorldBossData` asset into `Event Pool` (element 0). Create a new `InvasionData` asset (Task 6 Step 3), fill in at least one `InvasionVariant` with 5 waves (any test `MobData` with `MobType = MobInvasion` / `InvasionRole = Normal`, count 1-2 each), a small `reinforcements` list, a `boss` (`MobType = MobInvasion` / `InvasionRole = Boss`, a real `prefab`), and a `rewardTable` (`LootTable` with `xpReward`/`prestigeReward` > 0 and at least one item). Add this `InvasionData` to `Event Pool` (element 1). Fill `Eligible Maps` on the `InvasionData` the same way as `WorldBossData`'s (drag `Map_01`, set its real palier).
+On the existing `WorldEventScheduler` GameObject (placed yesterday): the old `Event Data` field is gone (replaced by `Event Pool`) — drag the existing `WorldBossData` asset into `Event Pool` (element 0). Create a new `InvasionData` asset (Task 6 Step 3), fill in at least one `InvasionVariant` with 5 waves (any test `MobData` with `MobType = EventMobInvasion` / `InvasionRole = Normal`, count 1-2 each), a small `reinforcements` list, a `boss` (`MobType = EventMobInvasion` / `InvasionRole = Boss`, a real `prefab`), and a `rewardTable` (`LootTable` with `xpReward`/`prestigeReward` > 0 and at least one item). Add this `InvasionData` to `Event Pool` (element 1). Fill `Eligible Maps` on the `InvasionData` the same way as `WorldBossData`'s (drag `Map_01`, set its real palier).
 
 - [ ] **Step 2: Re-populate `WorldBossData.possibleBosses`**
 
