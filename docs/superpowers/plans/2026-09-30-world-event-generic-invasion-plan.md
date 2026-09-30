@@ -339,6 +339,15 @@ Wait for Unity to finish compiling — confirm no errors.
 
 Open any `MobData` asset in the Inspector, open the `Mob Type` dropdown — confirm `Mob Invasion` now appears as an option alongside the existing values.
 
+**Amendement post-exécution (2026-09-30)** — après exécution de cette tâche telle quelle,
+Florian a demandé le même patron que `MobDungeon`/`DungeonRole` plutôt qu'un `MobType` séparé pour
+le boss : `BossInvasion` (ordinal 5) est retiré, `MobInvasion` (ordinal 6, inchangé) couvre
+maintenant TOUT mob d'invasion (trash ET boss), distingués par un nouveau champ `invasionRole:
+InvasionRole` (`Normal`/`Boss`, `ShowIf(mobType, MobInvasion)`) sur `MobData`, et `IsBoss()` est
+mis à jour en conséquence. Voir commit `79e2952` (après le commit initial de cette tâche) pour le
+diff réel — non reflété dans le before/after ci-dessus, qui documente l'état intermédiaire tel
+qu'exécuté avant cet amendement.
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -1143,6 +1152,13 @@ public class InvasionData : WorldEventData
 }
 ```
 
+**Amendement post-exécution (2026-09-30)** — suite à l'amendement de Task 2 (`BossInvasion`
+retiré, `InvasionRole` ajouté), les checks `OnValidate` ci-dessus ont été mis à jour : `variant.boss`
+doit avoir `mobType == MobInvasion && invasionRole == InvasionRole.Boss` (au lieu de `mobType ==
+BossInvasion`), et les mobs de vague/renfort doivent avoir `mobType == MobInvasion && invasionRole
+== InvasionRole.Normal` (au lieu de juste `mobType == MobInvasion`) — `WarnIfNotMobInvasion` est
+devenu `WarnIfNotInvasionTrash` en conséquence. Voir commit `79e2952` pour le diff réel.
+
 - [ ] **Step 2: Verify it compiles**
 
 Wait for Unity to finish compiling — confirm no errors.
@@ -1153,7 +1169,7 @@ Wait for Unity to finish compiling — confirm no errors.
 
 - [ ] **Step 4: Verify the `OnValidate` mobType warnings**
 
-On the new asset, add one `InvasionVariant`, set its `boss` to any `MobData` whose `mobType` is NOT `BossInvasion` (e.g. `Normal`) — confirm a `[InvasionData] ... attendu BossInvasion` warning appears in the Console immediately. Add one wave with one `InvasionMobEntry` whose `mob.mobType` is NOT `MobInvasion` — confirm the matching `attendu MobInvasion` warning also appears. Fix both (or leave as a deliberate test artifact if you'll reconfigure real content in Task 7) — the point is confirming the warnings actually fire, not that the asset ends up correctly configured yet.
+On the new asset, add one `InvasionVariant`, set its `boss` to any `MobData` whose `mobType`/`invasionRole` is NOT `MobInvasion`+`Boss` (e.g. leave it `Normal` mobType) — confirm a `[InvasionData] ... attendu MobInvasion + InvasionRole.Boss` warning appears in the Console immediately. Add one wave with one `InvasionMobEntry` whose `mob` isn't `MobInvasion`+`InvasionRole.Normal` — confirm the matching `attendu MobInvasion + InvasionRole.Normal` warning also appears. Fix both (or leave as a deliberate test artifact if you'll reconfigure real content in Task 7) — the point is confirming the warnings actually fire, not that the asset ends up correctly configured yet.
 
 - [ ] **Step 5: Commit**
 
@@ -1172,7 +1188,7 @@ git commit -m "feat: add InvasionData — 5-wave + endless-reinforcement Invasio
 
 - [ ] **Step 1: Configure `WorldEventScheduler` under `_Managers`**
 
-On the existing `WorldEventScheduler` GameObject (placed yesterday): the old `Event Data` field is gone (replaced by `Event Pool`) — drag the existing `WorldBossData` asset into `Event Pool` (element 0). Create a new `InvasionData` asset (Task 6 Step 3), fill in at least one `InvasionVariant` with 5 waves (any test `MobData` with `MobType = MobInvasion`, count 1-2 each), a small `reinforcements` list, a `boss` (`MobType = BossInvasion`, a real `prefab`), and a `rewardTable` (`LootTable` with `xpReward`/`prestigeReward` > 0 and at least one item). Add this `InvasionData` to `Event Pool` (element 1). Fill `Eligible Maps` on the `InvasionData` the same way as `WorldBossData`'s (drag `Map_01`, set its real palier).
+On the existing `WorldEventScheduler` GameObject (placed yesterday): the old `Event Data` field is gone (replaced by `Event Pool`) — drag the existing `WorldBossData` asset into `Event Pool` (element 0). Create a new `InvasionData` asset (Task 6 Step 3), fill in at least one `InvasionVariant` with 5 waves (any test `MobData` with `MobType = MobInvasion` / `InvasionRole = Normal`, count 1-2 each), a small `reinforcements` list, a `boss` (`MobType = MobInvasion` / `InvasionRole = Boss`, a real `prefab`), and a `rewardTable` (`LootTable` with `xpReward`/`prestigeReward` > 0 and at least one item). Add this `InvasionData` to `Event Pool` (element 1). Fill `Eligible Maps` on the `InvasionData` the same way as `WorldBossData`'s (drag `Map_01`, set its real palier).
 
 - [ ] **Step 2: Re-populate `WorldBossData.possibleBosses`**
 
