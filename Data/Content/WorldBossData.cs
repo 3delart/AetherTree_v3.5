@@ -19,24 +19,6 @@ using UnityEditor;
 // l'événement (mobLevel = palier, voir WorldEventScheduler), pas une propriété de l'asset.
 // =============================================================
 
-[System.Serializable]
-public class WorldEventMapEntry
-{
-#if UNITY_EDITOR
-    [Tooltip("Glisse la scène ici — sceneName se remplit automatiquement (voir " +
-             "WorldBossData.OnValidate). Editor-only, n'existe pas en build : sceneName reste le " +
-             "champ réellement lu au runtime, même convention que Portal.targetMapScene/" +
-             "DungeonMapData.mapScene.")]
-    public SceneAsset mapScene;
-#endif
-    [HideInInspector] public string sceneName;
-
-    [Tooltip("Palier de CETTE scène — doit correspondre au MapInfo.palier posé dans la scène " +
-             "elle-même. Pas de lecture automatique possible (une scène non chargée n'a pas de " +
-             "MapInfo accessible) : à retaper ici à la main, une seule fois à la config.")]
-    public int palier;
-}
-
 [CreateAssetMenu(fileName = "wboss_", menuName = "AetherTree/Contenu/WorldBossData")]
 public class WorldBossData : ScriptableObject
 {
