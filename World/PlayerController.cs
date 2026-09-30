@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.EventSystems;
 
 // =============================================================
 // PLAYERCONTROLLER.CS — Déplacement joueur
@@ -101,14 +102,38 @@ public class PlayerController : MonoBehaviour
 
         if (UIManager.Instance != null && UIManager.Instance.IsAnyPanelOpen()) return;
 
+        // Le raycast 3D ci-dessous ignore l'UI (Physics.Raycast ne connaît que les colliders du
+        // monde) — sans ce garde, un clic droit sur une barre d'action (hotbar, skillbar...) qui
+        // couvre visuellement un point de sol AUSSI déplacerait le joueur, en plus de l'action UI
+        // elle-même (ex: vider un slot au clic droit).
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
+
         Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
 
         // QueryTriggerInteraction.Ignore : ignore tous les colliders en mode Trigger
-        // (ZoneTrigger, SphereCollider des arbres, etc.) — seul le sol solide est touché
-        if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity,
-            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)) return;
+        // (ZoneTrigger, SphereCollider des arbres, etc.) — seul le sol solide est touché.
+        // RaycastAll (pas Raycast) — un mob au collider large (Boss Géant/Invasion) peut
+        // occuper tout l'espace écran entre la caméra et le sol ; un simple Raycast prend le
+        // PREMIER collider touché (le mob, pas tagué "Ground") et abandonne le déplacement —
+        // Florian, 2026-09-30 : "mon clic est sur son collider, ce qui m'empêche de me
+        // déplacer". On parcourt tous les hits et on prend le PLUS PROCHE tagué "Ground",
+        // ignorant les colliders de mob/PNJ qui se trouvent devant.
+        RaycastHit[] hits = Physics.RaycastAll(ray, Mathf.Infinity,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        if (hits.Length == 0) return;
 
-        if (!hit.collider.CompareTag("Ground")) return;
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+        RaycastHit hit = default;
+        bool foundGround = false;
+        foreach (RaycastHit candidate in hits)
+        {
+            if (!candidate.collider.CompareTag("Ground")) continue;
+            hit = candidate;
+            foundGround = true;
+            break;
+        }
+        if (!foundGround) return;
 
         // Déplacement manuel — annule toute approche automatique en cours.
         // SkillBar a son PROPRE suivi d'approche (_isApproaching/_pendingSkill, pour
