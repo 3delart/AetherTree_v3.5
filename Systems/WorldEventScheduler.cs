@@ -1,28 +1,23 @@
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.SceneManagement;
 using System.Collections;
+using System.Collections.Generic;
 
 // =============================================================
-// WORLDEVENTSCHEDULER.CS — Moteur de l'événement mondial à intervalle aléatoire
+// WORLDEVENTSCHEDULER.CS — Dispatcher générique d'événement mondial
 // Path : Assets/Scripts/Systems/WorldEventScheduler.cs
-// Spec : docs/superpowers/specs/2026-09-29-world-event-scheduler-boss-geant-design.md
+// Spec : docs/superpowers/specs/2026-09-30-world-event-generic-invasion-design.md
 //
-// Singleton global (DontDestroyOnLoad), même famille qu'InstanceSession/AerisSystem. Toute la
-// config (intervalle, offsets d'annonce, paliers éligibles, timeout) vit sur UN asset partagé
-// (eventData, voir Data/Content/WorldBossData.cs) — ce composant est un pur moteur, pas de
-// champs de config directement dessus. Florian place ce composant à la main sous _Managers et
-// glisse l'asset dans eventData — l'auto-création (Instance ci-dessous) reste un filet de
-// sécurité comme partout ailleurs dans le projet, mais sortirait avec eventData vide — système
-// inerte tant que personne ne l'assigne (voir RunCycle, garde de config).
+// Singleton global (DontDestroyOnLoad), même famille qu'InstanceSession/AerisSystem. Porte le
+// timer partagé + les 2 offsets d'annonce (T-5min/T-1min) — communs à TOUS les types
+// d'événements, jamais dupliqués sur chaque asset WorldEventData. Pur dispatcher : ne sait RIEN
+// de la mécanique interne de World Boss/Invasion, se contente de tirer un type au hasard dans
+// eventPool et de lui déléguer tout le reste via RunEvent().
 //
-// Réutilisable plus tard pour Invasion (roadmap #3, même famille de timer aléatoire) — PAS pour
-// Combat à Vague (roadmap #4, timer à HEURE FIXE, mécanisme différent, à ne jamais fusionner
-// avec celui-ci).
-//
-// Un seul événement actif à la fois : RunCycle() bloque sur SpawnAndWaitForResolution() jusqu'à
-// résolution complète (mort ou timeout) avant de reboucler — aucun chevauchement possible par
-// construction, pas besoin d'un garde explicite en plus.
+// Florian place ce composant à la main sous _Managers et glisse les assets dans eventPool —
+// l'auto-création (Instance ci-dessous) reste un filet de sécurité comme partout ailleurs dans
+// le projet, mais sortirait avec eventPool vide — système inerte tant que personne ne le
+// configure (voir RunCycle, garde de config).
 // =============================================================
 public class WorldEventScheduler : MonoBehaviour
 {
@@ -41,15 +36,23 @@ public class WorldEventScheduler : MonoBehaviour
         }
     }
 
-    [Tooltip("Toute la config de l'événement (boss/timer/annonces/paliers/timeout) — voir " +
-             "Data/Content/WorldBossData.cs. Un asset partagé glissé ici sur le GameObject " +
-             "sous _Managers.")]
-    public WorldBossData eventData;
+    [Header("Timer — intervalle aléatoire entre deux événements (secondes)")]
+    [Tooltip("Défaut ~6-8h. Réduis CES DEUX VALEURS *ET* les deux offsets d'annonce ci-dessous " +
+             "ENSEMBLE pour tester en Play Mode sans attendre des heures.")]
+    public float minInterval = 21600f; // 6h
+    public float maxInterval = 28800f; // 8h
 
-    // ── État runtime ─────────────────────────────────────────────
-    private GameObject _aliveBoss;
-    private Coroutine  _timeoutCoroutine;
-    private bool       _resolved;
+    [Header("Annonces — délai AVANT le déclenchement (secondes)")]
+    public float firstWarningOffset  = 300f; // 5 min
+    public float secondWarningOffset = 60f;  // 1 min
+
+    [Header("Pool d'événements possibles")]
+    [Tooltip("Un type est tiré au hasard à chaque cycle — glisse ici un WorldBossData, un " +
+             "InvasionData, ou tout futur type héritant de WorldEventData.")]
+    public List<WorldEventData> eventPool = new List<WorldEventData>();
+
+    public float FirstWarningOffset  => firstWarningOffset;
+    public float SecondWarningOffset => secondWarningOffset;
 
     private void Awake()
     {
@@ -71,120 +74,37 @@ public class WorldEventScheduler : MonoBehaviour
     {
         while (true)
         {
-            if (eventData == null || eventData.possibleBosses == null || eventData.possibleBosses.Count == 0 ||
-                eventData.eligibleMaps == null || eventData.eligibleMaps.Count == 0)
+            if (eventPool == null || eventPool.Count == 0)
             {
-                Debug.LogWarning("[WorldEventScheduler] eventData non assigné ou possibleBosses/eligibleMaps " +
-                    "vide(s) — système inerte tant que ces champs sont vides. Nouvelle vérification dans 5s.");
+                Debug.LogWarning("[WorldEventScheduler] eventPool vide — système inerte. Nouvelle vérification dans 5s.");
                 yield return new WaitForSeconds(5f);
-                continue; // relit la config à chaque passage — un fix live en Éditeur est pris en compte
+                continue;
             }
 
-            float totalDelay = Random.Range(eventData.minInterval, eventData.maxInterval);
+            float totalDelay = Random.Range(minInterval, maxInterval);
+            yield return new WaitForSeconds(Mathf.Max(0f, totalDelay - firstWarningOffset));
 
-            // ── Jusqu'à la 1ère annonce (T-5min par défaut) ──────
-            yield return new WaitForSeconds(Mathf.Max(0f, totalDelay - eventData.firstWarningOffset));
+            WorldEventData selected = eventPool[Random.Range(0, eventPool.Count)];
+            if (selected == null) continue; // entrée vide dans la liste — reboucle direct
 
-            WorldEventMapEntry targetMap = eventData.eligibleMaps[Random.Range(0, eventData.eligibleMaps.Count)];
-            MobData targetBoss = eventData.possibleBosses[Random.Range(0, eventData.possibleBosses.Count)];
-
-            AnnoncePanel.Instance?.Announce(
-                $"Un Boss Géant menace le Palier {targetMap.palier} dans {eventData.firstWarningOffset / 60f:F0} minutes !");
-
-            // ── Jusqu'à la 2e annonce (T-1min par défaut) ────────
-            yield return new WaitForSeconds(Mathf.Max(0f, eventData.firstWarningOffset - eventData.secondWarningOffset));
-
-            AnnoncePanel.Instance?.Announce(
-                $"Un Boss Géant menace le Palier {targetMap.palier} dans {eventData.secondWarningOffset / 60f:F0} minute(s) !");
-
-            // ── Jusqu'au spawn (T-0) ──────────────────────────────
-            yield return new WaitForSeconds(eventData.secondWarningOffset);
-
-            // Scène active RELUE ici, jamais capturée plus tôt — un joueur qui change de map
-            // pendant la fenêtre d'annonce ne doit compter que sa position AU MOMENT du check.
-            if (SceneManager.GetActiveScene().name == targetMap.sceneName)
-                yield return SpawnAndWaitForResolution(targetBoss, targetMap.palier);
-            // Sinon : rien ne spawn, on boucle directement sur le cycle suivant (retour Idle).
+            yield return selected.RunEvent(this);
+            // selected.RunEvent gère TOUT (annonces, spawn, résolution, récompense) en utilisant
+            // FirstWarningOffset/SecondWarningOffset ci-dessus — le scheduler ne sait rien de
+            // plus sur ce qui se passe à l'intérieur.
         }
     }
 
     // =========================================================
-    // SPAWN + RÉSOLUTION (mort ou timeout)
-    // =========================================================
-
-    private IEnumerator SpawnAndWaitForResolution(MobData bossData, int palier)
-    {
-        if (bossData.prefab == null)
-        {
-            Debug.LogWarning($"[WorldEventScheduler] {bossData.mobName} n'a pas de prefab — événement annulé.");
-            yield break;
-        }
-
-        if (!TryGetRandomNavMeshPoint(out Vector3 spawnPos))
-        {
-            Debug.LogWarning("[WorldEventScheduler] Aucun NavMesh baké dans la scène active — événement annulé.");
-            yield break;
-        }
-
-        _aliveBoss = Instantiate(bossData.prefab, spawnPos, Quaternion.identity);
-        Mob mob = _aliveBoss.GetComponent<Mob>();
-        mob?.InitializeSpawn(bossData, palier);
-
-        AnnoncePanel.Instance?.Announce($"Le Boss Géant est apparu sur le Palier {palier} !");
-
-        _resolved = false;
-        mob?.OnDeath(() => OnBossResolved(palier, killed: true));
-
-        _timeoutCoroutine = StartCoroutine(TimeoutAfterDelay(palier, eventData.despawnTimeout));
-
-        // Bloque le cycle principal tant que ni la mort ni le timeout n'ont résolu l'événement.
-        yield return new WaitUntil(() => _resolved);
-    }
-
-    private IEnumerator TimeoutAfterDelay(int palier, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        OnBossResolved(palier, killed: false);
-    }
-
-    /// <summary>Point de résolution UNIQUE — mort ET timeout y passent tous les deux. Le garde
-    /// _resolved empêche une double résolution si les deux se déclenchent presque en même temps
-    /// (le joueur tue le boss juste avant/pendant que le timeout allait se déclencher) : sans ce
-    /// garde, une double annonce ou un Destroy() sur un objet déjà détruit par Mob.Die() serait
-    /// possible.</summary>
-    private void OnBossResolved(int palier, bool killed)
-    {
-        if (_resolved) return;
-        _resolved = true;
-
-        if (_timeoutCoroutine != null) { StopCoroutine(_timeoutCoroutine); _timeoutCoroutine = null; }
-
-        if (killed)
-        {
-            AnnoncePanel.Instance?.Announce($"Le Boss Géant du Palier {palier} a été vaincu !");
-            // Récompenses (XP/Aeris/Prestige/loot) déjà gérées par GameEventBus.OnMobKilled dès
-            // que Mob.Die() publie l'event — le boss est un Mob normal, rien à faire ici.
-        }
-        else
-        {
-            if (_aliveBoss != null) Destroy(_aliveBoss);
-            AnnoncePanel.Instance?.Announce($"Le Boss Géant du Palier {palier} s'est retiré...");
-        }
-
-        _aliveBoss = null;
-    }
-
-    // =========================================================
-    // POSITION ALÉATOIRE SUR LE NAVMESH
+    // POSITION ALÉATOIRE SUR LE NAVMESH — utilisé par tout type d'événement
     // =========================================================
 
     /// <summary>Point barycentrique uniforme dans un triangle du NavMesh baké de la scène
-    /// ACTIVE — voir spec §Position de spawn. Pas de biais par aire de triangle (acceptable,
-    /// pas une distribution statistiquement critique). Retourne false si le NavMesh est vide/
-    /// absent — un `out Vector3.zero` en cas d'échec aurait été un piège : (0,0,0) est une
-    /// position VALIDE sur un vrai NavMesh (l'origine du monde), donc pas utilisable comme
-    /// sentinelle d'échec — d'où le bool de retour plutôt qu'un simple Vector3.</summary>
-    private static bool TryGetRandomNavMeshPoint(out Vector3 point)
+    /// ACTIVE. Pas de biais par aire de triangle (acceptable, pas une distribution
+    /// statistiquement critique). Retourne false si le NavMesh est vide/absent — un
+    /// `out Vector3.zero` en cas d'échec aurait été un piège : (0,0,0) est une position VALIDE
+    /// sur un vrai NavMesh (l'origine du monde), donc pas utilisable comme sentinelle d'échec —
+    /// d'où le bool de retour plutôt qu'un simple Vector3.</summary>
+    public static bool TryGetRandomNavMeshPoint(out Vector3 point)
     {
         var tri = NavMesh.CalculateTriangulation();
         if (tri.indices.Length < 3) { point = Vector3.zero; return false; }
