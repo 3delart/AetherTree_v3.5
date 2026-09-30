@@ -466,6 +466,13 @@ git commit -m "feat: add GrantEventLoot/GrantEventRewards for event-level reward
 
 ### Task 4: `WorldEventData.cs` — abstract base class + relocate `WorldEventMapEntry`
 
+**Amendement (2026-09-30, après implémentation)** — `eligibleMaps`/`WorldEventMapEntry`/
+`PickRandomMap()`/`SyncEligibleMapsSceneNames()` ont ensuite déménagé une 2e fois, de
+`WorldEventData` vers `Systems/WorldEventScheduler.cs` (Florian : un palier éligible ne dépend pas
+du type d'event tiré, même logique que le timer déjà partagé). Le before/after ci-dessous
+documente l'état intermédiaire, pas l'état final — voir commit `f454bba` pour le vrai diff.
+`WorldBossData`/`InvasionData` lisent `scheduler.eligibleMaps`/`scheduler.PickRandomMap()`.
+
 **Files:**
 - Create: `Data/Content/WorldEventData.cs`
 - Modify: `Data/Content/WorldBossData.cs` (remove `WorldEventMapEntry` only — full restructure is Task 5)
