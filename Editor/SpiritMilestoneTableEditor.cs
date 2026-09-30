@@ -60,10 +60,17 @@ public class SpiritMilestoneTableEditor : Editor
             DrawProcs(table);
     }
 
-    /// <summary>Génère les gains par niveau — table finale 2026-09-07 (Florian, rev.3 — cible
+    /// <summary>Génère les gains par niveau — table finale 2026-09-30 (Florian, rev.4 — cible
     ///   exacte lvl100 : 200 attaque / 1500 HP / 6% crit chance / 5% résist ALL) :
-    ///   Points élémentaires : 1 ligne tous les 10 niveaux (10,20,...,100), valeur = le niveau
-    ///     lui-même → total 550 à lvl100.
+    ///   Points élémentaires : UN gain À CHAQUE niveau (pas un lump tous les 10 — la version
+    ///     rev.3 dumpait tout le gain de la décennie en un coup au niveau pile, ex: 0 aux lvl
+    ///     1-9 puis +10 d'un coup au lvl10, plat au lieu de progressif, et surtout zéro point
+    ///     du tout sur les niveaux 91-99 — les plus chers en XP vu la courbe exponentielle — puis
+    ///     un seul gros paquet pile au lvl100 : "nul à chier" dixit Florian en retestant). Reprend
+    ///     la formule PALIER déjà actée le 2026-09-06 (voir GetXPRequired, même philosophie) :
+    ///     palier = (lvl-1)/10 + 1, CHAQUE niveau de ce palier donne +palier points (palier 1
+    ///     [lvl 1-10] = +1 pt/niveau, palier 2 [11-20] = +2, ..., palier 10 [91-100] = +10) →
+    ///     10 niveaux × chaque palier, cumulé = 10×(1+2+...+10) = 550 pile à lvl100, sans rustine.
     ///   Esprit Neutre : un gain à CHAQUE niveau, rampé par PAIRE de décennies (pairIndex 1-5,
     ///     regroupe 2 décennies pour retomber sur des totaux ronds exacts) :
     ///     impair = +(1+pairIndex) Attaque → 2,2,3,3,4,4,5,5,6,6 par décennie → 200 à lvl100.
@@ -80,8 +87,11 @@ public class SpiritMilestoneTableEditor : Editor
     private static void SeedStandardCurve(SpiritMilestoneTable table)
     {
         table.elementalPointGains.Clear();
-        for (int lvl = 10; lvl <= 100; lvl += 10)
-            table.elementalPointGains.Add(new SpiritElementalPointGain { level = lvl, elementalPoints = lvl });
+        for (int lvl = 1; lvl <= 100; lvl++)
+        {
+            int palier = (lvl - 1) / 10 + 1; // 1-10→1, 11-20→2, ..., 91-100→10
+            table.elementalPointGains.Add(new SpiritElementalPointGain { level = lvl, elementalPoints = palier });
+        }
 
         table.neutralStatGains.Clear();
         var byLevel = new Dictionary<int, SpiritNeutralStatGain>();
