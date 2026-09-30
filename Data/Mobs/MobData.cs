@@ -268,7 +268,9 @@ public enum MobType
     MobDungeon   = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
     BossMap      = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
     BossWorld    = 4,  // Boss Géant (événement, spawn sur un palier random)
-    BossInvasion = 5,  // Boss de l'événement Invasion
+    BossInvasion = 5,  // Boss de l'événement Invasion — voir InvasionVariant.boss
+    MobInvasion  = 6,  // Mob de vague/renfort d'une Invasion (le trash, pas le boss) — voir
+                       // InvasionWave/InvasionVariant.reinforcements (Data/Content/InvasionData.cs)
 }
 
 // ── Rôle en salle de donjon (Couloir) ────────────────────────────
