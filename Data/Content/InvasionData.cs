@@ -149,7 +149,7 @@ public class InvasionData : WorldEventData
     /// Coroutine séparée pour pouvoir être coupée net par TimeoutAfterDelay si elle prend trop de
     /// temps (voir RunEvent) — MarkSucceeded() n'est jamais appelé dans ce cas, la coroutine est
     /// juste arrêtée en plein milieu par StopCoroutine, où qu'elle en soit.</summary>
-    private IEnumerator RunInvasionLoop(WorldEventScheduler scheduler, InvasionVariant variant, Vector3 anchor, int palier)
+    private IEnumerator RunInvasionLoop(InvasionVariant variant, Vector3 anchor, int palier)
     {
         // ── 5 vagues fixes — pop sur le timer, n'attendent PAS que la précédente soit clear ──
         foreach (InvasionWave wave in variant.waves)
