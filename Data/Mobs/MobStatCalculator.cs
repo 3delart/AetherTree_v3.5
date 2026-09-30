@@ -3,14 +3,19 @@ using UnityEngine;
 // =============================================================
 // MOBSTATCALCULATOR — Calcul des stats finales d'un mob au spawn
 // Path : Assets/Scripts/Data/Mobs/MobStatCalculator.cs
-// AetherTree GDD v3.5 — §3.3.1
 //
 // Formule générale :
-//   statFinale = (statBase + statParNiveau × (level - 1)) × multiplicateurMobType
+//   statFinale = statBase + statParNiveau × (level - 1)
 //
-// Les défenses mêlée/distance/magie sont définies indépendamment sur
-// MobData SO (baseDefMelee, baseDefRanged, baseDefMagic + perLevel).
-// Le multiplicateur MobType s'applique sur chaque défense séparément.
+// Plus de multiplicateur par MobType (retiré 2026-09-24, demande Florian) —
+// un boss n'est plus un mob "Normal" automatiquement mis à l'échelle, ses
+// stats de base sont tapées directement sur son propre MobData, pour un
+// contrôle d'équilibrage total sans facteur caché à recalculer mentalement.
+// MobType reste une catégorie (Normal/MobDungeon/BossMap/BossWorld/
+// MobInvasion — un boss de donjon est MobDungeon + DungeonRole.Boss, un boss
+// d'invasion est MobInvasion + InvasionRole.Boss) lue par IsBoss() et par
+// d'autres systèmes (annonces, IA...), mais n'influence plus aucun calcul
+// de stat ici.
 //
 // Précision, esquive, critique : scalent par niveau via les champs perLevel.
 // Critique : fixe sur le SO (baseCritChance, baseCritMultiplier).
@@ -20,37 +25,6 @@ using UnityEngine;
 
 public static class MobStatCalculator
 {
-    // =========================================================
-    // MULTIPLICATEURS PAR MOBTYPE — GDD §3.3.1
-    // =========================================================
-
-    private static float GetAtkMult(MobType type) => type switch
-    {
-        MobType.Elite       => 1.8f,
-        MobType.BossZone    => 2.5f,
-        MobType.BossDungeon => 3.0f,
-        MobType.BossRaid    => 4.0f,
-        _                   => 1.0f,
-    };
-
-    private static float GetHPMult(MobType type) => type switch
-    {
-        MobType.Elite       => 4.0f,
-        MobType.BossZone    => 10.0f,
-        MobType.BossDungeon => 12.0f,
-        MobType.BossRaid    => 60.0f,
-        _                   => 1.0f,
-    };
-
-    private static float GetManaMult(MobType type) => type switch
-    {
-        MobType.Elite       => 1.8f,
-        MobType.BossZone    => 2.5f,
-        MobType.BossDungeon => 3.0f,
-        MobType.BossRaid    => 4.0f,
-        _                   => 1.0f,
-    };
-
     // =========================================================
     // CALCUL PRINCIPAL
     // =========================================================
@@ -70,21 +44,15 @@ public static class MobStatCalculator
         level = Mathf.Max(1, level);
         int lvlOffset = level - 1;
 
-        float atkMult  = GetAtkMult(data.mobType);
-        float hpMult   = GetHPMult(data.mobType);
-        float manaMult = GetManaMult(data.mobType);
-
         // ── HP / Mana ────────────────────────────────────────
-        float hp   = (data.baseHP   + data.hpPerLevel   * lvlOffset) * hpMult;
-        float mana = (data.baseMana + data.manaPerLevel * lvlOffset) * manaMult;
+        float hp   = data.baseHP   + data.hpPerLevel   * lvlOffset;
+        float mana = data.baseMana + data.manaPerLevel * lvlOffset;
 
         // ── Attaque ──────────────────────────────────────────
-        float atkMin = (data.baseAtkMin + data.atkMinPerLevel * lvlOffset) * atkMult;
-        float atkMax = (data.baseAtkMax + data.atkMaxPerLevel * lvlOffset) * atkMult;
+        float atkMin = data.baseAtkMin + data.atkMinPerLevel * lvlOffset;
+        float atkMax = data.baseAtkMax + data.atkMaxPerLevel * lvlOffset;
 
         // ── Défense — chaque profil scale indépendamment ─────
-        // Pas de multiplicateur MobType — les valeurs base + perLevel
-        // suffisent à différencier les profils par type de mob.
         float meleeDef  = data.baseDefMelee  + data.defMeleePerLevel  * lvlOffset;
         float rangedDef = data.baseDefRanged + data.defRangedPerLevel * lvlOffset;
         float magicDef  = data.baseDefMagic  + data.defMagicPerLevel  * lvlOffset;

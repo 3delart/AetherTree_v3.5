@@ -37,6 +37,12 @@ public class MobData : ScriptableObject
     [ShowIf(nameof(mobType), MobType.MobDungeon)]
     public DungeonRole dungeonRole = DungeonRole.Normal;
 
+    [Tooltip("Rôle dans l'événement Invasion — Normal = mob de vague/renfort (trash), Boss = LE " +
+             "boss de l'invasion (voir InvasionVariant.boss, Data/Content/InvasionData.cs). Même " +
+             "patron que dungeonRole ci-dessus (un seul MobType, le rôle distingue trash/boss).")]
+    [ShowIf(nameof(mobType), MobType.MobInvasion)]
+    public InvasionRole invasionRole = InvasionRole.Normal;
+
     // ── Élémentaire ───────────────────────────────────────────
     [Header("Élémentaire")]
     [Tooltip("Élément fixe du mob — cohérent avec le biome (§22.3)")]
@@ -210,14 +216,15 @@ public class MobData : ScriptableObject
         _                     => 0f,
     };
 
-    /// <summary>True si ce mob est un boss — BossMap/BossWorld/BossInvasion (MobType), ou un boss
-    /// de donjon exprimé via MobType.MobDungeon + DungeonRole.Boss (voir plus bas, BossDungeon
-    /// retiré de MobType pour ne plus dupliquer cette information à deux endroits).</summary>
+    /// <summary>True si ce mob est un boss — BossMap/BossWorld (MobType), ou un boss de donjon/
+    /// invasion exprimé via MobType.MobDungeon + DungeonRole.Boss / MobType.MobInvasion +
+    /// InvasionRole.Boss (voir plus bas — BossDungeon et BossInvasion retirés de MobType pour ne
+    /// plus dupliquer cette information à deux endroits, même patron pour les deux).</summary>
     public bool IsBoss()
         => mobType == MobType.BossMap
         || mobType == MobType.BossWorld
-        || mobType == MobType.BossInvasion
-        || (mobType == MobType.MobDungeon && dungeonRole == DungeonRole.Boss);
+        || (mobType == MobType.MobDungeon && dungeonRole == DungeonRole.Boss)
+        || (mobType == MobType.MobInvasion && invasionRole == InvasionRole.Boss);
 
     /// <summary>True si ce mob est actif selon le cycle jour/nuit.</summary>
     public bool IsActiveAtTime(bool isNight)
@@ -262,15 +269,18 @@ public class MobData : ScriptableObject
 // MIGRATION : tout asset qui avait mobType = BossDungeon (ordinal 3) doit être repassé à la main
 // sur MobType = MobDungeon + DungeonRole = Boss, sinon son mobType affiche une valeur vide dans
 // l'Inspector (l'ordinal 3 existe toujours dans le fichier, juste sans nom d'enum dessus).
+// MobInvasion (2026-09-30, demande Florian) couvre TOUT mob de l'événement Invasion (trash ET
+// boss) — même patron que MobDungeon/DungeonRole : un seul MobType, le rôle (InvasionRole)
+// distingue trash/boss. BossInvasion (ordinal 5, jamais sérialisé sur aucun asset réel — feature
+// Invasion tout juste créée ce même jour) est retiré, PAS renuméroté pour combler le trou : ordinal
+// 5 reste vacant, même discipline que l'ordinal 3 (ex-BossDungeon) plus bas.
 public enum MobType
 {
     Normal       = 0,  // Mob standard, monde ouvert
     MobDungeon   = 1,  // Tout mob de donjon (normal/objectif/spécial/boss) — voir DungeonRole
     BossMap      = 2,  // ex-BossZone — erre en zone ouverte (Palier 1, mini-boss)
     BossWorld    = 4,  // Boss Géant (événement, spawn sur un palier random)
-    BossInvasion = 5,  // Boss de l'événement Invasion — voir InvasionVariant.boss
-    MobInvasion  = 6,  // Mob de vague/renfort d'une Invasion (le trash, pas le boss) — voir
-                       // InvasionWave/InvasionVariant.reinforcements (Data/Content/InvasionData.cs)
+    MobInvasion  = 6,  // Tout mob de l'événement Invasion (vague/renfort/boss) — voir InvasionRole
 }
 
 // ── Rôle en salle de donjon (Couloir) ────────────────────────────
@@ -284,6 +294,14 @@ public enum DungeonRole
     Special   = 2, // Mob unique/scénarisé — ne respawn jamais, sans être un objectif de portail.
     Boss      = 3, // LE boss de cette salle — ne respawn jamais. Voir Mob.isDungeonBoss (instance
                    // en scène) pour le déclenchement réel d'InstanceSession.OnBossKilled().
+}
+
+// ── Rôle dans l'événement Invasion ───────────────────────────────
+// Même patron que DungeonRole ci-dessus — voir MobData.invasionRole.
+public enum InvasionRole
+{
+    Normal = 0, // Mob de vague/renfort — le trash de l'invasion.
+    Boss   = 1, // LE boss de cette invasion — voir InvasionVariant.boss.
 }
 
 // ── IA du mob ─────────────────────────────────────────────────
