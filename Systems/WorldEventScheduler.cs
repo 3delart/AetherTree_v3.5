@@ -132,8 +132,11 @@ public class WorldEventScheduler : MonoBehaviour
     // =========================================================
 
     /// <summary>Point barycentrique uniforme dans un triangle du NavMesh baké de la scène
-    /// ACTIVE. Pas de biais par aire de triangle (acceptable, pas une distribution
-    /// statistiquement critique). Retourne false si le NavMesh est vide/absent — un
+    /// ACTIVE, en excluant toute WorldEventNoSpawnZone active (villes — Florian, 2026-09-30 :
+    /// évite qu'un World Boss/une Invasion spawn au milieu des PNJ). Reroll jusqu'à
+    /// maxAttempts avant d'abandonner — pas de biais par aire de triangle (acceptable, pas une
+    /// distribution statistiquement critique). Retourne false si le NavMesh est vide/absent OU
+    /// si aucun point hors zone interdite n'a été trouvé en maxAttempts essais — un
     /// `out Vector3.zero` en cas d'échec aurait été un piège : (0,0,0) est une position VALIDE
     /// sur un vrai NavMesh (l'origine du monde), donc pas utilisable comme sentinelle d'échec —
     /// d'où le bool de retour plutôt qu'un simple Vector3.</summary>
@@ -142,6 +145,23 @@ public class WorldEventScheduler : MonoBehaviour
         var tri = NavMesh.CalculateTriangulation();
         if (tri.indices.Length < 3) { point = Vector3.zero; return false; }
 
+        WorldEventNoSpawnZone[] noSpawnZones = Object.FindObjectsOfType<WorldEventNoSpawnZone>();
+
+        const int maxAttempts = 20;
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            point = SampleRandomTrianglePoint(tri);
+            if (!IsInsideAnyNoSpawnZone(point, noSpawnZones)) return true;
+        }
+
+        Debug.LogWarning($"[WorldEventScheduler] {maxAttempts} tirages de point sont tous tombés dans une " +
+            "WorldEventNoSpawnZone — événement annulé pour ce cycle (réessaiera au prochain).");
+        point = Vector3.zero;
+        return false;
+    }
+
+    private static Vector3 SampleRandomTrianglePoint(NavMeshTriangulation tri)
+    {
         int triCount = tri.indices.Length / 3;
         int t = Random.Range(0, triCount) * 3;
         Vector3 a = tri.vertices[tri.indices[t]];
@@ -150,8 +170,15 @@ public class WorldEventScheduler : MonoBehaviour
 
         float r1 = Mathf.Sqrt(Random.value);
         float r2 = Random.value;
-        point = a * (1f - r1) + b * (r1 * (1f - r2)) + c * (r1 * r2);
-        return true;
+        return a * (1f - r1) + b * (r1 * (1f - r2)) + c * (r1 * r2);
+    }
+
+    private static bool IsInsideAnyNoSpawnZone(Vector3 point, WorldEventNoSpawnZone[] zones)
+    {
+        foreach (var zone in zones)
+            if (zone != null && Vector3.Distance(point, zone.transform.position) <= zone.radius)
+                return true;
+        return false;
     }
 
 #if UNITY_EDITOR
