@@ -76,7 +76,9 @@ public class WorldEventScheduler : MonoBehaviour
 
     [Header("Paliers éligibles")]
     [Tooltip("Partagé par TOUS les types d'événements — un palier éligible l'est pour n'importe " +
-             "quel type tiré, pas un pool séparé par asset.")]
+             "quel type tiré, pas un pool séparé par asset. NE JAMAIS inclure le Palier 1 " +
+             "(Florian, 2026-09-30) : on laisse les nouveaux joueurs apprendre à jouer sans " +
+             "interruption d'event mondial — les events commencent au Palier 2+.")]
     public List<WorldEventMapEntry> eligibleMaps = new List<WorldEventMapEntry>();
 
     public float FirstWarningOffset  => firstWarningOffset;
