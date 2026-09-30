@@ -72,6 +72,23 @@ public class XPSystem : MonoBehaviour
         GiveSpiritXP(e);
     }
 
+    /// <summary>XP/Prestige d'une LootTable d'événement à TOUS les joueurs éligibles, HORS du
+    /// pipeline GameEventBus.OnMobKilled — même principe que HandleMobKilled mais pour la
+    /// récompense de fin d'événement (World Boss/Invasion, voir Data/Content/WorldEventData.cs),
+    /// jamais liée à la mort d'un mob précis.</summary>
+    public void GrantEventRewards(LootTable table, List<Player> eligiblePlayers)
+    {
+        if (table == null || eligiblePlayers == null || eligiblePlayers.Count == 0) return;
+
+        if (table.xpReward > 0)
+            foreach (Player p in eligiblePlayers)
+                GiveCombatXP(p, table.xpReward);
+
+        if (table.prestigeReward > 0)
+            foreach (Player p in eligiblePlayers)
+                p.AddPrestige(table.prestigeReward);
+    }
+
     /// <summary>XP Esprit — GDD §5.8 : chaque mob tué dans la plage ±15 niveaux du joueur
     /// accorde 1 XP à l'Esprit actif, à condition que le joueur ait contribué au kill (≥1 hit
     /// — seuil bien plus bas que l'éligibilité XP joueur/loot à 10%, voir

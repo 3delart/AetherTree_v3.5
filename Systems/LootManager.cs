@@ -76,6 +76,39 @@ public class LootManager : MonoBehaviour
     }
 
     // =========================================================
+    // RÉCOMPENSE D'ÉVÉNEMENT (World Boss / Invasion)
+    // =========================================================
+
+    /// <summary>Distribue une LootTable à une liste de joueurs, HORS du pipeline
+    /// GameEventBus.OnMobKilled — pour la récompense de fin d'événement (World Boss/Invasion,
+    /// voir Data/Content/WorldEventData.cs), jamais liée à la mort d'un mob précis. Chaque item
+    /// va à un joueur DIFFÉRENT (tirage sans remise) ; si plus d'items droppent que de joueurs
+    /// éligibles, les items en trop ne sont PAS attribués (pas de bouclage/répétition).</summary>
+    public void GrantEventLoot(LootTable table, List<Player> eligiblePlayers)
+    {
+        if (table == null || eligiblePlayers == null || eligiblePlayers.Count == 0) return;
+
+        LootRollResult roll = table.RollAll();
+        if (roll.items.Count == 0 && roll.aeris == 0) return;
+
+        var remainingPool = new List<Player>(eligiblePlayers);
+        foreach (InventoryItem item in roll.items)
+        {
+            if (remainingPool.Count == 0) break;
+            int index = Random.Range(0, remainingPool.Count);
+            Player winner = remainingPool[index];
+            remainingPool.RemoveAt(index);
+            DeliverItem(winner, item, "Événement");
+        }
+
+        if (roll.aeris > 0)
+        {
+            Player winner = PickRandomEligible(eligiblePlayers);
+            DeliverAeris(winner, roll.aeris, "Événement");
+        }
+    }
+
+    // =========================================================
     // DISTRIBUTION
     // =========================================================
 
