@@ -1189,8 +1189,26 @@ public class SkillSystem : MonoBehaviour
         {
             if (target == null || target.isDead) { LogMissingTarget(skill, caster); yield break; }
             if (!PassesAoeFilter(skill.aoeFaction, caster, target)) yield break;
-            destination = target.transform.position
-                        - (target.transform.position - startPos).normalized * stopOffset;
+
+            // Vecteur caster→départ quasi nul (le caster démarre déjà ~collé à la cible) —
+            // .normalized dessus est instable, la destination pouvait s'effondrer littéralement
+            // SUR la cible au lieu de s'arrêter à distance sûre. Fallback sur le forward du
+            // caster (Florian, 2026-09-30 : loup qui finit chevauché/repoussé en démarrant son
+            // dash déjà collé au joueur).
+            Vector3 toCasterStart = startPos - target.transform.position;
+            Vector3 awayDir = toCasterStart.sqrMagnitude > 0.01f
+                ? toCasterStart.normalized
+                : caster.transform.forward;
+
+            // stopOffset ajusté du rayon (XZ) du collider de la cible — même correction que
+            // SkillBar/CombatAIController : sans ça, s'arrêter à 1.2 du PIVOT d'une cible au
+            // collider large (Boss Géant/Invasion) finit encore en plein dans son corps.
+            float effectiveStopOffset = stopOffset;
+            Collider targetCol = target.GetComponentInChildren<Collider>();
+            if (targetCol != null)
+                effectiveStopOffset += Mathf.Max(targetCol.bounds.extents.x, targetCol.bounds.extents.z);
+
+            destination = target.transform.position + awayDir * effectiveStopOffset;
             sweepEnRoute = false;
         }
         else if (skill.targetType == TargetType.GroundTarget)
