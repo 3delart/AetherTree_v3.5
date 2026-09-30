@@ -325,6 +325,14 @@ public class SkillBar : MonoBehaviour
                 Debug.Log("[SKILLBAR] ❌ Bloqué — Silence actif");
                 return false;
             }
+            // Skill spécifiquement bloqué par un debuff actif (ex : malus Aura bloquant la
+            // capture de familier) — voir DebuffData.blockedSkills / StatusEffectSystem.
+            // IsSkillBlocked. Ciblé sur CE skill précis, pas tous les skills comme Silence.
+            if (fx.IsSkillBlocked(skill))
+            {
+                Debug.Log($"[SKILLBAR] ❌ Bloqué — {skill.name} rendu injouable par un debuff actif");
+                return false;
+            }
             // Taunt — bloque les skills, force l'attaque de base (slot 0) uniquement sur la
             // source du taunt (§3.1.1.1) — voir override de cible plus bas.
             if (fx.isTaunted && slot != 0)
@@ -386,6 +394,13 @@ public class SkillBar : MonoBehaviour
             return false;
         }
 
+        // Vérification item (ex : flèche pour un archer) — voir SkillData.itemCost.
+        if (!HasEnoughItemCost(skill))
+        {
+            Debug.Log($"[SKILLBAR] {skill.itemCost?.name ?? "item"} insuffisant pour {skill.name}");
+            return false;
+        }
+
         // Récupère la cible courante — le tick auto-attaque continu (isAutoTick,
         // appelé par TargetingSystem.PerformAutoAttack) reste strictement sur
         // l'engagée (rouge) tant qu'elle existe, sans dévier vers une simple
@@ -440,7 +455,7 @@ public class SkillBar : MonoBehaviour
                 return false;
             }
 
-            float dist  = Vector3.Distance(_player.transform.position, target.transform.position);
+            float dist  = GetEffectiveDistance(_player.transform.position, target);
             float range = skill.range > 0f ? skill.range : GetDefaultRange();
 
             if (dist > range)
@@ -520,6 +535,7 @@ public class SkillBar : MonoBehaviour
         _player.SpendMana(GetEffectiveManaCost(skill));
         if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
+        SpendItemCost(skill);
 
         _player.AnimatorController?.PlayAttack(skill.attackAnimation);
 
@@ -614,6 +630,7 @@ public class SkillBar : MonoBehaviour
         _player.SpendMana(GetEffectiveManaCost(skill));
         if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
+        SpendItemCost(skill);
 
         _player.AnimatorController?.PlayAttack(skill.attackAnimation);
 
@@ -707,6 +724,7 @@ public class SkillBar : MonoBehaviour
         _player.SpendMana(GetEffectiveManaCost(skill));
         if (skill.hpCost > 0f) _player.SpendHP(skill.hpCost);
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
+        SpendItemCost(skill);
 
         _isChanneling    = true;
         _channelSkill    = skill;
@@ -1013,7 +1031,7 @@ public class SkillBar : MonoBehaviour
             }
         }
 
-        float dist  = Vector3.Distance(_player.transform.position, _pendingTarget.transform.position);
+        float dist  = GetEffectiveDistance(_player.transform.position, _pendingTarget);
         float range = _pendingSkill.range > 0f ? _pendingSkill.range : GetDefaultRange();
 
         if (dist <= range)
@@ -1048,6 +1066,31 @@ public class SkillBar : MonoBehaviour
     {
         float reduction = Mathf.Clamp01(_player.GetManaCostReduction(skill.PrimaryElement));
         return skill.manaCost * (1f - reduction);
+    }
+
+    /// <summary>Coût item (SkillData.itemCost, ex: flèche) — ResourceData ou ConsumableData
+    /// uniquement, réutilise GetResourceCount/GetConsumableCount déjà existants
+    /// (InventorySystem, mêmes méthodes que le craft) plutôt qu'un nouveau système de
+    /// comptage générique.</summary>
+    private bool HasEnoughItemCost(SkillData skill)
+    {
+        if (skill.itemCost == null || InventorySystem.Instance == null) return true;
+        return skill.itemCost switch
+        {
+            ResourceData rd   => InventorySystem.Instance.GetResourceCount(rd)   >= skill.itemCostQuantity,
+            ConsumableData cd => InventorySystem.Instance.GetConsumableCount(cd) >= skill.itemCostQuantity,
+            _                 => true, // type inattendu — ne bloque pas silencieusement un skill mal configuré
+        };
+    }
+
+    private void SpendItemCost(SkillData skill)
+    {
+        if (skill.itemCost == null || InventorySystem.Instance == null) return;
+        switch (skill.itemCost)
+        {
+            case ResourceData rd:   InventorySystem.Instance.ConsumeResource(rd, skill.itemCostQuantity);   break;
+            case ConsumableData cd: InventorySystem.Instance.ConsumeConsumable(cd, skill.itemCostQuantity); break;
+        }
     }
 
     // ── Engage + orientation vers la cible ─────────────────────
@@ -1115,6 +1158,20 @@ public class SkillBar : MonoBehaviour
     {
         if (_player == null) return 2.5f;
         return _player.weaponCategory == WeaponCategory.Ranged ? 10f : 2.5f;
+    }
+
+    /// <summary>Distance effective vers une cible, ajustée du rayon (XZ) de son collider — une
+    /// portée de mêlée doit atteindre la SURFACE de la cible, pas son pivot. Sans ça, un mob à
+    /// grande échelle (Boss Géant/Invasion) au collider large devient injoignable : sa surface
+    /// reste hors de portée même en butant physiquement dessus (Florian, 2026-09-30 — trouvé en
+    /// testant l'Invasion, mais touche tout mob suffisamment gros, World Boss inclus).</summary>
+    private float GetEffectiveDistance(Vector3 from, Entity target)
+    {
+        float dist = Vector3.Distance(from, target.transform.position);
+        Collider col = target.GetComponentInChildren<Collider>();
+        if (col != null)
+            dist -= Mathf.Max(col.bounds.extents.x, col.bounds.extents.z);
+        return dist;
     }
 
     // ── Utilitaires cooldown ──────────────────────────────────
