@@ -14,7 +14,8 @@
 
 - One active event at a time — the scheduler's cycle only proceeds to the next random draw once the running event's `RunEvent` coroutine fully completes. No overlapping events.
 - Timer and both announce offsets (`minInterval`/`maxInterval`/`firstWarningOffset`/`secondWarningOffset`) live ONLY on `WorldEventScheduler` — never duplicated onto `WorldBossData`/`InvasionData`/future event types.
-- Event-wide participation (`eligiblePlayers`) is tracked by the EVENT itself via `GameEventBus.OnDamageDealt` (any damage ≥0, from a `Player`, to a mob the event owns) — never derived from a per-mob `Mob.Die()` computation for event-scoped mobs.
+- Event-wide participation is tracked by the EVENT itself via `GameEventBus.OnDamageDealt` (any damage ≥0, from a `Player`, to a mob the event owns) as a per-player HIT COUNT, not a per-mob `Mob.Die()` computation — a player only becomes reward-eligible once their count reaches `WorldEventData.minHitsToBeEligible` (default 10; a single drive-by hit is not enough).
+- `WorldBossData` must never call `StopTracking()`/`GrantEventRewards()` from inside a `Mob.OnDeath` callback directly — `Mob.Die()` runs synchronously inside `Entity.TakeDamage()`, BEFORE the caller (`SkillSystem`) publishes that same hit's `DamageDealtEvent`; resolving synchronously in the callback would silently drop the killing blow's player from the hit count. Resolution must happen after the `RunEvent` coroutine's `WaitUntil` unblocks (a later frame), never inside the callback itself.
 - `MobData.massEventRewards` and its special-casing in `LootManager`/`XPSystem` are removed entirely — restore those two files' reward logic to read `eligiblePlayers` directly, exactly as before it was introduced.
 - The event-level reward distribution (items no-repeat draw, extras unawarded if more items than players, no wrap-around; XP/Prestige to every eligible player) is a NEW public code path (`LootManager.GrantEventLoot`/`XPSystem.GrantEventRewards`), separate from the normal per-mob `MobKilledEvent` pipeline.
 - `WorldEventMapEntry` lives in exactly one file (`Data/Content/WorldEventData.cs`) — never duplicated into `WorldBossData.cs`.
@@ -22,7 +23,9 @@
 
 ## Review Focus
 
-- **A player who only ever hits wave-1/wave-2 trash mobs, never the Invasion boss itself** — must still appear in `eligiblePlayers` and receive the event's final reward. This is the entire reason `OwnsMob`/`OnDamageDealt`-based tracking exists instead of reusing `Mob.Die()`'s per-mob computation — a task's verification must exercise this specifically, not just "someone who tanked everything."
+- **A player who only ever hits wave-1/wave-2 trash mobs, never the Invasion boss itself, but reaches `minHitsToBeEligible` (10) total hits on those trash mobs** — must still be counted eligible and receive the event's final reward. This is the entire reason `OwnsMob`/`OnDamageDealt`-based tracking exists instead of reusing `Mob.Die()`'s per-mob computation — a task's verification must exercise this specifically, not just "someone who tanked everything."
+- **A player who hits an event mob fewer than `minHitsToBeEligible` times (e.g. a drive-by 1-3 hits) then leaves** — must NOT receive the reward. Confirms the threshold actually filters, not just that tracking exists.
+- **A player's hit that BOTH crosses `minHitsToBeEligible` AND kills the World Boss in the same blow** (their 10th hit is also the fatal one) — must still count toward eligibility and receive the reward. `Mob.Die()` runs synchronously inside `Entity.TakeDamage()`, before `SkillSystem` publishes that hit's `DamageDealtEvent` — resolving the event (stopping tracking / granting rewards) directly from the `Mob.OnDeath` callback would race ahead of that event and silently drop this exact player. This is the specific case the deferred-resolution fix (Task 5) targets — a test that only checks "the boss dies → someone gets rewarded" would miss it.
 - **Invasion boss dies while wave-1 mobs (or reinforcements) are still alive** — spawning must stop immediately, but the reward must NOT be granted until every remaining invasion mob is also dead. A test that only checks "boss dies → reward" would miss a premature-reward bug here.
 - **Two different `WorldBossEntry` (or `InvasionVariant`) rolled on different cycles** — each must grant its OWN `rewardTable`, not always the first one in the list or a shared/stale one. An easy copy-paste bug (closing over the wrong loop variable, or reading `possibleBosses[0]` instead of the rolled entry) would silently always reward the same table.
 - **`eventPool` contains a `WorldBossData` with an empty `possibleBosses`/`eligibleMaps` (or an `InvasionData` with no `possibleVariants`)** — that specific cycle must be skipped (warn, no crash, no infinite hang), and the SCHEDULER must still move on to roll again next interval, not get stuck retrying the same broken asset forever.
@@ -445,7 +448,7 @@ git commit -m "feat: add GrantEventLoot/GrantEventRewards for event-level reward
 
 **Interfaces:**
 - Consumes: `GameEventBus.OnDamageDealt` / `DamageDealtEvent { amount, element, source: Entity, target: Entity, isCrit, isOneHit }` (existing, `Events/GameEvents.cs`). `LootManager.Instance?.GrantEventLoot(...)` / `XPSystem.Instance?.GrantEventRewards(...)` (Task 3).
-- Produces: `WorldEventMapEntry { mapScene (editor-only), sceneName, palier }`, abstract class `WorldEventData` with `eligibleMaps: List<WorldEventMapEntry>`, `eligiblePlayers: List<Player>`, `abstract string DisplayName`, `abstract IEnumerator RunEvent(WorldEventScheduler scheduler)`, `protected abstract bool OwnsMob(Entity target)`, `protected WorldEventMapEntry PickRandomMap()`, `protected void StartTracking()`, `protected void StopTracking()`, `protected void GrantEventRewards(LootTable table)` — Task 5 references the class name, Task 6/7 inherit from it and implement every abstract member.
+- Produces: `WorldEventMapEntry { mapScene (editor-only), sceneName, palier }`, abstract class `WorldEventData` with `eligibleMaps: List<WorldEventMapEntry>`, `minHitsToBeEligible: int` (default 10), `abstract string DisplayName`, `abstract IEnumerator RunEvent(WorldEventScheduler scheduler)`, `protected abstract bool OwnsMob(Entity target)`, `protected WorldEventMapEntry PickRandomMap()`, `protected void StartTracking()`, `protected void StopTracking()`, `protected void GrantEventRewards(LootTable table)`, `protected void SyncEligibleMapsSceneNames()` (editor-only) — Task 5 references the class name, Task 6 inherits from it and implements every abstract member. Participation is tracked internally as a private `Dictionary<Player,int>` (hit counts), never exposed as a public field — `GrantEventRewards` computes the eligible list on demand from it.
 
 - [ ] **Step 1: Read the current `WorldBossData.cs` to confirm exact `WorldEventMapEntry` boundaries**
 
@@ -457,6 +460,7 @@ Read `Data/Content/WorldBossData.cs` in full before editing — confirm the `Wor
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -499,8 +503,14 @@ public abstract class WorldEventData : ScriptableObject
     [Header("Paliers éligibles")]
     public List<WorldEventMapEntry> eligibleMaps = new List<WorldEventMapEntry>();
 
-    [Header("Runtime — ne pas modifier")]
-    [HideInInspector] public List<Player> eligiblePlayers = new List<Player>();
+    [Header("Éligibilité")]
+    [Tooltip("Coups minimum portés sur un mob de CET événement pour être éligible à la " +
+             "récompense finale — empêche un joueur de passage (1 coup, repart) d'être " +
+             "récompensé comme un vrai participant (Florian, 2026-09-30 : \"il faut vraiment " +
+             "participer\").")]
+    public int minHitsToBeEligible = 10;
+
+    private readonly Dictionary<Player, int> _hitCounts = new Dictionary<Player, int>();
 
     /// <summary>Nom d'affichage utilisé dans les annonces partagées ("Un {DisplayName} menace...").</summary>
     public abstract string DisplayName { get; }
@@ -522,30 +532,52 @@ public abstract class WorldEventData : ScriptableObject
     {
         if (!(e.source is Player player)) return;
         if (!OwnsMob(e.target)) return;
-        if (!eligiblePlayers.Contains(player)) eligiblePlayers.Add(player);
+        _hitCounts.TryGetValue(player, out int count);
+        _hitCounts[player] = count + 1;
     }
 
     /// <summary>À appeler AU DÉBUT de la fenêtre où les mobs de cet événement peuvent être
-    /// tapés (juste après le premier spawn) — vide la liste d'une éventuelle exécution
+    /// tapés (juste après le premier spawn) — vide les compteurs d'une éventuelle exécution
     /// précédente et s'abonne au tracking de dégâts.</summary>
     protected void StartTracking()
     {
-        eligiblePlayers.Clear();
+        _hitCounts.Clear();
         GameEventBus.OnDamageDealt += OnDamageDealtHandler;
     }
 
     /// <summary>À appeler dès que l'événement est résolu (succès ou échec) — coupe
-    /// l'abonnement, plus aucun dégât ne doit être compté après ce point.</summary>
+    /// l'abonnement, plus aucun dégât ne doit être compté après ce point. Ne doit JAMAIS être
+    /// appelé directement depuis un callback Mob.OnDeath (voir WorldBossData, Task 5) : Mob.Die()
+    /// est synchrone et s'exécute AVANT que l'appelant (SkillSystem) publie le DamageDealtEvent
+    /// de ce même coup — couper le tracking à cet instant précis perdrait ce dernier coup.</summary>
     protected void StopTracking() => GameEventBus.OnDamageDealt -= OnDamageDealtHandler;
 
-    /// <summary>Distribue la LootTable de l'événement (XP/Prestige/items) à eligiblePlayers —
-    /// délègue à LootManager.GrantEventLoot/XPSystem.GrantEventRewards, hors pipeline
-    /// MobKilledEvent normal.</summary>
+    /// <summary>Distribue la LootTable de l'événement (XP/Prestige/items) à tout joueur ayant
+    /// atteint minHitsToBeEligible coups — calculé à la volée depuis _hitCounts (jamais maintenu
+    /// comme liste incrémentale), délègue à LootManager.GrantEventLoot/XPSystem.GrantEventRewards,
+    /// hors pipeline MobKilledEvent normal.</summary>
     protected void GrantEventRewards(LootTable table)
     {
+        List<Player> eligiblePlayers = _hitCounts
+            .Where(kv => kv.Value >= minHitsToBeEligible)
+            .Select(kv => kv.Key)
+            .ToList();
+
         LootManager.Instance?.GrantEventLoot(table, eligiblePlayers);
         XPSystem.Instance?.GrantEventRewards(table, eligiblePlayers);
     }
+
+#if UNITY_EDITOR
+    /// <summary>Partagé par tout type concret (WorldBossData/InvasionData) — synchronise
+    /// sceneName depuis mapScene pour chaque entrée de eligibleMaps. Factorisé ici pour ne pas
+    /// dupliquer cette boucle dans le OnValidate de chaque sous-classe.</summary>
+    protected void SyncEligibleMapsSceneNames()
+    {
+        if (eligibleMaps == null) return;
+        foreach (var entry in eligibleMaps)
+            if (entry.mapScene != null) entry.sceneName = entry.mapScene.name;
+    }
+#endif
 }
 ```
 
@@ -578,8 +610,8 @@ them into one task keeps every commit green.
 - Modify: `Data/Content/WorldBossData.cs` (full rewrite of the class body — `WorldEventMapEntry` already removed in Task 4)
 
 **Interfaces:**
-- Consumes: `WorldEventData.RunEvent(WorldEventScheduler)`, `.eligibleMaps`, `.eligiblePlayers`, `PickRandomMap()`, `StartTracking()`/`StopTracking()`, `GrantEventRewards(LootTable)` (Task 4). `Mob.InitializeSpawn(MobData, int)`/`Mob.OnDeath(Action)` (existing, unchanged since yesterday).
-- Produces: `WorldEventScheduler.Instance` (unchanged lazy singleton), `public float FirstWarningOffset`/`SecondWarningOffset` (read-only properties), `public List<WorldEventData> eventPool`, `public static bool TryGetRandomNavMeshPoint(out Vector3 point)` (was private instance method, now public static — Task 6/7 call it as `WorldEventScheduler.TryGetRandomNavMeshPoint(out pos)`). `WorldBossEntry { boss: MobData, rewardTable: LootTable }`, `WorldBossData : WorldEventData` with `possibleBosses: List<WorldBossEntry>`, `despawnTimeout: float` — the reference shape Task 6's `InvasionData` follows for its own `RunEvent`/`OwnsMob`.
+- Consumes: `WorldEventData.RunEvent(WorldEventScheduler)`, `.eligibleMaps`, `PickRandomMap()`, `StartTracking()`/`StopTracking()`, `GrantEventRewards(LootTable)`, `SyncEligibleMapsSceneNames()` (Task 4). `Mob.InitializeSpawn(MobData, int)`/`Mob.OnDeath(Action)` (existing, unchanged since yesterday).
+- Produces: `WorldEventScheduler.Instance` (unchanged lazy singleton), `public float FirstWarningOffset`/`SecondWarningOffset` (read-only properties), `public List<WorldEventData> eventPool`, `public static bool TryGetRandomNavMeshPoint(out Vector3 point)` (was private instance method, now public static — Task 6 calls it as `WorldEventScheduler.TryGetRandomNavMeshPoint(out pos)`). `WorldBossEntry { boss: MobData, rewardTable: LootTable }`, `WorldBossData : WorldEventData` with `possibleBosses: List<WorldBossEntry>`, `despawnTimeout: float` — the reference shape Task 6's `InvasionData` follows for its own `RunEvent`/`OwnsMob`. Resolution (`StopTracking`/`GrantEventRewards`) happens only after `RunEvent`'s own `WaitUntil` unblocks, never inside the `Mob.OnDeath` callback directly — see the Global Constraints note on the last-hit race.
 
 - [ ] **Step 1: Read the current `WorldEventScheduler.cs`**
 
@@ -762,21 +794,16 @@ public class WorldBossData : WorldEventData
 
     public override string DisplayName => "Boss Géant";
 
-    private GameObject         _aliveBossObj;
-    private Mob                _aliveMob;
-    private Coroutine          _timeoutCoroutine;
-    private bool               _resolved;
-    private WorldEventScheduler _scheduler; // gardé pour StopCoroutine dans Resolve() — un
-                                             // ScriptableObject ne peut pas stopper sa propre
-                                             // coroutine, seul le MonoBehaviour hôte peut.
+    private GameObject _aliveBossObj;
+    private Mob         _aliveMob;
+    private bool        _resolved;
+    private bool        _killedFlag;
 
     protected override bool OwnsMob(Entity target)
         => target != null && ReferenceEquals(target, _aliveMob);
 
     public override IEnumerator RunEvent(WorldEventScheduler scheduler)
     {
-        _scheduler = scheduler;
-
         if (possibleBosses == null || possibleBosses.Count == 0 || eligibleMaps == null || eligibleMaps.Count == 0)
         {
             Debug.LogWarning("[WorldBossData] possibleBosses/eligibleMaps vide — cycle ignoré.");
@@ -814,42 +841,54 @@ public class WorldBossData : WorldEventData
         AnnoncePanel.Instance?.Announce($"Le {DisplayName} est apparu sur le Palier {targetMap.palier} !");
 
         StartTracking();
-        _resolved = false;
-        _aliveMob?.OnDeath(() => Resolve(targetMap.palier, entry.rewardTable, killed: true));
-        _timeoutCoroutine = scheduler.StartCoroutine(TimeoutAfterDelay(targetMap.palier, entry.rewardTable, despawnTimeout));
+        _resolved   = false;
+        _killedFlag = false;
+        _aliveMob?.OnDeath(() => MarkResolved(killed: true));
+        Coroutine timeoutCoroutine = scheduler.StartCoroutine(TimeoutAfterDelay(despawnTimeout));
 
         yield return new WaitUntil(() => _resolved);
-    }
 
-    private IEnumerator TimeoutAfterDelay(int palier, LootTable rewardTable, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        Resolve(palier, rewardTable, killed: false);
-    }
-
-    /// <summary>Point de résolution UNIQUE — mort ET timeout y passent tous les deux. Le garde
-    /// _resolved empêche une double résolution si les deux se déclenchent presque en même
-    /// temps.</summary>
-    private void Resolve(int palier, LootTable rewardTable, bool killed)
-    {
-        if (_resolved) return;
-        _resolved = true;
+        // StopTracking()/GrantEventRewards() APRÈS le WaitUntil, jamais dans le callback de mort
+        // lui-même — Mob.Die() (synchrone, déclenché par TakeDamage) appelle onDeathCallback AVANT
+        // que SkillSystem, dans son appelant, publie le DamageDealtEvent de CE MÊME coup. Résoudre
+        // directement dans le callback désabonnait le tracking avant que le coup fatal soit
+        // compté — le joueur qui achève le boss pouvait être exclu si ce coup le faisait franchir
+        // minHitsToBeEligible. En ne faisant que positionner _resolved/_killedFlag dans le
+        // callback, la résolution réelle n'arrive qu'à la reprise de la coroutine (frame suivante
+        // au plus tôt) — le DamageDealtEvent du coup fatal est alors déjà traité.
         StopTracking();
-        if (_timeoutCoroutine != null) { _scheduler.StopCoroutine(_timeoutCoroutine); _timeoutCoroutine = null; }
+        if (timeoutCoroutine != null) scheduler.StopCoroutine(timeoutCoroutine);
 
-        if (killed)
+        if (_killedFlag)
         {
-            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {palier} a été vaincu !");
-            GrantEventRewards(rewardTable);
+            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {targetMap.palier} a été vaincu !");
+            GrantEventRewards(entry.rewardTable);
         }
         else
         {
             if (_aliveBossObj != null) Destroy(_aliveBossObj);
-            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {palier} s'est retiré...");
+            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {targetMap.palier} s'est retiré...");
         }
 
         _aliveBossObj = null;
         _aliveMob     = null;
+    }
+
+    private IEnumerator TimeoutAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        MarkResolved(killed: false);
+    }
+
+    /// <summary>Positionne le résultat — mort ET timeout y passent tous les deux. Le garde
+    /// _resolved empêche une double résolution si les deux se déclenchent presque en même temps.
+    /// Ne fait QUE marquer l'état : la résolution réelle (StopTracking/GrantEventRewards) vit dans
+    /// RunEvent, après le WaitUntil — jamais ici (voir le commentaire dans RunEvent).</summary>
+    private void MarkResolved(bool killed)
+    {
+        if (_resolved) return;
+        _resolved   = true;
+        _killedFlag = killed;
     }
 
 #if UNITY_EDITOR
@@ -861,9 +900,7 @@ public class WorldBossData : WorldEventData
                     Debug.LogWarning($"[WorldBossData] {name} : {entry.boss.mobName} a mobType = " +
                         $"{entry.boss.mobType}, attendu BossWorld pour un Boss Géant.");
 
-        if (eligibleMaps != null)
-            foreach (var mapEntry in eligibleMaps)
-                if (mapEntry.mapScene != null) mapEntry.sceneName = mapEntry.mapScene.name;
+        SyncEligibleMapsSceneNames();
     }
 #endif
 }
@@ -1071,6 +1108,38 @@ public class InvasionData : WorldEventData
             return hit.position;
         return center; // repli sur l'ancre si le sample échoue — dégradation gracieuse
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (possibleVariants != null)
+        {
+            foreach (var variant in possibleVariants)
+            {
+                if (variant.boss != null && variant.boss.mobType != MobType.BossInvasion)
+                    Debug.LogWarning($"[InvasionData] {name} : {variant.boss.mobName} a mobType = " +
+                        $"{variant.boss.mobType}, attendu BossInvasion pour un boss d'invasion.");
+
+                if (variant.waves != null)
+                    foreach (var wave in variant.waves)
+                        WarnIfNotMobInvasion(wave.mobs);
+
+                WarnIfNotMobInvasion(variant.reinforcements);
+            }
+        }
+
+        SyncEligibleMapsSceneNames();
+    }
+
+    private void WarnIfNotMobInvasion(List<InvasionMobEntry> entries)
+    {
+        if (entries == null) return;
+        foreach (var entry in entries)
+            if (entry.mob != null && entry.mob.mobType != MobType.MobInvasion)
+                Debug.LogWarning($"[InvasionData] {name} : {entry.mob.mobName} a mobType = " +
+                    $"{entry.mob.mobType}, attendu MobInvasion pour un mob de vague/renfort.");
+    }
+#endif
 }
 ```
 
@@ -1080,9 +1149,13 @@ Wait for Unity to finish compiling — confirm no errors.
 
 - [ ] **Step 3: Verify the asset is creatable**
 
-`Assets > Create > AetherTree > Contenu > InvasionData` — confirm the menu item exists and creates an asset with empty `Possible Variants`/`Eligible Maps` and default `spawnRadius`/`waveInterval` values.
+`Assets > Create > AetherTree > Contenu > InvasionData` — confirm the menu item exists and creates an asset with empty `Possible Variants`/`Eligible Maps` and default `spawnRadius`/`waveInterval`/`minHitsToBeEligible` (10) values.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verify the `OnValidate` mobType warnings**
+
+On the new asset, add one `InvasionVariant`, set its `boss` to any `MobData` whose `mobType` is NOT `BossInvasion` (e.g. `Normal`) — confirm a `[InvasionData] ... attendu BossInvasion` warning appears in the Console immediately. Add one wave with one `InvasionMobEntry` whose `mob.mobType` is NOT `MobInvasion` — confirm the matching `attendu MobInvasion` warning also appears. Fix both (or leave as a deliberate test artifact if you'll reconfigure real content in Task 7) — the point is confirming the warnings actually fire, not that the asset ends up correctly configured yet.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add Data/Content/InvasionData.cs
@@ -1119,16 +1192,24 @@ Let an Invasion cycle reach spawn — confirm wave 2's mobs appear ~90s after wa
 
 - [ ] **Step 6: Verify Invasion reinforcements + late reward (Review Focus items 1 and 2)**
 
-Do NOT kill the boss immediately — confirm reinforcements keep spawning every `waveInterval` while it's alive. As you fight, make sure you personally kill at least one wave-1 or wave-2 mob but let the FINAL hit on the boss be dealt (if possible) with something that also means you never top the old ≥10% threshold on the boss alone — the point is to confirm a player who mostly hit trash still ends up rewarded. Kill the boss, then confirm: no new spawns occur, but the "invasion repoussée" announcement and reward do NOT fire until every remaining alive invasion mob is also dead — leave a couple of trash mobs alive on purpose after the boss dies and confirm the reward waits for them.
+Do NOT kill the boss immediately — confirm reinforcements keep spawning every `waveInterval` while it's alive. As you fight, make sure you personally land at least `minHitsToBeEligible` (10) hits on wave-1/wave-2 trash mobs and NEVER hit the boss itself at all — the point is to confirm a player who exclusively hit trash, never the boss, still ends up rewarded once they cross the threshold. Kill the boss (with a different attack/character if testing solo isn't possible, otherwise just land the final blow yourself in addition to your trash hits), then confirm: no new spawns occur, but the "invasion repoussée" announcement and reward do NOT fire until every remaining alive invasion mob is also dead — leave a couple of trash mobs alive on purpose after the boss dies and confirm the reward waits for them.
 
-- [ ] **Step 7: Verify the empty-pool-entry guard**
+- [ ] **Step 7: Verify the `minHitsToBeEligible` threshold actually filters (Review Focus item 2)**
+
+During a World Boss or Invasion cycle, land only 2-3 hits on an event mob then stop entirely (don't finish the fight, let someone/something else — or just let the timeout/other mobs — resolve the event). Confirm you do NOT appear in the reward distribution once the event resolves — a drive-by handful of hits below `minHitsToBeEligible` must not count as real participation.
+
+- [ ] **Step 8: Verify the World Boss last-hit race fix (Review Focus item 3)**
+
+Configure a throwaway low-HP test boss (or lower a real one's `baseHP`/`hpPerLevel` temporarily) so you can land EXACTLY your 10th hit as the killing blow — i.e. your `minHitsToBeEligible`-th hit and the fatal hit are the same single hit. Confirm you still receive the event reward. Before the Task 5 fix (`StopTracking`/`GrantEventRewards` deferred until after `RunEvent`'s `WaitUntil`, never inside the `Mob.OnDeath` callback), this exact hit could be silently dropped from the hit count because `Mob.Die()` runs synchronously before `SkillSystem` publishes that hit's `DamageDealtEvent`. Restore the test boss's real stats afterward.
+
+- [ ] **Step 9: Verify the empty-pool-entry guard**
 
 Temporarily clear `Eligible Maps` on the `InvasionData` asset specifically (leave `WorldBossData`'s intact) and force enough cycles to roll `InvasionData` — confirm a `[InvasionData] possibleVariants/eligibleMaps vide` warning appears, no crash, and the scheduler moves on to the next cycle (which might roll `WorldBossData` instead, or `InvasionData` again with the same warning). Restore `Eligible Maps` afterward.
 
-- [ ] **Step 8: Restore production values**
+- [ ] **Step 10: Restore production values**
 
-Set `Min Interval`/`Max Interval`/`First Warning Offset`/`Second Warning Offset` back on `WorldEventScheduler` to real values (`21600`/`28800`/`300`/`60`, or whatever Florian decides for actual demo pacing), and confirm both event data assets' own content (`possibleBosses`/`possibleVariants`) are back to their real intended entries (no leftover duplicate-entry test hack from Step 2).
+Set `Min Interval`/`Max Interval`/`First Warning Offset`/`Second Warning Offset` back on `WorldEventScheduler` to real values (`21600`/`28800`/`300`/`60`, or whatever Florian decides for actual demo pacing), and confirm both event data assets' own content (`possibleBosses`/`possibleVariants`) are back to their real intended entries (no leftover duplicate-entry test hack from Step 2, and no leftover low-HP test hack from Step 8).
 
-- [ ] **Step 9: Report back**
+- [ ] **Step 11: Report back**
 
 Tell me what worked and what didn't.
