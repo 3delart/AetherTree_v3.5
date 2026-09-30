@@ -296,6 +296,23 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
                     if (!enemyList.Contains(pnj))
                         enemyList.Add(pnj);
                 }
+
+                // Invasion — un mob d'invasion (EventInvasionMob) attaque aussi TOUT AUTRE mob
+                // qui n'est pas lui-même un mob d'invasion (WorldMob/WorldBoss/DungeonMob...), en
+                // plus des joueurs/PNJ ci-dessus (Florian, 2026-09-30 : "doit attaquer TOUT ce qui
+                // n'est pas mobtype invasion"). Un mob normal ne cible JAMAIS un autre mob — cette
+                // hostilité est unilatérale et propre à EventInvasionMob, pas un vrai système de
+                // faction (aucun autre MobType ne fait ce scan).
+                if (data.mobType == MobType.EventInvasionMob)
+                {
+                    Mob otherMob = col.GetComponent<Mob>();
+                    if (otherMob != null && otherMob != this && !otherMob.isDead &&
+                        otherMob.data != null && otherMob.data.mobType != MobType.EventInvasionMob)
+                    {
+                        if (!enemyList.Contains(otherMob))
+                            enemyList.Add(otherMob);
+                    }
+                }
             }
         }
 

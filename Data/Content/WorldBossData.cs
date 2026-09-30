@@ -81,6 +81,7 @@ public class WorldBossData : WorldEventData
         _aliveBossObj = Instantiate(entry.boss.prefab, spawnPos, Quaternion.identity);
         _aliveMob     = _aliveBossObj.GetComponent<Mob>();
         _aliveMob?.InitializeSpawn(entry.boss, targetMap.palier);
+        if (_aliveMob != null) _aliveMob.respawnEnabled = false; // mob d'event — mort = disparu, jamais de respawn sur place
 
         AnnoncePanel.Instance?.Announce($"Le {DisplayName} est apparu sur le Palier {targetMap.palier} !");
 

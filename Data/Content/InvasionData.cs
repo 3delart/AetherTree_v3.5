@@ -57,17 +57,27 @@ public class InvasionData : WorldEventData
     public List<InvasionVariant> possibleVariants = new List<InvasionVariant>();
 
     [Header("Zone de spawn autour du point d'ancrage")]
-    [Tooltip("Rayon (mètres) autour du point d'ancrage tiré au hasard — jamais toute la map.")]
-    public float spawnRadius = 20f;
+    [Tooltip("Rayon (mètres) autour du point d'ancrage tiré au hasard — jamais toute la map. " +
+             "Bien plus large qu'un simple boss (World Boss) : une invasion doit couvrir une " +
+             "vraie zone, pas un point (Florian, 2026-09-30).")]
+    public float spawnRadius = 100f;
 
     [Header("Cadence")]
     [Tooltip("Délai entre 2 vagues ET entre 2 vagues de renfort (secondes).")]
     public float waveInterval = 90f;
 
+    [Header("Résolution")]
+    [Tooltip("Si l'invasion n'est pas repoussée (tous les mobs morts) dans ce délai depuis son " +
+             "lancement, elle échoue — pas de récompense, mobs restants nettoyés. Même mécanique " +
+             "que WorldBossData.despawnTimeout.")]
+    public float despawnTimeout = 1800f; // 30 min
+
     public override string DisplayName => "Invasion";
 
     private readonly List<Mob> _aliveMobs = new List<Mob>();
     private bool _bossDead;
+    private bool _resolved;
+    private bool _succeeded;
 
     protected override bool OwnsMob(Entity target) => target is Mob m && _aliveMobs.Contains(m);
 
@@ -103,12 +113,48 @@ public class InvasionData : WorldEventData
 
         StartTracking();
         _aliveMobs.Clear();
-        _bossDead = false;
+        _bossDead  = false;
+        _resolved  = false;
+        _succeeded = false;
 
+        Coroutine loopCoroutine    = scheduler.StartCoroutine(RunInvasionLoop(variant, anchor, targetMap.palier));
+        Coroutine timeoutCoroutine = scheduler.StartCoroutine(TimeoutAfterDelay(despawnTimeout));
+
+        yield return new WaitUntil(() => _resolved);
+
+        // Même raison que WorldBossData : ne stopper le tracking et distribuer la récompense
+        // qu'APRÈS le WaitUntil, jamais dans un callback synchrone — laisse le temps au
+        // DamageDealtEvent du dernier coup d'être traité avant de couper l'abonnement.
+        StopTracking();
+        if (_succeeded)
+        {
+            if (timeoutCoroutine != null) scheduler.StopCoroutine(timeoutCoroutine);
+            AnnoncePanel.Instance?.Announce($"L'invasion ({variant.variantName}) du Palier {targetMap.palier} a été repoussée !");
+            GrantEventRewards(variant.rewardTable);
+        }
+        else
+        {
+            // Timeout gagné la course — coupe la boucle en cours (spawn de vague, attente de
+            // renfort, ou attente finale, peu importe où elle en est) et nettoie tout ce qui
+            // reste en vie. Pas de récompense.
+            if (loopCoroutine != null) scheduler.StopCoroutine(loopCoroutine);
+            foreach (Mob m in _aliveMobs)
+                if (m != null && !m.isDead) Destroy(m.gameObject);
+            _aliveMobs.Clear();
+            AnnoncePanel.Instance?.Announce($"L'invasion ({variant.variantName}) du Palier {targetMap.palier} n'a pas été repoussée à temps...");
+        }
+    }
+
+    /// <summary>Le déroulement normal de l'invasion — vagues, boss, renforts, attente finale.
+    /// Coroutine séparée pour pouvoir être coupée net par TimeoutAfterDelay si elle prend trop de
+    /// temps (voir RunEvent) — MarkSucceeded() n'est jamais appelé dans ce cas, la coroutine est
+    /// juste arrêtée en plein milieu par StopCoroutine, où qu'elle en soit.</summary>
+    private IEnumerator RunInvasionLoop(WorldEventScheduler scheduler, InvasionVariant variant, Vector3 anchor, int palier)
+    {
         // ── 5 vagues fixes — pop sur le timer, n'attendent PAS que la précédente soit clear ──
         foreach (InvasionWave wave in variant.waves)
         {
-            SpawnGroup(wave.mobs, anchor, targetMap.palier);
+            SpawnGroup(wave.mobs, anchor, palier);
             yield return new WaitForSeconds(waveInterval);
         }
 
@@ -117,9 +163,13 @@ public class InvasionData : WorldEventData
         {
             GameObject bossObj = Instantiate(variant.boss.prefab, GetRandomPointInRadius(anchor), Quaternion.identity);
             Mob bossMob = bossObj.GetComponent<Mob>();
-            bossMob?.InitializeSpawn(variant.boss, targetMap.palier);
-            if (bossMob != null) _aliveMobs.Add(bossMob);
-            AnnoncePanel.Instance?.Announce($"Le boss de l'invasion est apparu sur le Palier {targetMap.palier} !");
+            bossMob?.InitializeSpawn(variant.boss, palier);
+            if (bossMob != null)
+            {
+                bossMob.respawnEnabled = false; // mob d'event — mort = disparu, jamais de respawn sur place
+                _aliveMobs.Add(bossMob);
+            }
+            AnnoncePanel.Instance?.Announce($"Le boss de l'invasion est apparu sur le Palier {palier} !");
             bossMob?.OnDeath(() => _bossDead = true);
         }
         else
@@ -133,7 +183,7 @@ public class InvasionData : WorldEventData
         {
             yield return new WaitForSeconds(waveInterval);
             if (_bossDead) break;
-            SpawnGroup(variant.reinforcements, anchor, targetMap.palier);
+            SpawnGroup(variant.reinforcements, anchor, palier);
         }
 
         // ── Boss mort — plus aucun spawn, attendre que tout le reste meure ──
@@ -143,9 +193,22 @@ public class InvasionData : WorldEventData
             return _aliveMobs.Count == 0;
         });
 
-        StopTracking();
-        AnnoncePanel.Instance?.Announce($"L'invasion ({variant.variantName}) du Palier {targetMap.palier} a été repoussée !");
-        GrantEventRewards(variant.rewardTable);
+        MarkSucceeded();
+    }
+
+    private IEnumerator TimeoutAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        MarkResolved(succeeded: false);
+    }
+
+    private void MarkSucceeded() => MarkResolved(succeeded: true);
+
+    private void MarkResolved(bool succeeded)
+    {
+        if (_resolved) return;
+        _resolved  = true;
+        _succeeded = succeeded;
     }
 
     private void SpawnGroup(List<InvasionMobEntry> mobs, Vector3 anchor, int palier)
@@ -159,7 +222,11 @@ public class InvasionData : WorldEventData
                 GameObject obj = Instantiate(entry.mob.prefab, GetRandomPointInRadius(anchor), Quaternion.identity);
                 Mob mob = obj.GetComponent<Mob>();
                 mob?.InitializeSpawn(entry.mob, palier);
-                if (mob != null) _aliveMobs.Add(mob);
+                if (mob != null)
+                {
+                    mob.respawnEnabled = false; // mob d'event — mort = disparu, jamais de respawn sur place
+                    _aliveMobs.Add(mob);
+                }
             }
         }
     }
