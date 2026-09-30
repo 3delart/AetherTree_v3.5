@@ -247,21 +247,29 @@ Même patron que `MobDungeon`/`DungeonRole` (voir ce même fichier) :
 ```csharp
 public enum MobType
 {
-    Normal       = 0,
-    MobDungeon   = 1,
-    BossMap      = 2,
-    BossWorld    = 4,
-    BossInvasion = 5,   // déjà présent, jamais câblé — devient le boss d'invasion réel
-    MobInvasion  = 6,   // NOUVEAU — mob de vague/renfort d'invasion (trash, pas le boss)
+    Normal      = 0,
+    MobDungeon  = 1,
+    BossMap     = 2,
+    BossWorld   = 4,
+    MobInvasion = 6,   // NOUVEAU — tout mob de l'événement Invasion (vague/renfort/boss),
+                       // voir InvasionRole
+}
+
+public enum InvasionRole
+{
+    Normal = 0, // Mob de vague/renfort — le trash de l'invasion.
+    Boss   = 1, // LE boss de cette invasion — voir InvasionVariant.boss.
 }
 ```
 
-Attend — ordinal 5 (`BossInvasion`) existe DÉJÀ dans l'enum (commenté "Boss de l'événement
-Invasion", jamais câblé) : c'est LUI le boss d'invasion, pas besoin d'un `InvasionRole` séparé
-comme pour les donjons. `MobInvasion` (nouveau, ordinal 6, fin d'enum) couvre les mobs de
-vague/renfort (le trash). Pas de nouvel enum `InvasionRole` nécessaire — le distinguo
-normal/boss existe déjà via `MobType.MobInvasion` vs `MobType.BossInvasion`, exactement comme
-`BossMap`/`BossWorld` sont déjà séparés de `Normal`.
+**Correction post-relecture (2026-09-30)** — première version de ce design réutilisait
+`MobType.BossInvasion` (ordinal 5, déjà présent, jamais câblé) comme boss d'invasion, avec
+`MobInvasion` (nouveau, ordinal 6) pour le trash — pas de nouvel enum `InvasionRole`. Florian a
+demandé le même patron que `MobDungeon`/`DungeonRole` à la place : un seul `MobType.MobInvasion`
+pour TOUT mob de l'invasion, le rôle (`InvasionRole.Normal`/`Boss`) distingue trash/boss, exactement
+comme `dungeonRole` le fait pour `MobDungeon`. `BossInvasion` (ordinal 5) est retiré — jamais
+sérialisé sur aucun asset réel (l'Invasion vient d'être créée) — et PAS renuméroté pour combler le
+trou, même discipline que l'ordinal 3 vacant (ex-`BossDungeon`).
 
 ### `Data/Content/WorldBossData.cs` — perd le timer, gagne une récompense par boss
 
@@ -561,28 +569,32 @@ public class InvasionData : WorldEventData
         {
             foreach (var variant in possibleVariants)
             {
-                if (variant.boss != null && variant.boss.mobType != MobType.BossInvasion)
+                if (variant.boss != null &&
+                    (variant.boss.mobType != MobType.MobInvasion || variant.boss.invasionRole != InvasionRole.Boss))
                     Debug.LogWarning($"[InvasionData] {name} : {variant.boss.mobName} a mobType = " +
-                        $"{variant.boss.mobType}, attendu BossInvasion pour un boss d'invasion.");
+                        $"{variant.boss.mobType}/invasionRole = {variant.boss.invasionRole}, attendu " +
+                        "MobInvasion + InvasionRole.Boss pour un boss d'invasion.");
 
                 if (variant.waves != null)
                     foreach (var wave in variant.waves)
-                        WarnIfNotMobInvasion(wave.mobs);
+                        WarnIfNotInvasionTrash(wave.mobs);
 
-                WarnIfNotMobInvasion(variant.reinforcements);
+                WarnIfNotInvasionTrash(variant.reinforcements);
             }
         }
 
         SyncEligibleMapsSceneNames();
     }
 
-    private void WarnIfNotMobInvasion(List<InvasionMobEntry> entries)
+    private void WarnIfNotInvasionTrash(List<InvasionMobEntry> entries)
     {
         if (entries == null) return;
         foreach (var entry in entries)
-            if (entry.mob != null && entry.mob.mobType != MobType.MobInvasion)
+            if (entry.mob != null &&
+                (entry.mob.mobType != MobType.MobInvasion || entry.mob.invasionRole != InvasionRole.Normal))
                 Debug.LogWarning($"[InvasionData] {name} : {entry.mob.mobName} a mobType = " +
-                    $"{entry.mob.mobType}, attendu MobInvasion pour un mob de vague/renfort.");
+                    $"{entry.mob.mobType}/invasionRole = {entry.mob.invasionRole}, attendu " +
+                    "MobInvasion + InvasionRole.Normal pour un mob de vague/renfort.");
     }
 #endif
 }
