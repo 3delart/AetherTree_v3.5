@@ -81,6 +81,8 @@ spécifique à Boss Géant. Le plan d'implémentation doit RETIRER cette classe 
 `WorldBossData.cs` en même temps qu'il l'ajoute ici, pas la dupliquer dans les deux fichiers.
 
 ```csharp
+using System.Linq;
+
 [System.Serializable]
 public class WorldEventMapEntry
 {
@@ -96,8 +98,14 @@ public abstract class WorldEventData : ScriptableObject
     [Header("Paliers éligibles")]
     public List<WorldEventMapEntry> eligibleMaps = new List<WorldEventMapEntry>();
 
-    [Header("Runtime — ne pas modifier")]
-    [HideInInspector] public List<Player> eligiblePlayers = new List<Player>();
+    [Header("Éligibilité")]
+    [Tooltip("Coups minimum portés sur un mob de CET événement pour être éligible à la " +
+             "récompense finale — empêche un joueur de passage (1 coup, repart) d'être " +
+             "récompensé comme un vrai participant (Florian, 2026-09-30 : \"il faut vraiment " +
+             "participer\").")]
+    public int minHitsToBeEligible = 10;
+
+    private readonly Dictionary<Player, int> _hitCounts = new Dictionary<Player, int>();
 
     public abstract string DisplayName { get; }
     public abstract IEnumerator RunEvent(WorldEventScheduler scheduler);
@@ -110,30 +118,61 @@ public abstract class WorldEventData : ScriptableObject
     {
         if (!(e.source is Player player)) return;
         if (!OwnsMob(e.target)) return;
-        if (!eligiblePlayers.Contains(player)) eligiblePlayers.Add(player);
+        _hitCounts.TryGetValue(player, out int count);
+        _hitCounts[player] = count + 1;
     }
 
     protected void StartTracking()
     {
-        eligiblePlayers.Clear();
+        _hitCounts.Clear();
         GameEventBus.OnDamageDealt += OnDamageDealtHandler;
     }
 
     protected void StopTracking() => GameEventBus.OnDamageDealt -= OnDamageDealtHandler;
 
+    /// <summary>Distribue la récompense de l'événement à tout joueur ayant atteint
+    /// minHitsToBeEligible coups sur un mob possédé par CET événement (voir OwnsMob) — calculé à
+    /// la volée ici, jamais maintenu comme liste incrémentale, pour rester la source de vérité
+    /// unique au moment de la distribution.</summary>
     protected void GrantEventRewards(LootTable table)
     {
+        List<Player> eligiblePlayers = _hitCounts
+            .Where(kv => kv.Value >= minHitsToBeEligible)
+            .Select(kv => kv.Key)
+            .ToList();
+
         LootManager.Instance?.GrantEventLoot(table, eligiblePlayers);
         XPSystem.Instance?.GrantEventRewards(table, eligiblePlayers);
     }
+
+#if UNITY_EDITOR
+    /// <summary>Partagé par tout type concret (WorldBossData/InvasionData) — synchronise
+    /// sceneName depuis mapScene pour chaque entrée de eligibleMaps. Factorisé ici pour ne pas
+    /// dupliquer cette boucle dans le OnValidate de chaque sous-classe.</summary>
+    protected void SyncEligibleMapsSceneNames()
+    {
+        if (eligibleMaps == null) return;
+        foreach (var entry in eligibleMaps)
+            if (entry.mapScene != null) entry.sceneName = entry.mapScene.name;
+    }
+#endif
 }
 ```
 
 `OwnsMob`/`TrackDamage` remplacent le mécanisme `MobData.massEventRewards`/`contributingPlayers`
 d'hier pour tout ce qui passe par un événement — la participation est trackée par l'ÉVÉNEMENT
-lui-même (tout dégât, ≥1, aucun seuil), pas par le mob individuel. **`massEventRewards` est
-retiré entièrement** (voir §Suppression plus bas) : il ne sert plus à rien une fois que la
+lui-même (nombre de coups portés, pas juste présence), pas par le mob individuel. **`massEventRewards`
+est retiré entièrement** (voir §Suppression plus bas) : il ne sert plus à rien une fois que la
 récompense vit sur l'événement et non sur le mob.
+
+**Correction post-relecture (2026-09-30)** — bug trouvé en relisant spec+plan+code réel avant
+implémentation : dans la première version de ce design, `eligiblePlayers` était une simple liste
+(présence/absence). Florian a demandé un VRAI seuil de participation (nombre de coups, pas juste
+"a tapé au moins 1 fois") pour empêcher un joueur de passage d'être éligible — d'où
+`minHitsToBeEligible` (défaut 10, "il faut vraiment participer") et le passage à un
+`Dictionary<Player,int>` interne plutôt qu'une liste. Cette correction rend aussi obsolète le
+champ public `eligiblePlayers` (HideInInspector) de la première version — plus rien d'externe n'a
+besoin de le lire, il devient un détail d'implémentation privé (`_hitCounts`).
 
 ### `Systems/LootManager.cs` / `Progression/XPSystem.cs` — 2 nouvelles méthodes publiques
 
@@ -245,19 +284,15 @@ public class WorldBossData : WorldEventData
 
     public override string DisplayName => "Boss Géant";
 
-    private GameObject           _aliveBossObj;
-    private Mob                  _aliveMob;
-    private Coroutine             _timeoutCoroutine;
-    private bool                  _resolved;
-    private WorldEventScheduler   _scheduler; // référence gardée pour StopCoroutine dans Resolve()
-                                               // — un ScriptableObject ne peut pas stopper sa
-                                               // propre coroutine, seul le MonoBehaviour hôte peut.
+    private GameObject _aliveBossObj;
+    private Mob         _aliveMob;
+    private bool        _resolved;
+    private bool        _killedFlag;
 
     protected override bool OwnsMob(Entity target) => target != null && ReferenceEquals(target, _aliveMob);
 
     public override IEnumerator RunEvent(WorldEventScheduler scheduler)
     {
-        _scheduler = scheduler;
         if (possibleBosses == null || possibleBosses.Count == 0 || eligibleMaps == null || eligibleMaps.Count == 0)
         {
             Debug.LogWarning("[WorldBossData] possibleBosses/eligibleMaps vide — cycle ignoré.");
@@ -295,42 +330,71 @@ public class WorldBossData : WorldEventData
         AnnoncePanel.Instance?.Announce($"Le {DisplayName} est apparu sur le Palier {targetMap.palier} !");
 
         StartTracking();
-        _resolved = false;
-        _aliveMob?.OnDeath(() => Resolve(targetMap.palier, entry.rewardTable, killed: true));
-        _timeoutCoroutine = scheduler.StartCoroutine(TimeoutAfterDelay(targetMap.palier, entry.rewardTable, despawnTimeout));
+        _resolved   = false;
+        _killedFlag = false;
+        _aliveMob?.OnDeath(() => MarkResolved(killed: true));
+        Coroutine timeoutCoroutine = scheduler.StartCoroutine(TimeoutAfterDelay(despawnTimeout));
 
         yield return new WaitUntil(() => _resolved);
-    }
 
-    private IEnumerator TimeoutAfterDelay(int palier, LootTable rewardTable, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        Resolve(palier, rewardTable, killed: false);
-    }
-
-    private void Resolve(int palier, LootTable rewardTable, bool killed)
-    {
-        if (_resolved) return;
-        _resolved = true;
+        // StopTracking()/GrantEventRewards() APRÈS le WaitUntil, jamais dans le callback de mort
+        // lui-même — bug trouvé en relecture (2026-09-30) : Mob.Die() (synchrone, déclenché par
+        // TakeDamage) appelle onDeathCallback AVANT que SkillSystem, dans son appelant, publie le
+        // DamageDealtEvent de CE MÊME coup. Résoudre directement dans le callback (StopTracking
+        // immédiat) désabonnait le tracking avant que le coup fatal soit compté — le joueur qui
+        // achève le boss pouvait être exclu de eligiblePlayers si ce coup le faisait franchir
+        // minHitsToBeEligible. En ne faisant que positionner _resolved/_killedFlag dans le
+        // callback, la résolution réelle n'arrive qu'à la reprise de la coroutine (frame
+        // suivante au plus tôt) — le DamageDealtEvent du coup fatal est alors déjà traité.
         StopTracking();
-        if (_timeoutCoroutine != null) { _scheduler.StopCoroutine(_timeoutCoroutine); _timeoutCoroutine = null; }
+        if (timeoutCoroutine != null) scheduler.StopCoroutine(timeoutCoroutine);
 
-        if (killed)
+        if (_killedFlag)
         {
-            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {palier} a été vaincu !");
-            GrantEventRewards(rewardTable);
+            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {targetMap.palier} a été vaincu !");
+            GrantEventRewards(entry.rewardTable);
         }
         else
         {
             if (_aliveBossObj != null) Destroy(_aliveBossObj);
-            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {palier} s'est retiré...");
+            AnnoncePanel.Instance?.Announce($"Le {DisplayName} du Palier {targetMap.palier} s'est retiré...");
         }
 
         _aliveBossObj = null;
         _aliveMob     = null;
     }
+
+    private IEnumerator TimeoutAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        MarkResolved(killed: false);
+    }
+
+    private void MarkResolved(bool killed)
+    {
+        if (_resolved) return;
+        _resolved   = true;
+        _killedFlag = killed;
+    }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (possibleBosses != null)
+            foreach (var entry in possibleBosses)
+                if (entry.boss != null && entry.boss.mobType != MobType.BossWorld)
+                    Debug.LogWarning($"[WorldBossData] {name} : {entry.boss.mobName} a mobType = " +
+                        $"{entry.boss.mobType}, attendu BossWorld pour un Boss Géant.");
+
+        SyncEligibleMapsSceneNames();
+    }
+#endif
 }
 ```
+
+Le champ `_scheduler` de la première version disparaît — plus nécessaire : `RunEvent` a déjà
+`scheduler` en paramètre pour son propre `StopCoroutine`, la résolution ne passe plus par un
+callback externe qui en aurait besoin séparément.
 
 
 ### `Data/Content/InvasionData.cs` — nouveau, système de vagues
@@ -489,6 +553,38 @@ public class InvasionData : WorldEventData
             return hit.position;
         return center; // repli sur l'ancre si le sample échoue
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (possibleVariants != null)
+        {
+            foreach (var variant in possibleVariants)
+            {
+                if (variant.boss != null && variant.boss.mobType != MobType.BossInvasion)
+                    Debug.LogWarning($"[InvasionData] {name} : {variant.boss.mobName} a mobType = " +
+                        $"{variant.boss.mobType}, attendu BossInvasion pour un boss d'invasion.");
+
+                if (variant.waves != null)
+                    foreach (var wave in variant.waves)
+                        WarnIfNotMobInvasion(wave.mobs);
+
+                WarnIfNotMobInvasion(variant.reinforcements);
+            }
+        }
+
+        SyncEligibleMapsSceneNames();
+    }
+
+    private void WarnIfNotMobInvasion(List<InvasionMobEntry> entries)
+    {
+        if (entries == null) return;
+        foreach (var entry in entries)
+            if (entry.mob != null && entry.mob.mobType != MobType.MobInvasion)
+                Debug.LogWarning($"[InvasionData] {name} : {entry.mob.mobName} a mobType = " +
+                    $"{entry.mob.mobType}, attendu MobInvasion pour un mob de vague/renfort.");
+    }
+#endif
 }
 ```
 
@@ -554,8 +650,15 @@ WorldEventScheduler (timer partagé écoulé)
 6. Tuer le boss puis laisser des mobs de vague en vie → confirmer qu'aucun nouveau spawn
    n'intervient, et que la récompense n'est distribuée qu'une fois le DERNIER mob mort, pas à la
    mort du boss.
-7. Confirmer que `eligiblePlayers` inclut bien un joueur qui n'a tapé QUE des mobs de vague
-   (jamais le boss lui-même) — la récompense finale doit quand même lui être distribuée.
-8. Confirmer la suppression de `massEventRewards` : un mob normal (non lié à un événement) avec
-   plusieurs items droppés continue de tirer un gagnant indépendant par item (comportement
-   d'avant-hier, pas le tirage sans remise).
+7. Confirmer qu'un joueur ayant atteint `minHitsToBeEligible` (10) coups sur des mobs de vague
+   UNIQUEMENT (jamais le boss lui-même) reçoit bien la récompense finale.
+8. Confirmer qu'un joueur passé rapidement (moins de 10 coups, ex: 3) sur un mob de l'événement
+   n'est PAS dans la liste récompensée — le seuil filtre bien les participants insuffisants.
+9. Confirmer le fix de la race condition World Boss : configurer un boss avec peu de HP, faire en
+   sorte que le coup qui l'achève soit EXACTEMENT le 10e coup du joueur (celui qui le fait
+   franchir `minHitsToBeEligible`) — confirmer que la récompense est bien distribuée (avant le
+   fix, ce coup precis pouvait être perdu par la course entre `Mob.Die()`/`OnDeath` et la
+   publication de `DamageDealtEvent`, voir §WorldBossData).
+10. Confirmer la suppression de `massEventRewards` : un mob normal (non lié à un événement) avec
+    plusieurs items droppés continue de tirer un gagnant indépendant par item (comportement
+    d'avant-hier, pas le tirage sans remise).
