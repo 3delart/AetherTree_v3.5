@@ -169,7 +169,7 @@ public class SpawnManager : MonoBehaviour
             // Zone en cooldown restaurée (save existante) — ne spawn pas tout de suite,
             // Update() la surveillera. Zone jamais enregistrée (premier lancement de session) —
             // spawn immédiat, comportement d'avant ce chantier.
-            if (!WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, zone.zoneName, out _, out _))
+            if (!WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, zone.zoneName, out _))
                 SpawnBoss(zone);
         }
 
@@ -192,11 +192,11 @@ public class SpawnManager : MonoBehaviour
         {
             if (zone.aliveBoss != null) continue; // boss vivant, rien à faire
 
-            if (WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, zone.zoneName, out float remaining, out Vector3 pos)
+            if (WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, zone.zoneName, out float remaining)
                 && remaining <= 0f)
             {
                 WorldStateRegistry.Instance.ClearZone(_sceneName, zone.zoneName);
-                SpawnBoss(zone, pos);
+                SpawnBoss(zone);
             }
         }
 
@@ -209,11 +209,11 @@ public class SpawnManager : MonoBehaviour
                 if (rZone.nodeSlots[i] != null) continue; // node vivant, rien à faire
 
                 string identifier = $"{rZone.zoneName}#{i}";
-                if (WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, identifier, out float remaining, out Vector3 pos)
+                if (WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, identifier, out float remaining)
                     && remaining <= 0f)
                 {
                     WorldStateRegistry.Instance.ClearZone(_sceneName, identifier);
-                    SpawnOneNode(rZone, i, pos);
+                    SpawnOneNode(rZone, i);
                 }
             }
         }
@@ -223,17 +223,14 @@ public class SpawnManager : MonoBehaviour
     // SPAWN BOSS DE MAP
     // =========================================================
 
-    /// <summary>spawnPos : null = premier spawn de session (tire une position fraîche dans la
-    /// zone) ; une valeur fournie = respawn restauré depuis WorldStateRegistry, à LA POSITION
-    /// DÉJÀ DÉCIDÉE à la mort précédente (jamais re-tirée ici).</summary>
-    private void SpawnBoss(SpawnZone zone, Vector3? spawnPos = null)
+    private void SpawnBoss(SpawnZone zone)
     {
         MobData chosenData = RollMobData(zone);
         if (chosenData == null) { Debug.LogWarning($"[SPAWN] {zone.zoneName} — RollMobData retourne null"); return; }
         if (chosenData.prefab == null) { Debug.LogWarning($"[SpawnManager] {chosenData.mobName} n'a pas de prefab !"); return; }
 
         int     level = Random.Range(zone.minLevel, zone.maxLevel + 1);
-        Vector3 pos   = spawnPos ?? GetRandomPosition(zone.center, zone.size);
+        Vector3 pos   = GetRandomPosition(zone.center, zone.size);
 
         GameObject mobObj = Instantiate(chosenData.prefab, pos, Quaternion.identity);
         Mob mob = mobObj.GetComponent<Mob>();
@@ -244,9 +241,8 @@ public class SpawnManager : MonoBehaviour
             mob.OnDeath(() =>
             {
                 capturedZone.aliveBoss = null;
-                Vector3 nextPos = GetRandomPosition(capturedZone.center, capturedZone.size);
-                float   delay   = Random.Range(capturedZone.minRespawnDelay, capturedZone.maxRespawnDelay);
-                WorldStateRegistry.Instance.RegisterRespawn(_sceneName, capturedZone.zoneName, delay, nextPos);
+                float delay = Random.Range(capturedZone.minRespawnDelay, capturedZone.maxRespawnDelay);
+                WorldStateRegistry.Instance.RegisterRespawn(_sceneName, capturedZone.zoneName, delay);
             });
         }
         zone.aliveBoss = mobObj;
@@ -263,15 +259,12 @@ public class SpawnManager : MonoBehaviour
         {
             // Slot en cooldown restauré (save existante) — ne spawn pas tout de suite, Update()
             // le surveillera. Slot jamais enregistré (premier lancement) — spawn immédiat.
-            if (!WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, $"{rZone.zoneName}#{i}", out _, out _))
-                SpawnOneNode(rZone, i, null);
+            if (!WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, $"{rZone.zoneName}#{i}", out _))
+                SpawnOneNode(rZone, i);
         }
     }
 
-    /// <summary>spawnPos : null = premier spawn de session (tire une position fraîche) ; une
-    /// valeur fournie = respawn restauré depuis WorldStateRegistry, à LA POSITION DÉJÀ DÉCIDÉE à
-    /// l'épuisement précédent (jamais re-tirée ici).</summary>
-    private void SpawnOneNode(ResourceSpawnZone rZone, int slotIndex, Vector3? spawnPos)
+    private void SpawnOneNode(ResourceSpawnZone rZone, int slotIndex)
     {
         ResourceData data = RollResourceData(rZone);
         if (data == null)
@@ -290,7 +283,7 @@ public class SpawnManager : MonoBehaviour
             return;
         }
 
-        Vector3    pos     = spawnPos ?? GetRandomPosition(rZone.center, rZone.size);
+        Vector3    pos     = GetRandomPosition(rZone.center, rZone.size);
         GameObject nodeObj = Instantiate(data.nodePrefab, pos, Quaternion.identity);
 
         // Ajoute ResourceNode si absent sur le prefab
@@ -303,9 +296,8 @@ public class SpawnManager : MonoBehaviour
         node.InitFromSpawner(data, () =>
         {
             capturedZone.nodeSlots[capturedSlot] = null;
-            Vector3 nextPos = GetRandomPosition(capturedZone.center, capturedZone.size);
-            float   delay   = Random.Range(capturedZone.minRespawnDelay, capturedZone.maxRespawnDelay);
-            WorldStateRegistry.Instance.RegisterRespawn(_sceneName, $"{capturedZone.zoneName}#{capturedSlot}", delay, nextPos);
+            float delay = Random.Range(capturedZone.minRespawnDelay, capturedZone.maxRespawnDelay);
+            WorldStateRegistry.Instance.RegisterRespawn(_sceneName, $"{capturedZone.zoneName}#{capturedSlot}", delay);
         });
 
         rZone.nodeSlots[slotIndex] = nodeObj;

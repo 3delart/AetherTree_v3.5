@@ -17,6 +17,12 @@ using System.IO;
 // registre est déjà la source de vérité, même esprit que SaveSystem.cs qui fait les deux pour
 // CharacterProgress. Gelé pendant que le jeu est FERMÉ : Save() capture le temps restant,
 // Load() le restaure tel quel, aucun calcul de temps réel écoulé hors-jeu.
+//
+// Ne stocke QUE le timer, plus de position (retiré le 2026-10-01 — Florian : les zones
+// SpawnManager respawnent à une position ALÉATOIRE dans la zone de toute façon, verrouiller la
+// destination au moment du death n'apporte rien de perceptible ; et le futur chantier "mobs/
+// ressources posés à la main" n'en aurait jamais eu besoin non plus, leur position est déjà
+// fixe par nature). SpawnManager retire une position fraîche à chaque respawn réel.
 // =============================================================
 public class WorldStateRegistry : MonoBehaviour
 {
@@ -39,17 +45,7 @@ public class WorldStateRegistry : MonoBehaviour
     /// déclencher l'auto-création juste pour vérifier qu'un registre existe.</summary>
     public static bool Exists => _instance != null;
 
-    /// <summary>Un timer de respawn ET la position OÙ il devra réapparaître — décidée UNE FOIS
-    /// à l'enregistrement (mort/épuisement), jamais re-tirée au respawn réel. Garantit qu'un
-    /// save/reload en plein cooldown ne change pas la destination déjà "actée" (Florian,
-    /// 2026-10-01 : "chaque clé a son timer et sa position").</summary>
-    private class ZoneTimer
-    {
-        public float   remaining;
-        public Vector3 position;
-    }
-
-    private readonly Dictionary<string, ZoneTimer> _zoneTimers = new Dictionary<string, ZoneTimer>();
+    private readonly Dictionary<string, float> _zoneTimers = new Dictionary<string, float>();
 
     /// <summary>Countdown restant avant le prochain tirage WorldEventScheduler — géré ici pour
     /// que Save()/Load() aient un endroit unique où lire/écrire TOUT l'état monde. Lu/écrit par
@@ -83,10 +79,13 @@ public class WorldStateRegistry : MonoBehaviour
 
     private void Update()
     {
-        // Mutation en place (ZoneTimer est une classe, pas une struct) — pas besoin de copier
-        // les clés, on ne touche jamais la structure du Dictionary ici, juste ses valeurs.
-        foreach (var timer in _zoneTimers.Values)
-            timer.remaining = Mathf.Max(0f, timer.remaining - Time.deltaTime);
+        if (_zoneTimers.Count == 0) return;
+
+        // Copie des clés : on ne peut pas réassigner une valeur de Dictionary<string,float>
+        // (type valeur) pendant qu'on itère directement dessus.
+        var keys = new List<string>(_zoneTimers.Keys);
+        foreach (string key in keys)
+            _zoneTimers[key] = Mathf.Max(0f, _zoneTimers[key] - Time.deltaTime);
     }
 
     // =========================================================
@@ -96,33 +95,22 @@ public class WorldStateRegistry : MonoBehaviour
     // "identifier" est un identifiant GÉNÉRIQUE composé par l'appelant (SpawnManager) — le
     // registre ne sait rien de ce qu'il représente. Pour un boss de map (1 seul par zone) :
     // juste zoneName. Pour un node de ressource (plusieurs par zone, nodeCount) : zoneName + un
-    // suffixe d'index stable ("Zone#0", "Zone#1"...) — chaque slot garde son propre timer/sa
-    // propre position, indépendant des autres slots de la même zone.
+    // suffixe d'index stable ("Zone#0", "Zone#1"...) — chaque slot garde son propre timer,
+    // indépendant des autres slots de la même zone.
 
     private static string ZoneKey(string sceneName, string identifier) => $"{sceneName}|{identifier}";
 
     /// <summary>Appelé par SpawnManager à la mort d'un boss/épuisement d'un node ressource —
-    /// démarre (ou redémarre) le décompte de cette clé. `position` est déjà tirée par
-    /// l'appelant (dans les bornes de la zone) — stockée telle quelle, jamais retirée ici.</summary>
-    public void RegisterRespawn(string sceneName, string identifier, float delay, Vector3 position)
-        => _zoneTimers[ZoneKey(sceneName, identifier)] = new ZoneTimer { remaining = Mathf.Max(0f, delay), position = position };
+    /// démarre (ou redémarre) le décompte de cette clé.</summary>
+    public void RegisterRespawn(string sceneName, string identifier, float delay)
+        => _zoneTimers[ZoneKey(sceneName, identifier)] = Mathf.Max(0f, delay);
 
     /// <summary>Appelé par SpawnManager (à son Start() ET en polling tant que la clé est en
-    /// cooldown) — true + remaining/position si encore trackée (en cooldown, remaining peut être
-    /// 0 = prête à respawn MAIS pas encore nettoyée, voir ClearZone), false si jamais enregistrée
+    /// cooldown) — true + remaining si encore trackée (en cooldown, remaining peut être 0 =
+    /// prête à respawn MAIS pas encore nettoyée, voir ClearZone), false si jamais enregistrée
     /// (jamais mort/épuisée, ou déjà nettoyée — prête).</summary>
-    public bool TryGetRemainingTime(string sceneName, string identifier, out float remaining, out Vector3 position)
-    {
-        if (_zoneTimers.TryGetValue(ZoneKey(sceneName, identifier), out ZoneTimer timer))
-        {
-            remaining = timer.remaining;
-            position  = timer.position;
-            return true;
-        }
-        remaining = 0f;
-        position  = Vector3.zero;
-        return false;
-    }
+    public bool TryGetRemainingTime(string sceneName, string identifier, out float remaining)
+        => _zoneTimers.TryGetValue(ZoneKey(sceneName, identifier), out remaining);
 
     /// <summary>Appelé par SpawnManager une fois le respawn RÉELLEMENT déclenché (boss
     /// réinstancié / node ressource recréé) — retire l'entrée, la clé est de nouveau libre.</summary>
@@ -160,8 +148,7 @@ public class WorldStateRegistry : MonoBehaviour
             {
                 sceneName            = kv.Key.Substring(0, sep),
                 identifier           = kv.Key.Substring(sep + 1),
-                respawnTimeRemaining = kv.Value.remaining,
-                position             = kv.Value.position,
+                respawnTimeRemaining = kv.Value,
             });
         }
 
@@ -190,8 +177,7 @@ public class WorldStateRegistry : MonoBehaviour
             _zoneTimers.Clear();
             if (state.zoneTimers != null)
                 foreach (var z in state.zoneTimers)
-                    _zoneTimers[ZoneKey(z.sceneName, z.identifier)] =
-                        new ZoneTimer { remaining = z.respawnTimeRemaining, position = z.position };
+                    _zoneTimers[ZoneKey(z.sceneName, z.identifier)] = z.respawnTimeRemaining;
         }
         catch (System.Exception e)
         {
@@ -210,8 +196,7 @@ public class WorldState
 [System.Serializable]
 public class ZoneTimerState
 {
-    public string  sceneName;
-    public string  identifier; // zoneName (boss) ou "zoneName#index" (node de ressource)
-    public float   respawnTimeRemaining;
-    public Vector3 position;
+    public string sceneName;
+    public string identifier; // zoneName (boss) ou "zoneName#index" (node de ressource)
+    public float  respawnTimeRemaining;
 }
