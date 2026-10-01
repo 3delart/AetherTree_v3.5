@@ -108,6 +108,15 @@ public class SaveSystem : MonoBehaviour
 
     private void OnApplicationQuit()
     {
+        // Une entrée en attente (clé consommée, portail pas encore franchi) n'a aucun sens à
+        // travers un quit — pas persistée (PendingInstance n'est jamais dans CharacterProgress),
+        // donc de toute façon perdue au prochain lancement (statics remis à zéro), mais autant
+        // nettoyer proprement tout de suite (VFX chef de groupe compris) plutôt que de laisser un
+        // GameObject DontDestroyOnLoad traîner jusqu'à la fermeture réelle du process.
+        // InstanceSession.Exists (pas .Instance) : ne provoque jamais de création juste pour ce check.
+        if (InstanceSession.Exists && InstanceSession.Instance.PendingInstance != null)
+            InstanceSession.Instance.CancelPendingEntry();
+
         // ⚠ Même garde que Update() — si le chargement initial (Invoke + coroutine
         // LoadItemsDelayed) n'a pas fini, le Player est encore quasi vide (défauts
         // d'Awake). Sauvegarder à ce moment-là écraserait la vraie save avec un perso
@@ -125,12 +134,19 @@ public class SaveSystem : MonoBehaviour
             zt.FlushOnQuit();
 
         var player = FindObjectOfType<Player>();
-        if (player != null) Save(player);
+        if (player != null) Save(player, isQuitting: true);
+        if (WorldStateRegistry.Exists) WorldStateRegistry.Instance.Save();
     }
 
 #if UNITY_EDITOR
     private void OnDisable()
     {
+        // Même nettoyage qu'OnApplicationQuit — voir son commentaire. Un arrêt du Play Mode
+        // remet de toute façon PendingInstance à zéro (static, domain reload), mais autant
+        // passer par le chemin normal (détruit aussi le VFX chef de groupe proprement).
+        if (InstanceSession.Exists && InstanceSession.Instance.PendingInstance != null)
+            InstanceSession.Instance.CancelPendingEntry();
+
         // ⚠ Même garde — OnDisable() se déclenche à CHAQUE arrêt du Play Mode ET à
         // chaque recompilation de script pendant le Play Mode (domain reload). Sans ce
         // garde, un arrêt/recompile survenant avant la fin du chargement initial écrase
@@ -139,7 +155,8 @@ public class SaveSystem : MonoBehaviour
         if (_isFirstLoad) return;
 
         var player = FindObjectOfType<Player>();
-        if (player != null) Save(player);
+        if (player != null) Save(player, isQuitting: true);
+        if (WorldStateRegistry.Exists) WorldStateRegistry.Instance.Save();
     }
 #endif
 
@@ -147,11 +164,17 @@ public class SaveSystem : MonoBehaviour
     // SAVE PERSONNAGE
     // =========================================================
 
-    public void Save(Player player)
+    /// <summary>isQuitting = true UNIQUEMENT pour un vrai arrêt de session (OnApplicationQuit,
+    /// OnDisable Éditeur) — jamais pour l'autosave périodique ni les sauvegardes de transition
+    /// de map (LoadMapRoutine sauvegarde à CHAQUE changement de scène, y compris un simple
+    /// respawn mid-run). Détermine si une instance active compte comme "abandonnée" dans
+    /// CollectProgress() — sans ce garde, le moindre autosave pendant un run en cours sain
+    /// aurait redirigé lastMap vers startMap comme si le joueur avait quitté.</summary>
+    public void Save(Player player, bool isQuitting = false)
     {
         if (player == null) return;
 
-        var    progress = CollectProgress(player);
+        var    progress = CollectProgress(player, isQuitting);
         string json     = JsonUtility.ToJson(progress, prettyPrint: true);
 
         try
@@ -277,17 +300,36 @@ public class SaveSystem : MonoBehaviour
     // COLLECTE — Player → CharacterProgress
     // =========================================================
 
-    private CharacterProgress CollectProgress(Player player)
+    private CharacterProgress CollectProgress(Player player, bool isQuitting = false)
     {
+        // Quitter (vrai isQuitting UNIQUEMENT — pas l'autosave ni une simple transition de map,
+        // voir Save()) pendant une instance active (donjon, Combat à Vague...) COMPTE comme un
+        // abandon — pas de reprise possible au prochain lancement (lives/portails gatés/etc. ne
+        // survivent de toute façon jamais au redémarrage, il ne resterait qu'une scène de donjon
+        // vide et incohérente). Redirige vers la waiting room (InstanceSession.ReturnMapName, la
+        // map d'où le joueur est entré) plutôt que Map_01 — cohérent avec une sortie de donjon
+        // réussie, qui revient déjà au même endroit. InstanceSession.Exists (pas .Instance) : ne
+        // provoque jamais la création d'une session juste pour ce check.
+        bool abandoningInstance = isQuitting && InstanceSession.Exists && InstanceSession.Instance.CurrentInstance != null;
+        string abandonReturnMap = abandoningInstance
+            ? (!string.IsNullOrEmpty(InstanceSession.Instance.ReturnMapName)
+                ? InstanceSession.Instance.ReturnMapName
+                : (SceneLoader.Instance?.startMap ?? "Map_01"))
+            : null;
+
         var progress = new CharacterProgress
         {
             characterName   = player.entityName,
             level           = player.level,
             xpCombat        = player.xpCombat,
             activeTitle     = player.activeTitle,
-            worldReputation = player.worldReputation,
+            prestige        = player.prestige,
+            aura            = player.aura,
             pvpReputation   = player.pvpReputation,
-            lastMap         = SceneLoader.Instance?.CurrentMap ?? "Map_01",
+            lastMap             = abandoningInstance
+                ? abandonReturnMap
+                : (SceneLoader.Instance?.CurrentMap ?? "Map_01"),
+            usePlayerSpawnPoint = abandoningInstance,
             posX            = player.transform.position.x,
             posY            = player.transform.position.y,
             posZ            = player.transform.position.z,
@@ -339,6 +381,10 @@ public class SaveSystem : MonoBehaviour
 
         if (player.unlockedTiers != null)
             progress.unlockedTiers = new List<int>(player.unlockedTiers);
+
+        progress.confirmedCheckpoints = new List<Player.CheckpointEntry>(player.confirmedCheckpoints);
+
+        progress.dungeonPrestigeClaims = new List<Player.DungeonPrestigeClaim>(player.dungeonPrestigeClaims);
 
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
@@ -663,9 +709,10 @@ public class SaveSystem : MonoBehaviour
             p.spRankAttack, p.spRankDefense, p.spRankElemental, p.spRankHP,
             p.spTotalEarned, p.spAvailable);
 
-        // ② Réputation
-        player.AddWorldReputation(p.worldReputation - player.worldReputation);
-        player.AddPvPReputation(p.pvpReputation   - player.pvpReputation);
+        // ② Prestige & Aura & Réputation PvP
+        player.AddPrestige(p.prestige - player.prestige);
+        player.AddAura(p.aura         - player.aura);
+        player.AddPvPReputation(p.pvpReputation - player.pvpReputation);
 
         // ④ Aeris — SetAeris() fait autorité (pas Add() : la save doit pouvoir aussi
         // redescendre l'Aeris, ex. si le joueur en a dépensé après la dernière sauvegarde
@@ -712,6 +759,14 @@ public class SaveSystem : MonoBehaviour
 
         if (p.unlockedTiers != null)
             player.unlockedTiers = new List<int>(p.unlockedTiers);
+
+        player.confirmedCheckpoints = p.confirmedCheckpoints != null
+            ? new List<Player.CheckpointEntry>(p.confirmedCheckpoints)
+            : new List<Player.CheckpointEntry>();
+
+        player.dungeonPrestigeClaims = p.dungeonPrestigeClaims != null
+            ? new List<Player.DungeonPrestigeClaim>(p.dungeonPrestigeClaims)
+            : new List<Player.DungeonPrestigeClaim>();
 
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
@@ -889,7 +944,14 @@ public class SaveSystem : MonoBehaviour
         if (elemental != null && p.elementAffinities != null && p.elementAffinities.Count > 0)
             elemental.LoadAffinities(p.elementAffinities, p.elementEmptyWeight);
 
-        if (SceneLoader.Instance != null && !string.IsNullOrEmpty(p.lastMap)
+        if (p.usePlayerSpawnPoint && SceneLoader.Instance != null && !string.IsNullOrEmpty(p.lastMap))
+        {
+            // Donjon abandonné en quittant (voir CollectProgress) — posX/Y/Z sont des coordonnées
+            // de l'ANCIENNE scène (le donjon), inutilisables ici. LoadMapWithSpawn place tout
+            // seul au PlayerSpawnPoint de lastMap, pas de position à restaurer.
+            SceneLoader.Instance.LoadMapWithSpawn(p.lastMap);
+        }
+        else if (SceneLoader.Instance != null && !string.IsNullOrEmpty(p.lastMap)
             && p.lastMap != SceneLoader.Instance.CurrentMap)
         {
             _pendingPosition    = new Vector3(p.posX, p.posY, p.posZ);

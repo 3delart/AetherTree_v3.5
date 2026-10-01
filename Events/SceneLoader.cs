@@ -73,12 +73,10 @@ public class SceneLoader : MonoBehaviour
         StartCoroutine(LoadMapRoutine(mapName, reposition: true));
     }
 
-    /// <summary>Recharge la map actuelle (respawn, reset donjons...).</summary>
-    public void ReloadCurrentMap()
-    {
-        if (_isLoading || string.IsNullOrEmpty(_currentMap)) return;
-        StartCoroutine(ReloadRoutine());
-    }
+    /// <summary>Replace le joueur sur le PlayerSpawnPoint de la map courante SANS la recharger —
+    /// l'état de la scène (mobs morts, leviers actionnés, objectifs) reste intact. Utilisé par le
+    /// respawn de donjon (InstanceSession). Retourne false si aucun PlayerSpawnPoint n'existe.</summary>
+    public bool WarpToSpawnPoint() => RepositionPlayer();
 
     public string CurrentMap => _currentMap;
     public bool   IsLoading  => _isLoading;
@@ -101,6 +99,7 @@ public class SceneLoader : MonoBehaviour
         {
             var player = FindObjectOfType<Player>();
             if (player != null) SaveSystem.Instance?.Save(player);
+            if (WorldStateRegistry.Exists) WorldStateRegistry.Instance.Save();
         }
 
         // Nettoie les abonnements GameEventBus — évite les références mortes
@@ -139,27 +138,29 @@ public class SceneLoader : MonoBehaviour
         OnMapLoaded?.Invoke(mapName);
     }
 
-    private IEnumerator ReloadRoutine()
-    {
-        string map  = _currentMap;
-        _currentMap = "";
-        yield return StartCoroutine(LoadMapRoutine(map));
-    }
-
     // =========================================================
     // SPAWN POINT
     // =========================================================
 
-    private void RepositionPlayer()
+    private bool RepositionPlayer()
     {
-        GameObject spawnPoint = GameObject.Find("PlayerSpawnPoint");
-        if (spawnPoint == null) return;
+        // MapSpawnPoint par défaut d'abord ; le GameObject nommé "PlayerSpawnPoint" reste accepté
+        // en secours pour les scènes pas encore migrées.
+        Transform spawn = MapSpawnPoint.FindDefault()?.transform;
+        if (spawn == null) spawn = GameObject.Find("PlayerSpawnPoint")?.transform;
+        if (spawn == null)
+        {
+            Debug.LogWarning($"[SceneLoader] Aucun MapSpawnPoint par défaut dans '{_currentMap}' — " +
+                             "le joueur n'est pas repositionné. Poser Prefab_MapSpawnPoint dans la scène.");
+            return false;
+        }
 
         Player player = FindObjectOfType<Player>();
-        if (player == null) return;
+        if (player == null) return false;
 
         var agent = player.GetComponent<UnityEngine.AI.NavMeshAgent>();
-        if (agent != null) agent.Warp(spawnPoint.transform.position);
-        else player.transform.position = spawnPoint.transform.position;
+        if (agent != null) agent.Warp(spawn.position);
+        else player.transform.position = spawn.position;
+        return true;
     }
 }
