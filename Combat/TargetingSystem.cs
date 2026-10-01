@@ -142,7 +142,7 @@ public class TargetingSystem : MonoBehaviour
         var basicAttackSkill = SkillBar.Instance?.GetSkillAtSlot(0);
         if (basicAttackSkill != null && basicAttackSkill.range > 0f)
         {
-            float dist = Vector3.Distance(player.transform.position, engagedTarget.transform.position);
+            float dist = GetEffectiveDistance(player.transform.position, engagedTarget);
             if (dist > basicAttackSkill.range * 1.1f)
             {
                 if (_agent != null) _agent.SetDestination(engagedTarget.transform.position);
@@ -462,6 +462,21 @@ public class TargetingSystem : MonoBehaviour
                 SkillSystem.Instance.Execute(skill, player, engagedTarget ?? selectedTarget);
                 return;
         }
+    }
+
+    /// <summary>Distance effective vers une cible, ajustée du rayon (XZ) de son collider — même
+    /// correction que SkillBar.cs/CombatAIController.cs (Florian, 2026-10-01) : sans ça, la
+    /// boucle d'auto-attaque (TickAutoAttack, indépendante de SkillBar.TryUseSlot) ne lisait
+    /// jamais "en range" contre un collider large (Boss Géant/Invasion) et continuait de
+    /// SetDestination vers le pivot en boucle — poussant/collant contre le mob sans jamais
+    /// déclencher PerformAutoAttack().</summary>
+    private float GetEffectiveDistance(Vector3 from, Entity target)
+    {
+        float dist = Vector3.Distance(from, target.transform.position);
+        Collider col = target.GetComponentInChildren<Collider>();
+        if (col != null)
+            dist -= Mathf.Max(col.bounds.extents.x, col.bounds.extents.z);
+        return dist;
     }
 
     // =========================================================

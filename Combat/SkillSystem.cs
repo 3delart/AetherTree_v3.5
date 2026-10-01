@@ -1324,7 +1324,17 @@ public class SkillSystem : MonoBehaviour
             Vector3 offsetDir = skill.teleportBehindTarget
                 ? -target.transform.forward
                 :  target.transform.forward;
-            destination = target.transform.position + offsetDir.normalized * 1.5f;
+
+            // Offset ajusté du rayon (XZ) du collider de la cible — même correction que
+            // DashSelfRoutine juste au-dessus (Florian, 2026-10-01) : sans ça, un blink à 1.5 du
+            // PIVOT d'une cible au collider large (Boss Géant/Invasion) atterrit EN PLEIN DANS
+            // son corps au lieu de juste à côté.
+            float blinkOffset = 1.5f;
+            Collider targetCol = target.GetComponentInChildren<Collider>();
+            if (targetCol != null)
+                blinkOffset += Mathf.Max(targetCol.bounds.extents.x, targetCol.bounds.extents.z);
+
+            destination = target.transform.position + offsetDir.normalized * blinkOffset;
         }
         else if (skill.targetType == TargetType.GroundTarget)
         {
@@ -1462,6 +1472,20 @@ public class SkillSystem : MonoBehaviour
 
         float dashDuration = skill.displacementDuration;
         float stopOffset   = 1.2f;
+
+        // Ajusté du rayon (XZ) du collider du CASTER — pas de la cible, ici (Florian,
+        // 2026-10-01) : pour Target/Cone/AoE_Self, anchor EST le pivot du caster (exactLanding
+        // false dans ces 3 branches uniquement, voir plus haut) — sans cette correction, une
+        // victime attirée vers un caster au collider large (Boss Géant/Invasion) finit tirée
+        // EN PLEIN DANS son corps au lieu de s'arrêter à côté. GroundTarget (exactLanding true)
+        // n'est pas concerné : on atterrit pile sur le point cliqué, aucun collider en jeu.
+        if (!exactLanding)
+        {
+            Collider casterCol = caster.GetComponentInChildren<Collider>();
+            if (casterCol != null)
+                stopOffset += Mathf.Max(casterCol.bounds.extents.x, casterCol.bounds.extents.z);
+        }
+
         var   starts = new Vector3[victims.Count];
         var   ends   = new Vector3[victims.Count];
         var   agents = new UnityEngine.AI.NavMeshAgent[victims.Count];
