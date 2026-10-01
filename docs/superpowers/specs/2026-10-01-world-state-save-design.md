@@ -1,5 +1,20 @@
 # World State Save — Design
 
+**Amendements post-implémentation (2026-10-01)** :
+- `WorldSavePath` corrigé — `Application.persistentDataPath` assumé sans vérifier était faux ;
+  le vrai dossier du projet est `Directory.GetParent(Application.dataPath).FullName + "/Saves"`
+  (même patron que `SaveSystem.cs`, confirmé par Florian : "pourtant mon saveslot est rangé ici :
+  C:\AetherTree_v3.5\Saves").
+- **Position retirée du registre entièrement** — confirmée fonctionnelle en Play Mode (sceneName/
+  identifier/timer corrects), mais Florian a fait remarquer qu'elle n'apportait rien : les zones
+  `SpawnManager` respawnent à une position ALÉATOIRE de toute façon, verrouiller la destination au
+  moment du death est indiscernable d'un nouveau tirage au respawn réel. Le futur chantier "hors
+  scope" (mobs/ressources posés à la main) n'en aurait pas eu besoin non plus — leur position est
+  déjà fixe par nature. `ZoneTimer`/`ZoneTimerState`/`RegisterRespawn`/`TryGetRemainingTime`
+  redeviennent un simple float, `SpawnManager` retire une position fraîche à chaque respawn réel,
+  comme avant ce chantier. Voir commit `46d89e5` pour le diff réel — non reflété dans le code
+  ci-dessous, qui documente le design tel qu'initialement approuvé.
+
 ## Contexte
 
 Florian, en testant le système World Event (World Boss + Invasion, construit la veille) :

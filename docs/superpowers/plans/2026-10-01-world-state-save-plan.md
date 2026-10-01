@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Amendments post-implementation (2026-10-01)** — after all 4 tasks shipped and Florian tested
+in Play Mode: (1) the save path was wrong (`Application.persistentDataPath` assumed without
+checking `SaveSystem.cs`'s real convention, `Directory.GetParent(Application.dataPath) +
+"Saves"` — fixed, commit `29e6751`); (2) position tracking was dropped from the registry entirely
+— confirmed working, but added no practical value for SpawnManager's always-random-position
+zones (commit `46d89e5`). The task bodies below still show the originally-approved design
+(position parameters throughout) — not reflected, see the two commits above for the real diff.
+
 **Goal:** Persist World Event scheduler countdown and SpawnManager zone respawn timers (map bosses + rare resource nodes) across a game restart, via a new central `WorldStateRegistry`.
 
 **Architecture:** A new `WorldStateRegistry` singleton (`DontDestroyOnLoad`) owns, in memory, every tracked respawn timer (scene+identifier → remaining time + destined respawn position) and ticks them continuously regardless of which scene is loaded. It also owns JSON save/load (`world_state.json`, same `Application.persistentDataPath`/trigger conventions as `SaveSystem.cs`). `WorldEventScheduler`'s timer is restructured from an opaque `WaitForSeconds` into a queryable field so the registry can read/write it. `SpawnManager` stops owning its own respawn coroutines — it registers a timer+position at death/depletion and polls the registry instead.
