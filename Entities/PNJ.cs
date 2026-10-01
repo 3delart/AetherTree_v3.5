@@ -265,6 +265,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case PNJType.Jeweler:      InteractGenericShop(player);  break;
             case PNJType.Hatter:       InteractGenericShop(player);  break;
             case PNJType.CraftStation: InteractGenericShop(player);  break;
+            case PNJType.Purification: InteractPurification(player); break;
         }
 
         RegisterKnownPlayer(player);
@@ -341,6 +342,21 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         if (dialogue != null) StartDialogue(dialogue, player);
     }
 
+    // ── Purification (Aura) ──────────────────────────────────
+    // Texte différent selon le palier Aura ACTUEL du joueur — voir
+    // PNJData.purificationDialogueByAuraRank. Une entrée vide/absente à l'index du rang courant
+    // retombe sur SelectDialogue (defaultDialogue), même filet de sécurité que tout autre PNJ.
+    private void InteractPurification(Player player)
+    {
+        DialogueData dialogue = null;
+        var byRank = data.purificationDialogueByAuraRank;
+        if (byRank != null && player.auraRank < byRank.Count)
+            dialogue = byRank[player.auraRank];
+
+        dialogue ??= SelectDialogue(player);
+        if (dialogue != null) StartDialogue(dialogue, player);
+    }
+
     // ── Maire ─────────────────────────────────────────────────
     private void InteractMayor(Player player)
     {
@@ -377,7 +393,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
         if (data.reputationDialogueThreshold > 0 &&
             data.highReputationDialogue != null &&
-            player.worldReputationRank >= data.reputationDialogueThreshold)
+            player.prestigeRank >= data.reputationDialogueThreshold)
             return data.highReputationDialogue;
 
         if (data.knownPlayerDialogue != null && IsKnownPlayer(player))
@@ -472,7 +488,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             Debug.Log($"[PNJ] Récompense item : {stage.rewardItemID} (InventorySystem Phase 5)");
 
         if (stage.rewardWorldRep != 0)
-            player.AddWorldReputation(stage.rewardWorldRep);
+            player.AddPrestige(stage.rewardWorldRep);
     }
 
     private void HandleDialogueAction(DialogueAction action, Player player)
@@ -488,6 +504,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case DialogueAction.OpenQuestLog:       Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");  break;
             case DialogueAction.OpenHarborUI:       Debug.Log("[PNJ] OpenHarborUI — HarborUI Phase 8"); break;
             case DialogueAction.TriggerGuildCreation: TryCreateGuild(player); break;
+            case DialogueAction.PurifyAura:         TryPurifyAura(player); break;
             case DialogueAction.CloseDialogue:      EndDialogue(); break;
         }
     }
@@ -514,6 +531,66 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // TODO: vérifier Aeris joueur >= data.guildCreationCost
         // TODO: GuildSystem.Instance?.CreateGuild(player, data.guildCreationCost)
         Debug.Log($"[PNJ/Maire] Création de guilde débloquée — Coût : {data.guildCreationCost} Aeris (Phase 9)");
+    }
+
+    // =========================================================
+    // PURIFICATION AURA — spec 2026-09-29-prestige-aura-design.md §2.5
+    // =========================================================
+
+    /// <summary>Rachète UN palier d'Aura (rang courant → rang-1), coût lu sur
+    /// player.prestigeAuraData.auraTiers[rang courant] — table PARTAGÉE (un seul asset dragué
+    /// sur le prefab Player), plus sur ce PNJData individuellement. Recalcule le rang APRÈS
+    /// l'achat via player.AddAura(delta) — le delta amène l'Aura exactement au plancher du
+    /// palier cible (Player.GetAuraTierFloor), jamais un gain additif classique (spec §2.5 :
+    /// chaque achat FIXE l'Aura au plancher du palier suivant). Rien à faire si déjà Normal
+    /// (rang 0) — pas de palier au-dessus à racheter.</summary>
+    private void TryPurifyAura(Player player)
+    {
+        if (player == null || player.prestigeAuraData == null) return;
+
+        int rank = player.auraRank;
+        if (rank <= 0)
+        {
+            FloatingText.Spawn("Aura déjà Normal", player.transform.position + Vector3.up * 2f, Color.gray);
+            return;
+        }
+
+        var tiers = player.prestigeAuraData.auraTiers;
+        if (tiers == null || rank >= tiers.Count) return;
+        var tier = tiers[rank];
+
+        int aerisCost      = tier.purificationAerisCost;
+        int resourceQty    = tier.purificationResourceQty;
+        bool needsResource = tier.purificationResource != null && resourceQty > 0;
+
+        if (needsResource && (InventorySystem.Instance == null ||
+            InventorySystem.Instance.GetResourceCount(tier.purificationResource) < resourceQty))
+        {
+            FloatingText.Spawn($"{tier.purificationResource.name} insuffisant",
+                player.transform.position + Vector3.up * 2f, Color.red);
+            return;
+        }
+
+        if (AerisSystem.Instance == null || !AerisSystem.Instance.Spend(aerisCost))
+        {
+            FloatingText.Spawn("Aeris insuffisant", player.transform.position + Vector3.up * 2f, Color.red);
+            return;
+        }
+
+        if (needsResource)
+            InventorySystem.Instance.ConsumeResource(tier.purificationResource, resourceQty);
+
+        // Dernière étape (Terni → Normal) : remonte au PLAFOND (+100), pas au plancher (0) —
+        // sinon +100 (le départ, voir Player.aura) devient définitivement inatteignable une fois
+        // qu'on est descendu sous 0 ne serait-ce qu'une fois (aucune autre source ne peut jamais
+        // dépasser le plancher d'un palier). Florian, 2026-09-29 : "on ne peut pas remonter à
+        // +100" — repéré en testant ce PNJ. Toutes les autres étapes restent plancher normal.
+        int targetAura = (rank - 1 == 0) ? 100 : player.GetAuraTierFloor(rank - 1);
+        player.AddAura(targetAura - player.aura);
+
+        FloatingText.Spawn("Aura purifiée", player.transform.position + Vector3.up * 2f, new Color(0.6f, 0.9f, 1f));
+        Debug.Log($"[PNJ/Purification] Aura {rank} → {rank - 1} — {aerisCost} Aeris" +
+            (needsResource ? $" + {resourceQty}x {tier.purificationResource.name}" : "") + ".");
     }
 
     // =========================================================
@@ -627,6 +704,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public AnimationClip WalkClip  => data?.walkClip;
     public AnimationClip ChaseClip => data?.chaseClip;
     public AnimationClip DeathClip => data?.deathClip;
+    public List<AnimationClip> IdleClipVariants => data?.idleClipVariants;
 
     // =========================================================
     // ICombatAIProfile — voir spec §5bis pour le détail de chaque membre
@@ -714,6 +792,10 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = true;
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = true;
         if (_agent != null) { _agent.enabled = true; _agent.Warp(_spawnPos); }
+
+        // Même nécessité que Player.Revive() — l'état Animator "Death" n'a pas de transition de
+        // sortie automatique, sans ce signal le PNJ réapparaît figé en pose de mort.
+        _animatorController?.CancelChannel();
 
         Debug.Log($"[PNJ] {data.pnjName} respawné.");
     }

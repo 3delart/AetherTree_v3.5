@@ -40,6 +40,25 @@ public class PlayerAnimatorController : MonoBehaviour
              "référence exacte, l'override ne peut pas savoir quel slot remplacer.")]
     [SerializeField] private AnimationClip attackPlaceholderClip;
 
+    [Header("Idle hors combat (variantes aléatoires)")]
+    [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"Happy Idle\" (InCombat=false)\n" +
+             "dans l'Animator Controller — même principe que attackPlaceholderClip, sert de clé\n" +
+             "pour l'indexeur AnimatorOverrideController. Si non assigné, idleClips ci-dessous ne\n" +
+             "pourra jamais s'échanger (le state garde son clip d'origine).")]
+    [SerializeField] private AnimationClip idlePlaceholderClip;
+    [Tooltip("Pool de clips Idle hors combat — une variante est tirée au hasard à chaque retour au\n" +
+             "repos (Speed repasse à 0). Optionnel : vide ou null = pas de variation.")]
+    [SerializeField] private AnimationClip[] idleClips;
+
+    [Header("Idle en combat (variantes aléatoires)")]
+    [Tooltip("Même principe qu'idlePlaceholderClip, mais pour le state \"sword idle\"\n" +
+             "(InCombat=true) — slot séparé car c'est un state Animator différent, pas la même\n" +
+             "clé d'override que l'idle hors combat.")]
+    [SerializeField] private AnimationClip combatIdlePlaceholderClip;
+    [Tooltip("Pool de clips Idle en combat — même mécanisme qu'idleClips, appliqué quand\n" +
+             "Player.CombatActive est vrai au moment du retour au repos.")]
+    [SerializeField] private AnimationClip[] combatIdleClips;
+
     [Header("Death (override)")]
     [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"Death\" dans le\n" +
              "Animator Controller (placeholder dédié, même principe que attackPlaceholderClip\n" +
@@ -54,6 +73,11 @@ public class PlayerAnimatorController : MonoBehaviour
     private AnimatorOverrideController _overrideController;
     private NavMeshAgent                _agent;
     private Player                      _player;
+
+    // true au départ — fait déclencher le tirage d'une variante Idle dès le premier Update() si
+    // le joueur démarre déjà à l'arrêt, sans dupliquer la logique de tirage à part (même patron
+    // que CombatEntityAnimatorController._wasMoving).
+    private bool _wasMoving = true;
 
     private void Awake()
     {
@@ -83,6 +107,33 @@ public class PlayerAnimatorController : MonoBehaviour
         float speed = _agent != null ? _agent.velocity.magnitude : 0f;
         _animator.SetFloat(SpeedParam, speed);
         _animator.SetBool(InCombatParam, _player != null && _player.CombatActive);
+
+        // Tirage d'une variante Idle au moment précis où on repasse à l'arrêt (front descendant
+        // Speed>0 → Speed≈0) — pas à chaque frame immobile, pas de Play() forcé non plus : juste
+        // remplacer le contenu du slot AVANT que l'Animator ne transite lui-même vers Idle, pour
+        // ne pas casser le blend Walk→Idle existant avec un Play(0,0f) qui coupe net.
+        bool isMoving = speed > 0.05f;
+        if (_wasMoving && !isMoving) SwapIdleClip();
+        _wasMoving = isMoving;
+    }
+
+    /// <summary>Tire une variante Idle au hasard et la place dans le slot placeholder adapté
+    /// (hors combat "Happy Idle" ou en combat "sword idle" selon Player.CombatActive) — sans
+    /// relancer le state (contrairement à PlayOverrideClip), pour laisser l'Animator transiter
+    /// naturellement vers Idle avec son propre blend. No-op si le placeholder ou le pool
+    /// correspondant ne sont pas configurés.</summary>
+    private void SwapIdleClip()
+    {
+        if (_overrideController == null) return;
+
+        bool inCombat = _player != null && _player.CombatActive;
+        AnimationClip placeholder = inCombat ? combatIdlePlaceholderClip : idlePlaceholderClip;
+        AnimationClip[] pool      = inCombat ? combatIdleClips           : idleClips;
+
+        if (placeholder == null || pool == null || pool.Length == 0) return;
+
+        AnimationClip chosen = pool[Random.Range(0, pool.Length)];
+        if (chosen != null) _overrideController[placeholder] = chosen;
     }
 
     /// <summary>Échange le clip d'un slot placeholder puis relance le state associé depuis le
@@ -146,4 +197,11 @@ public class PlayerAnimatorController : MonoBehaviour
     {
         SkillBar.Instance?.OnAnimationHitEvent(hitIndex);
     }
+
+    // Hooks vides pour les Animation Events "FootStep"/"PlayFootStep" déjà posés aux bons frames
+    // sur les clips de marche/course repris d'AnyRPG — sans ces méthodes, Unity logue juste un
+    // warning "no receiver" (l'anim joue quand même, inoffensif). Prêts pour un futur système de
+    // son de pas, pas de logique pour l'instant.
+    public void FootStep()     { }
+    public void PlayFootStep() { }
 }

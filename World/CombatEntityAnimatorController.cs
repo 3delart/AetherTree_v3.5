@@ -21,9 +21,11 @@ using System.Collections.Generic;
 // créature). Renommer un de ces 4 clips dans le Controller casse le lookup silencieusement —
 // vérifier les logs d'Awake si un swap ne marche plus après une édition du Controller partagé.
 //
-// Idle/Walk/Chase sont swappés UNE SEULE FOIS à Awake (fixes pour toute la vie de l'instance,
-// lus sur ICombatAnimatorProfile — implémenté par Mob et PNJ via leur MobData/PNJData). Attack
-// est swappé à CHAQUE cast (clip différent par skill, voir PlayAttack/PlayChannel).
+// Walk/Chase sont swappés UNE SEULE FOIS à Awake (fixes pour toute la vie de l'instance, lus sur
+// ICombatAnimatorProfile — implémenté par Mob et PNJ via leur MobData/PNJData). Idle est swappé à
+// Awake PUIS re-tiré au hasard (IdleClip + IdleClipVariants) à chaque retour au repos, voir
+// SwapIdleClip(). Attack est swappé à CHAQUE cast (clip différent par skill, voir PlayAttack/
+// PlayChannel).
 // =============================================================
 
 /// <summary>Fourni par l'owner (Mob ou PNJ) — locomotion (clips + état courant) et relais de
@@ -36,6 +38,11 @@ public interface ICombatAnimatorProfile
     AnimationClip WalkClip  { get; }
     AnimationClip ChaseClip { get; }
     AnimationClip DeathClip { get; }
+    // Variantes supplémentaires d'Idle (IdleClip reste la variante de base toujours incluse) —
+    // une est tirée au hasard à chaque retour au repos (Speed passe à 0), voir
+    // CombatEntityAnimatorController.Update(). Optionnel : null/vide = toujours IdleClip, comme
+    // avant ce chantier.
+    List<AnimationClip> IdleClipVariants { get; }
     CombatAIState CurrentState { get; }
     void OnAnimationHitEvent(int hitIndex);
 }
@@ -71,6 +78,10 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
     private AnimationClip _chasePlaceholder;
     private AnimationClip _attackPlaceholder;
     private AnimationClip _deathPlaceholder;
+
+    // true au départ — fait déclencher le tirage d'une variante Idle dès le premier Update() si
+    // l'entité démarre déjà à l'arrêt (spawn immobile), sans dupliquer la logique de tirage à part.
+    private bool _wasMoving = true;
 
     private void Awake()
     {
@@ -154,6 +165,30 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
         // impossible via Speed seul, Speed=0 pendant Engage (immobile en train d'attaquer)
         // ressemble à Speed=0 en Patrol (arrivé à un point d'attente).
         _animator.SetBool(IsChasingParam, _profile != null && _profile.CurrentState == CombatAIState.Engage);
+
+        // Tirage d'une variante Idle au moment précis où on repasse à l'arrêt (front descendant
+        // Speed>0 → Speed≈0) — pas à chaque frame immobile (resterait figé sur le même choix tout
+        // du long, voir doc du champ _wasMoving), pas de Play() forcé non plus : juste remplacer le
+        // contenu du slot AVANT que l'Animator ne transite lui-même vers Idle, pour ne pas casser
+        // le blend Walk→Idle existant avec un Play(0,0f) qui coupe net.
+        bool isMoving = speed > 0.05f;
+        if (_wasMoving && !isMoving) SwapIdleClip();
+        _wasMoving = isMoving;
+    }
+
+    /// <summary>Tire une variante Idle au hasard parmi IdleClip + IdleClipVariants et la place dans
+    /// le slot placeholder — sans relancer le state (contrairement à PlayOverrideClip), pour
+    /// laisser l'Animator transiter naturellement vers Idle avec son propre blend.</summary>
+    private void SwapIdleClip()
+    {
+        if (_overrideController == null || _idlePlaceholder == null || _profile == null) return;
+
+        var variants = _profile.IdleClipVariants;
+        int variantCount = variants?.Count ?? 0;
+        int roll = Random.Range(0, variantCount + 1); // 0 = IdleClip de base, 1..N = variantes
+
+        AnimationClip chosen = roll == 0 ? _profile.IdleClip : variants[roll - 1];
+        if (chosen != null) _overrideController[_idlePlaceholder] = chosen;
     }
 
     /// <summary>Échange le clip d'un slot placeholder puis relance le state associé depuis le
@@ -210,4 +245,11 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
     {
         _profile?.OnAnimationHitEvent(hitIndex);
     }
+
+    // Hooks vides pour les Animation Events "FootStep"/"PlayFootStep" déjà posés aux bons frames
+    // sur les clips de marche/course repris d'AnyRPG — sans ces méthodes, Unity logue juste un
+    // warning "no receiver" (l'anim joue quand même, inoffensif). Prêts pour un futur système de
+    // son de pas, pas de logique pour l'instant.
+    public void FootStep()     { }
+    public void PlayFootStep() { }
 }

@@ -10,7 +10,7 @@ using System.Collections.Generic;
 // icon, requiredLevel, config... — voir ItemData/EquipmentDataBase).
 //
 // Stats fixes sur le SO (identiques sur toutes les instances) :
-//   weaponType, attackSpeed, weaponLevel
+//   weaponType, weaponLevel
 //   critChance             → fixe sur le SO — absent (0) sur les armes Magic
 //   critMultiplier         → fixe sur le SO — s'additionne à la base 1.5
 //
@@ -38,12 +38,6 @@ public class WeaponData : EquipmentDataBase
     [Tooltip("Niveau de l'arme — détermine le niveau maximum de rune pouvant être insérée.\n" +
              "Règle GDD §5.7 : rune.runeLevel ≤ weaponLevel")]
     [Min(1)] public int weaponLevel = 1;
-
-    // ── Stats fixes (identiques sur toutes les instances) ─────
-    [Header("Stats fixes (identiques sur toutes les instances)")]
-    [Tooltip("Cadence d'attaque de base — attaques par seconde.\n" +
-             "Gouverne uniquement le Slot 0 (BasicAttack) — jamais bloqué par le GCD.")]
-    public float attackSpeed = 1f;
 
     // ── Stats rollées — fourchettes dérivées d'une valeur de référence ────────
     // Voir note-systeme-ratio-degats.md pour le détail du raisonnement et des
@@ -258,7 +252,6 @@ public class WeaponInstance
     // critChance et critMultiplier sont définis une fois sur WeaponData. GDD §5.3.
     public float CritChance     => data != null ? data.critChance    : 0f;
     public float CritMultiplier => data != null ? data.critMultiplier : 0f;
-    public float AttackSpeed    => data != null ? data.attackSpeed    : 1f;
 
     // ── Raccourcis SO ─────────────────────────────────────────
     public WeaponType     WeaponType    => data != null ? data.weaponType : global::WeaponType.ShortSword;

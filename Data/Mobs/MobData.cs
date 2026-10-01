@@ -135,6 +135,10 @@ public class MobData : ScriptableObject
     [Header("Animations locomotion")]
     [Tooltip("Anim jouée à l'arrêt hors combat.")]
     public AnimationClip idleClip;
+    [Tooltip("Variantes supplémentaires d'idleClip — une est tirée au hasard à chaque retour au\n" +
+             "repos (évite de rejouer toujours la même pose). Optionnel : vide = toujours idleClip,\n" +
+             "comportement inchangé.")]
+    public List<AnimationClip> idleClipVariants = new List<AnimationClip>();
     [Tooltip("Anim de déplacement en Patrol (déambulation).")]
     public AnimationClip walkClip;
     [Tooltip("Anim de déplacement en Engage (poursuite/combat rapproché) — distincte de Walk\n" +

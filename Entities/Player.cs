@@ -62,6 +62,24 @@ using System.Collections.Generic;
 [RequireComponent(typeof(UnityEngine.CapsuleCollider))]
 public class Player : Entity
 {
+    // ── Checkpoint monde ouvert — voir Player.confirmedCheckpoints/ResolveCheckpoint ──
+    [System.Serializable]
+    public class CheckpointEntry
+    {
+        public int    palier;
+        public string mapName;
+    }
+
+    // ── Récompense Prestige quotidienne par donjon — voir DungeonData.prestigeReward et
+    // InstanceSession.OnBossKilled. lastClaimDate au format "yyyy-MM-dd" (System.DateTime.Now,
+    // même convention que ActivityCounter.CheckDailyReset).
+    [System.Serializable]
+    public class DungeonPrestigeClaim
+    {
+        public string dungeonID;
+        public string lastClaimDate;
+    }
+
     // ── Template ──────────────────────────────────────────────
     [Header("Template personnage (assigner ici)")]
     public CharacterData characterData;
@@ -120,6 +138,55 @@ public class Player : Entity
     /// <summary>Paliers débloqués via Donjon de Déblocage — voir GDD §14.3.4 et HasUnlockedTier().</summary>
     [HideInInspector] public List<int> unlockedTiers = new List<int>();
 
+    /// <summary>Un point de contrôle confirmé par palier — voir MapSpawnPoint.OnTriggerEnter
+    /// (type = Palier) + MapInfo. Une seule entrée par palier (ConfirmCheckpoint la met à jour).</summary>
+    [HideInInspector] public List<CheckpointEntry> confirmedCheckpoints = new List<CheckpointEntry>();
+
+    /// <summary>Confirme/actualise le point de contrôle d'un palier.</summary>
+    public void ConfirmCheckpoint(int palier, string mapName)
+    {
+        var existing = confirmedCheckpoints.Find(c => c.palier == palier);
+        if (existing != null) existing.mapName = mapName;
+        else confirmedCheckpoints.Add(new CheckpointEntry { palier = palier, mapName = mapName });
+    }
+
+    /// <summary>Remonte la chaîne des paliers confirmés depuis fromPalier vers le bas (fromPalier,
+    /// fromPalier-1, ..., 1) — retourne la première map confirmée trouvée, null si aucune (nouveau
+    /// personnage, ou aucun palier ≤ fromPalier jamais atteint). L'appelant retombe alors sur
+    /// SceneLoader.startMap.</summary>
+    public string ResolveCheckpoint(int fromPalier)
+    {
+        for (int p = fromPalier; p >= 1; p--)
+        {
+            var entry = confirmedCheckpoints.Find(c => c.palier == p);
+            if (entry != null) return entry.mapName;
+        }
+        return null;
+    }
+
+    /// <summary>Réclamations quotidiennes de Prestige de donjon — une entrée par donjon déjà
+    /// réclamé au moins une fois. Voir TryClaimDailyDungeonPrestige.</summary>
+    [HideInInspector] public List<DungeonPrestigeClaim> dungeonPrestigeClaims = new List<DungeonPrestigeClaim>();
+
+    /// <summary>Tente de réclamer le Prestige quotidien d'un donjon — renvoie false si déjà
+    /// réclamé aujourd'hui (date réelle, pas une notion de jour in-game). L'appelant (InstanceSession.
+    /// OnBossKilled) ne doit appeler AddPrestige(dungeon.prestigeReward) que si ceci renvoie true.</summary>
+    public bool TryClaimDailyDungeonPrestige(string dungeonID)
+    {
+        string today = System.DateTime.Now.ToString("yyyy-MM-dd");
+        var existing = dungeonPrestigeClaims.Find(c => c.dungeonID == dungeonID);
+        if (existing != null)
+        {
+            if (existing.lastClaimDate == today) return false;
+            existing.lastClaimDate = today;
+        }
+        else
+        {
+            dungeonPrestigeClaims.Add(new DungeonPrestigeClaim { dungeonID = dungeonID, lastClaimDate = today });
+        }
+        return true;
+    }
+
     /// <summary>
     /// Les 3 passifs RÉELLEMENT actifs (slots P1/P2/P3 de la PassifBar, GDD §7.5 —
     /// "assignés hors combat"), choisis parmi unlockedPassives. Seuls ceux-ci sont
@@ -136,13 +203,30 @@ public class Player : Entity
     // ── Titre actif ───────────────────────────────────────────
     [HideInInspector] public string activeTitle = "";
 
-    // ── Réputation — GDD §3.4 ────────────────────────────────
-    [HideInInspector] public int worldReputation     = 0;
+    // ── Prestige & Aura — remplace worldReputation (GDD §4.5.1 original, contradiction interne
+    // "ne se perd pas" vs tableau de pertes) — voir docs/superpowers/specs/
+    // 2026-09-29-prestige-aura-design.md. Deux jauges indépendantes :
+    //   Prestige — statut social, monte principalement (§1). Débloque des accès (PNJ exclusifs,
+    //   quêtes avancées, recettes) et le bonus de prix à la vente (ShopUI.SELL_MULTIPLIERS).
+    //   Aura     — jauge de pénalité, descend sur la mort (§2). Malus prix PNJ à l'achat, blocage
+    //   skill/familier via DebuffData (blockedSkills/blocksFamiliarEquip), debuffs de stats.
+    [HideInInspector] public int prestige     = 0;
+    [HideInInspector] public int prestigeRank = 0;
+    // Démarre à +100 (pas 0) — convention NosTale, évite un Terni quasi instantané au premier
+    // death (Florian, 2026-09-29). CharacterProgress.aura partage ce même défaut, sinon un
+    // personnage neuf verrait son Aura retombée à 0 dès le premier chargement de save (voir
+    // SaveSystem.ApplyProgress — delta-based, aligné sur ce qu'a CharacterProgress par défaut).
+    [HideInInspector] public int aura         = 100;
+    [HideInInspector] public int auraRank     = 0;
+
+    [Tooltip("Seuils/icônes Prestige, planchers/malus/icônes/debuffs/coûts Purification Aura — " +
+             "tout dans un seul asset, voir Data/Progression/PrestigeAuraData.cs. Un asset partagé " +
+             "glissé ici sur le prefab Player.")]
+    public PrestigeAuraData prestigeAuraData;
+
     [HideInInspector] public int pvpReputation       = 0;
-    [HideInInspector] public int worldReputationRank = 0;
     [HideInInspector] public int pvpReputationRank   = 0;
 
-    private static readonly int[] WorldRepThresholds = { 0, 100, 300, 700, 1500, 3000 };
     private static readonly int[] PvPRepThresholds   = { 0, 50, 150, 300, 550, 900, 1400, 2100, 3000, 4200, 6000 };
 
     // ── Contexte combat ───────────────────────────────────────
@@ -1019,6 +1103,12 @@ public class Player : Entity
 
     protected override void Die()
     {
+        // Malus Aura uniforme sur TOUTE mort, peu importe le contexte (monde ouvert ou donjon —
+        // Florian, 2026-09-29 : "uniforme pour la perte en mort"). Posé ici, au point d'entrée
+        // unique des deux branches ci-dessous, plutôt que dupliqué dans chacune.
+        activityCounter.Increment(CounterKeys.DEATHS_TOTAL);
+        AddAura(-20);
+
         // Une instance active court-circuite TOUT le flux de mort normal, Revive inclus — le
         // GDD est explicite sur au moins 2 des 3 activités (Déblocage/Vagues : "aucune
         // résurrection possible"), et la cohérence entre les 3 types passe par une seule règle
@@ -1036,7 +1126,7 @@ public class Player : Entity
                 hpAtDeath = currentHP,
                 context   = DeathContext.Dungeon,
             });
-            InstanceSession.Instance.OnPlayerDeath();
+            InstanceSession.Instance.OnPlayerDeath(this);
             return;
         }
 
@@ -1238,27 +1328,102 @@ public class Player : Entity
     }
 
     // =========================================================
-    // RÉPUTATION MONDE — GDD §3.4
+    // PRESTIGE & AURA — voir spec 2026-09-29-prestige-aura-design.md
     // =========================================================
 
-    public void AddWorldReputation(int amount)
+    /// <summary>Jamais négatif (clamp 0) — un palier Prestige "négatif" n'existe pas dans la
+    /// table de seuils. Pertes rares et volontairement petites (spec §1.5, ex : quête ratée),
+    /// jamais liées à la mort — voir AddAura pour ça. Sans prestigeAuraData assigné, le rang
+    /// reste à 0 (pas de crash, juste aucun palier calculable).</summary>
+    public void AddPrestige(int amount)
     {
-        worldReputation = Mathf.Max(0, worldReputation + amount);
-        worldReputationRank = 0;
-        for (int i = WorldRepThresholds.Length - 1; i >= 0; i--)
-            if (worldReputation >= WorldRepThresholds[i]) { worldReputationRank = i; break; }
+        prestige = Mathf.Max(0, prestige + amount);
+        prestigeRank = 0;
+        var tiers = prestigeAuraData?.prestigeTiers;
+        if (tiers == null) return;
+        for (int i = tiers.Count - 1; i >= 0; i--)
+            if (prestige >= tiers[i].threshold) { prestigeRank = i; break; }
+    }
+
+    /// <summary>Clampé au PLAFOND (+100) uniquement — PAS de plancher (spec §2.1) : le nombre
+    /// brut peut couler indéfiniment sous le plancher du dernier palier si le joueur meurt en
+    /// boucle sans jamais se purifier (PNJ Purification, §2.5), pour que le coût de Purification
+    /// garde un sens même très profond dans le négatif. Le RANG lui reste toujours plafonné au
+    /// dernier palier (Déchu) — aucun palier pire n'existe, seul le nombre brut continue de
+    /// baisser. Recalcule auraRank à chaque appel, puis swap le DebuffData actif si le rang a
+    /// changé (RefreshAuraDebuff). Sans prestigeAuraData assigné, le rang reste à 0.</summary>
+    public void AddAura(int amount)
+    {
+        int previousRank = auraRank;
+
+        aura = Mathf.Min(100, aura + amount);
+        auraRank = 0;
+        var tiers = prestigeAuraData?.auraTiers;
+        if (tiers != null)
+        {
+            auraRank = tiers.Count - 1; // dernier palier par défaut, écrasé dès qu'un palier matche
+            for (int i = 0; i < tiers.Count; i++)
+            {
+                if (aura >= tiers[i].floor) { auraRank = i; break; }
+            }
+        }
+
+        if (auraRank != previousRank) RefreshAuraDebuff();
+    }
+
+    /// <summary>Swap le debuff Aura actif pour celui du auraRank courant (AuraTierData.debuff,
+    /// vide sur Normal/Terni) — retire l'ancien (RemoveDebuff, sinon les paliers coexisteraient
+    /// au lieu de se remplacer, voir StatusEffectSystem.TryApplyDebuff : DebuffType.Stats est
+    /// stackable, un asset différent n'écrase pas l'ancien tout seul) puis applique le nouveau
+    /// s'il y en a un. Appelé uniquement quand auraRank change (AddAura).</summary>
+    private void RefreshAuraDebuff()
+    {
+        if (statusEffects == null) return;
+        var tiers = prestigeAuraData?.auraTiers;
+        if (tiers == null) return;
+
+        for (int i = 0; i < tiers.Count; i++)
+        {
+            if (i == auraRank) continue;
+            if (tiers[i].debuff != null) statusEffects.RemoveDebuff(tiers[i].debuff);
+        }
+
+        DebuffData current = auraRank >= 0 && auraRank < tiers.Count ? tiers[auraRank].debuff : null;
+        if (current != null) statusEffects.TryApplyDebuff(current, this);
+    }
+
+    /// <summary>Valeur plancher d'un palier Aura donné — voir AuraTierData.floor. Utilisé par le
+    /// PNJ Purification (PNJ.TryPurifyAura) pour SET l'Aura au plancher du palier cible au lieu
+    /// d'ajouter un delta arbitraire (spec §2.5 : chaque achat fixe l'Aura au plancher du palier
+    /// suivant, pas un gain additif classique). 0 si prestigeAuraData n'est pas assigné.</summary>
+    public int GetAuraTierFloor(int rank)
+    {
+        var tiers = prestigeAuraData?.auraTiers;
+        if (tiers == null || tiers.Count == 0) return 0;
+        return tiers[Mathf.Clamp(rank, 0, tiers.Count - 1)].floor;
+    }
+
+    /// <summary>Multiplicateur de prix PNJ — achat (majoration) ET vente (réduction), même %,
+    /// voir spec §3 : prixEffectif = prixBase × (1 + GetAuraPriceMultiplier()) à l'achat,
+    /// prixBase × (1 - GetAuraPriceMultiplier()) à la vente (ShopUI.GetSellPrice). 0 si
+    /// prestigeAuraData n'est pas assigné.</summary>
+    public float GetAuraPriceMultiplier()
+    {
+        var tiers = prestigeAuraData?.auraTiers;
+        if (tiers == null || tiers.Count == 0) return 0f;
+        return tiers[Mathf.Clamp(auraRank, 0, tiers.Count - 1)].priceMalus;
     }
 
     public float GetHdVListingFeeRate()
     {
         float[] fees = { 0.02f, 0.015f, 0.01f, 0.0075f, 0.005f, 0.0025f };
-        return fees[Mathf.Clamp(worldReputationRank, 0, fees.Length - 1)];
+        return fees[Mathf.Clamp(prestigeRank, 0, fees.Length - 1)];
     }
 
     public int GetHdVSlotCount()
     {
         int[] slots = { 3, 5, 8, 12, 16, 20 };
-        return slots[Mathf.Clamp(worldReputationRank, 0, slots.Length - 1)];
+        return slots[Mathf.Clamp(prestigeRank, 0, slots.Length - 1)];
     }
 
     // =========================================================
@@ -1273,14 +1438,21 @@ public class Player : Entity
             if (pvpReputation >= PvPRepThresholds[i]) { pvpReputationRank = i; break; }
     }
 
-    public void OnOpenWorldDeath() { activityCounter.Increment("DEATHS_OPEN_WORLD"); AddWorldReputation(-1); }
+    // Mort = Aura, jamais Prestige (spec §1.5/§2.4bis) — voir Die() : -20 par mort, uniforme
+    // peu importe le contexte, posé au point d'entrée unique plutôt que dupliqué ici.
+    // Ancienne méthode OnOpenWorldDeath() (monde ouvert seul, -100) retirée — jamais appelée par
+    // aucun code (confirmé par grep), le vrai hook vit maintenant directement dans Die().
     public void OnPvPDeath()       { activityCounter.Increment("PVP_DEATHS");        AddPvPReputation(-2); }
     public void OnPvPKill(string id)   { activityCounter.Increment("PVP_KILLS");      AddPvPReputation(2);  }
     public void OnDuelWon(string id)   { activityCounter.Increment("DUELS_WON");      GameEventBus.Publish(new SocialEvent { action = SocialAction.DuelWin, otherPlayerID = id }); AddPvPReputation(3); }
     public void OnDuelLost(string id)  { activityCounter.Increment("DUELS_LOST");     AddPvPReputation(-1); }
     public void OnFreeArenaTop3()      { activityCounter.Increment("FREE_ARENA_TOP3"); AddPvPReputation(4); }
     public void OnPvPReportValidated()    { AddPvPReputation(-10); }
-    public void OnWorldReportValidated()  { AddWorldReputation(-5); }
+    // Signalement monde validé — Florian a explicitement écarté tout effet Aura ici (2026-09-29,
+    // ⚠️ l'ancienne valeur -300 était un choix par défaut posé au renommage worldReputation→
+    // Prestige/Aura, jamais dans le tableau original de la spec). Stub vide, prêt pour un futur
+    // effet non-Aura (PvPReputation/Prestige/autre) si le système de signalement se construit.
+    public void OnWorldReportValidated()  { }
 
     public void OnArenaResult(bool won)
     {
@@ -1368,6 +1540,13 @@ public class Player : Entity
         currentHP   = maxHP   * hpPercent;
         currentMana = maxMana * manaPercent;
         PassiveSkillSystem.Instance?.ResetCombat();
+        // L'état Animator "Death" n'a aucune transition de sortie automatique (tient la pose
+        // jusqu'au revive, par design — voir PlayerAnimatorController.PlayDeath()) : sans ce
+        // signal explicite, le joueur ressuscite mais reste visuellement figé en mort. Réutilise
+        // le trigger CancelAction existant (même signal générique que CancelChannel()) — nécessite
+        // qu'une transition Death → locomotion conditionnée sur CancelAction existe dans
+        // l'Animator Controller (ajoutée par Florian, pas encore présente par défaut).
+        animatorController?.CancelChannel();
     }
 
     public void ReviveAtRespawnPoint()
@@ -1375,6 +1554,9 @@ public class Player : Entity
         isDead      = false;
         currentHP   = maxHP;
         currentMana = maxMana;
+        // Voir le commentaire équivalent dans Revive() — même nécessité de sortir l'Animator de
+        // l'état "Death".
+        animatorController?.CancelChannel();
         // TODO: TeleportSystem.Instance?.RespawnAtPoint(this)
     }
 
@@ -1389,8 +1571,11 @@ public class Player : Entity
         GameEventBus.Publish(new ItemEvent { itemID = itemID, action = ItemAction.Sell, quantity = 1, aerisAmount = aeris });
     }
 
-    public void OnHdVTransactionCompleted()  { activityCounter.Increment("HDV_TRANSACTIONS");  AddWorldReputation(1);  }
-    public void OnHdVListingCancelled()      { activityCounter.Increment("HDV_CANCELLATIONS"); AddWorldReputation(-1); }
+    // HdV = parqué, bloc multijoueur — ces hooks ne tournent jamais tant que le HdV n'existe pas.
+    // Florian a explicitement écarté tout effet Prestige ici (2026-09-29) — juste le compteur
+    // d'activité brut, pas de point.
+    public void OnHdVTransactionCompleted()  { activityCounter.Increment("HDV_TRANSACTIONS");  }
+    public void OnHdVListingCancelled()      { activityCounter.Increment("HDV_CANCELLATIONS"); }
     public void OnPlayerMet(string playerID) { activityCounter.Increment(CounterKeys.PLAYERS_MET); GameEventBus.Publish(new SocialEvent { action = SocialAction.MeetPlayer, otherPlayerID = playerID }); }
 
     public void OnPetCaptured(MobData mob)                  { activityCounter.Increment("PETS_CAPTURED");    GameEventBus.Publish(new PetEvent { action = PetAction.Capture, mob = mob }); }

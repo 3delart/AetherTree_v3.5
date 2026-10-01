@@ -154,34 +154,38 @@ public class TargetingSystem : MonoBehaviour
             if (_agent != null && _agent.hasPath) _agent.ResetPath();
         }
 
-        autoAttackTimer -= Time.deltaTime;
-        if (autoAttackTimer <= 0f)
+        // autoAttackTimer ne sert plus qu'à retarder explicitement l'auto-attaque après l'usage
+        // d'un skill actif (voir DelayAutoAttack ci-dessous, appelé par SkillBar) — plus de
+        // ré-armement automatique basé sur AttackSpeed (champ retiré de WeaponData le 2026-10-01,
+        // tous les slots suivent désormais la même règle de cooldown). Tant qu'il n'est pas
+        // explicitement posé, le vrai rythme est entièrement gouverné par skill.cooldown via
+        // TryUseSlot(0), qui no-op tant que _cooldownTimers[0] > 0.
+        if (autoAttackTimer > 0f)
         {
-            PerformAutoAttack();
-            float speed = player?.equippedWeaponInstance != null
-                ? player.equippedWeaponInstance.AttackSpeed : 1.2f;
-            autoAttackTimer = speed > 0f ? 1f / speed : 1f;
+            autoAttackTimer -= Time.deltaTime;
+            return;
         }
+        PerformAutoAttack();
     }
 
-    private void PerformAutoAttack()
+    private bool PerformAutoAttack()
     {
         if (player == null || SkillBar.Instance == null)
         {
-            return;
+            return false;
         }
         if (engagedTarget == null || engagedTarget.isDead)
         {
-            return;
+            return false;
         }
         if (player.statusEffects != null && (player.statusEffects.isStunned || player.statusEffects.isShocked || player.statusEffects.isFreezed))
         {
-            return;
+            return false;
         }
 
         // Distance déjà validée dans TickAutoAttack() juste avant — plus besoin
         // de re-checker ici (l'ancienne approche via coroutine a été retirée).
-        SkillBar.Instance.TryUseSlot(0, isAutoTick: true);
+        return SkillBar.Instance.TryUseSlot(0, isAutoTick: true);
     }
 
     private void ToggleAutoAttack()

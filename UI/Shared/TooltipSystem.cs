@@ -348,7 +348,9 @@ public class TooltipSystem : MonoBehaviour
         SetText(weaponTypeText,      w.WeaponType.ToString());
         SetText(weaponDamageText,    $"Dégâts : {Mathf.RoundToInt(w.FinalDamageMin)} – {Mathf.RoundToInt(w.FinalDamageMax)}");
         SetText(weaponPrecisionText, $"Précision : {Mathf.RoundToInt(w.FinalPrecision)}");
-        SetText(weaponSpeedText,     $"Vitesse : {w.AttackSpeed:F1} att/s");
+        // AttackSpeed retiré de WeaponData le 2026-10-01 (tous les skills, slot 0 compris,
+        // suivent désormais skill.cooldown) — weaponSpeedText ne reçoit plus de texte, laissé
+        // vide/masqué tel quel (champ Inspector toujours là si réutilisé plus tard).
         SetText(weaponCritText,      $"Critique : {w.CritChance * 100f:F0}% / x{w.CritMultiplier:F2}");
         SetText(weaponRuneText, w.equippedRune != null
             ? (w.equippedRune.isIdentified ? $"Rune : {w.equippedRune.Label}" : "Rune : ???")
@@ -464,9 +466,9 @@ public class TooltipSystem : MonoBehaviour
         SetText(jewelryLevelText,     j.data != null ? LevelTag(j.data.requiredLevel) : "");
         SetText(jewelrySlotText,      j.Slot.ToString());
         SetText(jewelryItemLevelText, $"Niveau bijou : {j.MaxGemLevel}");
-        SetText(jewelryMeleeText,     j.MeleeDefense  > 0f ? $"Déf. mêlée : {j.MeleeDefense}"    : "");
-        SetText(jewelryRangedText,    j.RangedDefense > 0f ? $"Déf. distance : {j.RangedDefense}" : "");
-        SetText(jewelryMagicText,     j.MagicDefense  > 0f ? $"Déf. magie : {j.MagicDefense}"     : "");
+        SetText(jewelryMeleeText,     j.MeleeDefense  > 0f ? $"Déf. mêlée : {Mathf.RoundToInt(j.MeleeDefense)}"    : "");
+        SetText(jewelryRangedText,    j.RangedDefense > 0f ? $"Déf. distance : {Mathf.RoundToInt(j.RangedDefense)}" : "");
+        SetText(jewelryMagicText,     j.MagicDefense  > 0f ? $"Déf. magie : {Mathf.RoundToInt(j.MagicDefense)}"     : "");
         var sbGems = new System.Text.StringBuilder();
         if (j.gemSlots != null)
             for (int i = 0; i < j.gemSlots.Length; i++)
@@ -556,6 +558,7 @@ public class TooltipSystem : MonoBehaviour
         if (skill.manaCost > 0f) costStr += $"Mana : {skill.manaCost}";
         if (skill.hpCost   > 0f) costStr += (costStr.Length > 0 ? " | " : "") + $"HP : {skill.hpCost}";
         if (skill.goldCost > 0)  costStr += (costStr.Length > 0 ? " | " : "") + $"Aeris : {skill.goldCost}";
+        if (skill.itemCost != null) costStr += (costStr.Length > 0 ? " | " : "") + $"{skill.itemCost.displayName.Get(LocalizationManager.CurrentLanguage)} x{skill.itemCostQuantity}";
         SetText(skillManaCostText, costStr);
         SetText(skillDamageText,   skill.effectType == SkillEffectType.Damage
             ? $"x{skill.damageMultiplier:F2}" : "");
@@ -609,7 +612,7 @@ public class TooltipSystem : MonoBehaviour
     {
         ShowOnly(consumablePanel);
         SetIcon(consumableIcon, c.Icon);
-        SetText(consumableNameText,     c.Name);
+        SetText(consumableNameText,     c.DisplayNameRich);
         SetText(consumableTypeText,     c.data?.consumableType.ToString() ?? "");
         SetText(consumableBuffText,     c.data?.buffEffect?.description.Get(LocalizationManager.CurrentLanguage) ?? "");
         SetText(consumableCooldownText, c.data?.cooldown > 0f ? $"CD : {c.data.cooldown}s"        : "");
@@ -673,8 +676,15 @@ public class TooltipSystem : MonoBehaviour
         SetIcon(seIcon, entry.icon);
         SetText(seNameText,     $"<color={color}>{displayName}</color>");
         SetText(seTypeText,     entry.isDebuff ? "Debuff" : "Buff");
-        SetText(seDurationText, entry.totalDuration > 0f
-            ? $"Durée : {entry.remainingTime:F1}s / {entry.totalDuration:F1}s" : "");
+        // Durée "énorme" = permanent en pratique (convention du projet pour les effets sans
+        // notion d'expiration naturelle, ex: debuffs Aura — voir DebuffData.duration côté data).
+        // Sans ce garde-fou le joueur verrait "Durée : 999998.3s / 999999.0s", un nombre absurde.
+        const float PermanentThreshold = 100000f;
+        SetText(seDurationText, entry.totalDuration <= 0f
+            ? ""
+            : entry.totalDuration >= PermanentThreshold
+                ? "Durée : Permanent"
+                : $"Durée : {entry.remainingTime:F1}s / {entry.totalDuration:F1}s");
         SetText(seDescText, entry.data != null
             ? FormatDesc(entry.data.description.Get(LocalizationManager.CurrentLanguage))
             : "");

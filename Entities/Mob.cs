@@ -403,6 +403,7 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public AnimationClip WalkClip  => data?.walkClip;
     public AnimationClip ChaseClip => data?.chaseClip;
     public AnimationClip DeathClip => data?.deathClip;
+    public List<AnimationClip> IdleClipVariants => data?.idleClipVariants;
 
     // =========================================================
     // DÉGÂTS — aggro + contributions

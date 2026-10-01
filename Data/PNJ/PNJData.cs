@@ -80,6 +80,18 @@ public class PNJData : ScriptableObject
     public DialogueData hostileDialogue;
 #pragma warning restore CS0618
 
+    // ── Purification (PNJType.Purification) — spec §2.5 ────────
+    // Coût de rachat par palier : pas sur ce PNJData, lu directement sur le PrestigeAuraData
+    // PARTAGÉ du joueur (Player.prestigeAuraData.auraTiers[rank].purificationAerisCost/
+    // purificationResource/purificationResourceQty) — voir PNJ.TryPurifyAura.
+    [Tooltip("Texte d'accueil différent selon le palier Aura ACTUEL du joueur — index = auraRank " +
+             "(0=Normal, 1=Terni, ... 5=Déchu). Une entrée vide/absente retombe sur defaultDialogue. " +
+             "Chaque dialogue garde la même option \"Purifier mon Aura\" (DialogueAction.PurifyAura), " +
+             "seul le texte de vœux change. Florian, 2026-09-29 : \"il faudrait un dialogue différent " +
+             "en fonction du rang de l'aura\".")]
+    [ShowIf(nameof(pnjType), PNJType.Purification, Header = "Purification (PNJType.Purification)")]
+    public List<DialogueData> purificationDialogueByAuraRank = new List<DialogueData>();
+
     // ── Capitaine de Port ─────────────────────────────────────
     [ShowIf(nameof(pnjType), PNJType.HarborMaster, Header = "Capitaine de Port (PNJType.HarborMaster)")]
     public List<string> availableDestinations = new List<string>();
@@ -181,6 +193,11 @@ public class PNJData : ScriptableObject
     [Tooltip("Anim jouée à l'arrêt hors combat.")]
     [ShowIf(nameof(canFight), true, Header = "Animations locomotion (canFight)")]
     public AnimationClip idleClip;
+    [Tooltip("Variantes supplémentaires d'idleClip — une est tirée au hasard à chaque retour au\n" +
+             "repos (évite de rejouer toujours la même pose). Optionnel : vide = toujours idleClip,\n" +
+             "comportement inchangé.")]
+    [ShowIf(nameof(canFight), true)]
+    public List<AnimationClip> idleClipVariants = new List<AnimationClip>();
     [Tooltip("Anim de déplacement en Patrol (déambulation).")]
     [ShowIf(nameof(canFight), true)]
     public AnimationClip walkClip;
@@ -292,6 +309,10 @@ public enum PNJType
     Jeweler       = 14, // Boutique + Gemmes (pose sur bijoux)
     Hatter        = 15, // Boutique + Craft de casques
     CraftStation  = 16, // Boutique + Craft (ressources intermédiaires, tous domaines)
+
+    Purification  = 17, // Dialogue seul (pas de Boutique) — rachète les paliers d'Aura négatifs
+                         // un par un, voir spec 2026-09-29-prestige-aura-design.md §2.5 et
+                         // Player.prestigeAuraData.auraTiers/PNJ.TryPurifyAura.
 }
 
 // ── Onglets de la fenêtre PNJ partagée — GDD §13.2 ────────────────────────────
@@ -352,8 +373,8 @@ public class ShopEntry
     [Tooltip("Glisse le SO ici (WeaponData, ArmorData, ConsumableData, ResourceData, SkillData...)")]
     public ScriptableObject item;
     public int  aerisCost;
-    [Tooltip("Rang de Réputation Monde minimum (0 = toujours visible)")]
-    public int  requiredWorldReputationRank = 0;
+    [Tooltip("Rang de Prestige minimum (0 = toujours visible)")]
+    public int  requiredPrestigeRank = 0;
     public bool isUnlimitedStock = true;
     public int  stockCount = 1;
 }

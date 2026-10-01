@@ -559,6 +559,18 @@ public class SkillBar : MonoBehaviour
         _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
         _animLockTimer     = _pendingHitTimeout;
 
+        // CD posé DÈS LE LANCEMENT (pas à ResolveInstant) — évite les 2 barres bout à bout (bug
+        // trouvé par Florian 2026-10-01 : poser le CD seulement à la résolution faisait
+        // apparaître d'abord la fenêtre d'attente, PUIS le vrai skill.cooldown qui ne démarrait
+        // qu'après). Combo-step JAMAIS concerné : son CD se pose uniquement au DERNIER step, via
+        // AdvanceComboAfterHit (inchangé, voir ResolveInstant).
+        //
+        // TOUS les slots (0 compris, depuis le retrait d'AttackSpeed de WeaponData le 2026-10-01)
+        // — durée = le plus long entre skill.cooldown et la durée de l'anim (IsAnimLocked bloque
+        // de toute façon jusqu'à la fin de l'anim, le CD ne doit jamais être plus court que ça).
+        if (!(IsComboActive && slot == _comboSlot))
+            _cooldownTimers[slot] = Mathf.Max(skill.cooldown, _pendingHitTimeout);
+
         if (_pendingHitTimeout <= 0f)
             ResolveInstant();   // pas d'anim → rien à attendre, résout tout de suite
     }
@@ -614,7 +626,9 @@ public class SkillBar : MonoBehaviour
         else
             SkillSystem.Instance?.ResolveExecute(skill, _player, target);
 
-        _cooldownTimers[slot] = skill.cooldown;
+        // CD déjà posé au LANCEMENT (voir StartInstant) — ne pas le reposer ici, sinon la barre
+        // retombe à zéro (fin de la fenêtre d'attente) puis REMONTE aussitôt (vrai skill.cooldown
+        // réappliqué), même bug que le double-cooldown corrigé aujourd'hui.
         if (slot >= 1)
         {
             _gcdTimer = GCD_DURATION;
@@ -1228,15 +1242,20 @@ public class SkillBar : MonoBehaviour
         if (IsComboActive && slot == _comboSlot && _comboStepCooldown > 0f && _comboSkill != null)
             return _comboSkill.comboStepInterval;
 
+        // Doit toujours remonter la même valeur que ce que StartInstant a posé dans
+        // _cooldownTimers[slot] (le plus long entre skill.cooldown et la durée de l'anim, tous
+        // slots confondus depuis le retrait d'AttackSpeed le 2026-10-01), sinon GetCooldownRatio
+        // (qui divise par ce total) dépasserait 1 pendant la fenêtre d'attente.
         if (_pendingHitSlot == slot && _pendingHitSkill != null && _pendingHitSkill.attackAnimation != null)
-            return _pendingHitSkill.attackAnimation.length;
+            return Mathf.Max(_pendingHitSkill.cooldown, _pendingHitSkill.attackAnimation.length);
         if (_pendingMultiSlot == slot && _pendingMultiSkill != null && _pendingMultiSkill.attackAnimation != null)
-            return _pendingMultiSkill.attackAnimation.length;
+            return Mathf.Max(_pendingMultiSkill.cooldown, _pendingMultiSkill.attackAnimation.length);
 
         // Slots 1-9 : si le GCD est plus long que le CD individuel, on base sur GCD_DURATION.
-        // Slot 0 : toujours le cooldown de la BasicAttack équipée.
         if (slot >= 1 && _gcdTimer > _cooldownTimers[slot])
             return GCD_DURATION;
+        if (_slots[slot].attackAnimation != null)
+            return Mathf.Max(_slots[slot].cooldown, _slots[slot].attackAnimation.length);
         return _slots[slot].cooldown;
     }
 
