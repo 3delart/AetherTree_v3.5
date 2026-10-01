@@ -112,9 +112,28 @@ public class WorldEventScheduler : MonoBehaviour
         DontDestroyOnLoad(gameObject);
     }
 
+    private float _timeUntilNextRoll = -1f; // -1 = pas encore armé
+
     private void Start()
     {
+        // .Instance ICI, pas .Exists — contrairement à GameEventBus.Reset() (qui veut juste
+        // savoir "y a-t-il déjà un registre" sans en créer un pour rien), le scheduler a BESOIN
+        // que le registre existe pour fonctionner : s'il n'a jamais été touché avant ce point,
+        // .Instance le crée et déclenche son Load() (dans son propre Awake()) — sans quoi une
+        // sauvegarde pourrait rester silencieusement jamais chargée si rien d'autre n'accède au
+        // registre en premier.
+        if (WorldStateRegistry.Instance.TryGetWorldEventTimeRemaining(out float saved))
+            _timeUntilNextRoll = saved;
+        // sinon : RunCycle() tire un intervalle neuf au premier passage (comportement actuel)
+
         StartCoroutine(RunCycle());
+    }
+
+    private void Update()
+    {
+        if (_timeUntilNextRoll < 0f) return; // pas encore armé, ou event en cours (voir RunCycle)
+        _timeUntilNextRoll = Mathf.Max(0f, _timeUntilNextRoll - Time.deltaTime);
+        WorldStateRegistry.Instance?.SetWorldEventTimeRemaining(_timeUntilNextRoll);
     }
 
     // =========================================================
@@ -132,12 +151,23 @@ public class WorldEventScheduler : MonoBehaviour
                 continue;
             }
 
-            float totalDelay = Random.Range(minInterval, maxInterval);
-            yield return new WaitForSeconds(Mathf.Max(0f, totalDelay - firstWarningOffset));
+            if (_timeUntilNextRoll < 0f)
+                _timeUntilNextRoll = Random.Range(minInterval, maxInterval);
+
+            // Attend que le countdown descende jusqu'à l'offset de 1ère annonce — équivalent au
+            // WaitForSeconds(totalDelay - firstWarningOffset) d'avant, mais interrogeable/
+            // sauvegardable à tout moment via _timeUntilNextRoll (décompté dans Update()) au
+            // lieu d'un délai opaque figé dans la coroutine.
+            yield return new WaitUntil(() => _timeUntilNextRoll <= firstWarningOffset);
 
             WorldEventData selected = eventPool[Random.Range(0, eventPool.Count)];
-            if (selected == null) continue; // entrée vide dans la liste — reboucle direct
+            if (selected == null) { _timeUntilNextRoll = -1f; continue; }
 
+            _timeUntilNextRoll = -1f; // event en cours — countdown "gelé/inactif" jusqu'à
+                                       // résolution (l'event en cours n'est pas sauvegardé en
+                                       // détail ; si le jeu ferme ici, à la réouverture ce cycle
+                                       // est abandonné et un intervalle NEUF est tiré, pas de
+                                       // countdown à reprendre pour un event qui n'a jamais fini)
             _activeEvent = selected; // voir Resubscribe() — permet un re-abonnement propre si
                                       // GameEventBus.Reset() tombe pendant que cet event tourne
             yield return selected.RunEvent(this);
