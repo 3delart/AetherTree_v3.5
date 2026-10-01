@@ -98,7 +98,17 @@ public class WorldStateRegistry : MonoBehaviour
     /// déclencher l'auto-création juste pour vérifier qu'un registre existe.</summary>
     public static bool Exists => _instance != null;
 
-    private readonly Dictionary<string, float> _zoneTimers = new Dictionary<string, float>();
+    /// <summary>Un timer de respawn ET la position OÙ il devra réapparaître — décidée UNE FOIS
+    /// à l'enregistrement (mort/épuisement), jamais re-tirée au respawn réel. Garantit qu'un
+    /// save/reload en plein cooldown ne change pas la destination déjà "actée" (Florian,
+    /// 2026-10-01 : "chaque clé a son timer et sa position").</summary>
+    private class ZoneTimer
+    {
+        public float   remaining;
+        public Vector3 position;
+    }
+
+    private readonly Dictionary<string, ZoneTimer> _zoneTimers = new Dictionary<string, ZoneTimer>();
 
     /// <summary>Countdown restant avant le prochain tirage WorldEventScheduler — géré ici pour
     /// que Save()/Load() aient un endroit unique où lire/écrire TOUT l'état monde. Lu/écrit par
@@ -117,39 +127,52 @@ public class WorldStateRegistry : MonoBehaviour
 
     private void Update()
     {
-        if (_zoneTimers.Count == 0) return;
-
-        // Copie des clés : on ne peut pas modifier un Dictionary pendant qu'on l'itère.
-        var keys = new List<string>(_zoneTimers.Keys);
-        foreach (string key in keys)
-        {
-            float remaining = _zoneTimers[key] - Time.deltaTime;
-            _zoneTimers[key] = Mathf.Max(0f, remaining);
-        }
+        // Mutation en place (ZoneTimer est une classe, pas une struct) — pas besoin de copier
+        // les clés, on ne touche jamais la structure du Dictionary ici, juste ses valeurs.
+        foreach (var timer in _zoneTimers.Values)
+            timer.remaining = Mathf.Max(0f, timer.remaining - Time.deltaTime);
     }
 
     // =========================================================
     // ZONES SPAWNMANAGER
     // =========================================================
+    //
+    // "identifier" est un identifiant GÉNÉRIQUE composé par l'appelant (SpawnManager) — le
+    // registre ne sait rien de ce qu'il représente. Pour un boss de map (1 seul par zone) :
+    // juste zoneName. Pour un node de ressource (plusieurs par zone, nodeCount) : zoneName + un
+    // suffixe d'index stable ("Zone#0", "Zone#1"...) — chaque slot garde son propre timer/sa
+    // propre position, indépendant des autres slots de la même zone (Florian, 2026-10-01 :
+    // confirmé après avoir trouvé que les ressources peuvent avoir plusieurs nodes simultanés).
 
-    private static string ZoneKey(string sceneName, string zoneName) => $"{sceneName}|{zoneName}";
+    private static string ZoneKey(string sceneName, string identifier) => $"{sceneName}|{identifier}";
 
-    /// <summary>Appelé par SpawnManager à la mort d'un boss/épuisement d'une ressource rare —
-    /// démarre (ou redémarre) le décompte de cette zone.</summary>
-    public void RegisterRespawn(string sceneName, string zoneName, float delay)
-        => _zoneTimers[ZoneKey(sceneName, zoneName)] = Mathf.Max(0f, delay);
+    /// <summary>Appelé par SpawnManager à la mort d'un boss/épuisement d'un node ressource —
+    /// démarre (ou redémarre) le décompte de cette clé. `position` est déjà tirée par
+    /// l'appelant (dans les bornes de la zone) — stockée telle quelle, jamais retirée ici.</summary>
+    public void RegisterRespawn(string sceneName, string identifier, float delay, Vector3 position)
+        => _zoneTimers[ZoneKey(sceneName, identifier)] = new ZoneTimer { remaining = Mathf.Max(0f, delay), position = position };
 
-    /// <summary>Appelé par SpawnManager (à son Start() ET en polling tant que la zone est en
-    /// cooldown) — true + remaining si la zone est encore trackée (en cooldown, remaining peut
-    /// être 0 = prête à respawn MAIS pas encore nettoyée, voir ClearZone), false si la zone n'a
-    /// jamais été enregistrée (jamais spawn/mort, ou déjà nettoyée — prête).</summary>
-    public bool TryGetRemainingTime(string sceneName, string zoneName, out float remaining)
-        => _zoneTimers.TryGetValue(ZoneKey(sceneName, zoneName), out remaining);
+    /// <summary>Appelé par SpawnManager (à son Start() ET en polling tant que la clé est en
+    /// cooldown) — true + remaining/position si encore trackée (en cooldown, remaining peut être
+    /// 0 = prête à respawn MAIS pas encore nettoyée, voir ClearZone), false si jamais enregistrée
+    /// (jamais mort/épuisée, ou déjà nettoyée — prête).</summary>
+    public bool TryGetRemainingTime(string sceneName, string identifier, out float remaining, out Vector3 position)
+    {
+        if (_zoneTimers.TryGetValue(ZoneKey(sceneName, identifier), out ZoneTimer timer))
+        {
+            remaining = timer.remaining;
+            position  = timer.position;
+            return true;
+        }
+        remaining = 0f;
+        position  = Vector3.zero;
+        return false;
+    }
 
     /// <summary>Appelé par SpawnManager une fois le respawn RÉELLEMENT déclenché (boss
-    /// réinstancié / node ressource recréé) — retire l'entrée, la zone est de nouveau libre.</summary>
-    public void ClearZone(string sceneName, string zoneName)
-        => _zoneTimers.Remove(ZoneKey(sceneName, zoneName));
+    /// réinstancié / node ressource recréé) — retire l'entrée, la clé est de nouveau libre.</summary>
+    public void ClearZone(string sceneName, string identifier)
+        => _zoneTimers.Remove(ZoneKey(sceneName, identifier));
 
     // =========================================================
     // WORLDEVENTSCHEDULER
@@ -181,8 +204,9 @@ public class WorldStateRegistry : MonoBehaviour
             state.zoneTimers.Add(new ZoneTimerState
             {
                 sceneName            = kv.Key.Substring(0, sep),
-                zoneName             = kv.Key.Substring(sep + 1),
-                respawnTimeRemaining = kv.Value,
+                identifier           = kv.Key.Substring(sep + 1),
+                respawnTimeRemaining = kv.Value.remaining,
+                position             = kv.Value.position,
             });
         }
 
@@ -211,7 +235,8 @@ public class WorldStateRegistry : MonoBehaviour
             _zoneTimers.Clear();
             if (state.zoneTimers != null)
                 foreach (var z in state.zoneTimers)
-                    _zoneTimers[ZoneKey(z.sceneName, z.zoneName)] = z.respawnTimeRemaining;
+                    _zoneTimers[ZoneKey(z.sceneName, z.identifier)] =
+                        new ZoneTimer { remaining = z.respawnTimeRemaining, position = z.position };
         }
         catch (System.Exception e)
         {
@@ -230,9 +255,10 @@ public class WorldState
 [System.Serializable]
 public class ZoneTimerState
 {
-    public string sceneName;
-    public string zoneName;
-    public float  respawnTimeRemaining;
+    public string  sceneName;
+    public string  identifier; // zoneName (boss) ou "zoneName#index" (node de ressource)
+    public float   respawnTimeRemaining;
+    public Vector3 position;
 }
 ```
 
@@ -304,19 +330,50 @@ private IEnumerator RunCycle()
 
 ### `Systems/SpawnManager.cs` — délègue le décompte au registre
 
-Changement de rôle : `SpawnManager` ne compte plus ses zones lui-même. À la place :
-
-- **Mort du boss / épuisement ressource** → `WorldStateRegistry.Instance.RegisterRespawn(sceneName, zone.zoneName, Random.Range(zone.minRespawnDelay, zone.maxRespawnDelay))` (le tirage aléatoire du délai reste ICI, SpawnManager garde la config min/max — seul le DÉCOMPTE part au registre).
-- **`Start()`** : pour chaque zone, interroge `WorldStateRegistry.Instance.TryGetRemainingTime(sceneName, zone.zoneName, out remaining)`. Si `true` → zone en cooldown, ne spawn pas, démarre le polling. Si `false` → zone libre, spawn immédiat (comportement actuel inchangé).
-- **Polling** (coroutine légère, ex: vérifie toutes les 1s tant qu'en cooldown) : dès que `TryGetRemainingTime` retourne `remaining <= 0`, déclenche le respawn réel (instancie boss/node) PUIS appelle `WorldStateRegistry.Instance.ClearZone(sceneName, zone.zoneName)`.
+Changement de rôle : `SpawnManager` ne compte plus ses zones lui-même, et la position de
+respawn est désormais tirée UNE FOIS à la mort/épuisement (jamais re-tirée au respawn réel —
+cohérent avec le countdown, voir `ZoneTimer` ci-dessus).
 
 `sceneName` = `SceneManager.GetActiveScene().name`, lu une fois au `Start()` (SpawnManager est
 toujours instancié dans la scène qu'il concerne, jamais DontDestroyOnLoad).
 
+**Boss de map (`SpawnZone`)** — 1 seul boss par zone, `identifier = zone.zoneName` (inchangé) :
+
+- **Mort** (dans le callback `mob.OnDeath` existant) : au lieu de juste `capturedZone.aliveBoss
+  = null`, tire la position de la PROCHAINE apparition tout de suite
+  (`GetRandomPosition(zone.center, zone.size)`) et appelle
+  `WorldStateRegistry.Instance.RegisterRespawn(sceneName, zone.zoneName, Random.Range(zone.minRespawnDelay, zone.maxRespawnDelay), nextPos)`.
+- **`Start()`** : pour chaque zone, interroge `TryGetRemainingTime(sceneName, zone.zoneName, out remaining, out pos)`.
+  `true` → zone en cooldown restaurée, ne spawn pas tout de suite (le polling de `Update()` la
+  surveille). `false` → zone libre, spawn immédiat à une position fraîchement tirée (comportement
+  actuel inchangé, c'est le tout premier spawn de la session).
+- **`Update()`** (remplace l'actuel bloc `pendingRespawn`/`RespawnBossAfterDelay`) : pour chaque
+  zone avec `aliveBoss == null`, interroge le registre — si `remaining <= 0`, spawn le boss À LA
+  POSITION STOCKÉE (pas un nouveau tirage) puis `ClearZone`.
+
+**Ressources rares (`ResourceSpawnZone`)** — PLUSIEURS nodes simultanés (`nodeCount`), chacun son
+propre timer/sa propre position, `identifier = $"{zoneName}#{slotIndex}"`. Les champs runtime
+`aliveNodes: List<GameObject>` + `pendingRespawns: int` actuels ne portent AUCUNE identité par
+node (juste un compte) — remplacés par un tableau à taille fixe indexé par slot :
+
+```csharp
+[Header("Runtime — ne pas modifier")]
+[HideInInspector] public GameObject[] nodeSlots; // taille nodeCount — null = slot en cooldown/pas encore spawn
+```
+
+- **`SpawnAllNodesInZone`** (premier spawn de session) : alloue `nodeSlots = new GameObject[nodeCount]`,
+  pour chaque slot i : si `TryGetRemainingTime(sceneName, $"{zoneName}#{i}", out remaining, out pos)`
+  retourne `false` (jamais épuisé) → spawn immédiat position fraîche, `nodeSlots[i] = nodeObj`.
+  Si `true` → slot en cooldown restauré, `nodeSlots[i] = null`, laissé au polling.
+- **Épuisement d'un node** (dans le callback `InitFromSpawner`, qui doit maintenant connaître
+  SON index de slot) : `nodeSlots[i] = null`, tire la prochaine position, `RegisterRespawn(sceneName, $"{zoneName}#{i}", Random.Range(rZone.minRespawnDelay, rZone.maxRespawnDelay), nextPos)`.
+- **`Update()`** : pour chaque slot `null`, interroge le registre — si `remaining <= 0`, spawn À
+  LA POSITION STOCKÉE, `nodeSlots[i] = nodeObj`, `ClearZone`.
+
 **Avertissement Editor** (nouveau, `OnValidate` sur `SpawnManager`) : warn si deux `SpawnZone`/
-`ResourceSpawnZone` du MÊME `SpawnManager` partagent le même `zoneName` — la clé composite
-`"scene|zone"` doit être unique par scène, sinon deux zones distinctes s'écraseraient dans le
-registre.
+`ResourceSpawnZone` du MÊME `SpawnManager` partagent le même `zoneName` — c'est la base de
+l'`identifier`, doit être unique par scène, sinon deux zones distinctes (ou pire, une zone boss
+et une zone ressource) s'écraseraient dans le registre.
 
 ## Hors scope (noté pour plus tard, demande explicite Florian)
 
@@ -364,3 +421,9 @@ juste un espace de noms séparé) — pas une réécriture, une extension une fo
    warning `OnValidate` apparaît en Console.
 8. Supprimer/corrompre `world_state.json` à la main → relancer → confirmer qu'aucune erreur ne
    bloque le jeu, tout repart à neuf.
+9. Configurer une `ResourceSpawnZone` avec `nodeCount = 3` → épuiser UN SEUL node → confirmer que
+   les deux autres restent actifs pendant que celui-là est en cooldown (timers indépendants par
+   slot, pas un seul timer partagé pour toute la zone).
+10. Noter la position d'un boss/node juste avant sa mort/épuisement → fermer le jeu pendant son
+    cooldown → relancer, attendre la fin du cooldown → confirmer qu'il réapparaît à LA MÊME
+    position notée (pas un nouveau tirage aléatoire après le reload).
