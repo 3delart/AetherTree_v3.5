@@ -471,8 +471,12 @@ public class SkillBar : MonoBehaviour
             // consomment désormais ce point déjà posé, voir plus bas — même philosophie que
             // les skills à cible Entity : commis à sa valeur d'origine, jamais réévalué en
             // route).
+            // GroundRaycastUtil (pas Physics.Raycast direct) — un mob au collider large (Boss
+            // Géant/Invasion) entre la caméra et le sol interceptait le rayon en premier,
+            // donnant un point faux (sur le mob, pas le sol) au lieu du point réellement cliqué
+            // (Florian, 2026-10-01 — même bug que le clic-déplacement, PlayerController.cs).
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (!Physics.Raycast(ray, out RaycastHit hit, 200f))
+            if (!GroundRaycastUtil.TryRaycastGround(ray, out RaycastHit hit, 200f))
             {
                 Debug.Log($"[SKILLBAR] Raycast sol manqué pour {skill.name}");
                 return false;

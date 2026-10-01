@@ -112,28 +112,12 @@ public class PlayerController : MonoBehaviour
 
         // QueryTriggerInteraction.Ignore : ignore tous les colliders en mode Trigger
         // (ZoneTrigger, SphereCollider des arbres, etc.) — seul le sol solide est touché.
-        // RaycastAll (pas Raycast) — un mob au collider large (Boss Géant/Invasion) peut
-        // occuper tout l'espace écran entre la caméra et le sol ; un simple Raycast prend le
-        // PREMIER collider touché (le mob, pas tagué "Ground") et abandonne le déplacement —
-        // Florian, 2026-09-30 : "mon clic est sur son collider, ce qui m'empêche de me
-        // déplacer". On parcourt tous les hits et on prend le PLUS PROCHE tagué "Ground",
-        // ignorant les colliders de mob/PNJ qui se trouvent devant.
-        RaycastHit[] hits = Physics.RaycastAll(ray, Mathf.Infinity,
-            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
-        if (hits.Length == 0) return;
-
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-
-        RaycastHit hit = default;
-        bool foundGround = false;
-        foreach (RaycastHit candidate in hits)
-        {
-            if (!candidate.collider.CompareTag("Ground")) continue;
-            hit = candidate;
-            foundGround = true;
-            break;
-        }
-        if (!foundGround) return;
+        // GroundRaycastUtil (pas Physics.Raycast direct) — un mob au collider large (Boss
+        // Géant/Invasion) peut occuper tout l'espace écran entre la caméra et le sol ; un
+        // simple Raycast prend le PREMIER collider touché (le mob, pas tagué "Ground") et
+        // abandonne le déplacement — Florian, 2026-09-30 : "mon clic est sur son collider, ce
+        // qui m'empêche de me déplacer".
+        if (!GroundRaycastUtil.TryRaycastGround(ray, out RaycastHit hit)) return;
 
         // Déplacement manuel — annule toute approche automatique en cours.
         // SkillBar a son PROPRE suivi d'approche (_isApproaching/_pendingSkill, pour

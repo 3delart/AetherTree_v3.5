@@ -427,8 +427,10 @@ public class TargetingSystem : MonoBehaviour
 
             case TargetType.GroundTarget:
             {
+                // GroundRaycastUtil — même bug/fix que SkillBar.cs/PlayerController.cs : un mob
+                // au collider large intercepte un Physics.Raycast direct avant le sol réel.
                 Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-                if (Physics.Raycast(ray, out RaycastHit hit, 200f))
+                if (GroundRaycastUtil.TryRaycastGround(ray, out RaycastHit hit, 200f))
                 {
                     SkillSystem.Instance.SetGroundTargetPoint(hit.point);
                     SkillSystem.Instance.Execute(skill, player, null);
