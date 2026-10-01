@@ -84,6 +84,24 @@ public class WorldEventScheduler : MonoBehaviour
     public float FirstWarningOffset  => firstWarningOffset;
     public float SecondWarningOffset => secondWarningOffset;
 
+    /// <summary>True sans jamais déclencher l'auto-création du singleton (contrairement à
+    /// .Instance) — même patron que InstanceSession.Exists, pour un appelant qui veut juste
+    /// savoir "y a-t-il un scheduler déjà en vie quelque part" sans en provoquer un par erreur
+    /// (voir GameEventBus.Reset()).</summary>
+    public static bool Exists => _instance != null;
+
+    private WorldEventData _activeEvent;
+
+    /// <summary>Ré-abonne le tracking de dégâts de l'event EN COURS après un GameEventBus.Reset()
+    /// (changement de map) — no-op si aucun event n'est actuellement en train de tracker
+    /// (_activeEvent null). Appelé par GameEventBus.Reset() via Exists (jamais .Instance, pour
+    /// ne pas auto-créer un scheduler juste pour ce check). Florian, 2026-10-01 : sans ça, un
+    /// joueur qui quitte puis revient sur la map d'un event EN PLEIN COMBAT voyait son tracking
+    /// de participation s'arrêter silencieusement — GameEventBus.Reset() vide OnDamageDealt
+    /// globalement, et rien ne réabonnait l'event en cours, contrairement à XPSystem/LootManager
+    /// qui ont déjà ce réflexe.</summary>
+    public void Resubscribe() => _activeEvent?.Resubscribe();
+
     public WorldEventMapEntry PickRandomMap()
         => (eligibleMaps == null || eligibleMaps.Count == 0) ? null : eligibleMaps[Random.Range(0, eligibleMaps.Count)];
 
@@ -120,7 +138,10 @@ public class WorldEventScheduler : MonoBehaviour
             WorldEventData selected = eventPool[Random.Range(0, eventPool.Count)];
             if (selected == null) continue; // entrée vide dans la liste — reboucle direct
 
+            _activeEvent = selected; // voir Resubscribe() — permet un re-abonnement propre si
+                                      // GameEventBus.Reset() tombe pendant que cet event tourne
             yield return selected.RunEvent(this);
+            _activeEvent = null;
             // selected.RunEvent gère TOUT (annonces, spawn, résolution, récompense) en utilisant
             // FirstWarningOffset/SecondWarningOffset ci-dessus — le scheduler ne sait rien de
             // plus sur ce qui se passe à l'intérieur.

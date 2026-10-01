@@ -83,5 +83,11 @@ public static class GameEventBus
         AerisSystem.Instance?.Resubscribe();
         QuestSystem.Instance?.Resubscribe();
         CharacterPanelUI.Instance?.Resubscribe();
+
+        // .Exists (pas .Instance) : ne crée jamais de scheduler juste pour ce check — un event
+        // mondial en cours (World Boss/Invasion) doit continuer à tracker les dégâts après un
+        // changement de map, sinon un joueur qui quitte puis revient perd silencieusement sa
+        // participation (Florian, 2026-10-01).
+        if (WorldEventScheduler.Exists) WorldEventScheduler.Instance.Resubscribe();
     }
 }

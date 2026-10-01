@@ -54,10 +54,13 @@ public abstract class WorldEventData : ScriptableObject
 
     /// <summary>À appeler AU DÉBUT de la fenêtre où les mobs de cet événement peuvent être
     /// tapés (juste après le premier spawn) — vide les compteurs d'une éventuelle exécution
-    /// précédente et s'abonne au tracking de dégâts.</summary>
+    /// précédente et s'abonne au tracking de dégâts. -= avant += : idempotent, jamais de
+    /// double-abonnement même si Resubscribe() (ci-dessous) a déjà tourné avant que cette
+    /// méthode soit atteinte.</summary>
     protected void StartTracking()
     {
         _hitCounts.Clear();
+        GameEventBus.OnDamageDealt -= OnDamageDealtHandler;
         GameEventBus.OnDamageDealt += OnDamageDealtHandler;
     }
 
@@ -67,6 +70,18 @@ public abstract class WorldEventData : ScriptableObject
     /// synchrone et s'exécute AVANT que l'appelant (SkillSystem) publie le DamageDealtEvent de ce
     /// même coup — couper le tracking à cet instant précis perdrait ce dernier coup.</summary>
     protected void StopTracking() => GameEventBus.OnDamageDealt -= OnDamageDealtHandler;
+
+    /// <summary>Ré-abonne le tracking SANS vider _hitCounts (contrairement à StartTracking) —
+    /// appelé par WorldEventScheduler.Resubscribe() après un GameEventBus.Reset() (changement de
+    /// map) pendant que CET event est en cours : un joueur qui quitte puis revient sur la map de
+    /// l'event doit continuer à accumuler ses coups, pas repartir de zéro (Florian, 2026-10-01).
+    /// -= avant += : idempotent, sans risque de double-compte si appelé plusieurs fois ou avant
+    /// que StartTracking() n'ait encore tourné.</summary>
+    public void Resubscribe()
+    {
+        GameEventBus.OnDamageDealt -= OnDamageDealtHandler;
+        GameEventBus.OnDamageDealt += OnDamageDealtHandler;
+    }
 
     /// <summary>Distribue la LootTable de l'événement (XP/Prestige/items) à tout joueur ayant
     /// atteint minHitsToBeEligible coups — calculé à la volée depuis _hitCounts (jamais maintenu
