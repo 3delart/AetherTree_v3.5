@@ -56,7 +56,22 @@ public class WorldStateRegistry : MonoBehaviour
     /// WorldEventScheduler lui-même via les méthodes ci-dessous (jamais directement par un tiers).</summary>
     private float _worldEventTimeRemaining = -1f; // -1 = pas encore initialisé par le scheduler
 
-    private static string WorldSavePath => Path.Combine(Application.persistentDataPath, "world_state.json");
+    /// <summary>Même dossier que SaveSystem.cs (Directory.GetParent(Application.dataPath) +
+    /// "Saves", PAS Application.persistentDataPath — erreur corrigée le 2026-10-01, Florian :
+    /// "pourtant mon saveslot est rangé ici : C:\AetherTree_v3.5\Saves") — world_state.json doit
+    /// vivre juste à côté de save_slot0.json/account.json, pas dans un dossier différent que
+    /// personne ne pense à vérifier.</summary>
+    private static string WorldSaveDir
+    {
+        get
+        {
+            string dir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Saves");
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            return dir;
+        }
+    }
+
+    private static string WorldSavePath => Path.Combine(WorldSaveDir, "world_state.json");
 
     private void Awake()
     {
