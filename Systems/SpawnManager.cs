@@ -49,7 +49,6 @@ public class SpawnManager : MonoBehaviour
 
         [Header("Runtime — ne pas modifier")]
         [HideInInspector] public GameObject aliveBoss;
-        [HideInInspector] public bool       pendingRespawn;
     }
 
     // =========================================================
@@ -85,8 +84,10 @@ public class SpawnManager : MonoBehaviour
         public float maxRespawnDelay = 1800f;
 
         [Header("Runtime — ne pas modifier")]
-        [HideInInspector] public List<GameObject> aliveNodes     = new List<GameObject>();
-        [HideInInspector] public int              pendingRespawns = 0;
+        [Tooltip("Taille nodeCount — un slot null est soit pas encore spawn, soit en cooldown " +
+                 "(voir WorldStateRegistry, identifier = \"zoneName#index\"). Remplace " +
+                 "l'ancien aliveNodes/pendingRespawns, qui ne portaient aucune identité par node.")]
+        [HideInInspector] public GameObject[] nodeSlots;
     }
 
     // =========================================================
@@ -99,6 +100,8 @@ public class SpawnManager : MonoBehaviour
     [Header("Zones de spawn — Ressources rares")]
     public List<ResourceSpawnZone> resourceZones = new List<ResourceSpawnZone>();
 
+    private string _sceneName;
+
 #if UNITY_EDITOR
     private void OnValidate()
     {
@@ -110,6 +113,19 @@ public class SpawnManager : MonoBehaviour
                     Debug.LogWarning($"[SpawnManager] {zone.zoneName} : {entry.mobData.mobName} a mobType = " +
                         $"{entry.mobData.mobType}, attendu WorldBoss pour un boss de map errant.");
         }
+
+        // zoneName est la base de l'identifiant WorldStateRegistry ("scene|zoneName" pour un
+        // boss, "scene|zoneName#index" pour un node) — un doublon entre deux zones (même boss/
+        // boss+ressource) ferait collisionner leurs timers dans le registre.
+        var seenNames = new HashSet<string>();
+        foreach (SpawnZone zone in zones)
+            if (!string.IsNullOrEmpty(zone.zoneName) && !seenNames.Add(zone.zoneName))
+                Debug.LogWarning($"[SpawnManager] zoneName \"{zone.zoneName}\" en double — collision " +
+                    "possible dans WorldStateRegistry, renomme l'une des deux zones.");
+        foreach (ResourceSpawnZone rZone in resourceZones)
+            if (!string.IsNullOrEmpty(rZone.zoneName) && !seenNames.Add(rZone.zoneName))
+                Debug.LogWarning($"[SpawnManager] zoneName \"{rZone.zoneName}\" en double — collision " +
+                    "possible dans WorldStateRegistry, renomme l'une des deux zones.");
     }
 #endif
 
@@ -139,6 +155,8 @@ public class SpawnManager : MonoBehaviour
     {
         yield return null;
 
+        _sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+
         NavMeshSurface surface = FindObjectOfType<NavMeshSurface>();
         if (surface != null)
             surface.BuildNavMesh();
@@ -147,7 +165,13 @@ public class SpawnManager : MonoBehaviour
         yield return null;
 
         foreach (SpawnZone zone in zones)
-            SpawnBoss(zone);
+        {
+            // Zone en cooldown restaurée (save existante) — ne spawn pas tout de suite,
+            // Update() la surveillera. Zone jamais enregistrée (premier lancement de session) —
+            // spawn immédiat, comportement d'avant ce chantier.
+            if (!WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, zone.zoneName, out _, out _))
+                SpawnBoss(zone);
+        }
 
         foreach (ResourceSpawnZone rZone in resourceZones)
             SpawnAllNodesInZone(rZone);
@@ -166,48 +190,66 @@ public class SpawnManager : MonoBehaviour
         // ── Boss de map ──────────────────────────────────────
         foreach (SpawnZone zone in zones)
         {
-            if (zone.aliveBoss == null && !zone.pendingRespawn)
+            if (zone.aliveBoss != null) continue; // boss vivant, rien à faire
+
+            if (WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, zone.zoneName, out float remaining, out Vector3 pos)
+                && remaining <= 0f)
             {
-                zone.pendingRespawn = true;
-                float delay = Random.Range(zone.minRespawnDelay, zone.maxRespawnDelay);
-                StartCoroutine(RespawnBossAfterDelay(zone, delay));
+                WorldStateRegistry.Instance.ClearZone(_sceneName, zone.zoneName);
+                SpawnBoss(zone, pos);
             }
         }
 
-        // ── Ressources — nettoyage null ───────────────────────
+        // ── Ressources ────────────────────────────────────────
         foreach (ResourceSpawnZone rZone in resourceZones)
-            rZone.aliveNodes.RemoveAll(n => n == null);
+        {
+            if (rZone.nodeSlots == null) continue;
+            for (int i = 0; i < rZone.nodeSlots.Length; i++)
+            {
+                if (rZone.nodeSlots[i] != null) continue; // node vivant, rien à faire
+
+                string identifier = $"{rZone.zoneName}#{i}";
+                if (WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, identifier, out float remaining, out Vector3 pos)
+                    && remaining <= 0f)
+                {
+                    WorldStateRegistry.Instance.ClearZone(_sceneName, identifier);
+                    SpawnOneNode(rZone, i, pos);
+                }
+            }
+        }
     }
 
     // =========================================================
     // SPAWN BOSS DE MAP
     // =========================================================
 
-    private void SpawnBoss(SpawnZone zone)
+    /// <summary>spawnPos : null = premier spawn de session (tire une position fraîche dans la
+    /// zone) ; une valeur fournie = respawn restauré depuis WorldStateRegistry, à LA POSITION
+    /// DÉJÀ DÉCIDÉE à la mort précédente (jamais re-tirée ici).</summary>
+    private void SpawnBoss(SpawnZone zone, Vector3? spawnPos = null)
     {
         MobData chosenData = RollMobData(zone);
         if (chosenData == null) { Debug.LogWarning($"[SPAWN] {zone.zoneName} — RollMobData retourne null"); return; }
         if (chosenData.prefab == null) { Debug.LogWarning($"[SpawnManager] {chosenData.mobName} n'a pas de prefab !"); return; }
 
-        int     level    = Random.Range(zone.minLevel, zone.maxLevel + 1);
-        Vector3 spawnPos = GetRandomPosition(zone.center, zone.size);
+        int     level = Random.Range(zone.minLevel, zone.maxLevel + 1);
+        Vector3 pos   = spawnPos ?? GetRandomPosition(zone.center, zone.size);
 
-        GameObject mobObj = Instantiate(chosenData.prefab, spawnPos, Quaternion.identity);
+        GameObject mobObj = Instantiate(chosenData.prefab, pos, Quaternion.identity);
         Mob mob = mobObj.GetComponent<Mob>();
         if (mob != null)
         {
             mob.InitializeSpawn(chosenData, level);
             var capturedZone = zone;
-            mob.OnDeath(() => capturedZone.aliveBoss = null);
+            mob.OnDeath(() =>
+            {
+                capturedZone.aliveBoss = null;
+                Vector3 nextPos = GetRandomPosition(capturedZone.center, capturedZone.size);
+                float   delay   = Random.Range(capturedZone.minRespawnDelay, capturedZone.maxRespawnDelay);
+                WorldStateRegistry.Instance.RegisterRespawn(_sceneName, capturedZone.zoneName, delay, nextPos);
+            });
         }
         zone.aliveBoss = mobObj;
-    }
-
-    private IEnumerator RespawnBossAfterDelay(SpawnZone zone, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        zone.pendingRespawn = false;
-        SpawnBoss(zone);
     }
 
     // =========================================================
@@ -216,11 +258,20 @@ public class SpawnManager : MonoBehaviour
 
     private void SpawnAllNodesInZone(ResourceSpawnZone rZone)
     {
+        rZone.nodeSlots = new GameObject[rZone.nodeCount];
         for (int i = 0; i < rZone.nodeCount; i++)
-            SpawnOneNode(rZone);
+        {
+            // Slot en cooldown restauré (save existante) — ne spawn pas tout de suite, Update()
+            // le surveillera. Slot jamais enregistré (premier lancement) — spawn immédiat.
+            if (!WorldStateRegistry.Instance.TryGetRemainingTime(_sceneName, $"{rZone.zoneName}#{i}", out _, out _))
+                SpawnOneNode(rZone, i, null);
+        }
     }
 
-    private void SpawnOneNode(ResourceSpawnZone rZone)
+    /// <summary>spawnPos : null = premier spawn de session (tire une position fraîche) ; une
+    /// valeur fournie = respawn restauré depuis WorldStateRegistry, à LA POSITION DÉJÀ DÉCIDÉE à
+    /// l'épuisement précédent (jamais re-tirée ici).</summary>
+    private void SpawnOneNode(ResourceSpawnZone rZone, int slotIndex, Vector3? spawnPos)
     {
         ResourceData data = RollResourceData(rZone);
         if (data == null)
@@ -239,30 +290,25 @@ public class SpawnManager : MonoBehaviour
             return;
         }
 
-        Vector3    spawnPos = GetRandomPosition(rZone.center, rZone.size);
-        GameObject nodeObj  = Instantiate(data.nodePrefab, spawnPos, Quaternion.identity);
+        Vector3    pos     = spawnPos ?? GetRandomPosition(rZone.center, rZone.size);
+        GameObject nodeObj = Instantiate(data.nodePrefab, pos, Quaternion.identity);
 
         // Ajoute ResourceNode si absent sur le prefab
         ResourceNode node = nodeObj.GetComponent<ResourceNode>();
         if (node == null) node = nodeObj.AddComponent<ResourceNode>();
 
         var capturedZone = rZone;
+        var capturedSlot = slotIndex;
 
         node.InitFromSpawner(data, () =>
         {
-            capturedZone.aliveNodes.Remove(nodeObj);
-            capturedZone.pendingRespawns++;
-            StartCoroutine(RespawnNodeAfterDelay(capturedZone));
+            capturedZone.nodeSlots[capturedSlot] = null;
+            Vector3 nextPos = GetRandomPosition(capturedZone.center, capturedZone.size);
+            float   delay   = Random.Range(capturedZone.minRespawnDelay, capturedZone.maxRespawnDelay);
+            WorldStateRegistry.Instance.RegisterRespawn(_sceneName, $"{capturedZone.zoneName}#{capturedSlot}", delay, nextPos);
         });
 
-        rZone.aliveNodes.Add(nodeObj);
-    }
-
-    private IEnumerator RespawnNodeAfterDelay(ResourceSpawnZone rZone)
-    {
-        yield return new WaitForSeconds(Random.Range(rZone.minRespawnDelay, rZone.maxRespawnDelay));
-        rZone.pendingRespawns--;
-        SpawnOneNode(rZone);
+        rZone.nodeSlots[slotIndex] = nodeObj;
     }
 
     // =========================================================
@@ -324,8 +370,12 @@ public class SpawnManager : MonoBehaviour
                 Gizmos.DrawWireCube(rZone.center, rZone.size);
 #if UNITY_EDITOR
                 UnityEditor.Handles.color = new Color(0.8f, 0.65f, 0.2f);
+                int aliveCount = 0;
+                if (rZone.nodeSlots != null)
+                    foreach (var slot in rZone.nodeSlots)
+                        if (slot != null) aliveCount++;
                 UnityEditor.Handles.Label(rZone.center + Vector3.up * 2f,
-                    $"[RES] {rZone.zoneName}\n{rZone.aliveNodes.Count}/{rZone.nodeCount}");
+                    $"[RES] {rZone.zoneName}\n{aliveCount}/{rZone.nodeCount}");
 #endif
             }
     }
