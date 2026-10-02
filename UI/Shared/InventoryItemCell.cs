@@ -21,8 +21,6 @@ public class InventoryItemCell : MonoBehaviour,
 
     private InventoryUI   _ui;
     private RectTransform _rect;
-    private Canvas        _canvas;
-    private static GameObject _dragGhost;
 
     private static readonly Color FilledColor = Color.white;
 
@@ -30,7 +28,6 @@ public class InventoryItemCell : MonoBehaviour,
     {
         _ui     = ui;
         _rect   = GetComponent<RectTransform>();
-        _canvas = GetComponentInParent<Canvas>();
 
         // BG = fond coloré (enfant "BG")
         bgImage   = transform.Find("BG")?.GetComponent<Image>()
@@ -108,38 +105,18 @@ public class InventoryItemCell : MonoBehaviour,
     {
         if (Item == null) return;
         InventoryUI.BeginDrag(this);
-
-        _dragGhost = new GameObject("DragGhost");
-        _dragGhost.transform.SetParent(_canvas.transform, false);
-        _dragGhost.transform.SetAsLastSibling();
-
-        var ghostRect       = _dragGhost.AddComponent<RectTransform>();
-        ghostRect.sizeDelta = _rect.sizeDelta;
-
-        var ghostImg           = _dragGhost.AddComponent<Image>();
-        ghostImg.sprite        = iconImage?.sprite;
-        ghostImg.color         = new Color(1f, 1f, 1f, 0.7f);
-        ghostImg.raycastTarget = false;
-
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _canvas.transform as RectTransform,
-            e.position, _canvas.worldCamera, out Vector2 pos);
-        ghostRect.localPosition = pos;
+        DragGhost.Begin(iconImage?.sprite, new Color(1f, 1f, 1f, 0.7f), _rect.sizeDelta, e);
     }
 
     public void OnDrag(PointerEventData e)
     {
-        if (_dragGhost == null) return;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _canvas.transform as RectTransform,
-            e.position, _canvas.worldCamera, out Vector2 pos);
-        (_dragGhost.transform as RectTransform).localPosition = pos;
+        DragGhost.Move(e);
     }
 
     public void OnEndDrag(PointerEventData e)
     {
-        if (_dragGhost != null) { Destroy(_dragGhost); _dragGhost = null; }
         InventoryUI.EndDrag();
+        DragGhost.End();
     }
 
     // ── Drop ─────────────────────────────────────────────────
