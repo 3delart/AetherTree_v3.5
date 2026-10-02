@@ -28,18 +28,29 @@ public class DragGhost : MonoBehaviour
         {
             if (_instance == null)
             {
-                Canvas canvas = FindObjectOfType<Canvas>();
+                // FindObjectOfType<Canvas> seul peut remonter N'IMPORTE QUEL Canvas actif —
+                // notamment un Canvas World Space temporaire (ex: ProgressBarPrefab.prefab,
+                // instancié en jeu par ProgressBarUI) si un est vivant au moment du premier
+                // drag, ce qui parenterait le ghost dans la scène 3D au lieu de l'UI (invisible
+                // à l'écran). Filtre sur isRootCanvas + renderMode != WorldSpace, garde celui au
+                // sortingOrder le plus élevé s'il y en a plusieurs — trouvé en revue de code,
+                // 2026-10-02.
+                Canvas canvas = null;
+                foreach (Canvas c in FindObjectsOfType<Canvas>())
+                {
+                    if (c.renderMode == RenderMode.WorldSpace) continue;
+                    if (!c.isRootCanvas) continue;
+                    if (canvas == null || c.sortingOrder > canvas.sortingOrder) canvas = c;
+                }
                 if (canvas == null)
                 {
-                    Debug.LogError("[DragGhost] Aucun Canvas trouvé dans la scène — " +
-                                    "impossible d'afficher le ghost de drag.");
+                    Debug.LogError("[DragGhost] Aucun Canvas UI (non World Space) trouvé dans " +
+                                    "la scène — impossible d'afficher le ghost de drag.");
                     return null;
                 }
 
                 var go = new GameObject("DragGhost (auto)");
                 go.transform.SetParent(canvas.transform, false);
-                DontDestroyOnLoad(go); // vit dans _Persistent.unity de toute façon,
-                                        // mais garde-fou si jamais appelé ailleurs
 
                 _instance = go.AddComponent<DragGhost>();
                 _instance.Setup(canvas);
@@ -60,7 +71,16 @@ public class DragGhost : MonoBehaviour
 
         _image.raycastTarget = false; // ne bloque jamais les événements sous le ghost
         _rect.pivot          = new Vector2(0.5f, 0.5f);
-        _rect.anchorMin       = _rect.anchorMax = Vector2.zero;
+        // Ancre centrée (0.5,0.5), PAS (0,0) — ScreenPointToLocalPointInRectangle() renvoie un
+        // point relatif au PIVOT du Canvas parent (centre, pour un Canvas standard), alors que
+        // anchoredPosition avec une ancre à (0,0) se mesure depuis le coin bas-gauche du parent.
+        // Avec l'ancre à (0,0) (reprise par erreur du code d'origine de SkillDragSource/
+        // PassiveDragSource — bug déjà présent avant ce chantier, jamais remarqué), le ghost
+        // apparaissait décalé du curseur d'environ la moitié de la taille du Canvas. Trouvé en
+        // revue de code, 2026-10-02 — affectait les 5 sources une fois unifiées (avant, seules
+        // Skill/Passive avaient ce bug ; les 3 autres utilisaient localPosition, qui n'a pas ce
+        // problème, mais ce chantier les a fait passer par anchoredPosition via DragGhost).
+        _rect.anchorMin       = _rect.anchorMax = new Vector2(0.5f, 0.5f);
 
         gameObject.SetActive(false);
     }
