@@ -1,5 +1,14 @@
 # Fusion du ghost de drag-and-drop — Design
 
+> **Amendement (plan 2026-10-02) :** la section "Composant complet" ci-dessous
+> calculait la teinte en interne (`ValidTint`/`EmptyTint` uniformes). Le plan
+> d'implémentation a corrigé ça en auto-relecture : `SkillDragSource`/
+> `PassiveDragSource` utilisaient en réalité `Color.white` (opaque) quand
+> l'icône est présente, alors que les 3 autres classes utilisaient `(1,1,1,0.7)`
+> — uniformiser aurait changé le rendu de 2 des 5 classes. `DragGhost.Begin()`
+> prend donc la teinte en paramètre explicite (`Color tint`) au lieu de la
+> calculer — voir le plan pour le code exact à jour.
+
 ## Contexte
 
 Florian juge le rendu actuel du drag-and-drop "visuellement bof" et veut un système
