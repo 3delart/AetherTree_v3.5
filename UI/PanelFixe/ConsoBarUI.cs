@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
+using System.Collections.Generic;
 
 // =============================================================
 // CONSOBARUI.CS — Barre des 3 consommables quickslot
@@ -21,8 +22,39 @@ public class ConsoBarUI : MonoBehaviour
     [Header("Slots — glisser les 3 GameObjects ici")]
     public GameObject[] slots = new GameObject[3];
 
+    [Header("Animations (optionnel)")]
+    [Tooltip("Jouée à la consommation d'une potion (ConsumableType.Potion uniquement, pas\n" +
+             "Food). Null = pas d'anim. Un seul coup via PlayAttack — pas de verrou le temps\n" +
+             "du clip, le soin/buff s'applique immédiatement comme avant.")]
+    public AnimationClip potionDrinkAnimation;
+
     private ConsoSlotBarUI[] _slotUIs = new ConsoSlotBarUI[3];
     private Player           _player;
+
+    // ── Cooldown partagé par ConsumableData (pas par slot) ──────────────────
+    // Un même potion consommé depuis la barre OU par double-clic inventaire (même item non
+    // slotté) partage le MÊME cooldown — sinon le double-clic contournait le CD (trouvé en
+    // test manuel : spam de potions identiques non assignées à la barre). Time.time-based,
+    // pas de coroutine — ConsoSlotBarUI.Update() lit GetCooldownRemaining() chaque frame pour
+    // son affichage, plus de décompte local indépendant.
+    private readonly Dictionary<ConsumableData, float> _cooldownEndTime = new Dictionary<ConsumableData, float>();
+    private readonly Dictionary<ConsumableData, float> _cooldownDuration = new Dictionary<ConsumableData, float>();
+
+    public bool IsOnCooldown(ConsumableData data)
+        => data != null && _cooldownEndTime.TryGetValue(data, out float end) && Time.time < end;
+
+    public float GetCooldownRemaining(ConsumableData data)
+        => data != null && _cooldownEndTime.TryGetValue(data, out float end) ? Mathf.Max(0f, end - Time.time) : 0f;
+
+    public float GetCooldownDuration(ConsumableData data)
+        => data != null && _cooldownDuration.TryGetValue(data, out float d) ? d : 0f;
+
+    private void StartCooldown(ConsumableData data, float duration)
+    {
+        if (data == null || duration <= 0f) return;
+        _cooldownEndTime[data]  = Time.time + duration;
+        _cooldownDuration[data] = duration;
+    }
 
     private void Awake()
     {
@@ -78,7 +110,7 @@ public class ConsoBarUI : MonoBehaviour
     }
 
     /// <summary>Utilise le consommable du slot — Potion/Food (heal HP/Mana + buff) et
-    /// DungeonStone (arme une entrée en attente, voir InstanceSession.ArmEntry — le vrai
+    /// DungeonKey (arme une entrée en attente, voir InstanceSession.ArmEntry — le vrai
     /// chargement de l'instance a lieu au franchissement d'un portail gaté, pas ici)
     /// implémentés ; TeleportItem/Other pas encore câblés.</summary>
     public void TryUseSlot(int index)
@@ -88,40 +120,65 @@ public class ConsoBarUI : MonoBehaviour
         var slot     = _slotUIs[index];
         var instance = slot.CurrentInstance;
         if (instance == null || instance.data == null || instance.IsEmpty) return;
-        if (slot.IsOnCooldown) return;
 
+        UseConsumable(instance, slot);
+    }
+
+    /// <summary>Utilise un consommable directement depuis l'inventaire (double clic) — voir
+    /// InventoryUI.OnCellDoubleClicked. Passe par le MÊME gate de cooldown partagé (par
+    /// ConsumableData) que TryUseSlot() — pas de raccourci qui permettrait de contourner le CD
+    /// d'une potion en la gardant hors barre.</summary>
+    public void TryUseInstance(ConsumableInstance instance)
+    {
+        if (instance == null || instance.data == null || instance.IsEmpty) return;
+
+        for (int i = 0; i < _slotUIs.Length; i++)
+        {
+            if (_slotUIs[i] != null && _slotUIs[i].CurrentInstance == instance)
+            {
+                TryUseSlot(i);
+                return;
+            }
+        }
+
+        UseConsumable(instance, null);
+    }
+
+    /// <summary>Cœur partagé de TryUseSlot()/TryUseInstance() — slot est null quand appelé
+    /// depuis l'inventaire sans slot ConsoBar associé (le cooldown reste géré, lui, au niveau
+    /// ConsumableData — voir _cooldownEndTime).</summary>
+    private void UseConsumable(ConsumableInstance instance, ConsoSlotBarUI slot)
+    {
         if (_player == null) _player = FindObjectOfType<Player>();
         if (_player == null || _player.isDead) return;
 
         var data = instance.data;
+        if (IsOnCooldown(data)) return;
 
-        if (data.consumableType == ConsumableType.DungeonStone)
+        if (data.consumableType == ConsumableType.DungeonKey)
         {
-            var dungeon = DungeonRegistry.Instance?.Resolve(data.dungeonID);
+            var dungeon = DungeonRegistry.Instance?.ResolveByKey(data);
             if (dungeon == null)
             {
-                Debug.LogWarning($"[ConsoBarUI] Pierre de donjon '{data.dungeonID}' introuvable dans DungeonRegistry.");
+                Debug.LogWarning($"[ConsoBarUI] Aucun DungeonData ne référence la clé '{data.itemID}' comme requiredKey.");
                 return;
             }
             bool armed = InstanceSession.Instance != null && InstanceSession.Instance.ArmEntry(dungeon);
             if (!armed)
             {
-                Debug.LogWarning($"[ConsoBarUI] Entrée en attente refusée pour '{data.dungeonID}' — item non consommé.");
+                Debug.LogWarning($"[ConsoBarUI] Entrée en attente refusée pour '{dungeon.dungeonID}' — item non consommé.");
                 return;
             }
-            instance.Remove(1);
-            if (instance.IsEmpty)
-            {
-                var wrapper = InventorySystem.Instance?.GetAllItems().Find(i => i.ConsumableInstance == instance);
-                if (wrapper != null) InventorySystem.Instance.RemoveItem(wrapper);
-                slot.SetConsoInstance(null);
-            }
-            else
-            {
-                slot.UpdateQuantity(instance.quantity);
-            }
-            InventorySystem.Instance?.OnInventoryChanged?.Invoke();
-            InventoryUI.Instance?.RefreshGrid();
+            InstanceSession.Instance.AttachLeaderVfx(data.dungeonEntryVfx, _player);
+            ConsumeAndRefresh(instance, slot);
+            return;
+        }
+
+        if (data.consumableType == ConsumableType.RewardChest)
+        {
+            var won = data.RollChestEntry(instance.chestRarity ?? WeaponData.RollRarity());
+            if (won != null) InventorySystem.Instance?.AddItem(won);
+            ConsumeAndRefresh(instance, slot);
             return;
         }
 
@@ -135,19 +192,28 @@ public class ConsoBarUI : MonoBehaviour
         if (data.healMana > 0f) _player.RecoverMana(data.healMana);
         if (data.buffEffect != null) _player.statusEffects?.ApplyBuff(data.buffEffect, _player);
 
+        if (data.consumableType == ConsumableType.Potion)
+            _player.AnimatorController?.PlayAttack(potionDrinkAnimation);
+
+        StartCooldown(data, data.cooldown);
+        ConsumeAndRefresh(instance, slot);
+    }
+
+    /// <summary>Retire 1 du stack, nettoie/rafraîchit inventaire + slot (si assigné). Le
+    /// cooldown est géré séparément par StartCooldown(data, ...) — voir UseConsumable.</summary>
+    private void ConsumeAndRefresh(ConsumableInstance instance, ConsoSlotBarUI slot)
+    {
         instance.Remove(1);
         if (instance.IsEmpty)
         {
             var wrapper = InventorySystem.Instance?.GetAllItems().Find(i => i.ConsumableInstance == instance);
             if (wrapper != null) InventorySystem.Instance.RemoveItem(wrapper);
-            slot.SetConsoInstance(null);
+            slot?.SetConsoInstance(null);
         }
         else
         {
-            slot.UpdateQuantity(instance.quantity);
+            slot?.UpdateQuantity(instance.quantity);
         }
-
-        if (data.cooldown > 0f) slot.StartCooldown(data.cooldown);
 
         InventorySystem.Instance?.OnInventoryChanged?.Invoke();
         InventoryUI.Instance?.RefreshGrid();
@@ -187,7 +253,7 @@ public class ConsoBarUI : MonoBehaviour
 // =============================================================
 // CONSOSLOTBARUI — attaché automatiquement sur chaque slot
 // =============================================================
-public class ConsoSlotBarUI : MonoBehaviour
+public class ConsoSlotBarUI : MonoBehaviour, IPointerClickHandler
 {
     [HideInInspector] public Image           itemIcon;
     [HideInInspector] public Image           cdOverlay;
@@ -197,10 +263,6 @@ public class ConsoSlotBarUI : MonoBehaviour
 
     private ConsumableData _currentConso;
     public  ConsumableData CurrentConso => _currentConso;
-
-    private float _cooldownRemaining = 0f;
-    private float _cooldownTotal     = 0f;
-    public  bool  IsOnCooldown => _cooldownRemaining > 0f;
 
     private static readonly Color EmptyColor  = new Color(0f, 0f, 0f, 0.4f);
     private static readonly Color OnCooldown  = new Color(0f, 0f, 0f, 0.6f);
@@ -217,6 +279,19 @@ public class ConsoSlotBarUI : MonoBehaviour
 
     private ConsumableInstance _currentInstance;
     public ConsumableInstance CurrentInstance => _currentInstance;
+
+    /// <summary>Clic droit — vide le slot. Exige l'inventaire ouvert : c'est le geste qui rend le
+    /// clic droit VOLONTAIRE (on ne vide jamais un slot par un clic droit machinal en plein
+    /// combat), pas une histoire de conflit avec le déplacement (déjà réglé côté
+    /// PlayerController). Ne touche pas à l'inventaire, l'objet y reste (la ConsoBar n'est
+    /// qu'une référence vers le même stack, voir SetConsoInstance).</summary>
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (eventData.button != PointerEventData.InputButton.Right) return;
+        if (_currentInstance == null) return;
+        if (InventoryUI.Instance == null || !InventoryUI.Instance.gameObject.activeSelf) return;
+        SetConsoInstance(null);
+    }
 
     /// <summary>Assigne une ConsumableInstance depuis l'inventaire (drag & drop).</summary>
     public void SetConsoInstance(ConsumableInstance instance)
@@ -243,28 +318,24 @@ public class ConsoSlotBarUI : MonoBehaviour
         GetComponent<TooltipTrigger>()?.SetItem(instance != null ? new InventoryItem(instance) : null);
     }
 
+    /// <summary>Restaure une assignation depuis la sauvegarde (par référence SO, voir
+    /// CharacterProgress.consoBarSlots — pas d'instance à sérialiser). Retrouve la VRAIE
+    /// ConsumableInstance déjà présente dans l'inventaire du joueur au lieu d'en fabriquer une
+    /// nouvelle : sinon le slot pointerait sur une copie fantôme, jamais reliée au vrai stack
+    /// (miroir cassé — vendre l'objet dans l'inventaire ne viderait jamais ce slot).</summary>
     public void SetConso(ConsumableData conso, int quantity)
     {
-        _currentConso    = conso;
-        _currentInstance = conso != null ? conso.CreateInstance(quantity) : null;
+        if (conso == null) { SetConsoInstance(null); return; }
 
-        if (itemIcon != null)
+        ConsumableInstance real = null;
+        if (InventorySystem.Instance != null)
         {
-            if (conso == null)
+            foreach (var item in InventorySystem.Instance.GetAllItems())
             {
-                itemIcon.sprite  = null;
-                itemIcon.color   = EmptyColor;
-                itemIcon.enabled = false;
-            }
-            else
-            {
-                itemIcon.sprite  = conso.icon;
-                itemIcon.color   = Color.white;
-                itemIcon.enabled = true;
+                if (item.ConsumableInstance?.data == conso) { real = item.ConsumableInstance; break; }
             }
         }
-        UpdateQuantity(quantity);
-        GetComponent<TooltipTrigger>()?.SetItem(_currentInstance != null ? new InventoryItem(_currentInstance) : null);
+        SetConsoInstance(real);
     }
 
     public void UpdateQuantity(int quantity)
@@ -282,20 +353,31 @@ public class ConsoSlotBarUI : MonoBehaviour
         if (itemIcon  != null && _currentConso != null) itemIcon.color = onCD ? DimmedColor : Color.white;
     }
 
-    /// <summary>Démarre le décompte — TryUseSlot() vérifie IsOnCooldown avant de réutiliser.</summary>
-    public void StartCooldown(float duration)
-    {
-        _cooldownTotal     = duration;
-        _cooldownRemaining = duration;
-        SetCooldown(_cooldownRemaining, _cooldownTotal);
-    }
-
+    // Cooldown affiché ici en LECTURE SEULE — la source de vérité est ConsoBarUI (partagée
+    // par ConsumableData, pas par slot, voir ConsoBarUI._cooldownEndTime). Un item identique
+    // utilisé depuis l'inventaire (double clic, hors barre) doit assombrir CE slot aussi.
+    //
+    // Miroir vivant du stack — pas une copie figée au moment du glisser-déposer : ce slot et
+    // la cellule d'inventaire pointent sur la MÊME ConsumableInstance. Si le stack change
+    // ailleurs (vente, artisanat, une autre UI qui le consomme), la quantité affichée ici doit
+    // suivre sans action de la ConsoBar elle-même — d'où la relecture de instance.quantity
+    // chaque frame plutôt qu'une valeur mémorisée à l'assignation. Si le stack tombe à 0 et
+    // disparaît de l'inventaire, le slot se vide tout seul.
     private void Update()
     {
-        if (_cooldownRemaining <= 0f) return;
-        _cooldownRemaining -= Time.deltaTime;
-        if (_cooldownRemaining < 0f) _cooldownRemaining = 0f;
-        SetCooldown(_cooldownRemaining, _cooldownTotal);
+        if (_currentInstance != null)
+        {
+            bool stillInInventory = InventorySystem.Instance?.GetItemByInstance(_currentInstance) != null;
+            if (_currentInstance.IsEmpty || !stillInInventory)
+                SetConsoInstance(null);
+            else
+                UpdateQuantity(_currentInstance.quantity);
+        }
+
+        if (_currentConso == null || ConsoBarUI.Instance == null) return;
+        float remaining = ConsoBarUI.Instance.GetCooldownRemaining(_currentConso);
+        float total      = ConsoBarUI.Instance.GetCooldownDuration(_currentConso);
+        SetCooldown(remaining, total);
     }
 }
 
@@ -325,6 +407,17 @@ public class ConsoDropSlot : MonoBehaviour, IDropHandler
         }
 
         var conso = item.ConsumableInstance;
+
+        // Seuls Potion/Food/TeleportItem ont un sens dans une barre d'action utilisable en un
+        // clic — DungeonKey (passe par le Portal gaté, pas la barre), RewardChest (s'ouvre depuis
+        // l'inventaire) et Other (effet non défini) sont exclus.
+        ConsumableType type = conso.data.consumableType;
+        if (type != ConsumableType.Potion && type != ConsumableType.Food && type != ConsumableType.TeleportItem)
+        {
+            UnityEngine.Debug.Log($"[CONSO DROP] {conso.Name} ({type}) ne peut pas être placé dans la ConsoBar.");
+            return;
+        }
+
         ConsoBarUI.Instance?.AssignConsoInstance(slotIndex, conso);
         UnityEngine.Debug.Log($"[CONSO DROP] {conso.Name} assigné au slot {slotIndex}.");
     }

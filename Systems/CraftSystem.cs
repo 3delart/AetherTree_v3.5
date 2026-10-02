@@ -21,6 +21,14 @@ public class CraftSystem : MonoBehaviour
     [Tooltip("Clic droit → 'Auto-remplir allRecipes' pour scanner le projet.")]
     public List<RecipeData> allRecipes = new List<RecipeData>();
 
+    [Header("Animations (optionnel)")]
+    [Tooltip("Jouée pendant la barre de progression pour une recette dont le résultat est un\n" +
+             "ConsumableData de type Potion (voir ConsumableType). Null = pas d'anim spécifique.")]
+    public AnimationClip potionCraftAnimation;
+    [Tooltip("Jouée pendant la barre de progression pour une recette dont le résultat est un\n" +
+             "ConsumableData de type Food. Null = pas d'anim spécifique.")]
+    public AnimationClip foodCraftAnimation;
+
     private Player _player;
     private bool   _channeling;
     public  bool   IsChanneling => _channeling;
@@ -63,7 +71,7 @@ public class CraftSystem : MonoBehaviour
 
     /// <summary>Quantité maximum fabricable d'un coup avec le stock d'ingrédients actuel —
     /// le plus petit ratio have/needed sur tous les ingrédients, plafonné à 99 (même plafond
-    /// absolu que TransactionConfirmUI). Utilisé par CraftRecipeUI pour borner son slider.</summary>
+    /// absolu que ConfirmationUI). Utilisé par CraftRecipeUI pour borner son slider.</summary>
     public int GetMaxCraftable(RecipeData recipe)
     {
         if (recipe == null) return 0;
@@ -85,11 +93,22 @@ public class CraftSystem : MonoBehaviour
         if (_channeling || !CanCraft(recipe, quantity)) return;
         _channeling = true;
 
+        // Anim de canalisation selon le type du résultat — null pour tout le reste
+        // (équipement/ressource) tant qu'aucune anim dédiée n'est fournie. PlayChannel()
+        // no-op déjà proprement si le clip est null (voir PlayerAnimatorController).
+        AnimationClip craftClip = null;
+        if (recipe.result is ConsumableData cd)
+        {
+            if (cd.consumableType == ConsumableType.Potion) craftClip = potionCraftAnimation;
+            else if (cd.consumableType == ConsumableType.Food) craftClip = foodCraftAnimation;
+        }
+        _player.AnimatorController?.PlayChannel(craftClip);
+
         ProgressBarUI.Instance?.StartProgress(
             label:        "Craft en cours...",
             duration:     recipe.craftTimeSeconds,
             onComplete:   () => ResolveCraft(recipe, quantity, onComplete),
-            onCancel:     () => { _channeling = false; onCancel?.Invoke(); },
+            onCancel:     () => { _channeling = false; _player.AnimatorController?.CancelChannel(); onCancel?.Invoke(); },
             type:         ProgressBarUI.BarType.Craft,
             followTarget: _player.transform
         );
@@ -98,6 +117,10 @@ public class CraftSystem : MonoBehaviour
     private void ResolveCraft(RecipeData recipe, int quantity, System.Action onComplete)
     {
         _channeling = false;
+        // Coupe l'anim de canalisation pile à la fin de la barre — sa durée réelle (celle du
+        // clip) ne correspond pas forcément à recipe.craftTimeSeconds, jamais de pose figée
+        // qui dépasse ou un retour en locomotion en avance.
+        _player.AnimatorController?.CancelChannel();
         foreach (var ing in recipe.ingredients)
             InventorySystem.Instance.ConsumeItem(ing.item, ing.quantity * quantity);
 
