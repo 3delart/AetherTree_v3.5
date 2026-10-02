@@ -42,75 +42,25 @@ public class SkillDragSource : MonoBehaviour,
 {
     [HideInInspector] public SkillData skill;
 
-    private static GameObject _ghost;
-    private static SkillData  _dragging;
-
-    private Canvas _rootCanvas;
-
-    /// <summary>
-    /// Remonte la hiérarchie pour trouver le Canvas racine.
-    /// Appelé à OnBeginDrag — pas dans Awake — pour garantir que
-    /// le GameObject est déjà attaché à la hiérarchie du Canvas.
-    /// </summary>
-    private Canvas FindRootCanvas()
-    {
-        Canvas[] canvases = GetComponentsInParent<Canvas>(includeInactive: true);
-        if (canvases != null && canvases.Length > 0)
-            return canvases[canvases.Length - 1];
-        return FindObjectOfType<Canvas>();
-    }
+    private static SkillData _dragging;
 
     public void OnBeginDrag(PointerEventData eventData)
     {
         if (skill == null) return;
         _dragging = skill;
-
-        // Résout le Canvas racine ici — le GO est garanti dans la hiérarchie.
-        _rootCanvas = FindRootCanvas();
-
-        _ghost = new GameObject("SkillDragGhost");
-        _ghost.transform.SetParent(_rootCanvas.transform, false);
-        _ghost.transform.SetAsLastSibling();
-
-        var rt = _ghost.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(48f, 48f);
-        rt.anchorMin = rt.anchorMax = Vector2.zero;
-        rt.pivot     = new Vector2(0.5f, 0.5f);
-
-        var img = _ghost.AddComponent<Image>();
-        img.sprite        = skill.icon;
-        img.color         = skill.icon != null ? Color.white : new Color(0.5f, 0.5f, 0.5f, 0.8f);
-        img.raycastTarget = false;
-
-        MoveGhost(eventData);
+        Color tint = skill.icon != null ? Color.white : new Color(0.5f, 0.5f, 0.5f, 0.8f);
+        DragGhost.Begin(skill.icon, tint, new Vector2(48f, 48f), eventData);
     }
 
     public void OnDrag(PointerEventData eventData)
     {
-        MoveGhost(eventData);
+        DragGhost.Move(eventData);
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
         _dragging = null;
-        if (_ghost != null) { Destroy(_ghost); _ghost = null; }
-    }
-
-    private void MoveGhost(PointerEventData eventData)
-    {
-        if (_ghost == null || _rootCanvas == null) return;
-
-        Camera cam = _rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay
-            ? null
-            : _rootCanvas.worldCamera;
-
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _rootCanvas.transform as RectTransform,
-            eventData.position,
-            cam,
-            out Vector2 localPoint);
-
-        (_ghost.transform as RectTransform).anchoredPosition = localPoint;
+        DragGhost.End();
     }
 
     public static SkillData CurrentDragging => _dragging;
@@ -125,69 +75,25 @@ public class PassiveDragSource : MonoBehaviour,
 {
     [HideInInspector] public PassiveSkillData passive;
 
-    private static GameObject       _ghost;
     private static PassiveSkillData _dragging;
-
-    private Canvas _rootCanvas;
-
-    private Canvas FindRootCanvas()
-    {
-        Canvas[] canvases = GetComponentsInParent<Canvas>(includeInactive: true);
-        if (canvases != null && canvases.Length > 0)
-            return canvases[canvases.Length - 1];
-        return FindObjectOfType<Canvas>();
-    }
 
     public void OnBeginDrag(PointerEventData eventData)
     {
         if (passive == null) return;
         _dragging = passive;
-
-        _rootCanvas = FindRootCanvas();
-
-        _ghost = new GameObject("PassiveDragGhost");
-        _ghost.transform.SetParent(_rootCanvas.transform, false);
-        _ghost.transform.SetAsLastSibling();
-
-        var rt = _ghost.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(48f, 48f);
-        rt.anchorMin = rt.anchorMax = Vector2.zero;
-        rt.pivot     = new Vector2(0.5f, 0.5f);
-
-        var img = _ghost.AddComponent<Image>();
-        img.sprite        = passive.icon;
-        img.color         = passive.icon != null ? Color.white : new Color(0.5f, 0.5f, 0.5f, 0.8f);
-        img.raycastTarget = false;
-
-        MoveGhost(eventData);
+        Color tint = passive.icon != null ? Color.white : new Color(0.5f, 0.5f, 0.5f, 0.8f);
+        DragGhost.Begin(passive.icon, tint, new Vector2(48f, 48f), eventData);
     }
 
     public void OnDrag(PointerEventData eventData)
     {
-        MoveGhost(eventData);
+        DragGhost.Move(eventData);
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
         _dragging = null;
-        if (_ghost != null) { Destroy(_ghost); _ghost = null; }
-    }
-
-    private void MoveGhost(PointerEventData eventData)
-    {
-        if (_ghost == null || _rootCanvas == null) return;
-
-        Camera cam = _rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay
-            ? null
-            : _rootCanvas.worldCamera;
-
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _rootCanvas.transform as RectTransform,
-            eventData.position,
-            cam,
-            out Vector2 localPoint);
-
-        (_ghost.transform as RectTransform).anchoredPosition = localPoint;
+        DragGhost.End();
     }
 
     public static PassiveSkillData CurrentDragging => _dragging;
