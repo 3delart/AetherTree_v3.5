@@ -21,14 +21,11 @@ public class EquipmentSlotHandler : MonoBehaviour,
     public EquipmentSlot slotType;
 
     private Player        _player;
-    private Canvas        _canvas;
     private RectTransform _rect;
-    private static GameObject _dragGhost;
 
     private void Start()
     {
         _player = FindObjectOfType<Player>();
-        _canvas = GetComponentInParent<Canvas>();
         _rect   = GetComponent<RectTransform>();
     }
 
@@ -74,38 +71,19 @@ public class EquipmentSlotHandler : MonoBehaviour,
         if (item == null) return;
 
         InventoryUI.BeginDragEquipped(item);
-
-        _dragGhost = new GameObject("DragGhost");
-        _dragGhost.transform.SetParent(_canvas.transform, false);
-        _dragGhost.transform.SetAsLastSibling();
-
-        var ghostRect       = _dragGhost.AddComponent<RectTransform>();
-        ghostRect.sizeDelta = _rect != null ? _rect.sizeDelta : new Vector2(64, 64);
-
-        var ghostImg           = _dragGhost.AddComponent<Image>();
-        ghostImg.sprite        = item.Icon;
-        ghostImg.color         = new Color(1f, 1f, 1f, 0.7f);
-        ghostImg.raycastTarget = false;
-
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _canvas.transform as RectTransform,
-            e.position, _canvas.worldCamera, out Vector2 pos);
-        ghostRect.localPosition = pos;
+        DragGhost.Begin(item.Icon, new Color(1f, 1f, 1f, 0.7f),
+            _rect != null ? _rect.sizeDelta : new Vector2(64, 64), e);
     }
 
     public void OnDrag(PointerEventData e)
     {
-        if (_dragGhost == null) return;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _canvas.transform as RectTransform,
-            e.position, _canvas.worldCamera, out Vector2 pos);
-        (_dragGhost.transform as RectTransform).localPosition = pos;
+        DragGhost.Move(e);
     }
 
     public void OnEndDrag(PointerEventData e)
     {
-        if (_dragGhost != null) { Destroy(_dragGhost); _dragGhost = null; }
         InventoryUI.EndDrag();
+        DragGhost.End();
     }
 
     // =========================================================
@@ -161,6 +139,15 @@ public class EquipmentSlotHandler : MonoBehaviour,
             case EquipmentSlot.Spirit:
                 instance = _player.equippedSpiritInstances?.Count > 0
                     ? _player.equippedSpiritInstances[0] : null; break;
+            case EquipmentSlot.Talisman:
+                instance = _player.equippedTalismanInstance?.data != null
+                    ? _player.equippedTalismanInstance : null; break;
+            case EquipmentSlot.CosmeticHead:
+                instance = _player.equippedCosmeticHeadInstance?.data != null
+                    ? _player.equippedCosmeticHeadInstance : null; break;
+            case EquipmentSlot.CosmeticBody:
+                instance = _player.equippedCosmeticBodyInstance?.data != null
+                    ? _player.equippedCosmeticBodyInstance : null; break;
             case EquipmentSlot.Ring:
             case EquipmentSlot.Necklace:
             case EquipmentSlot.Bracelet:
@@ -187,6 +174,9 @@ public class EquipmentSlotHandler : MonoBehaviour,
             case EquipmentSlot.Gloves:   return new InventoryItem((GlovesInstance)instance);
             case EquipmentSlot.Boots:    return new InventoryItem((BootsInstance)instance);
             case EquipmentSlot.Spirit:   return new InventoryItem((SpiritInstance)instance);
+            case EquipmentSlot.Talisman: return new InventoryItem((TalismanInstance)instance);
+            case EquipmentSlot.CosmeticHead: return new InventoryItem((CosmeticInstanceHead)instance);
+            case EquipmentSlot.CosmeticBody: return new InventoryItem((CosmeticInstanceBody)instance);
             default:                     return new InventoryItem((JewelryInstance)instance);
         }
     }
