@@ -13,7 +13,7 @@ using System.Collections.Generic;
 // RarityDropSlot/ForgeDropSlot). Clic sur une cellule = sélection (liseré),
 // aucune action tant que le joueur ne clique pas buyButton (ou double-clic
 // direct sur la cellule, raccourci qui saute la sélection). Ouvre ensuite
-// TransactionConfirmUI — étape Quantité puis étape Confirmation, pas de
+// ConfirmationUI — étape Quantité puis étape Confirmation, pas de
 // canalisation (réservée à Craft/Upgrade/Pari).
 // =============================================================
 
@@ -91,7 +91,7 @@ public class ShopUI : MonoBehaviour
     {
         gameObject.SetActive(false);
         InventoryUI.Instance?.Close();
-        TransactionConfirmUI.Instance?.Close();
+        ConfirmationUI.Instance?.Close();
         _pnjData = null;
         _player  = null;
         ClearGrid();
@@ -113,7 +113,7 @@ public class ShopUI : MonoBehaviour
         {
             if (entry?.item == null) continue;
 
-            bool reputationLocked = _player.worldReputationRank < entry.requiredWorldReputationRank;
+            bool reputationLocked = _player.prestigeRank < entry.requiredPrestigeRank;
             bool exhausted        = ShopStockRegistry.Instance != null
                                  && ShopStockRegistry.Instance.IsExhausted(_pnjData.pnjName, entry);
             bool locked           = reputationLocked || exhausted;
@@ -191,12 +191,23 @@ public class ShopUI : MonoBehaviour
             : 99;
         if (maxQty <= 0) return;
 
-        TransactionConfirmUI.Instance?.OpenBuyFlow(
+        ConfirmationUI.Instance?.OpenBuyFlow(
             itemName : GetEntryName(entry),
-            unitPrice: entry.aerisCost,
+            unitPrice: GetEffectiveBuyPrice(entry.aerisCost),
             maxQty   : maxQty,
             onConfirm: quantity => BuyEntry(entry, quantity)
         );
+    }
+
+    /// <summary>Prix effectif à l'achat — malus Aura uniquement (spec Prestige/Aura §3),
+    /// Prestige n'influence jamais un prix (rôle retiré au renommage worldReputation→
+    /// Prestige/Aura). Utilisé ICI (affichage) ET dans BuyEntry (dépense réelle) — jamais
+    /// entry.aerisCost brut directement, pour que le prix affiché et le prix débité restent
+    /// toujours identiques.</summary>
+    private int GetEffectiveBuyPrice(int baseCost)
+    {
+        float malus = _player != null ? _player.GetAuraPriceMultiplier() : 0f;
+        return Mathf.RoundToInt(baseCost * (1f + malus));
     }
 
     private GameObject SpawnCell(Sprite icon, int price, bool locked, bool exhausted = false, string priceLabel = null,
@@ -275,7 +286,7 @@ public class ShopUI : MonoBehaviour
     {
         if (entry == null || _player == null || quantity <= 0) return;
 
-        int total = entry.aerisCost * quantity;
+        int total = GetEffectiveBuyPrice(entry.aerisCost) * quantity;
         if (!(AerisSystem.Instance?.Spend(total) ?? false))
         {
             Debug.Log("[SHOP] Aeris insuffisants.");
@@ -337,7 +348,7 @@ public class ShopUI : MonoBehaviour
         int maxQty = GetAvailableQuantity(item);
         if (maxQty <= 0) return;
 
-        TransactionConfirmUI.Instance?.OpenSellFlow(
+        ConfirmationUI.Instance?.OpenSellFlow(
             itemName : item.DisplayNameRich,
             unitPrice: sellPrice,
             maxQty   : maxQty,
@@ -518,9 +529,14 @@ public class ShopUI : MonoBehaviour
 
         if (basePrice <= 0) return 0;
 
-        int rank = _player != null ? _player.worldReputationRank : 0;
+        int rank = _player != null ? _player.prestigeRank : 0;
         float mult = rank < SELL_MULTIPLIERS.Length ? SELL_MULTIPLIERS[rank] : SELL_MULTIPLIERS[SELL_MULTIPLIERS.Length - 1];
-        return Mathf.RoundToInt(basePrice * mult);
+
+        // Malus Aura à la vente — même barème que le malus d'achat (GetAuraPriceMultiplier,
+        // spec Prestige/Aura §3), appliqué en réduction ici au lieu d'une majoration.
+        float auraMalus = _player != null ? _player.GetAuraPriceMultiplier() : 0f;
+
+        return Mathf.RoundToInt(basePrice * mult * (1f - auraMalus));
     }
 
     // =========================================================

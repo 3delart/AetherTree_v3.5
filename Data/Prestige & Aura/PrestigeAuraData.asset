@@ -1,0 +1,94 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b456343a7d1227408ec57dd547a15a7, type: 3}
+  m_Name: PrestigeAuraData
+  m_EditorClassIdentifier: 
+  prestigeTiers:
+  - label: Novice
+    threshold: 0
+    icon: {fileID: 21300000, guid: 24bd86e9937a5dd488579379e23e8d94, type: 3}
+  - label: Apprenti
+    threshold: 500
+    icon: {fileID: 21300000, guid: 7f282b4673de92749993576f6e02aad7, type: 3}
+  - label: "\xC9veill\xE9"
+    threshold: 2000
+    icon: {fileID: 21300000, guid: bc1e0a15a1b53b649808b5462c67f602, type: 3}
+  - label: Aguerri
+    threshold: 10000
+    icon: {fileID: 21300000, guid: 9a644bcdf3a1e9444aec66f1518178e6, type: 3}
+  - label: "Chevronn\xE9"
+    threshold: 50000
+    icon: {fileID: 21300000, guid: b5c2ae4c69a1aa94d9b84a5565257305, type: 3}
+  - label: Illustre
+    threshold: 170000
+    icon: {fileID: 21300000, guid: 3abc2fecd4a2a5f4698cb910306a1bcc, type: 3}
+  - label: "Ma\xEEtre"
+    threshold: 450000
+    icon: {fileID: 21300000, guid: be427883a9017a54ca58ccdea9ffacbd, type: 3}
+  - label: "\xC9lite"
+    threshold: 1000000
+    icon: {fileID: 21300000, guid: ddc9819bcd47f8f44a44167452b44a03, type: 3}
+  - label: "H\xE9ro\xEEque"
+    threshold: 2500000
+    icon: {fileID: 21300000, guid: f6b092c76abd3da41959186db2aea4d7, type: 3}
+  - label: "L\xE9gende"
+    threshold: 5000000
+    icon: {fileID: 21300000, guid: e02dde012901c224fa905df14722dfd9, type: 3}
+  auraTiers:
+  - label: Normal
+    floor: 0
+    priceMalus: 0
+    icon: {fileID: 0}
+    debuff: {fileID: 0}
+    purificationAerisCost: 0
+    purificationResource: {fileID: 0}
+    purificationResourceQty: 0
+  - label: Terni
+    floor: -200
+    priceMalus: 0.1
+    icon: {fileID: 21300000, guid: b1b774cf76993ae4abdda29b422450d4, type: 3}
+    debuff: {fileID: 0}
+    purificationAerisCost: 100
+    purificationResource: {fileID: 0}
+    purificationResourceQty: 0
+  - label: "Voil\xE9"
+    floor: -400
+    priceMalus: 0.2
+    icon: {fileID: 21300000, guid: cd4dde47d35a6544bbdf69a854ee68cd, type: 3}
+    debuff: {fileID: 11400000, guid: cd10f8588e7048e46a6b26b206ecaf3b, type: 2}
+    purificationAerisCost: 300
+    purificationResource: {fileID: 0}
+    purificationResourceQty: 0
+  - label: Corrompu
+    floor: -600
+    priceMalus: 0.3
+    icon: {fileID: 21300000, guid: ce8d0397611f2e14d8490bbe9a88e442, type: 3}
+    debuff: {fileID: 11400000, guid: 20b71c2ff87267240b4caaf22d73b24f, type: 2}
+    purificationAerisCost: 700
+    purificationResource: {fileID: 0}
+    purificationResourceQty: 0
+  - label: Maudit
+    floor: -800
+    priceMalus: 0.4
+    icon: {fileID: 21300000, guid: 4fedc76a3cede4e40b140da5c1020771, type: 3}
+    debuff: {fileID: 11400000, guid: cf72cc0e916415347ba2be54e8bb415e, type: 2}
+    purificationAerisCost: 1500
+    purificationResource: {fileID: 0}
+    purificationResourceQty: 0
+  - label: "D\xE9chu"
+    floor: -2147483648
+    priceMalus: 0.5
+    icon: {fileID: 21300000, guid: 2b7dd24bda38aa0458b8fa0b162f71de, type: 3}
+    debuff: {fileID: 11400000, guid: 742f02d0d8a4cf44fb3006220de33511, type: 2}
+    purificationAerisCost: 3000
+    purificationResource: {fileID: 0}
+    purificationResourceQty: 0

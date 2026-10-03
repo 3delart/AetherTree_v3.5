@@ -54,6 +54,17 @@ public class ShowIfAttribute : PropertyAttribute
     public string AndField;
     public object AndValue;
 
+    /// <summary>Condition d'EXCLUSION optionnelle, indépendante d'AndField (un 3e slot,
+    /// pas une réutilisation du 2e déjà pris) — le champ est masqué si CE champ frère vaut
+    /// CETTE valeur, peu importe le reste. Sert à retirer UN cas précis d'une condition
+    /// principale déjà large sans devoir réénumérer toutes les valeurs à garder (plus
+    /// robuste à l'ajout futur d'une nouvelle valeur d'enum — pas besoin de revenir ici).
+    /// Ex: [ShowIf(nameof(targetType), TargetType.Target, TargetType.Cone, ...,
+    ///             AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
+    ///             ExcludeField = nameof(effectType), ExcludeValue = SkillEffectType.Other)]</summary>
+    public string ExcludeField;
+    public object ExcludeValue;
+
     /// <summary>Optionnel — remplace le LIBELLÉ du champ lui-même (pas juste le Header au-dessus).
     /// `[InspectorName]` ne fonctionne QUE sur les valeurs d'enum côté Unity, jamais sur un champ
     /// lui-même — c'est le seul moyen de renommer l'étiquette d'un champ normal dans l'Inspector

@@ -46,6 +46,7 @@ public class SkillBarUI : MonoBehaviour
             slot.cdText         = t.Find("CD")        ?.GetComponent<TextMeshProUGUI>();
             slot.mpCostText     = t.Find("MPCost")    ?.GetComponent<TextMeshProUGUI>();
             slot.keyBindingText = t.Find("KeyBinding")?.GetComponent<TextMeshProUGUI>();
+            slot.slotIndex      = i;
             slot.Init();
 
             // Ajoute TooltipTrigger si absent
@@ -121,15 +122,28 @@ public class SkillBarUI : MonoBehaviour
 // =============================================================
 // SKILLSLOTUI — attaché automatiquement sur chaque slot
 // =============================================================
-public class SkillSlotUI : MonoBehaviour
+public class SkillSlotUI : MonoBehaviour, IPointerClickHandler
 {
     [HideInInspector] public Image           skillIcon;
     [HideInInspector] public Image           cdOverlay;
     [HideInInspector] public TextMeshProUGUI cdText;
     [HideInInspector] public TextMeshProUGUI mpCostText;
     [HideInInspector] public TextMeshProUGUI keyBindingText;
+    [HideInInspector] public int             slotIndex = -1;
 
     private SkillData _currentSkill;
+
+    /// <summary>Clic droit — vide le slot. Exige la SkillLibrary ouverte : c'est le geste qui
+    /// rend le clic droit VOLONTAIRE (on ne vide jamais un slot par un clic droit machinal en
+    /// plein combat). Slot 0 (attaque de base) et 9 (ultime) restent vidables comme les autres —
+    /// pas d'exception demandée.</summary>
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (eventData.button != PointerEventData.InputButton.Right) return;
+        if (_currentSkill == null || slotIndex < 0) return;
+        if (SkillLibraryUI.Instance == null || !SkillLibraryUI.Instance.IsOpen) return;
+        SkillBar.Instance?.SetSkillAtSlot(slotIndex, null);
+    }
 
     private static readonly Color EmptyColor  = new Color(0f, 0f, 0f, 0.4f);
     private static readonly Color OnCooldown  = new Color(0f, 0f, 0f, 0.6f);

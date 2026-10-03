@@ -43,7 +43,10 @@ public abstract class Entity : MonoBehaviour
     // IDENTITÉ
     // =========================================================
 
-    [Header("Identité")]
+    // Toujours écrasé au runtime par la sous-classe (Mob.ApplyData → data.mobName,
+    // Player.Awake → characterData.characterName, PNJ.Awake → data.pnjName) — jamais un champ à
+    // éditer à la main, caché de l'Inspector pour ne pas laisser croire le contraire.
+    [HideInInspector]
     public string entityName = "Entity";
 
     /// <summary>

@@ -252,15 +252,25 @@ public class CharacterProgress
     public int    xpCombat      = 0;
     public string activeTitle   = "";
 
-    // ② Réputation
-    public int worldReputation = 0;
-    public int pvpReputation   = 0;
+    // ② Prestige & Aura (ex-worldReputation, voir spec Prestige/Aura) + Réputation PvP (séparée,
+    // inchangée)
+    public int prestige      = 0;
+    // Même défaut que Player.aura (+100, pas 0) — un personnage neuf sans save doit démarrer là,
+    // pas retomber à 0 au premier ApplyProgress() delta-based.
+    public int aura          = 100;
+    public int pvpReputation = 0;
 
     // ③ Position & Map
     public string lastMap = "Map_01";
     public float  posX    = 0f;
     public float  posY    = 0f;
     public float  posZ    = 0f;
+    // true = ignore posX/Y/Z, spawn au PlayerSpawnPoint de lastMap plutôt — posé quand la
+    // sauvegarde a eu lieu pendant une instance active (donjon abandonné en quittant, voir
+    // SaveSystem.CollectProgress). lastMap est alors substitué par SceneLoader.startMap au lieu
+    // de la vraie scène donjon — posX/Y/Z d'origine seraient des coordonnées de cette scène-là,
+    // sans rapport avec startMap, donc inutilisables tel quel.
+    public bool usePlayerSpawnPoint = false;
 
     // ④ Aeris
     public int aeris = 0;
@@ -324,6 +334,14 @@ public class CharacterProgress
 
     // Paliers débloqués via Donjon de Déblocage — voir Player.HasUnlockedTier.
     public List<int> unlockedTiers = new List<int>();
+
+    // Points de contrôle confirmés, un par palier — voir Player.confirmedCheckpoints/MapSpawnPoint.
+    // Vide = jamais rien confirmé, RespawnSystem/InstanceSession retombent sur SceneLoader.startMap.
+    public List<Player.CheckpointEntry> confirmedCheckpoints = new List<Player.CheckpointEntry>();
+
+    // Réclamations quotidiennes de Prestige de donjon — voir Player.dungeonPrestigeClaims/
+    // TryClaimDailyDungeonPrestige.
+    public List<Player.DungeonPrestigeClaim> dungeonPrestigeClaims = new List<Player.DungeonPrestigeClaim>();
 
     // ⑫ Progression conditions en cours
     public List<SavedConditionProgress> conditionProgresses = new List<SavedConditionProgress>();

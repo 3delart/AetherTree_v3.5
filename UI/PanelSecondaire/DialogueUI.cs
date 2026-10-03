@@ -194,8 +194,23 @@ public class DialogueUI : MonoBehaviour
         foreach (var opt in stage.options)
         {
             var captured = opt;
-            SpawnButton(opt.label, () => OnOptionClicked(captured));
+            string label = opt.action == DialogueAction.PurifyAura
+                ? BuildPurifyAuraLabel(opt.label, _currentPlayer)
+                : opt.label;
+            SpawnButton(label, () => OnOptionClicked(captured));
         }
+    }
+
+    /// <summary>Ajoute le coût Aeris courant au label du bouton Purifier — le coût dépend du
+    /// auraRank ACTUEL du joueur (voir Player.prestigeAuraData.auraTiers), jamais fixé sur
+    /// l'asset DialogueOption (partagé entre tous les joueurs/paliers), donc calculé ici à
+    /// chaque affichage plutôt que stocké en dur dans le label texte de l'option.</summary>
+    private string BuildPurifyAuraLabel(string baseLabel, Player player)
+    {
+        var tiers = player?.prestigeAuraData?.auraTiers;
+        int rank = player?.auraRank ?? 0;
+        if (tiers == null || rank <= 0 || rank >= tiers.Count) return baseLabel;
+        return $"{baseLabel} ({tiers[rank].purificationAerisCost} Aeris)";
     }
 
     private void BuildQuestButtons(PNJData data, Player player)

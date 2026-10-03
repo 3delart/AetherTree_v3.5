@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 // =============================================================
 // CONSUMABLEDATA.CS — ScriptableObject template de consommable
@@ -12,8 +13,12 @@ using UnityEngine;
 // Types de consommables :
 //   Potion        — restaure HP/Mana, applique un BuffData
 //   Food          — nourriture (Cuisiner) — mêmes champs que Potion, catégorie distincte
-//   DungeonStone  — pierre d'accès à un donjon
+//   DungeonKey    — clé d'accès à un donjon (Classique ET Déblocage, même type — renommé
+//                   depuis DungeonStone pour ne plus laisser croire à un type par sous-catégorie)
 //   TeleportItem  — téléportation vers une zone
+//   RewardChest   — à l'usage, tire 1 item pondéré dans chestEntries et l'ajoute direct à
+//                   l'inventaire (voir RollChestEntry() plus bas) — jamais un asset séparé,
+//                   les entrées d'un coffre ne sont jamais partagées entre deux consommables
 //   Other         — effet spécial custom
 //
 // RuneData/GemData ne sont PAS des ConsumableType — ce sont des ScriptableObject à
@@ -29,9 +34,25 @@ public enum ConsumableType
 {
     Potion       = 0, // Restaure HP et/ou Mana, applique un BuffData
     Food         = 1, // Nourriture (Cuisiner) — mêmes champs que Potion, catégorie distincte
-    DungeonStone = 2, // Ouvre l'accès à un donjon spécifique
+    DungeonKey   = 2, // Ouvre l'accès à un donjon spécifique (Classique ET Déblocage)
     TeleportItem = 3, // Téléporte vers une zone
     Other        = 4, // Effet custom
+    RewardChest  = 5, // Tire 1 item pondéré dans chestEntries à l'usage — ajouté après coup,
+                       // TOUJOURS en fin d'enum (ordinal safety).
+}
+
+[System.Serializable]
+public class ChestEntry
+{
+    [Tooltip("Item potentiellement gagnant — glisser le SO directement ici.")]
+    public ScriptableObject itemSO;
+
+    [Tooltip("Poids RELATIF, pas une probabilité 0-1 — comparé à la somme des poids de toutes " +
+             "les entrées. Ex: 3 entrées de poids 10/5/1 → 62.5% / 31.25% / 6.25%.")]
+    [Min(0.01f)]
+    public float weight = 1f;
+
+    public int quantity = 1;
 }
 
 [CreateAssetMenu(fileName = "cons_", menuName = "AetherTree/Inventaire/ConsumableData")]
@@ -40,6 +61,13 @@ public class ConsumableData : ItemData
     // ── Identité ──────────────────────────────────────────────
     [Header("Identité")]
     public ConsumableType  consumableType = ConsumableType.Potion;
+
+    // ── Clé de donjon ─────────────────────────────────────────
+    [Tooltip("VFX accroché au joueur pendant l'attente entre la consommation de cette clé et le " +
+             "franchissement du portail gaté du donjon — voir InstanceSession.AttachLeaderVfx(), " +
+             "appelé par ConsoBarUI juste après un ArmEntry() réussi. Null = rien.")]
+    [ShowIf(nameof(consumableType), ConsumableType.DungeonKey, Header = "Clé de donjon (si consumableType = DungeonKey)")]
+    public GameObject dungeonEntryVfx;
 
     // ── Potion / Food — mêmes champs, à plat, pas de sous-section ──
     [Tooltip("Cooldown avant de pouvoir réutiliser cet objet (secondes).")]
@@ -55,15 +83,44 @@ public class ConsumableData : ItemData
     [ShowIf(nameof(consumableType), ConsumableType.Potion, ConsumableType.Food)]
     public BuffData buffEffect;
 
-    // ── Pierre de donjon ──────────────────────────────────────
-    [Tooltip("ID du donjon accessible avec cette pierre.")]
-    [ShowIf(nameof(consumableType), ConsumableType.DungeonStone, Header = "Pierre de donjon (si consumableType = DungeonStone)")]
-    public string dungeonID = "";
-
     // ── Téléportation ─────────────────────────────────────────
     [Tooltip("ID de la zone de destination.")]
     [ShowIf(nameof(consumableType), ConsumableType.TeleportItem, Header = "Téléportation (si consumableType = TeleportItem)")]
     public string targetZoneID = "";
+
+    // ── Coffre ────────────────────────────────────────────────
+    [Tooltip("Un seul gagnant tiré parmi ces entrées au prorata de leur poids — jamais vide, " +
+             "jamais deux items en un coffre. Différent de LootTable (Data/Mobs/LootTable.cs), " +
+             "qui tire CHAQUE entrée indépendamment (pensé pour les drops de mob, pas un coffre).")]
+    [ShowIf(nameof(consumableType), ConsumableType.RewardChest, Header = "Coffre (si consumableType = RewardChest)")]
+    public List<ChestEntry> chestEntries = new List<ChestEntry>();
+
+    /// <summary>Tire UN gagnant pondéré et retourne l'InventoryItem correspondant — null si
+    /// aucune entrée valide (liste vide, ou somme des poids nulle). rarityRank est la rareté déjà
+    /// rollée à l'accord du coffre (voir ConsumableInstance.chestRarity) — appliquée à l'entrée
+    /// gagnante si c'est une Arme/Armure, voir ItemDropFactory.</summary>
+    public InventoryItem RollChestEntry(int rarityRank)
+    {
+        float totalWeight = 0f;
+        foreach (var entry in chestEntries)
+            if (entry != null && entry.itemSO != null) totalWeight += Mathf.Max(0f, entry.weight);
+
+        if (totalWeight <= 0f) return null;
+
+        float roll = Random.value * totalWeight;
+        float cursor = 0f;
+
+        foreach (var entry in chestEntries)
+        {
+            if (entry == null || entry.itemSO == null) continue;
+            cursor += Mathf.Max(0f, entry.weight);
+            if (roll > cursor) continue;
+
+            return ItemDropFactory.CreateInventoryItem(entry.itemSO, entry.quantity, rarityOverride: rarityRank);
+        }
+
+        return null; // ne devrait arriver qu'en cas d'imprécision flottante extrême
+    }
 
     // ── Utilitaires ───────────────────────────────────────────
     public ConsumableInstance CreateInstance(int quantity = 1)
@@ -86,10 +143,17 @@ public class ConsumableInstance
     public ConsumableData data;
     public int            quantity = 1;
 
-    public ConsumableInstance(ConsumableData source, int qty = 1)
+    [Tooltip("Rareté rollée UNE FOIS à l'accord du coffre (InstanceSession.OnBossKilled(), via " +
+             "WeaponData.RollRarity()) — null pour tout consommable qui n'est pas un RewardChest. " +
+             "Reste figée jusqu'à l'ouverture (ConsumableData.RollChestEntry() la reçoit en " +
+             "paramètre).")]
+    public int?            chestRarity;
+
+    public ConsumableInstance(ConsumableData source, int qty = 1, int? rolledChestRarity = null)
     {
-        data     = source;
-        quantity = qty;
+        data        = source;
+        quantity    = qty;
+        chestRarity = rolledChestRarity;
     }
 
     public string ItemId    => data != null ? data.itemID : "unknown_consumable";
@@ -97,6 +161,14 @@ public class ConsumableInstance
     public Sprite Icon      => data?.icon;
     public int    MaxStack  => data?.stackSize ?? 99;
     public bool   IsEmpty   => quantity <= 0;
+
+    /// <summary>Nom coloré par rareté pour un RewardChest déjà rollé (voir chestRarity) — même
+    /// patron que WeaponInstance/ArmorInstance.DisplayNameRich. Retombe sur Name pour tout le
+    /// reste (pas de rareté sur un consommable normal).</summary>
+    public string DisplayNameRich =>
+        (data != null && data.consumableType == ConsumableType.RewardChest && chestRarity.HasValue)
+            ? $"<color={RarityTier.GetColorHex(chestRarity.Value)}>{RarityTier.GetName(chestRarity.Value)} {Name}</color>"
+            : Name;
 
     /// <summary>Ajoute une quantité au stack. Retourne le surplus si dépassement.</summary>
     public int Add(int amount)

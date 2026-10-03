@@ -9,7 +9,7 @@ using UnityEngine.EventSystems;
 // quel InventoryItem vendable (GetSellPrice > 0) — même schéma que
 // RarityDropSlot/ForgeDropSlot : ne fait que référencer, jamais d'appel
 // InventorySystem.RemoveItem directement, la vente réelle n'a lieu qu'à la
-// confirmation dans TransactionConfirmUI (voir ShopUI.OnSellDropped).
+// confirmation dans ConfirmationUI (voir ShopUI.OnSellDropped).
 // =============================================================
 
 public class ShopSellDropSlot : MonoBehaviour, IDropHandler

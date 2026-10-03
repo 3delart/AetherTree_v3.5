@@ -40,9 +40,10 @@ public class LootEntry
 // ── Résultat d'un roll ────────────────────────────────────────
 public class LootRollResult
 {
-    public List<InventoryItem> items = new List<InventoryItem>();
-    public int                 aeris = 0;
-    public int                 xp    = 0;
+    public List<InventoryItem> items    = new List<InventoryItem>();
+    public int                 aeris    = 0;
+    public int                 xp       = 0;
+    public int                 prestige = 0;
 }
 
 // ── LootResult legacy ────────────────────────────────────────
@@ -79,6 +80,11 @@ public class LootTable : ScriptableObject
     [Tooltip("XP accordé aux joueurs éligibles à la mort du mob.")]
     public int xpReward = 0;
 
+    [Header("Prestige")]
+    [Tooltip("Prestige accordé à la mort du mob — 0 par défaut, la plupart des mobs n'en donnent " +
+             "pas (voir spec Prestige/Aura §1.4). Réservé aux boss/mobs notables.")]
+    public int prestigeReward = 0;
+
     // =========================================================
     // ROLL
     // =========================================================
@@ -91,8 +97,9 @@ public class LootTable : ScriptableObject
     {
         var result = new LootRollResult
         {
-            aeris = Random.Range(minAeris, maxAeris + 1),
-            xp    = xpReward,
+            aeris    = Random.Range(minAeris, maxAeris + 1),
+            xp       = xpReward,
+            prestige = prestigeReward,
         };
 
         foreach (LootEntry entry in entries)
@@ -143,51 +150,11 @@ public class LootTable : ScriptableObject
         return Mathf.RoundToInt(Mathf.Lerp(entry.minQuantity, entry.maxQuantity, t));
     }
 
-    /// <summary>Crée un InventoryItem depuis une LootEntry.</summary>
+    /// <summary>Crée un InventoryItem depuis une LootEntry — voir ItemDropFactory (partagé
+    /// avec ConsumableData.RollChestEntry(), qui lui force une rareté fixe pour Armes/Armures
+    /// au lieu du roll aléatoire habituel).</summary>
     private InventoryItem CreateInventoryItem(LootEntry entry, int qty)
-    {
-        if (entry.itemSO == null) return null;
-
-        switch (entry.itemSO)
-        {
-            case WeaponData wd:
-                return new InventoryItem(wd.CreateDropInstance(WeaponData.RollRarity()));
-
-            case ArmorData ad:
-                return new InventoryItem(ad.CreateDropInstance(ArmorData.RollRarity()));
-
-            case HelmetData hd:
-                return new InventoryItem(hd.CreateInstance());
-
-            case GlovesData gd:
-                return new InventoryItem(gd.CreateInstance());
-
-            case BootsData bd:
-                return new InventoryItem(bd.CreateInstance());
-
-            case JewelryData jd:
-                return new InventoryItem(jd.CreateInstance());
-
-            case SpiritData sd:
-                return new InventoryItem(new SpiritInstance(sd));
-
-            case ConsumableData cd:
-                return new InventoryItem(cd.CreateInstance(qty));
-
-            case ResourceData rd:
-                return new InventoryItem(rd.CreateInstance(qty));
-
-            case GemData gemD:
-                return new InventoryItem(gemD.CreateDropInstance());
-
-            case RuneData runeD:
-                return new InventoryItem(runeD.CreateDropInstance());
-
-            default:
-                Debug.LogWarning($"[LootTable] Type SO non reconnu : {entry.itemSO.GetType().Name}");
-                return null;
-        }
-    }
+        => ItemDropFactory.CreateInventoryItem(entry.itemSO, qty);
 
     /// <summary>Legacy — retourne les itemIDs string pour compatibilité.</summary>
     public List<LootResult> RollLoot()

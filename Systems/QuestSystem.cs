@@ -141,6 +141,14 @@ public class QuestSystem : MonoBehaviour
                 player.transform.position + Vector3.up * 2f, new Color(1f, 0.85f, 0.2f));
         }
 
+        // Prestige
+        if (quest.prestigeReward > 0)
+        {
+            player.AddPrestige(quest.prestigeReward);
+            FloatingText.Spawn($"+{quest.prestigeReward} Prestige",
+                player.transform.position + Vector3.up * 3f, new Color(0.85f, 0.65f, 1f));
+        }
+
         // ── ITEMS ─────────────────────────────────────────────────
         if (quest.rewardItems != null && InventorySystem.Instance != null)
         {

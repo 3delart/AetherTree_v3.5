@@ -121,8 +121,9 @@ public class QuestData : ScriptableObject
     public List<QuestObjective> objectives = new List<QuestObjective>();
 
     [Header("Récompenses")]
-    public int xpReward    = 100;
-    public int aerisReward = 50;
+    public int xpReward       = 100;
+    public int aerisReward    = 50;
+    public int prestigeReward = 50;
 
     [Header("Récompenses items")]
     [Tooltip("Ajouter autant d'entrées que voulu.\nRemplir UN SEUL champ par entrée.")]

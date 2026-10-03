@@ -1,0 +1,59 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 10399760f70cad648a0a7e84247eac1c, type: 3}
+  m_Name: invasion_test
+  m_EditorClassIdentifier: 
+  minHitsToBeEligible: 10
+  possibleVariants:
+  - variantName: Invasion_1_test
+    waves:
+    - mobs:
+      - mob: {fileID: 11400000, guid: b5ed67d66eb972b479344a89bda16a7f, type: 2}
+        count: 30
+    - mobs:
+      - mob: {fileID: 11400000, guid: b5ed67d66eb972b479344a89bda16a7f, type: 2}
+        count: 50
+      - mob: {fileID: 11400000, guid: a7335203f59fcbb40959e73df253c067, type: 2}
+        count: 20
+    - mobs:
+      - mob: {fileID: 11400000, guid: b5ed67d66eb972b479344a89bda16a7f, type: 2}
+        count: 50
+      - mob: {fileID: 11400000, guid: a7335203f59fcbb40959e73df253c067, type: 2}
+        count: 50
+      - mob: {fileID: 11400000, guid: db8cc6babeed87244baa22d4b4859ce0, type: 2}
+        count: 3
+    - mobs:
+      - mob: {fileID: 11400000, guid: b5ed67d66eb972b479344a89bda16a7f, type: 2}
+        count: 20
+      - mob: {fileID: 11400000, guid: a7335203f59fcbb40959e73df253c067, type: 2}
+        count: 20
+      - mob: {fileID: 11400000, guid: db8cc6babeed87244baa22d4b4859ce0, type: 2}
+        count: 10
+    - mobs:
+      - mob: {fileID: 11400000, guid: b5ed67d66eb972b479344a89bda16a7f, type: 2}
+        count: 10
+      - mob: {fileID: 11400000, guid: a7335203f59fcbb40959e73df253c067, type: 2}
+        count: 20
+      - mob: {fileID: 11400000, guid: db8cc6babeed87244baa22d4b4859ce0, type: 2}
+        count: 30
+    reinforcements:
+    - mob: {fileID: 11400000, guid: b5ed67d66eb972b479344a89bda16a7f, type: 2}
+      count: 10
+    - mob: {fileID: 11400000, guid: a7335203f59fcbb40959e73df253c067, type: 2}
+      count: 10
+    - mob: {fileID: 11400000, guid: db8cc6babeed87244baa22d4b4859ce0, type: 2}
+      count: 10
+    boss: {fileID: 11400000, guid: c780bda3359bc7c45bcf9589e1a64eb2, type: 2}
+    rewardTable: {fileID: 11400000, guid: f65e21120244b73468d1eaeccc2d7f5a, type: 2}
+  spawnRadius: 100
+  waveInterval: 90
+  despawnTimeout: 1800

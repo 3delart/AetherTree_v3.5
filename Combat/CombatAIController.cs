@@ -414,8 +414,8 @@ public class CombatAIController : MonoBehaviour
     }
 
     /// <summary>Déclenche l'anim d'attaque et pose l'état pending — la résolution réelle
-    /// n'arrive qu'à l'event d'impact ou au timeout de secours. Sans attackAnimation assignée,
-    /// résout immédiatement. Un MultiHit SANS attackAnimation reste sur l'ancien chemin
+    /// n'arrive qu'à l'event d'impact ou au timeout de secours. Sans animationClip assignée,
+    /// résout immédiatement. Un MultiHit SANS animationClip reste sur l'ancien chemin
     /// Execute()/ExecuteMultiHit (respecte HitStep.delay via coroutine).</summary>
     private void StartPendingHit(SkillData skill, Entity target)
     {
@@ -425,7 +425,7 @@ public class CombatAIController : MonoBehaviour
         bool isMulti = skill.executionType == SkillExecutionType.MultiHit
                        && skill.hitSteps != null && skill.hitSteps.Count > 0;
 
-        if (isMulti && skill.attackAnimation == null)
+        if (isMulti && skill.animationClip == null)
         {
             _skillSystem?.Execute(skill, _owner, target);
             if (_profile.SecondarySkills != null && _profile.SecondarySkills.Contains(skill))
@@ -433,13 +433,13 @@ public class CombatAIController : MonoBehaviour
             return;
         }
 
-        _animator?.PlayAttack(skill.attackAnimation);
+        _animator?.PlayAttack(skill.animationClip);
 
         _pendingSkill   = skill;
         _pendingTarget  = target;
         _pendingIsMulti = isMulti;
         _pendingMultiNextIndex = 0;
-        _pendingTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+        _pendingTimeout = skill.animationClip != null ? skill.animationClip.length : 0f;
 
         if (_pendingTimeout <= 0f)
             ResolvePendingHit(0);
@@ -506,7 +506,7 @@ public class CombatAIController : MonoBehaviour
         _channelSkill  = skill;
         _channelTarget = target;
 
-        _animator?.PlayChannel(skill.channelAnimation);
+        _animator?.PlayChannel(skill.animationClip);
 
         _channelVfxCast = skill.vfxCast != null
             ? Instantiate(skill.vfxCast, _owner.transform.position, Quaternion.identity)

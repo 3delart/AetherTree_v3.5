@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 // =============================================================
 // MINIMAPUI.CS — UI de la minimap
@@ -8,7 +9,7 @@ using UnityEngine.UI;
 // SETUP HIERARCHY :
 //   MinimapPanel
 //     ├── MapNamePanel
-//     │     └── (TMP nom de zone — branché plus tard)
+//     │     └── MapZone         ← TextMeshProUGUI — assigner sur zoneNameText
 //     ├── Map                  ← RawImage — assigner ici
 //     │     └── PlayerIcon     ← Image (flèche) — assigner ici
 //     └── MapButton            ← Button — assigner ici
@@ -19,6 +20,7 @@ using UnityEngine.UI;
 //   mapRenderTexture → la RenderTexture créée (256×256)
 //   playerIcon       → Image "PlayerIcon" (sprite flèche)
 //   mapButton        → Button "MapButton"
+//   zoneNameText     → TextMeshProUGUI "MapZone" — voir SetZoneName()
 //   playerTransform  → laisser vide (auto-détecté)
 // =============================================================
 public class MinimapUI : MonoBehaviour
@@ -38,6 +40,11 @@ public class MinimapUI : MonoBehaviour
     [Header("Bouton MAP")]
     [Tooltip("Bouton qui ouvre le panel grande carte")]
     public Button    mapButton;
+
+    [Header("Nom de zone")]
+    [Tooltip("TextMeshProUGUI 'MapZone' affichant le nom du biome courant — voir SetZoneName(), " +
+             "appelé par BiomeZone.OnTriggerEnter.")]
+    public TextMeshProUGUI zoneNameText;
 
     // ── Runtime ──────────────────────────────────────────────
     private Transform _playerTransform;
@@ -88,10 +95,9 @@ public class MinimapUI : MonoBehaviour
     // API PUBLIQUE
     // =========================================================
 
-    /// <summary>Met à jour le nom de zone affiché (à brancher sur ZoneManager plus tard).</summary>
+    /// <summary>Met à jour le nom de zone affiché — appelé par BiomeZone.OnTriggerEnter.</summary>
     public void SetZoneName(string zoneName)
     {
-        // TODO : brancher MapNamePanel TMP quand ZoneManager sera implémenté
-        Debug.Log($"[MinimapUI] Zone : {zoneName}");
+        if (zoneNameText != null) zoneNameText.text = zoneName;
     }
 }

@@ -190,7 +190,7 @@ public class InventorySystem : MonoBehaviour
     /// <summary>Cherche un slot consommable du même SO avec de la place disponible.</summary>
     private InventoryItem FindStackableConsumable(ConsumableData data)
     {
-        if (data == null) return null;
+        if (data == null || !data.isStackable) return null;
         foreach (var item in _items)
             if (item.ConsumableInstance?.data == data && item.ConsumableInstance.quantity < item.ConsumableInstance.MaxStack)
                 return item;
@@ -299,7 +299,9 @@ public class InventorySystem : MonoBehaviour
 
     /// <summary>
     /// Équipe l'item sur le joueur et le retire de l'inventaire.
-    /// L'item actuellement équipé est retourné dans l'inventaire.
+    /// L'item actuellement équipé est retourné dans l'inventaire — si l'inventaire est plein et
+    /// ne peut pas l'accepter, l'échange est ANNULÉ (return false) : rien n'est perdu, l'ancien
+    /// objet reste équipé et le nouveau reste en inventaire.
     /// </summary>
     public bool EquipItem(InventoryItem item, Player player)
     {
@@ -319,60 +321,69 @@ public class InventorySystem : MonoBehaviour
                     return false;
                 }
 
-                if (player.equippedWeaponInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedWeaponInstance));
+                if (player.equippedWeaponInstance?.data != null
+                    && !AddItem(new InventoryItem(player.equippedWeaponInstance)))
+                    return false;
                 player.EquipWeapon(item.WeaponInstance);
                 break;
 
             case EquipmentSlot.Armor:
                 if (item.ArmorInstance == null) return false;
-                if (player.equippedArmorInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedArmorInstance));
+                if (player.equippedArmorInstance?.data != null
+                    && !AddItem(new InventoryItem(player.equippedArmorInstance)))
+                    return false;
                 player.EquipArmor(item.ArmorInstance);
                 break;
 
             case EquipmentSlot.Helmet:
                 if (item.HelmetInstance == null) return false;
-                if (player.equippedHelmetInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedHelmetInstance));
+                if (player.equippedHelmetInstance?.data != null
+                    && !AddItem(new InventoryItem(player.equippedHelmetInstance)))
+                    return false;
                 player.EquipHelmet(item.HelmetInstance);
                 break;
 
             case EquipmentSlot.Gloves:
                 if (item.GlovesInstance == null) return false;
-                if (player.equippedGlovesInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedGlovesInstance));
+                if (player.equippedGlovesInstance?.data != null
+                    && !AddItem(new InventoryItem(player.equippedGlovesInstance)))
+                    return false;
                 player.EquipGloves(item.GlovesInstance);
                 break;
 
             case EquipmentSlot.Boots:
                 if (item.BootsInstance == null) return false;
-                if (player.equippedBootsInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedBootsInstance));
+                if (player.equippedBootsInstance?.data != null
+                    && !AddItem(new InventoryItem(player.equippedBootsInstance)))
+                    return false;
                 player.EquipBoots(item.BootsInstance);
                 break;
 
             case EquipmentSlot.Ring:
             case EquipmentSlot.Necklace:
             case EquipmentSlot.Bracelet:
+            {
                 if (item.JewelryInstance == null) return false;
                 JewelryInstance existingJewelry = player.equippedJewelryInstances?.Find(
                     j => j != null && j.Slot == item.JewelryInstance.Slot);
                 if (existingJewelry != null)
                 {
+                    // AddItem AVANT UnequipJewelry() — sinon un inventaire plein perdrait
+                    // l'ancien bijou (déjà détaché, jamais rendu).
+                    if (!AddItem(new InventoryItem(existingJewelry))) return false;
                     player.UnequipJewelry(existingJewelry);
-                    AddItem(new InventoryItem(existingJewelry));
                 }
                 player.EquipJewelry(item.JewelryInstance);
                 break;
+            }
 
             case EquipmentSlot.Spirit:
                 if (item.SpiritInstance == null) return false;
                 if (player.equippedSpiritInstances?.Count > 0)
                 {
                     var oldSpirit = player.equippedSpiritInstances[0];
+                    if (!AddItem(new InventoryItem(oldSpirit))) return false;
                     player.UnequipSpirit(oldSpirit);
-                    AddItem(new InventoryItem(oldSpirit));
                 }
                 player.EquipSpirit(item.SpiritInstance);
                 break;
@@ -382,23 +393,27 @@ public class InventorySystem : MonoBehaviour
                 if (player.equippedTalismanInstance?.data != null)
                 {
                     var oldTalisman = player.equippedTalismanInstance;
-                    player.UnequipTalisman(); // coupe le buff de l'ancien AVANT de le rendre
-                    AddItem(new InventoryItem(oldTalisman));
+                    // AddItem AVANT UnequipTalisman() — celui-ci coupe le buff ET efface la seule
+                    // référence à l'instance, un inventaire plein perdrait l'ancien talisman.
+                    if (!AddItem(new InventoryItem(oldTalisman))) return false;
+                    player.UnequipTalisman();
                 }
                 player.EquipTalisman(item.TalismanInstance);
                 break;
 
             case EquipmentSlot.CosmeticHead:
                 if (item.CosmeticInstanceHead == null) return false;
-                if (player.equippedCosmeticHeadInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedCosmeticHeadInstance));
+                if (player.equippedCosmeticHeadInstance?.data != null
+                    && !AddItem(new InventoryItem(player.equippedCosmeticHeadInstance)))
+                    return false;
                 player.EquipCosmeticHead(item.CosmeticInstanceHead);
                 break;
 
             case EquipmentSlot.CosmeticBody:
                 if (item.CosmeticInstanceBody == null) return false;
-                if (player.equippedCosmeticBodyInstance?.data != null)
-                    AddItem(new InventoryItem(player.equippedCosmeticBodyInstance));
+                if (player.equippedCosmeticBodyInstance?.data != null
+                    && !AddItem(new InventoryItem(player.equippedCosmeticBodyInstance)))
+                    return false;
                 player.EquipCosmeticBody(item.CosmeticInstanceBody);
                 break;
 
@@ -441,7 +456,9 @@ public class InventorySystem : MonoBehaviour
         if (toRemove != null) _items.Remove(toRemove);
     }
 
-    /// <summary>Déséquipe l'item du joueur et le place dans l'inventaire.</summary>
+    /// <summary>Déséquipe l'item du joueur et le place dans l'inventaire. Ne retire JAMAIS
+    /// l'objet du joueur si l'inventaire ne l'a pas réellement accepté (AddItem == false,
+    /// inventaire plein) — sinon l'objet disparaîtrait purement et simplement.</summary>
     public void UnequipToInventory(EquipmentSlot slot, Player player)
     {
         if (player == null) return;
@@ -449,40 +466,59 @@ public class InventorySystem : MonoBehaviour
         switch (slot)
         {
             case EquipmentSlot.Weapon:
-                if (player.equippedWeaponInstance != null)
-                { AddItem(new InventoryItem(player.equippedWeaponInstance)); player.UnequipWeapon(); }
+                if (player.equippedWeaponInstance != null && AddItem(new InventoryItem(player.equippedWeaponInstance)))
+                    player.UnequipWeapon();
                 break;
             case EquipmentSlot.Armor:
-                if (player.equippedArmorInstance != null)
-                { AddItem(new InventoryItem(player.equippedArmorInstance)); player.UnequipArmor(); }
+                if (player.equippedArmorInstance != null && AddItem(new InventoryItem(player.equippedArmorInstance)))
+                    player.UnequipArmor();
                 break;
             case EquipmentSlot.Helmet:
-                if (player.equippedHelmetInstance != null)
-                { AddItem(new InventoryItem(player.equippedHelmetInstance)); player.UnequipHelmet(); }
+                if (player.equippedHelmetInstance != null && AddItem(new InventoryItem(player.equippedHelmetInstance)))
+                    player.UnequipHelmet();
                 break;
             case EquipmentSlot.Gloves:
-                if (player.equippedGlovesInstance != null)
-                { AddItem(new InventoryItem(player.equippedGlovesInstance)); player.UnequipGloves(); }
+                if (player.equippedGlovesInstance != null && AddItem(new InventoryItem(player.equippedGlovesInstance)))
+                    player.UnequipGloves();
                 break;
             case EquipmentSlot.Boots:
-                if (player.equippedBootsInstance != null)
-                { AddItem(new InventoryItem(player.equippedBootsInstance)); player.UnequipBoots(); }
+                if (player.equippedBootsInstance != null && AddItem(new InventoryItem(player.equippedBootsInstance)))
+                    player.UnequipBoots();
                 break;
-            case EquipmentSlot.Talisman:
-                if (player.equippedTalismanInstance != null)
+            case EquipmentSlot.Ring:
+            case EquipmentSlot.Necklace:
+            case EquipmentSlot.Bracelet:
+            {
+                JewelrySlot jewelrySlot = slot == EquipmentSlot.Ring     ? JewelrySlot.Ring
+                                        : slot == EquipmentSlot.Necklace ? JewelrySlot.Necklace
+                                        :                                  JewelrySlot.Bracelet;
+                JewelryInstance equippedJewelry = player.equippedJewelryInstances?.Find(
+                    j => j != null && j.Slot == jewelrySlot);
+                if (equippedJewelry != null && AddItem(new InventoryItem(equippedJewelry)))
+                    player.UnequipJewelry(equippedJewelry);
+                break;
+            }
+            case EquipmentSlot.Spirit:
+                if (player.equippedSpiritInstances?.Count > 0)
                 {
-                    var talisman = player.equippedTalismanInstance;
-                    player.UnequipTalisman(); // coupe le buff avant de rendre l'objet
-                    AddItem(new InventoryItem(talisman));
+                    var equippedSpirit = player.equippedSpiritInstances[0];
+                    if (AddItem(new InventoryItem(equippedSpirit)))
+                        player.UnequipSpirit(equippedSpirit);
                 }
                 break;
+            case EquipmentSlot.Talisman:
+                // AddItem AVANT UnequipTalisman() — celui-ci coupe le buff et efface la seule
+                // référence à l'instance ; si l'inventaire est plein, on ne le fait pas.
+                if (player.equippedTalismanInstance != null && AddItem(new InventoryItem(player.equippedTalismanInstance)))
+                    player.UnequipTalisman();
+                break;
             case EquipmentSlot.CosmeticHead:
-                if (player.equippedCosmeticHeadInstance != null)
-                { AddItem(new InventoryItem(player.equippedCosmeticHeadInstance)); player.UnequipCosmeticHead(); }
+                if (player.equippedCosmeticHeadInstance != null && AddItem(new InventoryItem(player.equippedCosmeticHeadInstance)))
+                    player.UnequipCosmeticHead();
                 break;
             case EquipmentSlot.CosmeticBody:
-                if (player.equippedCosmeticBodyInstance != null)
-                { AddItem(new InventoryItem(player.equippedCosmeticBodyInstance)); player.UnequipCosmeticBody(); }
+                if (player.equippedCosmeticBodyInstance != null && AddItem(new InventoryItem(player.equippedCosmeticBodyInstance)))
+                    player.UnequipCosmeticBody();
                 break;
         }
     }
@@ -607,8 +643,9 @@ public class InventoryItem
     {
         get
         {
-            if (WeaponInstance != null) return WeaponInstance.DisplayNameRich;
-            if (ArmorInstance  != null) return ArmorInstance.DisplayNameRich;
+            if (WeaponInstance     != null) return WeaponInstance.DisplayNameRich;
+            if (ArmorInstance      != null) return ArmorInstance.DisplayNameRich;
+            if (ConsumableInstance != null) return ConsumableInstance.DisplayNameRich;
             return Name;
         }
     }

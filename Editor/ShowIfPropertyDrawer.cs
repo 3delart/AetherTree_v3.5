@@ -29,7 +29,17 @@ public class ShowIfPropertyDrawer : PropertyDrawer
     public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
     {
         if (!IsVisible(property))
+        {
+            // Un List<T>/array laissé DÉPLIÉ (property.isExpanded = true, réglé par un clic
+            // précédent sur le foldout à un moment où le champ était visible) garde sa rangée
+            // "Add/Remove" + éléments dessinée par Unity en interne même quand cette méthode
+            // renvoie une hauteur négative — la hauteur seule ne suffit pas à cacher un tableau
+            // dont le foldout est resté ouvert. Le replier explicitement force le masquage,
+            // peu importe son état précédent. Sans effet sur un champ non-tableau (isExpanded
+            // reste toujours false pour ceux-là, ce Set est un no-op).
+            property.isExpanded = false;
             return -EditorGUIUtility.standardVerticalSpacing; // annule l'espacement auto entre champs
+        }
 
         float height = EditorGUI.GetPropertyHeight(property, label, true);
         if (!string.IsNullOrEmpty(((ShowIfAttribute)attribute).Header))
@@ -111,6 +121,12 @@ public class ShowIfPropertyDrawer : PropertyDrawer
         // AndField optionnel — condition ET secondaire (voir ShowIfAttribute.AndField).
         // Absente (null) par défaut → n'affecte aucun des usages existants à un seul champ.
         if (showIf.AndField != null && !MatchesAny(property, showIf.AndField, new[] { showIf.AndValue }))
+            return false;
+
+        // ExcludeField optionnel — condition d'exclusion, slot INDÉPENDANT d'AndField (voir
+        // ShowIfAttribute.ExcludeField). Absente (null) par défaut → aucun effet sur les
+        // usages existants.
+        if (showIf.ExcludeField != null && MatchesAny(property, showIf.ExcludeField, new[] { showIf.ExcludeValue }))
             return false;
 
         return true;

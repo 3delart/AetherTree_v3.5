@@ -70,11 +70,13 @@ public class DebuffInstance : StatusEffectInstance
 
             case DebuffType.ManaDrain:
                 // Drain de mana progressif sur la durée, reversé au lanceur (§3.1.1.1)
-                // Percent : ratio du MaxMana du LANCEUR (pas de la cible) — même principe que
-                // HpDrain (2026-09-07) : évite la disproportion sur les gros pools cible, scale
-                // avec la vraie puissance du lanceur. 0 si source null.
+                // Percent : ratio du MaxMana de la CIBLE — corrigé 2026-09-29 (Florian), la
+                // base LANCEUR (2026-09-07) cassait dans le sens boss→joueur (le boss a un pool
+                // énorme, draine un joueur squishy de façon absurde) — cible garde le calcul
+                // symétrique quel que soit qui lance sur qui, même convention que le DoT
+                // (baseDamagePercent, déjà en % cible depuis le début).
                 float drainRate = DebuffData.manaDrainModifier == ModifierType.Percent
-                    ? (source != null ? source.MaxMana * DebuffData.manaDrainPerSecond : 0f)
+                    ? target.MaxMana * DebuffData.manaDrainPerSecond
                     : DebuffData.manaDrainPerSecond;
                 float drain = drainRate * deltaTime;
                 if (drain > 0f)
@@ -90,13 +92,11 @@ public class DebuffInstance : StatusEffectInstance
                 // le fait en amont pour les dégâts de skill/DoT ; ici on l'appelle directement
                 // avec le montant brut, donc ignore défense/résistances), peut tuer, reversés
                 // en soin identique au lanceur.
-                // Percent : ratio du MaxHP du LANCEUR (pas de la cible) — décision explicite
-                // Florian (2026-09-07) : évite la disproportion sur les boss à gros pool HP
-                // (la cible n'entre plus dans le calcul) et scale naturellement avec la vraie
-                // puissance du lanceur à tout niveau (un tank plus tanky drain/soigne plus, un
-                // DPS avec peu de HP drain/soigne moins). 0 si source null (pas de base de calcul).
+                // Percent : ratio du MaxHP de la CIBLE — corrigé 2026-09-29 (Florian), même
+                // raison que ManaDrain ci-dessus (la base LANCEUR du 2026-09-07 cassait dans le
+                // sens boss→joueur), même convention que le DoT.
                 float hpDrainRate = DebuffData.hpDrainModifier == ModifierType.Percent
-                    ? (source != null ? source.MaxHP * DebuffData.hpDrainPerSecond : 0f)
+                    ? target.MaxHP * DebuffData.hpDrainPerSecond
                     : DebuffData.hpDrainPerSecond;
                 float hpDrain = hpDrainRate * deltaTime;
                 if (hpDrain > 0f)

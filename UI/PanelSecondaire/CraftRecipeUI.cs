@@ -10,10 +10,10 @@ using System.Collections.Generic;
 //
 // Flow : CraftPanelUI (liste) → bouton Craft → CraftRecipeUI (cette fiche,
 // résultat + ingrédients qui se recalculent avec le slider de quantité) →
-// bouton Craft ICI → TransactionConfirmUI (confirmation finale, qty déjà
+// bouton Craft ICI → ConfirmationUI (confirmation finale, qty déjà
 // choisie ici pré-remplie). Le craft réel ne part que depuis la confirmation.
 //
-// Reste ouvert derrière TransactionConfirmUI (comme ShopUI reste ouvert
+// Reste ouvert derrière ConfirmationUI (comme ShopUI reste ouvert
 // derrière son propre popup) — pas fermé automatiquement à l'ouverture du
 // popup, seulement via son propre bouton Close ou en cascade depuis
 // CraftPanelUI.Close()/PNJWindowUI.Close().
@@ -48,7 +48,7 @@ public class CraftRecipeUI : MonoBehaviour
     public Button          maxButton;       // "Max" — saute au plafond fabricable (stock actuel)
 
     [Header("Action")]
-    public Button craftButton; // "ResultCraftButton" — ouvre TransactionConfirmUI
+    public Button craftButton; // "ResultCraftButton" — ouvre ConfirmationUI
 
     private const string ColorOk  = "#4CDB57"; // même famille que ForgeUI
     private const string ColorBad = "#E0455F";
@@ -210,7 +210,7 @@ public class CraftRecipeUI : MonoBehaviour
             : _recipe.name;
 
         var recipe = _recipe;
-        TransactionConfirmUI.Instance?.OpenCraftFlow(itemName, _maxQty,
+        ConfirmationUI.Instance?.OpenCraftFlow(itemName, _maxQty,
             onConfirm: quantity => StartCraft(recipe, quantity),
             initialQty: _quantity);
     }

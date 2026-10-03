@@ -24,6 +24,37 @@ public class ResourceNode : MonoBehaviour
     [Tooltip("True = placé manuellement. False = géré par SpawnManager.")]
     public bool isFixed = false;
 
+    [Tooltip("Fourchette de délai avant respawn de CE node fixe, en secondes — pas sur " +
+             "ResourceData : la même ressource peut respawn plus vite ou plus lentement selon la " +
+             "map/l'endroit où elle est placée. Min = Max donne un délai fixe. Roulé à chaque " +
+             "épuisement. Sans effet si isFixed = false (SpawnManager utilise ResourceData." +
+             "respawnDelay pour son propre respawn en zone).")]
+    [Min(1f)] public float minRespawnDelay = 300f;
+    [Min(1f)] public float maxRespawnDelay = 300f;
+
+    [Header("Remplissage progressif (optionnel — ex: puits)")]
+    [Tooltip("Coché : au lieu de disparaître (SetActive false) entre deux récoltes, le node reste " +
+             "actif/visible — figé vide (frame 0) pendant tout le délai de respawn roulé, PUIS " +
+             "joue l'anim de remplissage à vitesse normale, non récoltable tant qu'elle n'est " +
+             "pas terminée. Démarre plein au premier chargement (voir Start()). isFixed " +
+             "uniquement (un puits est toujours placé à la main, jamais géré par SpawnManager).")]
+    public bool hasFillAnimation = false;
+
+    [Tooltip("Animator qui joue le clip de remplissage. Laisser vide = auto-résolu sur ce " +
+             "GameObject au premier Awake().")]
+    public Animator animator;
+
+    [Tooltip("Nom du state Animator à jouer pour le remplissage (doit avoir Loop Time DÉCOCHÉ — " +
+             "sinon il boucle et repart à vide au lieu de rester figé sur la pose pleine).")]
+    public string fillStateName = "Fill";
+
+    [Tooltip("Durée réelle du clip, à sa vitesse normale (Animator.speed = 1), en secondes — " +
+             "anime-le à la durée qui te semble naturelle, aucun rapport avec le délai de " +
+             "respawn. Sert juste à savoir quand l'anim est terminée : le node reste vide/statique " +
+             "pendant tout le délai roulé, PUIS joue le clip à vitesse normale, et devient " +
+             "récoltable une fois le clip fini (délai + cette durée, pas juste le délai).")]
+    [Min(0.01f)] public float fillClipLength = 2f;
+
     // ── Runtime ──────────────────────────────────────────────
     private bool          _isExhausted = false;
     private bool          _isCollecting = false;
@@ -33,6 +64,21 @@ public class ResourceNode : MonoBehaviour
 
     // Distance max que le joueur peut bouger avant annulation
     private const float CANCEL_MOVE_THRESHOLD = 0.3f;
+
+    private void Awake()
+    {
+        if (hasFillAnimation && animator == null) animator = GetComponent<Animator>();
+    }
+
+    private void Start()
+    {
+        // Un puits démarre TOUJOURS plein/prêt (Florian, 2026-09-29 — pas de mémoire d'état
+        // entre sessions, sujet serveur pas encore abordé sur aucun système du projet). Force
+        // le clip sur sa dernière frame (pose pleine) plutôt que de laisser l'Animator jouer son
+        // state par défaut depuis 0 tout seul au chargement.
+        if (hasFillAnimation && animator != null)
+            animator.Play(fillStateName, 0, 1f);
+    }
 
     // =========================================================
     // INIT PAR SPAWNMANAGER
@@ -130,10 +176,30 @@ public class ResourceNode : MonoBehaviour
     {
         _isExhausted = true;
 
-        if (isFixed)
+        if (isFixed && hasFillAnimation)
+        {
+            // Reste actif/visible — BeginCollect() est déjà bloqué par _isExhausted, pas besoin
+            // de désactiver le GameObject. Fige direct sur la frame 0 (vide) à la récolte —
+            // sinon la pose PLEINE resterait affichée (figée depuis Start()/le cycle précédent)
+            // pendant tout le délai, avant même que l'anim de remplissage démarre. Statique vide
+            // pendant le délai, PUIS l'anim se joue à vitesse normale — récoltable seulement une
+            // fois le clip terminé (délai + fillClipLength au total, pas juste le délai).
+            // speed = 0 : Play() seul relancerait la lecture immédiatement à vitesse normale,
+            // ce qui ferait avancer l'anim PENDANT le délai au lieu de rester figée vide.
+            if (animator != null)
+            {
+                animator.Play(fillStateName, 0, 0f);
+                animator.speed = 0f;
+            }
+
+            float delay = Random.Range(minRespawnDelay, maxRespawnDelay);
+            Invoke(nameof(PlayFillAnimation), delay);
+            Invoke(nameof(Restore), delay + fillClipLength);
+        }
+        else if (isFixed)
         {
             gameObject.SetActive(false);
-            Invoke(nameof(Restore), data?.respawnDelay ?? 30f);
+            Invoke(nameof(Restore), Random.Range(minRespawnDelay, maxRespawnDelay));
         }
         else
         {
@@ -142,10 +208,17 @@ public class ResourceNode : MonoBehaviour
         }
     }
 
+    private void PlayFillAnimation()
+    {
+        if (animator == null) return;
+        animator.speed = 1f;
+        animator.Play(fillStateName, 0, 0f);
+    }
+
     private void Restore()
     {
         _isExhausted = false;
-        gameObject.SetActive(true);
+        if (!hasFillAnimation) gameObject.SetActive(true);
     }
 
     // =========================================================

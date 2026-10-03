@@ -71,8 +71,10 @@ public class DialogueStage
     public string text      = "";
 
     // ── Conditions d'accès — GDD v30 §19.1 ───────────────────
-    [Tooltip("Rang de Réputation Monde minimum requis pour accéder à ce stage (0 = aucun)")]
-    public int   requiredWorldReputationRank = 0;
+    [Tooltip("Rang de Prestige minimum requis pour accéder à ce stage (0 = aucun) — champ " +
+             "déclaré mais jamais lu par aucun code (vérifié 2026-09-29), même statut qu'avant " +
+             "le renommage.")]
+    public int   requiredPrestigeRank = 0;
 
     [Tooltip("Niveau joueur minimum requis (0 = aucun)")]
     public int   requiredLevel = 0;
@@ -143,4 +145,8 @@ public enum DialogueAction
     // les autres onglets se changent depuis l'intérieur de la fenêtre, pas
     // via une nouvelle DialogueAction.
     OpenPNJWindow        = 13,
+
+    // ── Ajouté 2026-09-29 — PNJ Purification, spec Prestige/Aura §2.5 ──────────
+    PurifyAura           = 14, // Rachète le palier d'Aura courant (PNJ.TryPurifyAura) —
+                                // pas d'écran dédié, dialogue-only comme Mayor/Guard.
 }

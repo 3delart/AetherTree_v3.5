@@ -165,6 +165,12 @@ public class StatusEffectIcon : MonoBehaviour, IPointerEnterHandler, IPointerExi
     // UPDATE DISPLAY
     // =========================================================
 
+    // Durée "énorme" = permanent en pratique (convention du projet pour les effets sans notion
+    // d'expiration naturelle, ex: debuffs Aura) — voir même garde-fou dans TooltipSystem.
+    // ShowStatusEffectTooltip. Sans lui, l'icône afficherait un texte du genre "999998.2s" qui
+    // change chaque frame, sur un effet censé paraître stable/permanent.
+    private const float PermanentThreshold = 100000f;
+
     public void UpdateDisplay(float remaining, float total)
     {
         if (_entry != null)
@@ -173,11 +179,13 @@ public class StatusEffectIcon : MonoBehaviour, IPointerEnterHandler, IPointerExi
             _entry.totalDuration = total;
         }
 
+        bool isPermanent = total >= PermanentThreshold;
+
         if (_cooldownFill != null)
-            _cooldownFill.fillAmount = total > 0f ? remaining / total : 0f;
+            _cooldownFill.fillAmount = isPermanent ? 1f : (total > 0f ? remaining / total : 0f);
 
         if (_timerText != null)
-            _timerText.text = remaining > 0f ? $"{remaining:F1}s" : "";
+            _timerText.text = isPermanent ? "" : (remaining > 0f ? $"{remaining:F1}s" : "");
     }
 
     // =========================================================

@@ -541,7 +541,7 @@ public class SkillBar : MonoBehaviour
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
         SpendItemCost(skill);
 
-        _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+        _player.AnimatorController?.PlayAttack(skill.animationClip);
 
         if (skill.vfxCast != null)
             Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
@@ -556,7 +556,7 @@ public class SkillBar : MonoBehaviour
         // (chantier A) : sinon ResolveExecute()/le placement VFX utiliserait la position d'une
         // entité non-pertinente au lieu du point au sol.
         _pendingHitTarget  = skill.targetType == TargetType.GroundTarget ? null : target;
-        _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+        _pendingHitTimeout = skill.animationClip != null ? skill.animationClip.length : 0f;
         _animLockTimer     = _pendingHitTimeout;
 
         // CD posé DÈS LE LANCEMENT (pas à ResolveInstant) — évite les 2 barres bout à bout (bug
@@ -632,8 +632,8 @@ public class SkillBar : MonoBehaviour
         if (slot >= 1)
         {
             _gcdTimer = GCD_DURATION;
-            float autoAttackDelay = skill.attackAnimation != null
-                ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
+            float autoAttackDelay = skill.animationClip != null
+                ? Mathf.Max(GCD_DURATION, skill.animationClip.length)
                 : GCD_DURATION;
             TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
         }
@@ -650,7 +650,7 @@ public class SkillBar : MonoBehaviour
         if (skill.goldCost > 0) AerisSystem.Instance?.Spend(skill.goldCost);
         SpendItemCost(skill);
 
-        _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+        _player.AnimatorController?.PlayAttack(skill.animationClip);
 
         if (skill.vfxCast != null)
             Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
@@ -665,7 +665,7 @@ public class SkillBar : MonoBehaviour
         // entité non-pertinente au lieu du point au sol.
         _pendingMultiTarget    = skill.targetType == TargetType.GroundTarget ? null : target;
         _pendingMultiNextIndex = 0;
-        _pendingMultiTimeout   = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+        _pendingMultiTimeout   = skill.animationClip != null ? skill.animationClip.length : 0f;
         _animLockTimer         = _pendingMultiTimeout;
 
         if (_pendingMultiTimeout <= 0f)
@@ -704,8 +704,8 @@ public class SkillBar : MonoBehaviour
             if (slot >= 1)
             {
                 _gcdTimer = GCD_DURATION;
-                float autoAttackDelay = skill.attackAnimation != null
-                    ? Mathf.Max(GCD_DURATION, skill.attackAnimation.length)
+                float autoAttackDelay = skill.animationClip != null
+                    ? Mathf.Max(GCD_DURATION, skill.animationClip.length)
                     : GCD_DURATION;
                 TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
             }
@@ -760,7 +760,7 @@ public class SkillBar : MonoBehaviour
         // sinon déclencher immédiatement le poll d'annulation par mouvement dans Update().
         _agent?.ResetPath();
 
-        _player.AnimatorController?.PlayChannel(skill.channelAnimation);
+        _player.AnimatorController?.PlayChannel(skill.animationClip);
 
         _channelVfxCast = skill.vfxCast != null
             ? Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity)
@@ -773,7 +773,7 @@ public class SkillBar : MonoBehaviour
 
         // POINT D'EXTENSION CHANTIER B (calage sur frame d'impact, hors scope de ce plan) :
         // le déclencheur de ResolveChannel() est ICI, et seulement ici. Le jour où B est
-        // spécifié, onComplete sera remplacé par un Animation Event posé sur channelAnimation
+        // spécifié, onComplete sera remplacé par un Animation Event posé sur animationClip
         // au lieu du timer de la bar — aucun autre code de cette méthode/classe n'aura besoin
         // de changer. Ne jamais coupler ResolveChannel() à autre chose que cet appelant.
         ProgressBarUI.Instance?.StartProgress(
@@ -921,7 +921,7 @@ public class SkillBar : MonoBehaviour
     {
         _player.BeginSkillUse(skill);
         _player.SpendMana(GetEffectiveManaCost(skill));
-        _player.AnimatorController?.PlayAttack(skill.attackAnimation);
+        _player.AnimatorController?.PlayAttack(skill.animationClip);
 
         if (skill.vfxCast != null)
             Instantiate(skill.vfxCast, _player.transform.position, Quaternion.identity);
@@ -935,7 +935,7 @@ public class SkillBar : MonoBehaviour
         _pendingHitSlot    = slot;
         _pendingHitSkill   = skill;
         _pendingHitTarget  = skill.targetType == TargetType.GroundTarget ? null : target;
-        _pendingHitTimeout = skill.attackAnimation != null ? skill.attackAnimation.length : 0f;
+        _pendingHitTimeout = skill.animationClip != null ? skill.animationClip.length : 0f;
         _animLockTimer     = _pendingHitTimeout;
 
         if (_pendingHitTimeout <= 0f) ResolveInstant();
@@ -957,8 +957,8 @@ public class SkillBar : MonoBehaviour
             if (slot >= 1)
             {
                 _gcdTimer = GCD_DURATION;
-                float autoAttackDelay = resolvedSkill.attackAnimation != null
-                    ? Mathf.Max(GCD_DURATION, resolvedSkill.attackAnimation.length)
+                float autoAttackDelay = resolvedSkill.animationClip != null
+                    ? Mathf.Max(GCD_DURATION, resolvedSkill.animationClip.length)
                     : GCD_DURATION;
                 TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
             }
@@ -1246,16 +1246,16 @@ public class SkillBar : MonoBehaviour
         // _cooldownTimers[slot] (le plus long entre skill.cooldown et la durée de l'anim, tous
         // slots confondus depuis le retrait d'AttackSpeed le 2026-10-01), sinon GetCooldownRatio
         // (qui divise par ce total) dépasserait 1 pendant la fenêtre d'attente.
-        if (_pendingHitSlot == slot && _pendingHitSkill != null && _pendingHitSkill.attackAnimation != null)
-            return Mathf.Max(_pendingHitSkill.cooldown, _pendingHitSkill.attackAnimation.length);
-        if (_pendingMultiSlot == slot && _pendingMultiSkill != null && _pendingMultiSkill.attackAnimation != null)
-            return Mathf.Max(_pendingMultiSkill.cooldown, _pendingMultiSkill.attackAnimation.length);
+        if (_pendingHitSlot == slot && _pendingHitSkill != null && _pendingHitSkill.animationClip != null)
+            return Mathf.Max(_pendingHitSkill.cooldown, _pendingHitSkill.animationClip.length);
+        if (_pendingMultiSlot == slot && _pendingMultiSkill != null && _pendingMultiSkill.animationClip != null)
+            return Mathf.Max(_pendingMultiSkill.cooldown, _pendingMultiSkill.animationClip.length);
 
         // Slots 1-9 : si le GCD est plus long que le CD individuel, on base sur GCD_DURATION.
         if (slot >= 1 && _gcdTimer > _cooldownTimers[slot])
             return GCD_DURATION;
-        if (_slots[slot].attackAnimation != null)
-            return Mathf.Max(_slots[slot].cooldown, _slots[slot].attackAnimation.length);
+        if (_slots[slot].animationClip != null)
+            return Mathf.Max(_slots[slot].cooldown, _slots[slot].animationClip.length);
         return _slots[slot].cooldown;
     }
 
@@ -1271,7 +1271,7 @@ public class SkillBar : MonoBehaviour
     /// <summary>
     /// Appelé par SkillSystem avant ExecuteMultiHit.
     /// Bloque tous les slots pendant la durée totale du MultiHit (somme des delays).
-    /// Cette durée doit correspondre à celle de skill.attackAnimation — sinon
+    /// Cette durée doit correspondre à celle de skill.animationClip — sinon
     /// l'auto-attaque (slot 0) reprend la main dès l'expiration du lock gameplay,
     /// même si l'animation est encore en train de jouer, et écrase le state Attack
     /// partagé en plein milieu. Avertissement éditeur sur ce mismatch : voir

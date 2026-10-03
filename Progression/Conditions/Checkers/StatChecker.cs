@@ -43,6 +43,10 @@ public class StatChecker : ConditionCheckerBase
         ResistFire, ResistWater, ResistEarth, ResistNature,
         ResistLightning, ResistDarkness, ResistLight,
         PlayerLevel,    // ← level du joueur (lu sur player.level)
+        Prestige,       // ← player.prestige (jauge brute, voir spec Prestige/Aura §1) — ajouté après
+                         // coup, toujours en fin d'enum (ordinal safety).
+        Aura,           // ← player.aura (jauge brute, peut être négative — voir spec §2, minValue/
+                         // maxValue à 0 = pas de restriction, comme pour toutes les autres stats).
     }
 
     [Header("Mode : FinalStat")]
@@ -110,6 +114,8 @@ public class StatChecker : ConditionCheckerBase
             FinalStatType.ResistDarkness    => p.stats?.GetResistance(ElementType.Darkness)  ?? 0f,
             FinalStatType.ResistLight       => p.stats?.GetResistance(ElementType.Light)     ?? 0f,
             FinalStatType.PlayerLevel       => p.level,
+            FinalStatType.Prestige          => p.prestige,
+            FinalStatType.Aura              => p.aura,
             _                               => 0f,
         };
 

@@ -19,7 +19,7 @@ using System.Collections.Generic;
 // Le bouton Craft en bas est unique, global, agit sur la carte sélectionnée.
 //
 // Quantité de craft : le bouton Craft ouvre CraftRecipeUI (fiche recette avec
-// slider de quantité), qui ouvre à son tour TransactionConfirmUI pour la
+// slider de quantité), qui ouvre à son tour ConfirmationUI pour la
 // confirmation finale. Cette liste-ci ne prévisualise que have/needed pour
 // 1 unité (PreviewQuantity) — juste pour savoir si une carte est craftable
 // au moins une fois, la vraie quantité se choisit dans CraftRecipeUI.
@@ -49,7 +49,7 @@ public class CraftPanelUI : MonoBehaviour
 
     // Utilisée uniquement pour la prévisualisation have/needed dans la liste (1 unité) et
     // pour savoir si la carte est cliquable/craftable au moins une fois — la vraie quantité
-    // à fabriquer vient du popup TransactionConfirmUI (voir OnCraftClicked).
+    // à fabriquer vient du popup ConfirmationUI (voir OnCraftClicked).
     private const int PreviewQuantity = 1;
 
     private PNJData          _pnjData;
@@ -222,7 +222,7 @@ public class CraftPanelUI : MonoBehaviour
     // =========================================================
 
     /// <summary>Ouvre CraftRecipeUI (fiche recette + quantité) — la confirmation finale
-    /// (TransactionConfirmUI) est déclenchée depuis CE panel-là, pas ici.</summary>
+    /// (ConfirmationUI) est déclenchée depuis CE panel-là, pas ici.</summary>
     private void OnCraftClicked()
     {
         if (_selectedRecipe == null) return;

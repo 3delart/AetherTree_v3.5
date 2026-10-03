@@ -62,11 +62,6 @@ public class ResourceData : ItemData
     [ShowIf(nameof(resourceType), ResourceType.Collectible)]
     public float collectTime = 5f;
 
-    [Tooltip("Délai de réapparition du node après collecte.")]
-    [Min(1f)]
-    [ShowIf(nameof(resourceType), ResourceType.Collectible)]
-    public float respawnDelay = 300f;
-
     [Tooltip("Distance max à laquelle le joueur peut collecter ce node.")]
     [ShowIf(nameof(resourceType), ResourceType.Collectible)]
     public float interactionRadius = 2.5f;

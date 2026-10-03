@@ -90,11 +90,31 @@ public class CharacterPanelUI : MonoBehaviour
     private static readonly Color CosmEmptyColor = new Color(72, 72, 72, 0.05f);
 
     // =========================================================
-    // RÉPUTATION
+    // PRESTIGE & AURA + PVP (kills/deaths seulement — rang de Réputation PvP retiré du panel,
+    // Florian 2026-09-29 ; Player.pvpReputation/pvpReputationRank restent inchangés côté code)
     // =========================================================
-    [Header("Réputation")]
-    public TextMeshProUGUI worldReputationText;
-    public TextMeshProUGUI pvpReputationText;
+    [Header("Prestige & Aura")]
+    // FormerlySerializedAs — prestigeText est le renommage direct de l'ancien worldReputationText
+    // (voir spec Prestige/Aura, 2026-09-29). Sans ce lien, Unity traite le champ comme NOUVEAU à
+    // la sérialisation (elle lie par NOM de champ, pas par ordre) : la référence déjà glissée
+    // dans l'Inspector sur l'ancien nom devient orpheline et ce champ-ci reste vide tant que
+    // Florian ne re-glisse pas le TMP à la main — c'est très probablement pourquoi rien ne
+    // s'affichait. auraText n'a pas cet attribut : c'est un champ RÉELLEMENT nouveau (aucun
+    // ancien slot à récupérer), Florian doit lui assigner un TMP neuf dans la scène.
+    [FormerlySerializedAs("worldReputationText")]
+    public TextMeshProUGUI prestigeText;
+    public TextMeshProUGUI auraText;
+
+    // ── Icône de statut unique — spec Prestige/Aura §0 ──────────────────────────
+    // Un seul Image affiché à la fois : Aura négative (auraRank > 0, palier Terni et pire) montre
+    // le badge d'Aura de CE palier ; Aura 0-à-+100 (auraRank == 0, Normal) montre le badge de
+    // Prestige du palier actuel à la place. Jamais les deux en même temps. Les sprites eux-mêmes
+    // ne sont PLUS sur ce composant — lus depuis _player.prestigeAuraData (asset partagé, voir
+    // Data/Progression/PrestigeAuraData.cs), seul le Image reste local à ce panel.
+    [Tooltip("Le seul Image affiché — glisser l'objet UI Image du panel ici.")]
+    public Image statusIcon;
+
+    [Header("PvP")]
     public TextMeshProUGUI pvpKillsText;
     public TextMeshProUGUI pvpDeathsText;
 
@@ -293,7 +313,7 @@ public class CharacterPanelUI : MonoBehaviour
         RefreshHeader();
         RefreshVitals();
         RefreshEquipmentSlots();
-        RefreshReputation();
+        RefreshPrestigeAuraAndPvP();
 
         RefreshCardAttack();
         RefreshCardDefense();
@@ -338,13 +358,14 @@ public class CharacterPanelUI : MonoBehaviour
     }
 
     // =========================================================
-    // RÉPUTATION
+    // PRESTIGE & AURA + PVP
     // =========================================================
 
-    private void RefreshReputation()
+    private void RefreshPrestigeAuraAndPvP()
     {
-        SetText(worldReputationText, $"{_player.worldReputation}  (rang {_player.worldReputationRank})");
-        SetText(pvpReputationText,   $"{_player.pvpReputation}  (rang {_player.pvpReputationRank})");
+        SetText(prestigeText, $"{_player.prestige}");
+        SetText(auraText,     $"{_player.aura}");
+        RefreshStatusIcon();
 
         var ac = _player.GetActivityCounter();
         if (ac != null)
@@ -352,6 +373,26 @@ public class CharacterPanelUI : MonoBehaviour
             SetText(pvpKillsText,  ac.Get("PVP_KILLS").ToString());
             SetText(pvpDeathsText, ac.Get("PVP_DEATHS").ToString());
         }
+    }
+
+    /// <summary>Un seul badge affiché — Aura négative (auraRank > 0) prend priorité sur Prestige
+    /// (spec §0 : jamais les deux en même temps). Sprites lus depuis le PrestigeAuraData partagé
+    /// du joueur, pas d'un tableau local. statusIcon.enabled coupé si le sprite attendu n'est pas
+    /// assigné (asset manquant ou champ vide dans l'Inspector de PrestigeAuraData), plutôt que
+    /// d'afficher une Image vide/cassée.</summary>
+    private void RefreshStatusIcon()
+    {
+        if (statusIcon == null || _player.prestigeAuraData == null) { if (statusIcon != null) statusIcon.enabled = false; return; }
+
+        var auraTiers     = _player.prestigeAuraData.auraTiers;
+        var prestigeTiers = _player.prestigeAuraData.prestigeTiers;
+
+        Sprite sprite = _player.auraRank > 0
+            ? (auraTiers != null && _player.auraRank < auraTiers.Count ? auraTiers[_player.auraRank].icon : null)
+            : (prestigeTiers != null && _player.prestigeRank < prestigeTiers.Count ? prestigeTiers[_player.prestigeRank].icon : null);
+
+        statusIcon.enabled = sprite != null;
+        statusIcon.sprite  = sprite;
     }
 
     // =========================================================
@@ -1134,6 +1175,7 @@ public class CharacterPanelUI : MonoBehaviour
         slotHelmet?.GetComponent<TooltipTrigger>()?.SetItem(_player.equippedHelmetInstance  != null ? new InventoryItem(_player.equippedHelmetInstance)  : null);
         slotGloves?.GetComponent<TooltipTrigger>()?.SetItem(_player.equippedGlovesInstance  != null ? new InventoryItem(_player.equippedGlovesInstance)  : null);
         slotBoots?.GetComponent<TooltipTrigger>()?.SetItem( _player.equippedBootsInstance   != null ? new InventoryItem(_player.equippedBootsInstance)   : null);
+        slotTalisman?.GetComponent<TooltipTrigger>()?.SetItem(_player.equippedTalismanInstance?.data != null ? new InventoryItem(_player.equippedTalismanInstance) : null);
         if (_player.equippedSpiritInstances?.Count > 0)
             slotSpirit?.GetComponent<TooltipTrigger>()?.SetItem(new InventoryItem(_player.equippedSpiritInstances[0]));
         if (_player.equippedJewelryInstances != null)

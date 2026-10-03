@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b0a12c5d0985934f88e460d010b141d, type: 3}
+  m_Name: worldboss_data
+  m_EditorClassIdentifier: 
+  minHitsToBeEligible: 10
+  possibleBosses:
+  - boss: {fileID: 11400000, guid: 9397db6a38ee3a3489c4119078a6c8a4, type: 2}
+    rewardTable: {fileID: 11400000, guid: 4765b749ac931b344a1f83efe62cd302, type: 2}
+  despawnTimeout: 1800

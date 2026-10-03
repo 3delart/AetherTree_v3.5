@@ -274,10 +274,21 @@ public class InventoryUI : MonoBehaviour
 
     public void OnCellClicked(InventoryItemCell cell) { } // simple clic — pas d'action
 
-    /// <summary>Double clic → équipe l'item (inventaire) ou déséquipe (slot équipé).</summary>
+    /// <summary>Double clic → consomme (Potion/Food/DungeonKey/...) ou équipe l'item
+    /// (inventaire), ou déséquipe (slot équipé).</summary>
     public void OnCellDoubleClicked(InventoryItemCell cell)
     {
         if (cell?.Item == null) return;
+
+        // Consommable — délègue à ConsoBarUI.TryUseInstance() (respecte le cooldown du slot
+        // ConsoBar SI cet item y est déjà assigné, voir ce commentaire côté ConsoBarUI). Ne
+        // passe jamais par EquipItem() ci-dessous, qui n'a aucun sens pour un consommable.
+        if (cell.Item.ConsumableInstance != null)
+        {
+            ConsoBarUI.Instance?.TryUseInstance(cell.Item.ConsumableInstance);
+            return;
+        }
+
         if (_player == null) _player = UnityEngine.Object.FindObjectOfType<Player>();
         if (_inventory == null) _inventory = InventorySystem.Instance;
         if (_player == null) return;
