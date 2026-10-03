@@ -133,6 +133,10 @@ public class MobData : ScriptableObject
     // docs/guide-utilisation/creation-mob.md § Animator). Chaque mob garde ses propres clips,
     // liés à SON rig — seul le graphe/Controller est mutualisé, jamais les clips eux-mêmes.
     [Header("Animations locomotion")]
+    [Tooltip("Catégorie de rig — pilote l'auto-fill des clips ci-dessous depuis " +
+             "MobAnimationPresets (voir OnValidate) quand un champ est vide. N'écrase jamais " +
+             "un clip déjà assigné à la main.")]
+    public AnimationType animationType = AnimationType.Humanoid;
     [Tooltip("Anim jouée à l'arrêt hors combat.")]
     public AnimationClip idleClip;
     [Tooltip("Variantes supplémentaires d'idleClip — une est tirée au hasard à chaque retour au\n" +
@@ -246,12 +250,32 @@ public class MobData : ScriptableObject
         if (atkMaxPerLevel < atkMinPerLevel)
             atkMaxPerLevel = atkMinPerLevel;
 
-        // Sans ces 3 clips, CombatEntityAnimatorController retombe sur les placeholders du
-        // Controller partagé — une anim faite pour un AUTRE rig (souvent T-pose/désarticulé).
-        if (idleClip == null || walkClip == null || chaseClip == null)
-            Debug.LogWarning($"[MobData] {mobName} : idleClip/walkClip/chaseClip incomplet(s) — " +
-                              "ce mob affichera l'anim placeholder du Controller partagé (faite " +
-                              "pour un autre rig) tant que les 3 clips ne sont pas assignés.");
+        // AnimationType.None = mob fixe qui ne doit recevoir AUCUN clip, point (ex: mannequin
+        // d'entraînement — pas de déplacement, pas de chase, pas de ciblage, pas de mort animée
+        // non plus — demande Florian). Zéro auto-fill, zéro warning.
+        if (animationType != AnimationType.None)
+        {
+            var preset = MobAnimationPresets.FindAsset()?.GetPreset(animationType);
+            // Auto-fill depuis MobAnimationPresets selon animationType — uniquement les champs
+            // encore vides, jamais un clip déjà assigné à la main. Quadruped/Autre : no-op tant
+            // qu'aucun preset n'existe pour ce type (GetPreset retourne null).
+            if (preset != null)
+            {
+                if (idleClip == null) idleClip = preset.idleClip;
+                if ((idleClipVariants == null || idleClipVariants.Count == 0) && preset.idleClipVariants.Count > 0)
+                    idleClipVariants = new List<AnimationClip>(preset.idleClipVariants);
+                if (walkClip  == null) walkClip  = preset.walkClip;
+                if (chaseClip == null) chaseClip = preset.chaseClip;
+                if (deathClip == null) deathClip = preset.deathClip;
+            }
+
+            // Sans ces 3 clips, CombatEntityAnimatorController retombe sur les placeholders du
+            // Controller partagé — une anim faite pour un AUTRE rig (souvent T-pose/désarticulé).
+            if (idleClip == null || walkClip == null || chaseClip == null)
+                Debug.LogWarning($"[MobData] {mobName} : idleClip/walkClip/chaseClip incomplet(s) — " +
+                                  "ce mob affichera l'anim placeholder du Controller partagé (faite " +
+                                  "pour un autre rig) tant que les 3 clips ne sont pas assignés.");
+        }
     }
 #endif
 }

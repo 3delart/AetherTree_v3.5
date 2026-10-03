@@ -16,6 +16,8 @@ public class InventoryItemCell : MonoBehaviour,
     [HideInInspector] public Image           bgImage;
     [HideInInspector] public TextMeshProUGUI rarityText;
     [HideInInspector] public TextMeshProUGUI nameText;
+    [HideInInspector] public Image           cdOverlay;
+    [HideInInspector] public TextMeshProUGUI cdText;
 
     public InventoryItem Item { get; private set; }
 
@@ -48,6 +50,45 @@ public class InventoryItemCell : MonoBehaviour,
         nameText = transform.Find("Count")?.GetComponent<TextMeshProUGUI>()
                 ?? transform.Find("Quantity")?.GetComponent<TextMeshProUGUI>()
                 ?? GetComponentInChildren<TextMeshProUGUI>();
+
+        // Cooldown — même enfants nommés que ConsoBarUI/PassifBarUI (CDOverlay/CD), copie
+        // conforme du cooldown partagé par ConsumableData (demande Florian : un consommable
+        // en CD dans la Conso Bar doit aussi s'afficher en CD dans l'inventaire).
+        cdOverlay = transform.Find("CDOverlay")?.GetComponent<Image>();
+        cdText    = transform.Find("CD")?.GetComponent<TextMeshProUGUI>();
+        if (cdOverlay != null)
+        {
+            cdOverlay.type       = Image.Type.Filled;
+            cdOverlay.fillMethod = Image.FillMethod.Radial360;
+            cdOverlay.fillAmount = 0f;
+            cdOverlay.gameObject.SetActive(false);
+        }
+    }
+
+    /// <summary>Poll chaque frame, même pattern que ConsoSlotBarUI.Update() — le cooldown est
+    /// partagé par ConsumableData (pas par slot/cellule), donc une cellule inventaire affiche le
+    /// même état qu'un slot de la Conso Bar pour le même item, sans event ni synchro explicite.</summary>
+    private void Update()
+    {
+        if (cdOverlay == null) return;
+
+        ConsumableData data = Item?.ConsumableInstance?.data;
+        if (data == null || ConsoBarUI.Instance == null)
+        {
+            if (cdOverlay.gameObject.activeSelf) SetCooldown(0f, 0f);
+            return;
+        }
+
+        float remaining = ConsoBarUI.Instance.GetCooldownRemaining(data);
+        float total      = ConsoBarUI.Instance.GetCooldownDuration(data);
+        SetCooldown(remaining, total);
+    }
+
+    public void SetCooldown(float remaining, float total)
+    {
+        bool onCD = remaining > 0f && total > 0f;
+        if (cdOverlay != null) { cdOverlay.gameObject.SetActive(onCD); cdOverlay.fillAmount = onCD ? remaining / total : 0f; }
+        if (cdText    != null) { cdText.gameObject.SetActive(onCD);    cdText.text = onCD ? Mathf.CeilToInt(remaining).ToString() : ""; }
     }
 
     public void SetItem(InventoryItem item)

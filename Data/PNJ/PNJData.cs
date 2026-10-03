@@ -190,25 +190,31 @@ public class PNJData : ScriptableObject
     // Consommées par CombatEntityAnimatorController — même mécanisme que MobData (voir son
     // commentaire). Groupé sous canFight : un PNJ non combattant n'a pas de NavMeshAgent, donc
     // pas de Walk/Chase à distinguer (voir Awake() — _agent n'existe que si canFight).
-    [Tooltip("Anim jouée à l'arrêt hors combat.")]
-    [ShowIf(nameof(canFight), true, Header = "Animations locomotion (canFight)")]
+    [Tooltip("Catégorie de rig — pilote l'auto-fill des clips ci-dessous depuis " +
+             "MobAnimationPresets (voir OnValidate) quand un champ est vide. N'écrase jamais " +
+             "un clip déjà assigné à la main.")]
+    public AnimationType animationType = AnimationType.Humanoid;
+    [Header("Animations locomotion")]
+    [Tooltip("Anim jouée à l'arrêt hors combat. Toujours affiché (même hors canFight — un PNJ\n" +
+             "statique respire quand même).")]
     public AnimationClip idleClip;
     [Tooltip("Variantes supplémentaires d'idleClip — une est tirée au hasard à chaque retour au\n" +
              "repos (évite de rejouer toujours la même pose). Optionnel : vide = toujours idleClip,\n" +
              "comportement inchangé.")]
-    [ShowIf(nameof(canFight), true)]
     public List<AnimationClip> idleClipVariants = new List<AnimationClip>();
-    [Tooltip("Anim de déplacement en Patrol (déambulation).")]
+    [Tooltip("Anim de déplacement en Patrol (déambulation). Nécessite canFight (sans NavMeshAgent,\n" +
+             "jamais joué).")]
     [ShowIf(nameof(canFight), true)]
     public AnimationClip walkClip;
     [Tooltip("Anim de déplacement en Engage (poursuite/combat rapproché) — distincte de Walk\n" +
-             "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController.")]
+             "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController. Nécessite\n" +
+             "canFight.")]
     [ShowIf(nameof(canFight), true)]
     public AnimationClip chaseClip;
     [Tooltip("Anim de mort — jouée une fois via PlayDeath() avant le début de la séquence de\n" +
              "respawn (masquage renderers/collider). Optionnel : si null, aucune anim n'est jouée\n" +
-             "et aucun délai n'est ajouté — voir PNJ.RespawnCoroutine().")]
-    [ShowIf(nameof(canFight), true)]
+             "et aucun délai n'est ajouté — voir PNJ.RespawnCoroutine(). Toujours affiché (même\n" +
+             "hors canFight — un PNJ non-combattant peut quand même mourir, voir canDie).")]
     public AnimationClip deathClip;
 
     // ── Critique ──────────────────────────────────────────────
@@ -250,6 +256,29 @@ public class PNJData : ScriptableObject
         if (canFight && !canDie)
             Debug.LogWarning($"[PNJData] {pnjName} : canFight = true mais canDie = false — " +
                              "ce PNJ peut attaquer mais est invulnérable. Intentionnel ?");
+
+        // AnimationType.None = PNJ fixe qui ne doit recevoir AUCUN clip, point — zéro auto-fill
+        // (même règle que MobData, voir son OnValidate). Sinon (types normaux) : idle + death
+        // toujours remplis (même hors combat — Inspector les affiche toujours, voir ShowIf sur
+        // walkClip/chaseClip juste en dessous ; death gardé derrière canDie — inutile si ce PNJ
+        // ne peut pas mourir) ; walk/chase réservés aux PNJ canFight (sans NavMeshAgent, ils ne
+        // joueront jamais — demande Florian : pas de clip inutile posé).
+        if (animationType != AnimationType.None)
+        {
+            var preset = MobAnimationPresets.FindAsset()?.GetPreset(animationType);
+            if (preset != null)
+            {
+                if (idleClip == null) idleClip = preset.idleClip;
+                if ((idleClipVariants == null || idleClipVariants.Count == 0) && preset.idleClipVariants.Count > 0)
+                    idleClipVariants = new List<AnimationClip>(preset.idleClipVariants);
+                if (canDie && deathClip == null) deathClip = preset.deathClip;
+                if (canFight)
+                {
+                    if (walkClip  == null) walkClip  = preset.walkClip;
+                    if (chaseClip == null) chaseClip = preset.chaseClip;
+                }
+            }
+        }
 
         // Sans ces 3 clips, CombatEntityAnimatorController retombe sur les placeholders du
         // Controller partagé — une anim faite pour un AUTRE rig (souvent T-pose/désarticulé).

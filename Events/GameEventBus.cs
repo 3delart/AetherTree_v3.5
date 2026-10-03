@@ -83,6 +83,7 @@ public static class GameEventBus
         AerisSystem.Instance?.Resubscribe();
         QuestSystem.Instance?.Resubscribe();
         CharacterPanelUI.Instance?.Resubscribe();
+        PassiveSkillSystem.Instance?.Resubscribe();
 
         // .Exists (pas .Instance) : ne crée jamais de scheduler juste pour ce check — un event
         // mondial en cours (World Boss/Invasion) doit continuer à tracker les dégâts après un

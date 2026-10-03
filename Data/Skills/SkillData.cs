@@ -1,6 +1,9 @@
 using UnityEngine;
 using UnityEngine.Serialization;
 using System.Collections.Generic;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 // =============================================================
 // SKILLDATA — ScriptableObject définissant un sort
@@ -62,7 +65,9 @@ public class SkillData : ScriptableObject
     public List<SkillTag> tags        = new List<SkillTag>();
     public SkillType      skillType   = SkillType.Active;
 
-    // ── ② Compatibilité arme ──────────────────────────────────
+    // ── ② Compatibilité arme — reste visible pour TOUS les effectType, y compris Other
+    // (Florian, 2026-09-29 : un skill Other peut dépendre d'une arme précise, ex: un outil de
+    // capture spécifique). Retiré puis remis dans la même session — pas de ShowIf ici.
     [Header("② Compatibilité arme")]
     [Tooltip("Types d'armes compatibles — vide = universel")]
     public List<WeaponType> compatibleWeapons = new List<WeaponType>();
@@ -85,37 +90,77 @@ public class SkillData : ScriptableObject
     public float           cooldown         = 1f;
     public float           castTime         = 0f;
 
-    // ── ④ Dégâts — physiques + élémentaires, Damage ou Other (ex: DrainHP) uniquement.
-    // Jamais utilisés pour Buff/Debuff (aucun calcul de dégâts ne les lit, voir
-    // SkillSystem.ApplyEffectType/CalculateDamage).
+    // ── Effet spécial — placé ICI (juste après ③, avant tout le reste) pour qu'il soit la
+    // PREMIÈRE chose réglée en configurant un skill Damage/Other (Florian, 2026-09-29 : "en
+    // premier, on devrait choisir le special effect").
+    //
+    // Drain HP instantané (par opposition au drain continu DoT via DebuffData.hpDrainPerSecond/
+    // manaDrainPerSecond, ⑪ Effets secondaires) — mana/HP indépendant des dégâts passe TOUJOURS
+    // par ces DebuffData existants, jamais ce bool. Ce champ ne gère que le vol instantané au
+    // moment du cast, avec 3 bases de calcul possibles (2026-09-29, Florian).
+    [Tooltip("Coché : ce skill vole du HP à la cible en soin pour le caster, au moment du cast\n" +
+             "(voir drainValueMode/drainValue). Vol de mana ou drain continu passe par un\n" +
+             "Buff/DebuffData en ⑪ Effets secondaires, pas ce champ.")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, Header = "Effet spécial (Drain)")]
+    public bool isDrain = false;
+
+    [Tooltip("Flat            → drainValue est un montant fixe de HP.\n" +
+             "PercentTargetMaxHP → drainValue est un % du MaxHP de la CIBLE (symétrique quel " +
+             "que soit qui lance sur qui — même convention que le DoT/HpDrain, voir " +
+             "DebuffData).\n" +
+             "PercentDamage   → drainValue est un % des dégâts infligés par CE skill (mode " +
+             "d'origine, nécessite que le skill fasse vraiment mal).")]
+    [ShowIf(nameof(isDrain), true)]
+    public DrainValueMode drainValueMode = DrainValueMode.PercentDamage;
+
+    [Tooltip("Valeur interprétée selon drainValueMode ci-dessus — montant flat de HP, ratio du " +
+             "MaxHP cible, ou ratio des dégâts infligés.")]
+    [ShowIf(nameof(isDrain), true)]
+    public float drainValue = 0.5f;
+
+    [Tooltip("Effet spécial d'un skill Other — Capture/Summon/Interrupt.")]
+    [ShowIf(nameof(effectType), SkillEffectType.Other, Header = "Effet spécial (Capture/Summon/Interrupt)")]
+    public OtherSpecialEffect otherSpecialEffect = OtherSpecialEffect.None;
+
+    [Tooltip("MobData à invoquer (Summon uniquement).")]
+    [ShowIf(nameof(otherSpecialEffect), OtherSpecialEffect.Summon)]
+    public MobData summonMobData;
+
+    [Tooltip("Durée de vie de l'invocation en secondes. 0 = permanent jusqu'à la mort.")]
+    [ShowIf(nameof(otherSpecialEffect), OtherSpecialEffect.Summon)]
+    public float summonDuration = 30f;
+
+    // ── ④ Dégâts — physiques + élémentaires, Damage UNIQUEMENT (plus "ou Other" — aucun
+    // Other actuel n'en a besoin, voir note ci-dessus). Jamais utilisés pour Buff/Debuff non
+    // plus (aucun calcul de dégâts ne les lit, voir SkillSystem.ApplyEffectType/CalculateDamage).
     [Tooltip("Multiplicateur global sur les dégâts physiques.\n" +
              "Ex: 1.0 = dégâts normaux | 2.0 = double dégâts physiques")]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
+    [ShowIf(nameof(effectType), SkillEffectType.Damage,
         Header = "④ Dégâts — Ratios physiques (somme doit = 1.0)")]
     public float damageMultiplier = 1f;
 
     [Tooltip("Part des dégâts réduite par la défense Mêlée de la cible.\n" +
              "Ex: skill mêlée pur → 1.0 | skill hybride → 0.7")]
     [Range(0f, 1f)]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage)]
     public float damageMeleeRatio  = 1f;
 
     [Tooltip("Part des dégâts réduite par la défense Distance de la cible.\n" +
              "Ex: projectile → 1.0 | lancer de lame → 0.5")]
     [Range(0f, 1f)]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage)]
     public float damageRangedRatio = 0f;
 
     [Tooltip("Part des dégâts réduite par la défense Magique de la cible.\n" +
              "Ex: sort pur → 1.0 | skill hybride → 0.3")]
     [Range(0f, 1f)]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage)]
     public float damageMagicRatio  = 0f;
 
     [Tooltip("Vide = Neutre pur (pas de dégâts élémentaires)\n" +
              "1 élément = skill élémentaire\n" +
              "2+ éléments = skill combo élémentaire")]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other, Header = "④ Éléments")]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage, Header = "④ Éléments")]
     public List<ElementType> elements = new List<ElementType>();
 
     [Range(0f, 5f)]
@@ -125,41 +170,47 @@ public class SkillData : ScriptableObject
              "2.5 = elemPoints × 2.5  (ex: 300 pts → 750 dégâts elem)\n" +
              "5.0 = skill burst élémentaire maximum\n" +
              "⚠ Ignoré automatiquement si elements est vide (skill Neutre)")]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other)]
+    [ShowIf(nameof(effectType), SkillEffectType.Damage)]
     public float elementalMultiplier = 1f;
 
-    // ── ⑤ Exécution avancée — les 3 skillType (BasicAttack/Active/Ultimate ne diffèrent QUE
-    // par leur slot SkillBar, voir SkillType — aucune raison de restreindre MultiHit/Combo à
-    // Active seul). Damage ou Other uniquement (jamais Buff/Debuff, pas de sens à multi-hit/
-    // comboter un soin ou un buff pur avec ce mécanisme).
+    // ── ⑤ Exécution avancée — Damage uniquement (jamais Buff/Debuff/Other, pas de sens à
+    // multi-hit/comboter un soin, un buff pur ou un effet spécial avec ce mécanisme — retiré
+    // d'Other 2026-09-29, Florian : "Other affiche seulement cd, cast time, coût").
     [Tooltip("Normal        → exécution standard\n" +
              "MultiHit      → une activation, N hits en séquence (hitSteps)\n" +
              "ComboSequence → N appuis successifs sur le même slot (comboSteps)")]
-    [ShowIf(nameof(effectType), SkillEffectType.Damage, SkillEffectType.Other,
+    [ShowIf(nameof(effectType), SkillEffectType.Damage,
         Header = "⑤ Exécution avancée")]
     public SkillExecutionType executionType = SkillExecutionType.Normal;
 
+    // AndField=effectType/Damage ajouté 2026-09-29 (Florian) — garde-fou indépendant, au cas où
+    // executionType garderait une valeur MultiHit/ComboSequence périmée d'avant un passage à
+    // Other (même classe de souci qu'isDrain/damageSpecialEffect plus haut dans le fichier).
     [Tooltip("MultiHit uniquement — liste des hits avec leurs stats propres.\n" +
              "Chaque HitStep définit : délai, multiplicateur, élément, effets, VFX.")]
-    [ShowIf(nameof(executionType), SkillExecutionType.MultiHit)]
+    [ShowIf(nameof(executionType), SkillExecutionType.MultiHit,
+        AndField = nameof(effectType), AndValue = SkillEffectType.Damage)]
     public List<HitStep>   hitSteps  = new List<HitStep>();
 
     [Tooltip("ComboSequence uniquement — liste des SkillData steps dans l'ordre.\n" +
              "Chaque step est un skill complet avec ses propres stats et icône.")]
-    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
+    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence,
+        AndField = nameof(effectType), AndValue = SkillEffectType.Damage)]
     public List<SkillData> comboSteps = new List<SkillData>();
 
     [Tooltip("ComboSequence uniquement — durée en secondes pendant laquelle\n" +
              "le joueur peut appuyer pour continuer le combo après chaque step.\n" +
              "Expiration → CD déclenché + retour au step 0.")]
-    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
+    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence,
+        AndField = nameof(effectType), AndValue = SkillEffectType.Damage)]
     public float comboWindowDuration = 2f;
 
     [Tooltip("ComboSequence uniquement — délai minimum en secondes entre deux steps.\n" +
              "Empêche de spammer tous les steps du combo en moins d'une seconde.\n" +
              "0 = pas de délai minimum. Réglable par combo (ex: 0.5s pour un combo rapide,\n" +
              "2s pour un combo lent/lourd).")]
-    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence)]
+    [ShowIf(nameof(executionType), SkillExecutionType.ComboSequence,
+        AndField = nameof(effectType), AndValue = SkillEffectType.Damage)]
     public float comboStepInterval = 0f;
 
     // ── ⑥ Coût ────────────────────────────────────────────────
@@ -170,6 +221,14 @@ public class SkillData : ScriptableObject
     public float hpCost   = 0f;
     [Tooltip("Coût en gold.")]
     public int   goldCost = 0;
+
+    [Tooltip("Item consommé dans l'inventaire du joueur au lancement du skill (ex : flèche pour " +
+             "un archer). ResourceData ou ConsumableData uniquement — glisser directement le SO. " +
+             "Vide = pas de coût item. Retiré via InventorySystem.ConsumeResource/ConsumeConsumable " +
+             "(déjà existants, réutilisés tels quels).")]
+    public ItemData itemCost = null;
+    [Tooltip("Quantité d'itemCost consommée par lancement. Ignoré si itemCost est vide.")]
+    public int      itemCostQuantity = 1;
 
     // ── ⑦ Ciblage — QUI est touché (targetType + filtre allié/ennemi). La distance/taille vit
     // en ⑧ Portée, séparée exprès (deux questions différentes : qui, et jusqu'où/combien large).
@@ -272,6 +331,7 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(targetType), TargetType.Self, TargetType.AoE_Self, TargetType.Target,
         TargetType.GroundTarget, TargetType.AoE_Target, TargetType.Cone,
         AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
+        ExcludeField = nameof(effectType), ExcludeValue = SkillEffectType.Other,
         Header = "⑩ Zone à impact différé")]
     public bool hasDelayedImpact = false;
 
@@ -313,6 +373,7 @@ public class SkillData : ScriptableObject
     [ShowIf(nameof(targetType), TargetType.GroundTarget, TargetType.Target,
         TargetType.AoE_Target, TargetType.Cone,
         AndField = nameof(executionType), AndValue = SkillExecutionType.Normal,
+        ExcludeField = nameof(effectType), ExcludeValue = SkillEffectType.Other,
         Header = "⑩ Trajectoire mobile")]
     public bool isTrajectory = false;
 
@@ -361,24 +422,7 @@ public class SkillData : ScriptableObject
         Header = "⑩ Zone qui suit")]
     public bool zoneFollowsAnchor = false;
 
-    // ── ⑪ Effet spécial (si effectType == Other) & Effets secondaires ─────
-    [Tooltip("Effet spécial appliqué par ce skill.\nActif uniquement si effectType = Other.")]
-    [ShowIf(nameof(effectType), SkillEffectType.Other, Header = "⑪ Effet spécial (si effectType = Other)")]
-    public SkillSpecialEffect specialEffect = SkillSpecialEffect.None;
-
-    [Tooltip("Ratio des dégâts restitués en soin (DrainHP). Ex: 0.5 = 50% des dégâts soignés.")]
-    [Range(0f, 1f)]
-    [ShowIf(nameof(specialEffect), SkillSpecialEffect.DrainHP)]
-    public float drainHealRatio = 0.5f;
-
-    [Tooltip("MobData à invoquer (Summon uniquement).")]
-    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
-    public MobData summonMobData;
-
-    [Tooltip("Durée de vie de l'invocation en secondes. 0 = permanent jusqu'à la mort.")]
-    [ShowIf(nameof(specialEffect), SkillSpecialEffect.Summon)]
-    public float summonDuration = 30f;
-
+    // ── ⑪ Effets secondaires ────────────────────────────────────
     [Header("⑪ Effets secondaires (BuffData / DebuffData + chance)")]
     [Tooltip("Effets déclenchés à l'utilisation du skill.\n" +
              "Glisse un BuffData ou DebuffData + règle la chance.\n\n" +
@@ -415,17 +459,17 @@ public class SkillData : ScriptableObject
     [FormerlySerializedAs("vfxPrefab")]
     public GameObject vfxImpact;
 
-    [Tooltip("Animation jouée par le caster à l'exécution du skill (PlayerAnimatorController.PlayAttack).\n" +
+    [Tooltip("Animation jouée par le caster à l'exécution du skill — attaque (castTime 0,\n" +
+             "PlayerAnimatorController.PlayAttack) ou canalisation (castTime > 0, PlayChannel,\n" +
+             "étirée sur castTime secondes, coupée net si interrompue par CC/Silence/mouvement).\n" +
+             "Un seul champ : les deux chemins partagent le même state Animator \"Attack\".\n" +
              "Vide = pas d'animation dédiée (ex: buff pur, effet purement passif).\n" +
              "⚠ Donnée visuelle — si SpellData est un jour séparé en gameplay/visuel pour le\n" +
              "serveur-autoritaire (voir a implémenter/AetherTree_Recap_Reseau+refactor.md §Priorité 1),\n" +
              "ce champ part du côté visuel, pas gameplay.")]
-    public AnimationClip attackAnimation;
-
-    [Tooltip("Animation jouée PENDANT la canalisation (castTime > 0) — boucle ou étirée sur\n" +
-             "castTime secondes. Distincte de attackAnimation (jouée sur les skills castTime 0).\n" +
-             "Coupée net si la canalisation est interrompue (CC/Silence/mouvement).")]
-    public AnimationClip channelAnimation;
+    [FormerlySerializedAs("attackAnimation")]
+    [FormerlySerializedAs("channelAnimation")]
+    public AnimationClip animationClip;
 
     // ── ⑬ Son ──────────────────────────────────────────────────
     [Header("⑬ Son")]
@@ -480,12 +524,12 @@ public class SkillData : ScriptableObject
             skillID = name;
 
         // MultiHit : SkillBar.LockForMultiHit() bloque l'auto-attaque pendant
-        // somme(hitSteps.delay) + 0.3s — si attackAnimation dure sensiblement plus
+        // somme(hitSteps.delay) + 0.3s — si animationClip dure sensiblement plus
         // longtemps, l'auto-attaque reprend la main avant la fin de l'anim et écrase
         // le state Attack partagé en plein milieu (bug vécu — voir historique du projet).
         // Avertissement plutôt que correction automatique : c'est aux delays ou à
         // l'anim d'être ajustés, pas au lock de compenser en silence.
-        if (executionType == SkillExecutionType.MultiHit && attackAnimation != null
+        if (executionType == SkillExecutionType.MultiHit && animationClip != null
             && hitSteps != null && hitSteps.Count > 0)
         {
             float totalDelay = 0f;
@@ -493,14 +537,44 @@ public class SkillData : ScriptableObject
                 totalDelay += step.delay;
             totalDelay += 0.3f;
 
-            float animLength = attackAnimation.length;
+            float animLength = animationClip.length;
             if (animLength - totalDelay > 0.15f)
             {
-                Debug.LogWarning($"[SkillData:{name}] attackAnimation ({animLength:F2}s) dure " +
+                Debug.LogWarning($"[SkillData:{name}] animationClip ({animLength:F2}s) dure " +
                                   $"{(animLength - totalDelay):F2}s de plus que le lock MultiHit " +
                                   $"({totalDelay:F2}s, somme des hitSteps.delay + marge) — l'auto-attaque " +
                                   $"va reprendre la main avant la fin de l'animation. Allonge les delays " +
                                   $"des hitSteps, ou raccourcis/retime l'animation.", this);
+            }
+        }
+
+        // Un animationClip sans aucun marker OnSkillHitFrame retombe sur le fallback de
+        // sécurité (résolution au timeout = longueur totale du clip, voir SkillBar.StartInstant/
+        // StartMultiHit) au lieu de la frame d'impact voulue par le designer — mauvais game feel
+        // silencieux (demande Florian : un marker posé explicitement sur CHAQUE clip, pas de
+        // skill qui dépend du fallback par oubli). Ne couvre pas les skills en canalisation
+        // (castTime > 0) : ResolveChannel() résout sur le timer castTime, pas sur un Animation
+        // Event, posé ou non (voir commentaire "POINT D'EXTENSION CHANTIER B" dans SkillBar.
+        // StartChannel()) — un marker y serait actuellement inerte, pas une vraie omission.
+        if (animationClip != null && castTime <= 0f)
+        {
+            var events = AnimationUtility.GetAnimationEvents(animationClip);
+            bool hasHitFrame = false;
+            foreach (var evt in events)
+            {
+                if (evt.functionName == "OnSkillHitFrame")
+                {
+                    hasHitFrame = true;
+                    break;
+                }
+            }
+            if (!hasHitFrame)
+            {
+                Debug.LogWarning($"[SkillData:{name}] animationClip \"{animationClip.name}\" n'a aucun " +
+                                  "marker OnSkillHitFrame — la résolution tombera sur le fallback " +
+                                  $"(timeout = {animationClip.length:F2}s, la longueur totale du clip) " +
+                                  "au lieu d'une frame d'impact choisie. Pose un Animation Event " +
+                                  "\"OnSkillHitFrame\" sur ce clip.", this);
             }
         }
 
@@ -736,27 +810,40 @@ public enum TeleportBringFaction
     Everyone = 3,  // Emmène tout le monde à proximité, sans distinction
 }
 
+/// <summary>Base de calcul du drain HP instantané (SkillData.isDrain) — voir tooltips des
+/// champs, section "Effet spécial (Drain)" en tête de SkillData.</summary>
+public enum DrainValueMode
+{
+    Flat                = 0,
+    PercentTargetMaxHP  = 1,
+    PercentDamage       = 2,
+}
+
 // =============================================================
 // SKILL SPECIAL EFFECTS
 // =============================================================
-public enum SkillSpecialEffect
+// Damage n'a plus d'enum dédié depuis 2026-09-29 — Drain simplifié en bool `isDrain` +
+// DrainValueMode (voir plus haut) après confusion sur DrainMana/flat-vs-% ; tout ce qui n'est
+// pas un vol instantané de HP au cast passe par Buff/DebuffData (⑪ Effets secondaires), pas un
+// champ ici. Seul Other garde son enum dédié, ci-dessous.
+
+/// <summary>Effet spécial d'un skill effectType = Other — pas de dégâts. Capture pas encore
+/// construit (dépend du Familier, roadmap #8) ; Summon/Interrupt sont des TODO stubs dans
+/// SkillSystem.cs (juste un Debug.Log, aucune vraie logique) — confirmé en lisant le code
+/// 2026-09-29, PAS "fonctionnel" contrairement à ce qu'une note antérieure affirmait à tort.</summary>
+public enum OtherSpecialEffect
 {
     None           = 0,  // Pas d'effet spécial (valeur par défaut)
+    Capture        = 1, // Tente de capturer le mob ciblé — logique réelle pas encore construite,
+                         // dépend du système Familier (roadmap #8). Chance basée sur le % HP du
+                         // mob (plus bas = plus de chance), seuil minimum ~50% HP — détail exact
+                         // à définir avec le design Familier.
+    Summon         = 2, // Invoque un mob allié (summonMobData) — STUB, TODO phase suivante
+    Interrupt      = 3, // Annule le cast en cours de la cible — STUB, TODO phase suivante
 
-    // ── Drain / Transfert ─────────────────────────────────────
-    DrainHP        = 1, // Vol de HP : dégâts sur cible → soin caster (drainHealRatio)
-    DrainMana      = 2, // Vol de Mana : vide la cible, rend le caster
-
-    // ── Invocation ────────────────────────────────────────────
-    Summon         = 3, // Invoque un mob allié (summonMobData) — TODO phase suivante
-
-    // ── Divers ────────────────────────────────────────────────
-    Interrupt      = 4, // Annule le cast en cours de la cible — TODO phase suivante
-
-    // Pull/Push/SwapPosition/PullAoE/PushAoE/GatherAoE/Vortex/TeleportSelf/TeleportTarget
-    // (ordinaux 1-9) supprimés — absorbés par SkillData.DisplacementType, composable avec
-    // n'importe quel effectType (Damage/Buff/Debuff/Other), contrairement à specialEffect qui
-    // n'existe que si effectType = Other. 0 asset ne les utilisait (vérifié Step 1).
+    // Pull/Push/SwapPosition/etc. (ordinaux historiques d'une version antérieure) restent
+    // absorbés par SkillData.DisplacementType, composable avec n'importe quel effectType,
+    // contrairement à ces deux enums (Damage/Other uniquement, chacun le sien).
 }
 
 public enum SkillTag

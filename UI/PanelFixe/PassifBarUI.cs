@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 
 // =============================================================
@@ -41,6 +42,7 @@ public class PassifBarUI : MonoBehaviour
             slot.passifIcon = t.Find("PassifIcon")?.GetComponent<Image>();
             slot.cdOverlay  = t.Find("CDOverlay") ?.GetComponent<Image>();
             slot.cdText     = t.Find("CD")        ?.GetComponent<TextMeshProUGUI>();
+            slot.slotIndex = i;
             slot.Init();
 
             _slotUIs[i] = slot;
@@ -122,13 +124,37 @@ public class PassifBarUI : MonoBehaviour
 // =============================================================
 // PASSIFSLOTBARUI — attaché automatiquement sur chaque slot
 // =============================================================
-public class PassifSlotBarUI : MonoBehaviour
+public class PassifSlotBarUI : MonoBehaviour, IPointerClickHandler
 {
     [HideInInspector] public Image           passifIcon;
     [HideInInspector] public Image           cdOverlay;
     [HideInInspector] public TextMeshProUGUI cdText;
+    [HideInInspector] public int             slotIndex = -1;
+
+    private PassiveSkillData _currentPassif;
 
     private static readonly Color EmptyColor = new Color(0f, 0f, 0f, 0.4f);
+
+    /// <summary>Clic droit — vide le slot. Exige la SkillLibrary ouverte : c'est le geste qui
+    /// rend le clic droit VOLONTAIRE (on ne vide jamais un slot par un clic droit machinal en
+    /// plein combat).</summary>
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (eventData.button != PointerEventData.InputButton.Right) return;
+        if (_currentPassif == null || slotIndex < 0) return;
+        if (SkillLibraryUI.Instance == null || !SkillLibraryUI.Instance.IsOpen) return;
+        PassifBarUI.Instance?.SetPassifAtSlot(slotIndex, null);
+    }
+
+    // Pas de coroutine/event — poll chaque frame, même pattern que ConsoSlotBarUI.Update().
+    // Jamais implémenté jusqu'ici (slot restait toujours sans overlay de cooldown, même après
+    // un déclenchement réel) — demande Florian.
+    private void Update()
+    {
+        if (_currentPassif == null || PassiveSkillSystem.Instance == null) return;
+        float remaining = PassiveSkillSystem.Instance.GetCooldownRemaining(_currentPassif);
+        SetCooldown(remaining, _currentPassif.cooldown);
+    }
 
     public void Init()
     {
@@ -141,6 +167,7 @@ public class PassifSlotBarUI : MonoBehaviour
 
     public void SetPassif(PassiveSkillData passive)
     {
+        _currentPassif = passive;
         if (passifIcon == null) return;
         if (passive == null || passive.icon == null)
         {

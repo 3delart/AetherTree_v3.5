@@ -52,12 +52,16 @@ public class CombatEntityAnimatorController : MonoBehaviour, ICombatAnimator
 {
     // Noms EXACTS des 4 clips placeholder posés dans le Animator Controller partagé — un
     // renommage dans le Controller doit être répercuté ici, sinon le lookup échoue et le swap
-    // ne fait plus rien (l'anim reste sur le placeholder d'origine, jamais celle voulue).
-    private const string PlaceholderIdleName   = "PLACEHOLDER_Idle";
-    private const string PlaceholderWalkName   = "PLACEHOLDER_Walk";
-    private const string PlaceholderChaseName  = "PLACEHOLDER_Chase";
-    private const string PlaceholderAttackName = "PLACEHOLDER_Attack";
-    private const string PlaceholderDeathName  = "PLACEHOLDER_Death";
+    // ne fait plus rien (l'anim reste sur le placeholder d'origine, jamais celle voulue). Mis à
+    // jour (2026-10) pour matcher les clips réels du preset Humanoid (Idle_PlaceholderHumanoid
+    // etc., voir MobAnimationPresets) — si un Controller distinct pour Quadruped/Autre voit le
+    // jour un jour avec ses propres clips placeholder, ces constantes devront redevenir
+    // génériques ou ce lookup devra être revu par rig.
+    private const string PlaceholderIdleName   = "Idle_PlaceholderHumanoid";
+    private const string PlaceholderWalkName   = "Walk_PlaceholderHumanoid";
+    private const string PlaceholderChaseName  = "Chase_PlaceholderHumanoid";
+    private const string PlaceholderAttackName = "Attack_PlaceholderHumanoid";
+    private const string PlaceholderDeathName  = "Death_PlaceholderHumanoid";
 
     private const string SpeedParam          = "Speed";
     private const string IsChasingParam      = "IsChasing";

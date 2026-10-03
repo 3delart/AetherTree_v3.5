@@ -622,6 +622,7 @@ public class Player : Entity
         stats.RecalculateStats(this);
         RefreshSlot0();
         weaponVisual?.RefreshWeapon(instance.data);
+        animatorController?.RefreshWeaponAnimation(instance.data != null ? instance.data.weaponType : WeaponType.UnArmed);
     }
 
     public void UnequipWeapon()
@@ -630,6 +631,7 @@ public class Player : Entity
         stats.RecalculateStats(this);
         RefreshSlot0();
         weaponVisual?.RefreshWeapon(null);
+        animatorController?.RefreshWeaponAnimation(WeaponType.UnArmed);
     }
 
     public void EquipArmor(ArmorInstance instance)
@@ -1222,7 +1224,7 @@ public class Player : Entity
         // retour à la locomotion) à la résolution.
         BeginSkillUse(skill);
         if (skill.castTime <= 0f)
-            animatorController?.PlayAttack(skill.attackAnimation);
+            animatorController?.PlayAttack(skill.animationClip);
 
         ResolveSkillUse(skill, target);
     }

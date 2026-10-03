@@ -5,16 +5,19 @@ using UnityEngine.AI;
 // PLAYERANIMATORCONTROLLER.CS — Pilotage de l'Animator du joueur
 // Path : Assets/Scripts/World/PlayerAnimatorController.cs
 //
-// Locomotion : paramètre "Speed" (float) piloté par NavMeshAgent.velocity,
-// "InCombat" (bool) piloté par Player.CombatActive — l'Animator Controller
-// doit définir ces deux paramètres + les états Idle/Walk/Run, avec une
-// variante armée (InCombat=true) et désarmée (InCombat=false) — pas de
-// logique ici pour lister ces états, c'est le graphe Animator qui décide
-// des transitions selon ces deux paramètres.
+// Locomotion : paramètre "Speed" (float) piloté par NavMeshAgent.velocity —
+// l'Animator Controller définit les états Idle/running (désarmé) et "idle
+// with weapon"/"running with weapon" (armé, transition depuis Any State dès
+// qu'une arme est équipée — pas de logique ici, c'est le graphe qui décide).
+// "InCombat" (bool, piloté par Player.CombatActive) reste pour compat avec
+// un éventuel usage futur dans le graphe, mais ne pilote plus aucun swap de
+// clip côté script — idle "en combat" et "idle with weapon" sont le même
+// concept depuis la refonte du graphe (demande Florian), voir
+// RefreshWeaponAnimation() pour la variante par arme.
 //
 // Attaque : un seul état "Attack" réutilisable dans l'Animator Controller
 // (Motion placeholder au départ) — le clip réel est injecté à la volée via
-// AnimatorOverrideController selon SkillData.attackAnimation, pour ne pas
+// AnimatorOverrideController selon SkillData.animationClip, pour ne pas
 // avoir à ajouter un state par skill à la main (des dizaines/centaines de
 // skills à terme — voir a implémenter, décision prise avec l'utilisateur).
 // =============================================================
@@ -50,14 +53,18 @@ public class PlayerAnimatorController : MonoBehaviour
              "repos (Speed repasse à 0). Optionnel : vide ou null = pas de variation.")]
     [SerializeField] private AnimationClip[] idleClips;
 
-    [Header("Idle en combat (variantes aléatoires)")]
-    [Tooltip("Même principe qu'idlePlaceholderClip, mais pour le state \"sword idle\"\n" +
-             "(InCombat=true) — slot séparé car c'est un state Animator différent, pas la même\n" +
-             "clé d'override que l'idle hors combat.")]
-    [SerializeField] private AnimationClip combatIdlePlaceholderClip;
-    [Tooltip("Pool de clips Idle en combat — même mécanisme qu'idleClips, appliqué quand\n" +
-             "Player.CombatActive est vrai au moment du retour au repos.")]
-    [SerializeField] private AnimationClip[] combatIdleClips;
+    [Header("Idle/Running armé (par type d'arme)")]
+    [Tooltip("Asset listant, par famille de WeaponType, les clips \"idle with weapon\"/\"running " +
+             "with weapon\" — voir PlayerWeaponAnimationPresets. Référence directe (pas de " +
+             "singleton, un seul consommateur).")]
+    [SerializeField] private PlayerWeaponAnimationPresets weaponAnimationPresets;
+    [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"idle with weapon\" dans le\n" +
+             "Animator Controller — sert de clé pour l'indexeur AnimatorOverrideController, même\n" +
+             "principe qu'attackPlaceholderClip.")]
+    [SerializeField] private AnimationClip idleWithWeaponPlaceholderClip;
+    [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"running with weapon\" dans le\n" +
+             "Animator Controller — même principe.")]
+    [SerializeField] private AnimationClip runningWithWeaponPlaceholderClip;
 
     [Header("Death (override)")]
     [Tooltip("Le MÊME clip que celui assigné comme Motion du state \"Death\" dans le\n" +
@@ -117,23 +124,19 @@ public class PlayerAnimatorController : MonoBehaviour
         _wasMoving = isMoving;
     }
 
-    /// <summary>Tire une variante Idle au hasard et la place dans le slot placeholder adapté
-    /// (hors combat "Happy Idle" ou en combat "sword idle" selon Player.CombatActive) — sans
-    /// relancer le state (contrairement à PlayOverrideClip), pour laisser l'Animator transiter
-    /// naturellement vers Idle avec son propre blend. No-op si le placeholder ou le pool
-    /// correspondant ne sont pas configurés.</summary>
+    /// <summary>Tire une variante Idle au hasard et la place dans le slot placeholder "Idle" (state
+    /// désarmé uniquement — "idle with weapon" n'a pas de variantes, il suit l'arme équipée via
+    /// RefreshWeaponAnimation, voir plus bas : "idle en combat" et "idle with weapon" sont le même
+    /// concept depuis la refonte du graphe, demande Florian) — sans relancer le state (contrairement
+    /// à PlayOverrideClip), pour laisser l'Animator transiter naturellement vers Idle avec son
+    /// propre blend. No-op si le placeholder ou le pool ne sont pas configurés.</summary>
     private void SwapIdleClip()
     {
         if (_overrideController == null) return;
+        if (idlePlaceholderClip == null || idleClips == null || idleClips.Length == 0) return;
 
-        bool inCombat = _player != null && _player.CombatActive;
-        AnimationClip placeholder = inCombat ? combatIdlePlaceholderClip : idlePlaceholderClip;
-        AnimationClip[] pool      = inCombat ? combatIdleClips           : idleClips;
-
-        if (placeholder == null || pool == null || pool.Length == 0) return;
-
-        AnimationClip chosen = pool[Random.Range(0, pool.Length)];
-        if (chosen != null) _overrideController[placeholder] = chosen;
+        AnimationClip chosen = idleClips[Random.Range(0, idleClips.Length)];
+        if (chosen != null) _overrideController[idlePlaceholderClip] = chosen;
     }
 
     /// <summary>Échange le clip d'un slot placeholder puis relance le state associé depuis le
@@ -161,10 +164,31 @@ public class PlayerAnimatorController : MonoBehaviour
     /// <summary>
     /// Joue l'animation d'un skill — échange le clip du state "Attack" réutilisable
     /// puis relance ce state depuis le début. Appelé par Player.UseSkill().
-    /// Ne fait rien si le skill n'a pas d'attackAnimation assignée (ex: buff pur) ou si
+    /// Ne fait rien si le skill n'a pas d'animationClip assignée (ex: buff pur) ou si
     /// le Controller n'est pas encore prêt.
     /// </summary>
     public void PlayAttack(AnimationClip clip) => PlayOverrideClip(clip, attackPlaceholderClip, AttackState);
+
+    /// <summary>Échange les clips "idle with weapon"/"running with weapon" selon la famille de
+    /// l'arme équipée — PAS de relance de state (contrairement à PlayOverrideClip) : la
+    /// locomotion ne doit jamais couper net, l'Animator transite vers ces states tout seul selon
+    /// Speed/InCombat, exactement comme SwapIdleClip(). Appelé par Player.EquipWeapon()/
+    /// UnequipWeapon() — PAS à chaque frame, seulement quand l'arme change. weaponType =
+    /// WeaponType.UnArmed si désarmé (GetPreset retourne alors le preset UnArmed s'il existe,
+    /// ou null → no-op, les states gardent leur dernier clip armé, inoffensif tant qu'ils ne sont
+    /// pas joués côté désarmé — voir le graphe Animator pour la transition réelle).</summary>
+    public void RefreshWeaponAnimation(WeaponType weaponType)
+    {
+        if (_overrideController == null || weaponAnimationPresets == null) return;
+
+        var preset = weaponAnimationPresets.GetPreset(weaponType);
+        if (preset == null) return;
+
+        if (idleWithWeaponPlaceholderClip != null && preset.idleWithWeaponClip != null)
+            _overrideController[idleWithWeaponPlaceholderClip] = preset.idleWithWeaponClip;
+        if (runningWithWeaponPlaceholderClip != null && preset.runningWithWeaponClip != null)
+            _overrideController[runningWithWeaponPlaceholderClip] = preset.runningWithWeaponClip;
+    }
 
     /// <summary>Joue l'animation de canalisation d'un skill (castTime > 0) — même mécanisme
     /// d'échange que PlayAttack (override du state "Attack" réutilisable). Appelé par
@@ -204,4 +228,12 @@ public class PlayerAnimatorController : MonoBehaviour
     // son de pas, pas de logique pour l'instant.
     public void FootStep()     { }
     public void PlayFootStep() { }
+
+    // Même principe pour "AnimationPrefabCreate"/"StartAudio"/"AnimationPrefabDestroy" — baked
+    // par AnyRPG sur ses clips de skill (ex: AnyRPGShootBowAndArrow, flèche/son/cleanup de VFX
+    // propres à leur système). Aucun paramètre posé sur ces events dans nos clips copiés (tous
+    // à 0/null) — hooks vides, prêts si on branche un jour nos propres VFX/SFX dessus.
+    public void AnimationPrefabCreate()  { }
+    public void StartAudio()             { }
+    public void AnimationPrefabDestroy() { }
 }

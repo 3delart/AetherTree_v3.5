@@ -64,10 +64,20 @@ public class PassiveSkillSystem : MonoBehaviour
         _player  = GetComponent<Player>();
     }
 
-    private void OnEnable()
+    private void OnEnable() => Resubscribe();
+
+    /// <summary>Réabonne aux 3 events GameEventBus consommés par ce système — appelé à OnEnable
+    /// ET par GameEventBus.Reset() à chaque changement de map (Reset() vide tous les events puis
+    /// chaque singleton concerné se réabonne lui-même, voir sa doc). -= avant += : idempotent,
+    /// jamais de double-abonnement si Resubscribe() est appelé plusieurs fois sans Reset() entre
+    /// temps.</summary>
+    public void Resubscribe()
     {
+        GameEventBus.OnDamageDealt -= OnDamageDealt;
         GameEventBus.OnDamageDealt += OnDamageDealt;
+        GameEventBus.OnMobKilled   -= OnMobKilled;
         GameEventBus.OnMobKilled   += OnMobKilled;
+        GameEventBus.OnSkillUsed   -= OnSkillUsed;
         GameEventBus.OnSkillUsed   += OnSkillUsed;
     }
 
