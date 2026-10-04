@@ -21,11 +21,17 @@ Besoins explicites (reformulés depuis la conversation) :
   le Point A.
 - Si le joueur lui parle, il s'arrête de marcher pendant le dialogue. Un dégât reçu pendant le
   dialogue le coupe immédiatement et bascule sur le combat.
-- Arrivé au bout de sa route, deux comportements possibles (configurables par PNJ) : boucle en
-  marchant en va-et-vient, ou attend puis disparaît/réapparaît au Point A pour recommencer.
-- L'arrivée au point final doit pouvoir déclencher une récompense de quête plus tard — exposé ici
-  comme un simple point d'accroche (événement), pas une vraie intégration QuestData (hors scope,
-  la revue dialogue/quest-giver/quête multi-step viendra dans une session dédiée séparée).
+- Boucle en continu : une seule logique (index+1 modulo la taille de la liste), qui boucle
+  automatiquement sur `patrolPoints[0]` une fois le dernier point atteint. La forme (aller-retour
+  A→B→C→B→A ou boucle fermée A→B→C→A) est un pur choix de contenu de la liste (répéter ou non un
+  point), pas un réglage séparé — simplifié par Florian le 2026-10-04 après une première passe à
+  deux comportements configurables. Pause idle (`waitAtPointSeconds`) à CHAQUE point avant de
+  repartir, PNJ toujours visible (pas de disparition/réapparition dans ce système — ça reste
+  réservé à la mort, voir `Die()`/`RespawnCoroutine()` existant).
+- L'arrivée à un point doit pouvoir déclencher une récompense de quête plus tard — exposé ici
+  comme un simple point d'accroche (événement avec l'index du point atteint), pas une vraie
+  intégration QuestData (hors scope, la revue dialogue/quest-giver/quête multi-step viendra dans
+  une session dédiée séparée).
 
 **Contrainte explicite de Florian** : la marche en route (« ambulant ») et la déambulation
 aléatoire existante autour du spawn (« patrouille », l'actuel état `Patrol` de
@@ -65,28 +71,33 @@ selon la map. `PNJData` (asset SO) ne change pas du tout pour cette fonctionnali
 
 Nouveaux champs sur `PNJ.cs` :
 
-```csharp
-public enum PatrolEndBehavior { LoopBackAndForth, LoopToStart, WaitThenRespawnAtStart, StopAtEnd }
+**Simplifié par Florian (2026-10-04) : une seule logique, pas d'enum de comportement de fin.**
+Le PNJ avance toujours vers `patrolPoints[index]`, index+1 modulo la taille de la liste à chaque
+arrivée — boucle automatique sur `patrolPoints[0]` à la fin. La FORME de la route (aller-retour
+ou boucle fermée) devient un pur choix de contenu, pas une branche de code :
+- Boucle fermée A→B→C→A→... : `patrolPoints = [A, B, C]`.
+- Aller-retour A→B→C→B→A→... : `patrolPoints = [A, B, C, B]` (B répété — même Transform assigné
+  deux fois dans la liste, rien de spécial à coder).
 
+Le PNJ reste visible et marque un temps d'arrêt (idle) à CHAQUE point avant de repartir —
+identique partout, y compris au bouclage sur `patrolPoints[0]`. Pas de disparition/réapparition
+nulle part dans ce système (ça reste réservé à `Die()`/`RespawnCoroutine()`, sur la mort).
+
+```csharp
 [Header("Patrol Route (PNJ ambulant)")]
 [Tooltip("Active la marche dirigée A→B→... — système INDÉPENDANT de la patrouille de combat\n" +
          "(CombatAIController.Patrol, réservée aux Gardes). Glisser des GameObjects de la SCÈNE\n" +
-         "(pas des prefabs/assets) dans patrolPoints ci-dessous — au moins 2 points requis.")]
+         "(pas des prefabs/assets) dans patrolPoints ci-dessous — au moins 2 points requis.\n" +
+         "Répéter un point dans la liste pour un aller-retour (A,B,C,B) plutôt qu'une boucle\n" +
+         "fermée (A,B,C) — même mécanique, pas de réglage séparé.")]
 public bool isPatrolRoute = false;
 
 [ShowIf(nameof(isPatrolRoute), true)]
 public List<Transform> patrolPoints = new List<Transform>();
 
+[Tooltip("Temps d'arrêt (idle) à CHAQUE point avant de repartir vers le suivant.")]
 [ShowIf(nameof(isPatrolRoute), true)]
-public PatrolEndBehavior endBehavior = PatrolEndBehavior.LoopBackAndForth;
-
-[Tooltip("Attente au dernier point avant de disparaître (WaitThenRespawnAtStart uniquement).")]
-[ShowIf(nameof(endBehavior), PatrolEndBehavior.WaitThenRespawnAtStart)]
-public float waitAtEndSeconds = 5f;
-
-[Tooltip("Attente au Point A, disparu, avant de réapparaître et recommencer.")]
-[ShowIf(nameof(endBehavior), PatrolEndBehavior.WaitThenRespawnAtStart)]
-public float waitAtStartSeconds = 5f;
+public float waitAtPointSeconds = 3f;
 ```
 
 Vitesse de marche : réutilise `data.baseMoveSpeed` (déjà présent sur `PNJData`, pas réservé au
@@ -131,9 +142,9 @@ en avaient besoin.
 Nouveaux champs privés :
 
 ```csharp
-private int  _routeIndex     = 0;
-private int  _routeDirection = 1;     // +1 ou -1, pour LoopBackAndForth
-private bool _routeWaiting   = false; // pendant WaitThenRespawnAtStart
+private int   _routeIndex      = 0;
+private bool  _routeWaiting    = false;
+private float _routeWaitTimer  = 0f;
 ```
 
 Appelé depuis `Update()`, juste avant/après `_combatAI.Tick()` :
@@ -144,7 +155,13 @@ private void TickPatrolRoute()
     if (!isPatrolRoute || patrolPoints.Count < 2) return;
     if (IsTalking) return;                                    // dialogue gèle la marche
     if (_combatAI != null && _combatAI.CurrentState != CombatAIState.Patrol) return; // combat/retour en cours
-    if (_routeWaiting) return;                                 // attente WaitThenRespawnAtStart
+
+    if (_routeWaiting)
+    {
+        _routeWaitTimer -= Time.deltaTime;
+        if (_routeWaitTimer <= 0f) _routeWaiting = false;
+        return;
+    }
 
     Transform current = patrolPoints[_routeIndex];
     if (current == null) return;
@@ -157,88 +174,24 @@ private void TickPatrolRoute()
     if (_agent != null) _agent.SetDestination(current.position);
 
     if (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.3f)
-        AdvanceRoute();
-}
-
-private void AdvanceRoute()
-{
-    bool atEnd   = _routeDirection > 0 && _routeIndex == patrolPoints.Count - 1;
-    bool atStart = _routeDirection < 0 && _routeIndex == 0;
-
-    if (atEnd)
     {
-        OnReachedRouteEnd?.Invoke(this);   // hook quest, voir plus bas
+        OnReachedRoutePoint?.Invoke(this, _routeIndex);   // hook quest, voir plus bas — AVANT l'avance d'index
 
-        switch (endBehavior)
-        {
-            case PatrolEndBehavior.LoopBackAndForth:
-                _routeDirection = -1;
-                _routeIndex += _routeDirection;
-                break;
-            case PatrolEndBehavior.LoopToStart:
-                // Boucle fermée — PAS de retour en arrière par les mêmes points : direction
-                // reste +1, saut direct à l'index 0 (le NavMeshAgent trace lui-même le chemin
-                // le plus court jusqu'à Point[0], qui ne repasse pas forcément par B).
-                _routeIndex = 0;
-                break;
-            case PatrolEndBehavior.StopAtEnd:
-                isPatrolRoute = false;   // s'arrête définitivement, plus jamais réévalué
-                break;
-            case PatrolEndBehavior.WaitThenRespawnAtStart:
-                StartCoroutine(WaitThenRespawnRoutine());
-                break;
-        }
-        return;
+        _routeIndex     = (_routeIndex + 1) % patrolPoints.Count;   // boucle automatique sur 0
+        _routeWaiting   = true;
+        _routeWaitTimer = waitAtPointSeconds;
     }
-
-    if (atStart)
-    {
-        // Seulement atteignable par LoopBackAndForth (seul cas où _routeDirection devient
-        // négatif) — repart vers +1. StopAtEnd/WaitThenRespawnAtStart ne reculent jamais,
-        // cette branche ne les concerne pas.
-        _routeDirection = 1;
-        _routeIndex += _routeDirection;
-        return;
-    }
-
-    _routeIndex += _routeDirection;
 }
 ```
 
-Trace de vérification sur une route à 3 points (A=0, B=1, C=2) :
+Une seule logique, aucune branche de forme de route : `index + 1 modulo Count` boucle
+automatiquement sur `patrolPoints[0]` une fois le dernier point atteint. La forme (aller-retour
+ou boucle fermée) dépend uniquement du contenu de `patrolPoints` — voir exemples plus haut.
 
-- `LoopBackAndForth` : 0(A)→1(B)→2(C, atEnd, flip)→1(B)→0(A, atStart, flip)→1(B)→2(C, flip)→...
-  — va-et-vient, repasse par B dans les deux sens, jamais d'index hors limites.
-- `LoopToStart` : 0(A)→1(B)→2(C, atEnd, saut)→0(A)→1(B)→2(C, saut)→... — boucle fermée, revient
-  direct à A sans jamais repasser par B en sens inverse (le trajet C→A est tracé par le
-  NavMeshAgent, pas forcément une ligne qui repasse par B).
-
-`WaitThenRespawnRoutine()` réutilise le MÊME style que `RespawnCoroutine()` existant (cacher
-renderers/colliders, attendre, réapparaître) mais déclenché par l'ARRIVÉE, pas par la mort :
-
-```csharp
-private IEnumerator WaitThenRespawnRoutine()
-{
-    _routeWaiting = true;
-    yield return new WaitForSeconds(waitAtEndSeconds);
-
-    foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = false;
-    foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
-    if (_agent != null) _agent.enabled = false;
-
-    yield return new WaitForSeconds(waitAtStartSeconds);
-
-    _routeIndex     = 0;
-    _routeDirection = 1;
-    transform.position = patrolPoints[0].position;
-
-    foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = true;
-    foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = true;
-    if (_agent != null) { _agent.enabled = true; _agent.Warp(patrolPoints[0].position); }
-
-    _routeWaiting = false;
-}
-```
+Trace de vérification sur `patrolPoints = [A, B, C]` : arrivées successives =
+0(A)→1(B)→2(C)→0(A)→1(B)→2(C)→... — boucle fermée, idle `waitAtPointSeconds` à chaque arrivée.
+Avec `patrolPoints = [A, B, C, B]` : 0(A)→1(B)→2(C)→3(B)→0(A)→1(B)→... — aller-retour, même code,
+aucune différence de logique.
 
 ### Intégration dans `PNJ.Update()`
 
@@ -274,11 +227,11 @@ protected override void Update()
 ### Hook quest (déféré)
 
 ```csharp
-/// <summary>Déclenché à chaque arrivée au dernier point de la route (une fois par boucle pour
-/// LoopBackAndForth, une fois par cycle pour WaitThenRespawnAtStart). Pas encore consommé —
-/// point d'accroche pour une future récompense de quête (QuestSystem), à brancher lors de la
-/// revue dialogue/quest-giver/quête multi-step.</summary>
-public event System.Action<PNJ> OnReachedRouteEnd;
+/// <summary>Déclenché à CHAQUE arrivée à un point de la route (pas seulement le dernier) —
+/// `pointIndex` donne l'index dans patrolPoints, un futur abonné (QuestSystem) filtre lui-même
+/// sur l'index qui l'intéresse. Pas encore consommé — point d'accroche pour une future
+/// récompense de quête, à brancher lors de la revue dialogue/quest-giver/quête multi-step.</summary>
+public event System.Action<PNJ, int> OnReachedRoutePoint;
 ```
 
 ### Combat — `CombatAIController` INTOUCHÉ
@@ -361,11 +314,10 @@ Pas de framework de test automatisé — vérification manuelle en Play Mode par
    actuel après le combat — SANS retourner au Point A.
 5. Cas limite : combat déclenché alors qu'un dialogue était ouvert → vérifier que le dialogue se
    ferme tout seul et que le PNJ passe directement au combat.
-6. Tester `endBehavior = LoopBackAndForth` sur une route à 3 points → va-et-vient A↔B↔C infini.
-7. Tester `endBehavior = LoopToStart` sur la même route à 3 points → boucle fermée A→B→C→A→...,
-   jamais de retour en arrière par B.
-8. Tester `endBehavior = WaitThenRespawnAtStart` → attente au bout, disparition, réapparition au
-   Point A après le délai, reprise de la marche depuis le début.
-9. Vérifier qu'un PNJ Garde existant (`isPatrolRoute = false`) n'a AUCUN changement de
+6. Tester `patrolPoints = [A, B, C]` → boucle fermée A→B→C→A→... avec idle `waitAtPointSeconds`
+   à chaque arrivée, y compris au bouclage sur A.
+7. Tester `patrolPoints = [A, B, C, B]` → aller-retour A→B→C→B→A→..., même code, juste B répété
+   dans la liste.
+8. Vérifier qu'un PNJ Garde existant (`isPatrolRoute = false`) n'a AUCUN changement de
    comportement (patrouille aléatoire inchangée) — confirme que les deux systèmes sont bien
    restés séparés.
