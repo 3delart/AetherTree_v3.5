@@ -95,7 +95,7 @@ public class ZoneTrigger : MonoBehaviour
     private void Update()
     {
         if (!_playerInZone || _player == null) return;
-        if (zoneData == null)                  return;
+        if (string.IsNullOrEmpty(zoneID))      return;
 
         float dt = Mathf.Min(Time.deltaTime, MaxZoneDeltaTime);
         _timeInZone    += dt;
