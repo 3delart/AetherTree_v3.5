@@ -60,6 +60,26 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     [Tooltip("Rayon dans lequel le joueur peut interagir avec ce PNJ")]
     public float interactionRadius = 3f;
 
+    // ── Patrol Route (PNJ ambulant) ────────────────────────────
+    // Système INDÉPENDANT de la patrouille de combat (CombatAIController.Patrol, réservée aux
+    // Gardes — déambulation aléatoire autour du spawn). Voir docs/superpowers/specs/
+    // 2026-10-04-pnj-patrol-route-design.md — toute la logique vit dans TickPatrolRoute()
+    // ci-dessous, CombatAIController.cs n'est jamais modifié.
+    [Header("Patrol Route (PNJ ambulant)")]
+    [Tooltip("Active la marche dirigée A→B→... Glisser des GameObjects de la SCÈNE (pas des\n" +
+             "prefabs/assets) dans patrolPoints — au moins 2 points requis. Répéter un point\n" +
+             "dans la liste pour un aller-retour (A,B,C,B) plutôt qu'une boucle fermée (A,B,C) —\n" +
+             "même mécanique, pas de réglage séparé.")]
+    public bool isPatrolRoute = false;
+
+    [ShowIf(nameof(isPatrolRoute), true)]
+    public List<Transform> patrolPoints = new List<Transform>();
+
+    [Tooltip("Temps d'arrêt (idle) à CHAQUE point avant de repartir vers le suivant, y compris\n" +
+             "au bouclage sur patrolPoints[0].")]
+    [ShowIf(nameof(isPatrolRoute), true)]
+    public float waitAtPointSeconds = 3f;
+
     // ── Mémoire joueurs connus ────────────────────────────────
     // Persisté via SaveSystem — GDD v3.5 §3.4
     private HashSet<string> knownPlayerIDs = new HashSet<string>();
@@ -150,28 +170,53 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         _skillSystem = GetComponent<SkillSystem>();
         _spawnPos    = transform.position;
 
-        if (data != null && data.canFight)
+        // needsMovement élargit la condition historique (canFight seul) à "canFight OU route" —
+        // un PNJ ambulant non-combattant a besoin d'un NavMeshAgent pour marcher, exactement
+        // comme un PNJ canFight en avait déjà besoin pour son IA de combat.
+        bool needsMovement = (data != null && data.canFight) || isPatrolRoute;
+
+        if (needsMovement)
         {
-            // CombatEntityAnimatorController ET CombatAIController sont ajoutés dynamiquement ici,
-            // PAS via [RequireComponent] sur la classe PNJ — un PNJ non combattant (marchand,
-            // décoratif...) ne doit JAMAIS se voir forcer un Animator/NavMeshAgent (trouvé en test
-            // manuel : "Creating missing Animator component" sur un PNJ Cuisinier sans la moindre
-            // notion de combat). `_agent` est relu APRÈS AddComponent<CombatAIController>, PAS
-            // avant — CombatAIController requiert NavMeshAgent ([RequireComponent]), donc si le
-            // prefab n'en portait pas déjà un (il le devrait, même exigence qu'avant cette
-            // migration), Unity en ajoute un par défaut à l'instant de cet AddComponent ; lire
-            // _agent avant ce point l'aurait laissé null, et Initialize() aurait reçu ce null au
-            // lieu du NavMeshAgent réellement présent sur le GameObject — trouvé en relisant ce
-            // plan avant exécution.
+            // CombatEntityAnimatorController ET NavMeshAgent sont lus/ajoutés ici, PAS via
+            // [RequireComponent] sur la classe PNJ — un PNJ qui n'a ni combat ni route ne doit
+            // JAMAIS se voir forcer un Animator/NavMeshAgent (trouvé en test manuel : "Creating
+            // missing Animator component" sur un PNJ Cuisinier sans la moindre notion de
+            // mouvement).
             _animatorController = GetComponent<CombatEntityAnimatorController>();
             if (_animatorController == null)
                 _animatorController = gameObject.AddComponent<CombatEntityAnimatorController>();
 
+            _agent = GetComponent<NavMeshAgent>();
+            if (_agent == null)
+            {
+                // Un PNJ ambulant/combattant DOIT avoir un NavMeshAgent posé sur son prefab —
+                // contrairement à CombatAIController (RequireComponent, Unity en ajoute un par
+                // défaut), rien ici ne force son ajout automatique : un NavMeshAgent auto-ajouté
+                // par Unity a des réglages par défaut (rayon/hauteur) qui ne correspondent presque
+                // jamais au PNJ réel, mieux vaut un avertissement clair que marcher avec une
+                // mauvaise forme de collision. Log + sortie propre plutôt qu'un
+                // NullReferenceException au prochain `_agent.speed = ...` (vécu en écrivant ce
+                // plan : un PNJ non-combattant existant n'a jamais eu de NavMeshAgent).
+                Debug.LogWarning($"[PNJ] {name} : besoin de mouvement (canFight ou isPatrolRoute) " +
+                                  "mais aucun NavMeshAgent sur le prefab — l'ajouter manuellement.");
+            }
+            else
+            {
+                _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
+                SetMoveSpeed(data.baseMoveSpeed);
+            }
+        }
+
+        if (data != null && data.canFight && _agent != null)
+        {
             _combatAI = gameObject.AddComponent<CombatAIController>();
-            _agent    = GetComponent<NavMeshAgent>();
-            _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
             _combatAI.Initialize(this, _agent, _skillSystem, this, _animatorController, _spawnPos);
         }
+
+        if (isPatrolRoute && patrolPoints.Count < 2)
+            Debug.LogWarning($"[PNJ] {name} : isPatrolRoute = true mais moins de 2 points assignés dans patrolPoints.");
+        if (isPatrolRoute && data != null && data.walkClip == null)
+            Debug.LogWarning($"[PNJ] {name} : isPatrolRoute = true mais data.walkClip non assigné.");
     }
 
     // =========================================================
