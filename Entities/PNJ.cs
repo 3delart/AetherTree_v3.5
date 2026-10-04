@@ -1138,6 +1138,20 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, _spawnPos);
         _combatAI?.ResetCooldowns();
 
+        // Si la mort a eu lieu en Engage/Return, CurrentState reste figé là (NotifyDeath() ne le
+        // remet jamais à Patrol, voir juste au-dessus) — sans ce nettoyage, FindClosestEnemy()
+        // retrouve l'ancien agresseur dans aggroSet dès la prochaine frame et le PNJ repart au
+        // combat instantanément au réveil au lieu de reprendre calmement sa route. CurrentState
+        // lui-même n'a pas de setter public exposé (private set), donc pas de moyen direct de le
+        // forcer à Patrol ici — mais vider aggroSet fait que TickEngage() ne retrouve plus aucune
+        // cible dès le prochain Tick() (CombatAIController.cs, pas touché), ce qui déclenche tout
+        // seul son propre retour normal vers Patrol via le même chemin Engage→Return→Patrol que la
+        // fin de combat habituelle. aggroSet.Clear() est d'ailleurs exactement ce qu'OnReturnToPatrol()
+        // fait déjà en temps normal (plus bas dans ce fichier) — la mort court-circuitait juste ce
+        // nettoyage. Trouvé en test manuel par Florian.
+        aggroSet.Clear();
+        enemyList.Clear();
+
         foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = true;
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = true;
         if (_agent != null) { _agent.enabled = true; _agent.Warp(_spawnPos); }
