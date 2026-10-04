@@ -32,6 +32,13 @@ public class QuestRewardItem
     public GemData  gem;
     public RuneData rune;
 
+    [Header("— Filtre arme —")]
+    [Tooltip("Any (défaut) = récompense universelle. Une famille précise = cette entrée n'est\n" +
+             "accordée que si l'arme équipée du joueur appartient à cette famille au moment du\n" +
+             "turn-in (WeaponType.GetStartingFamily(), même regroupement que la compat skill).\n" +
+             "Aucun choix proposé au joueur — résolution automatique.")]
+    public WeaponType requiredWeaponFamily = WeaponType.Any;
+
     // ── Nom affiché ───────────────────────────────────────────
 
     public string DisplayName

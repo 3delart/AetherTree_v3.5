@@ -128,6 +128,18 @@ public class QuestSystem : MonoBehaviour
             return false;
         }
 
+        WeaponType playerFamily = (player.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
+        var eligibleRewards = new List<QuestRewardItem>();
+        if (quest.rewardItems != null)
+            foreach (var r in quest.rewardItems)
+                if (r != null && (r.requiredWeaponFamily == WeaponType.Any || r.requiredWeaponFamily == playerFamily))
+                    eligibleRewards.Add(r);
+
+        if (quest.rewardItems != null && quest.rewardItems.Count > 0 && eligibleRewards.Count == 0)
+            Debug.LogWarning($"[QUEST] {quest.questName} : aucune récompense item éligible pour la " +
+                $"famille d'arme {playerFamily} — toutes les entrées étaient filtrées, vérifier la " +
+                "configuration si ce n'est pas voulu.");
+
         _states[quest.questID] = QuestState.TurnedIn;
 
         // XP
@@ -155,11 +167,10 @@ public class QuestSystem : MonoBehaviour
         }
 
         // ── ITEMS ─────────────────────────────────────────────────
-        if (quest.rewardItems != null && InventorySystem.Instance != null)
+        if (eligibleRewards.Count > 0 && InventorySystem.Instance != null)
         {
-            foreach (var reward in quest.rewardItems)
+            foreach (var reward in eligibleRewards)
             {
-                if (reward == null) continue;
                 var item = reward.CreateItem();
                 if (item == null) continue;
 
