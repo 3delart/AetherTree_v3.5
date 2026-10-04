@@ -90,6 +90,14 @@ public abstract class Entity : MonoBehaviour
     protected float currentHP;
     protected float currentMana;
 
+    // Reliquat fractionnaire de la régénération passive — survit à la mort/respawn de l'entité
+    // (contrairement aux accumulateurs de DebuffInstance/BuffInstance, détruits avec l'effet de
+    // statut via ClearAllEffects() dans Die()). Assumé sans conséquence : un reliquat qui
+    // survit ne fait que légèrement rapprocher le PROCHAIN point entier de regen après respawn,
+    // aucune perte ni gain d'HP/Mana n'en découle.
+    private FractionalAccumulator _regenHPAccum;
+    private FractionalAccumulator _regenManaAccum;
+
     // =========================================================
     // STATS DE MOUVEMENT
     // =========================================================
@@ -365,8 +373,21 @@ public abstract class Entity : MonoBehaviour
     // Sans effet si regenHP == 0f && regenMana == 0f (Mob/PNJ/Pet).
     private void ApplyRegen()
     {
-        if (regenHP   > 0f) Heal(regenHP);
-        if (regenMana > 0f) RecoverMana(regenMana);
+        // FractionalAccumulator au lieu d'un Heal(regenHP) direct — regenHP/regenMana peuvent
+        // être fractionnaires (bonus % de stats), et ce tick tourne 1×/sec : un regenHP de 0.3
+        // arrondi directement vaudrait 0 à CHAQUE tick, pour toujours (regen silencieusement
+        // cassée). L'accumulateur garde le reliquat et ne soigne que lorsqu'au moins 1 point
+        // entier s'est accumulé — voir docs/superpowers/specs/2026-10-04-integer-hp-mana-design.md.
+        if (regenHP > 0f)
+        {
+            int whole = _regenHPAccum.ExtractWhole(regenHP);
+            if (whole > 0) Heal(whole);
+        }
+        if (regenMana > 0f)
+        {
+            int whole = _regenManaAccum.ExtractWhole(regenMana);
+            if (whole > 0) RecoverMana(whole);
+        }
     }
 
     // =========================================================
