@@ -1539,8 +1539,14 @@ public class Player : Entity
     public void Revive(float hpPercent = 0.30f, float manaPercent = 0.30f)
     {
         isDead      = false;
-        currentHP   = maxHP   * hpPercent;
-        currentMana = maxMana * manaPercent;
+        // Assignation DIRECTE à currentHP/currentMana, pas via Heal()/RecoverMana() (le joueur
+        // est encore isDead == true l'instant d'avant, Heal()/RecoverMana() refuseraient tout —
+        // voir leurs gardes isDead) — donc l'arrondi doit être fait ici explicitement, pas
+        // hérité automatiquement des méthodes arrondies d'Entity.cs. Trouvé en écrivant la spec
+        // (inventaire exhaustif des sites de mutation) : ce site bypassait tout, pas rapporté
+        // par Florian en test manuel.
+        currentHP   = Mathf.Round(maxHP   * hpPercent);
+        currentMana = Mathf.Round(maxMana * manaPercent);
         PassiveSkillSystem.Instance?.ResetCombat();
         // L'état Animator "Death" n'a aucune transition de sortie automatique (tient la pose
         // jusqu'au revive, par design — voir PlayerAnimatorController.PlayDeath()) : sans ce
