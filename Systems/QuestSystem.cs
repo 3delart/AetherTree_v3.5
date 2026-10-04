@@ -89,21 +89,13 @@ public class QuestSystem : MonoBehaviour
         if (quest == null) return false;
         if (string.IsNullOrEmpty(quest.questID)) return false;
 
-        // Déjà acceptée ou terminée ?
+        // Déjà acceptée ou terminée ? — reste du ressort de QuestSystem, pas de RequirementSet :
+        // une quête ne doit jamais se re-proposer déjà active/terminée, indépendamment de ses
+        // propres prérequis.
         var state = GetQuestState(quest.questID);
         if (state == QuestState.Active || state == QuestState.TurnedIn) return false;
 
-        // Niveau minimum
-        if (player != null && player.level < quest.minLevel) return false;
-
-        // Prérequis quête
-        if (quest.prerequisiteQuest != null)
-        {
-            var preState = GetQuestState(quest.prerequisiteQuest.questID);
-            if (preState != QuestState.TurnedIn) return false;
-        }
-
-        return true;
+        return quest.requirements == null || quest.requirements.IsMet(player);
     }
 
     // =========================================================
