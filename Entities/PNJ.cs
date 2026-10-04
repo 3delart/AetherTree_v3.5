@@ -472,6 +472,13 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             OnReachedRoutePoint?.Invoke(this, _routeIndex);
 
             bool isLastPoint = _routeIndex == patrolPoints.Count - 1;
+
+            // Publié à CHAQUE passage au dernier point, même en boucle (loopRoute = true) — un
+            // objectif de quête Escort ne compte qu'une fois grâce au garde-fou IsComplete de
+            // QuestObjective.Increment(), pas besoin de filtrer ici.
+            if (isLastPoint && data != null)
+                GameEventBus.Publish(new PNJRouteCompletedEvent { pnjData = data });
+
             if (!loopRoute && isLastPoint)
             {
                 // Pas d'avance d'index ici — ReappearAtRouteStart() le remet à 0 explicitement
@@ -965,6 +972,11 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         if (data == null || !data.canDie) return;
 
         base.Die();
+
+        // Échoue toute quête d'escorte en cours visant ce PNJ (objectif Escort pas encore
+        // complet) — AVANT le respawn, pas besoin de condition sur canFight/aiType ici, un PNJ
+        // sans objectif Escort actif ne fait simplement rien dans cette méthode.
+        QuestSystem.Instance?.FailEscortQuestsFor(data);
 
         // Un PNJ (contrairement à un Mob) n'est jamais désactivé à sa mort — RespawnCoroutine()
         // repasse isDead = false après data.respawnDelay secondes. Sans ce nettoyage, un

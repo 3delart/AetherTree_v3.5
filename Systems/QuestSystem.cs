@@ -17,7 +17,7 @@ using System.Collections.Generic;
 //   Poser sur _Managers. Pas de références Inspector requises.
 // =============================================================
 
-public enum QuestState { None, Active, Completed, TurnedIn }
+public enum QuestState { None, Active, Completed, TurnedIn, Failed }
 
 public class QuestSystem : MonoBehaviour
 {
@@ -43,18 +43,22 @@ public class QuestSystem : MonoBehaviour
 
     private void Subscribe()
     {
-        GameEventBus.OnMobKilled     += HandleMobKilled;
-        GameEventBus.OnItemAction    += HandleItemAction;
-        GameEventBus.OnZoneEntered   += HandleZoneEntered;
-        GameEventBus.OnRecipeCrafted += HandleRecipeCrafted;
+        GameEventBus.OnMobKilled        += HandleMobKilled;
+        GameEventBus.OnItemAction       += HandleItemAction;
+        GameEventBus.OnZoneEntered      += HandleZoneEntered;
+        GameEventBus.OnRecipeCrafted    += HandleRecipeCrafted;
+        GameEventBus.OnInstanceCompleted += HandleInstanceCompleted;
+        GameEventBus.OnPNJRouteCompleted += HandlePNJRouteCompleted;
     }
 
     private void Unsubscribe()
     {
-        GameEventBus.OnMobKilled     -= HandleMobKilled;
-        GameEventBus.OnItemAction    -= HandleItemAction;
-        GameEventBus.OnZoneEntered   -= HandleZoneEntered;
-        GameEventBus.OnRecipeCrafted -= HandleRecipeCrafted;
+        GameEventBus.OnMobKilled        -= HandleMobKilled;
+        GameEventBus.OnItemAction       -= HandleItemAction;
+        GameEventBus.OnZoneEntered      -= HandleZoneEntered;
+        GameEventBus.OnRecipeCrafted    -= HandleRecipeCrafted;
+        GameEventBus.OnInstanceCompleted -= HandleInstanceCompleted;
+        GameEventBus.OnPNJRouteCompleted -= HandlePNJRouteCompleted;
     }
 
     // =========================================================
@@ -85,6 +89,15 @@ public class QuestSystem : MonoBehaviour
         // Remet les compteurs à zéro (important pour les quotidiennes)
         quest.ResetProgress();
 
+        // DeliverToPNJ — l'item à livrer est donné directement ici, pas ramassé en jeu (voir
+        // QuestObjective.targetItem). Restreint à ResourceData/ConsumableData (seuls types que
+        // GrantDeliveryItem sait instancier/compter via InventorySystem) — même restriction déjà
+        // documentée sur le champ.
+        if (quest.objectives != null)
+            foreach (var obj in quest.objectives)
+                if (obj.type == QuestObjectiveType.DeliverToPNJ)
+                    GrantDeliveryItem(obj, player);
+
         Debug.Log($"[QUEST] Acceptée : {quest.questName}");
 
         GameEventBus.Publish(new QuestEvent
@@ -94,6 +107,32 @@ public class QuestSystem : MonoBehaviour
             player = player,
         });
         return true;
+    }
+
+    /// <summary>Donne au joueur l'item à livrer d'un objectif DeliverToPNJ, à l'acceptation de la
+    /// quête. Restreint à ResourceData/ConsumableData — seuls types avec un CreateInstance(qty)
+    /// uniforme et comptables via InventorySystem.GetItemCount/ConsumeItem (même limitation déjà
+    /// documentée sur Requirement.ItemOwned).</summary>
+    private void GrantDeliveryItem(QuestObjective obj, Player player)
+    {
+        if (InventorySystem.Instance == null) return;
+
+        InventoryItem item = obj.targetItem switch
+        {
+            ResourceData rd   => new InventoryItem(rd.CreateInstance(Mathf.Max(1, obj.requiredCount))),
+            ConsumableData cd => new InventoryItem(cd.CreateInstance(Mathf.Max(1, obj.requiredCount))),
+            _ => null
+        };
+
+        if (item == null)
+        {
+            Debug.LogWarning($"[QUEST] Objectif DeliverToPNJ : targetItem '{obj.targetItem?.name}' " +
+                "n'est ni ResourceData ni ConsumableData — item non livré.");
+            return;
+        }
+
+        if (!InventorySystem.Instance.AddItem(item))
+            Debug.LogWarning($"[QUEST] Objectif DeliverToPNJ : inventaire plein, item à livrer non reçu.");
     }
 
     /// <summary>True si la quête peut être acceptée.</summary>
@@ -427,6 +466,120 @@ public class QuestSystem : MonoBehaviour
     }
 
     // =========================================================
+    // PROGRESSION DONJON (DungeonComplete) — via InstanceCompletedEvent (Success uniquement)
+    // =========================================================
+
+    private void HandleInstanceCompleted(InstanceCompletedEvent e)
+    {
+        if (string.IsNullOrEmpty(e.instanceID)) return;
+
+        foreach (var kvp in _activeData)
+        {
+            if (_states[kvp.Key] != QuestState.Active) continue;
+
+            QuestData quest       = kvp.Value;
+            var       activeIndices = quest.GetActiveObjectiveIndices();
+
+            foreach (int idx in activeIndices)
+            {
+                var obj = quest.objectives[idx];
+                if (obj.type != QuestObjectiveType.DungeonComplete) continue;
+                if (obj.targetDungeon == null || obj.targetDungeon.InstanceID != e.instanceID) continue;
+
+                bool wasComplete = obj.IsComplete;
+                obj.Increment();
+
+                if (!wasComplete)
+                {
+                    Debug.Log($"[QUEST] {quest.questName} · {obj.description} : {obj.ProgressLabel}");
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                    });
+                }
+            }
+
+            CheckCompletion(quest);
+        }
+    }
+
+    // =========================================================
+    // PROGRESSION ESCORTE (Escort) — via PNJRouteCompletedEvent
+    // =========================================================
+
+    private void HandlePNJRouteCompleted(PNJRouteCompletedEvent e)
+    {
+        if (e.pnjData == null) return;
+
+        foreach (var kvp in _activeData)
+        {
+            if (_states[kvp.Key] != QuestState.Active) continue;
+
+            QuestData quest       = kvp.Value;
+            var       activeIndices = quest.GetActiveObjectiveIndices();
+
+            foreach (int idx in activeIndices)
+            {
+                var obj = quest.objectives[idx];
+                if (obj.type != QuestObjectiveType.Escort) continue;
+                if (obj.targetPNJ == null || obj.targetPNJ != e.pnjData) continue;
+
+                bool wasComplete = obj.IsComplete;
+                obj.Increment();
+
+                if (!wasComplete)
+                {
+                    Debug.Log($"[QUEST] {quest.questName} · Escorte {e.pnjData.pnjName} : {obj.ProgressLabel}");
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                    });
+                }
+            }
+
+            CheckCompletion(quest);
+        }
+    }
+
+    /// <summary>Échoue toute quête Active ayant un objectif Escort NON COMPLET visant ce PNJ —
+    /// appelé depuis PNJ.Die() quand un PNJ escorté meurt avant d'atteindre son dernier point.
+    /// Un objectif déjà complet (le PNJ était déjà arrivé) n'échoue jamais rétroactivement.</summary>
+    public void FailEscortQuestsFor(PNJData pnjData)
+    {
+        if (pnjData == null) return;
+
+        foreach (var kvp in new Dictionary<string, QuestData>(_activeData))
+        {
+            if (_states[kvp.Key] != QuestState.Active) continue;
+
+            QuestData quest = kvp.Value;
+            bool hasUnmetEscort = false;
+
+            foreach (var obj in quest.objectives)
+                if (obj.type == QuestObjectiveType.Escort && obj.targetPNJ == pnjData && !obj.IsComplete)
+                    hasUnmetEscort = true;
+
+            if (!hasUnmetEscort) continue;
+
+            _states[quest.questID] = QuestState.Failed;
+            _activeData.Remove(quest.questID);
+            quest.ResetProgress();
+
+            Debug.Log($"[QUEST] Échouée (escorte) : {quest.questName} — {pnjData.pnjName} est mort avant d'arriver.");
+
+            GameEventBus.Publish(new QuestEvent
+            {
+                quest  = quest,
+                action = QuestAction.Failed,
+            });
+        }
+    }
+
+    // =========================================================
     // PROGRESSION PARLER AU PNJ
     // =========================================================
 
@@ -447,21 +600,46 @@ public class QuestSystem : MonoBehaviour
             foreach (int idx in activeIndices)
             {
                 var obj = quest.objectives[idx];
-                if (obj.type != QuestObjectiveType.TalkTo) continue;
 
-                // Comparaison par référence SO — pas par nom string
-                if (obj.targetPNJ == null || obj.targetPNJ != pnjData) continue;
-
-                obj.Increment();
-                Debug.Log($"[QUEST] {quest.questName} · TalkTo {pnjData.pnjName} : {obj.ProgressLabel}");
-
-                GameEventBus.Publish(new QuestEvent
+                if (obj.type == QuestObjectiveType.TalkTo)
                 {
-                    quest          = quest,
-                    action         = QuestAction.ObjectiveUpdated,
-                    objectiveIndex = idx,
-                    player         = player,
-                });
+                    // Comparaison par référence SO — pas par nom string
+                    if (obj.targetPNJ == null || obj.targetPNJ != pnjData) continue;
+
+                    obj.Increment();
+                    Debug.Log($"[QUEST] {quest.questName} · TalkTo {pnjData.pnjName} : {obj.ProgressLabel}");
+
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                        player         = player,
+                    });
+                }
+                else if (obj.type == QuestObjectiveType.DeliverToPNJ)
+                {
+                    if (obj.targetPNJ == null || obj.targetPNJ != pnjData) continue;
+                    if (obj.targetItem is not ItemData itemData) continue;
+                    if (InventorySystem.Instance == null) continue;
+
+                    int have = InventorySystem.Instance.GetItemCount(itemData);
+                    if (have < Mathf.Max(1, obj.requiredCount)) continue; // ne tient pas (encore) l'item
+
+                    if (!InventorySystem.Instance.ConsumeItem(itemData, Mathf.Max(1, obj.requiredCount)))
+                        continue;
+
+                    obj.Increment(obj.requiredCount);
+                    Debug.Log($"[QUEST] {quest.questName} · Livraison à {pnjData.pnjName} : {obj.ProgressLabel}");
+
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                        player         = player,
+                    });
+                }
             }
 
             CheckCompletion(quest);

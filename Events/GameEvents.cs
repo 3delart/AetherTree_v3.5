@@ -210,3 +210,20 @@ public struct RecipeCraftedEvent
     public Player      player;
     public int         quantity;
 }
+
+// ── Instance terminée ────────────────────────────────────────
+// Publié par : InstanceSession.EndRun() — Success UNIQUEMENT (Failure/Left ne publient rien ici,
+// voir EndRun — pas de case à gérer côté abonné pour ces deux issues).
+public struct InstanceCompletedEvent
+{
+    public string instanceID; // IInstanceConfig.InstanceID du donjon/event terminé
+}
+
+// ── PNJ ambulant a atteint son dernier point de route ────────
+// Publié par : PNJ.TickPatrolRoute() — à CHAQUE passage au dernier point (y compris en boucle,
+// loopRoute = true), pas seulement en mode stop-at-end. Un abonné qui ne veut compter qu'une fois
+// doit gérer l'idempotence lui-même (voir QuestObjective.Increment(), déjà no-op si IsComplete).
+public struct PNJRouteCompletedEvent
+{
+    public PNJData pnjData;
+}

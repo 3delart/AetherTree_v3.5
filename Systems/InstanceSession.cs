@@ -456,6 +456,12 @@ public class InstanceSession : MonoBehaviour
     {
         CurrentOutcome = outcome;
         Debug.Log($"[INSTANCE] {CurrentInstance.DisplayName} — {outcome}. Expulsion dans {CurrentInstance.SuccessExitDelay}s.");
+
+        // EndRun n'est appelé qu'avec Success (vérifié — Failure passe par FailureGraceRoutine
+        // directement, sans EndRun) — publier ici suffit pour un objectif de quête
+        // DungeonComplete, zéro risque de compter une Failure/Left comme une victoire.
+        GameEventBus.Publish(new InstanceCompletedEvent { instanceID = CurrentInstance.InstanceID });
+
         StartCoroutine(SuccessExitRoutine());
     }
 
