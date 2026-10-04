@@ -121,9 +121,16 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public CombatAIState CurrentState => _combatAI != null ? _combatAI.CurrentState : CombatAIState.Patrol;
 
     // ── Patrol Route — état privé ──────────────────────────────
-    private int   _routeIndex     = 0;
-    private bool  _routeWaiting   = false;
-    private float _routeWaitTimer = 0f;
+    private int       _routeIndex       = 0;
+    private bool      _routeWaiting     = false;
+    private float     _routeWaitTimer   = 0f;
+    private Transform _lastRouteTarget  = null; // évite un SetDestination() par frame — un seul appel par point visé
+    // _routeAnchor est le "chez-soi" de combat pendant la route — distinct de _spawnPos (figé au
+    // Point A d'origine). Alimente LeashAnchor/PatrolRadius ci-dessous : sans lui, un PNJ ambulant
+    // qui combat à plus de leashRadius de son Point A déclenche Return en boucle (CombatAIController
+    // compare toujours contre LeashAnchor, que Initialize() ne touche pas) — trouvé en revue de
+    // code avant exécution, pas en test manuel.
+    private Vector3    _routeAnchor      = Vector3.zero;
 
     /// <summary>Déclenché à CHAQUE arrivée à un point de la route (pas seulement le dernier) —
     /// pointIndex donne l'index dans patrolPoints. Pas encore consommé — point d'accroche pour une
@@ -180,6 +187,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // Cache des composants combat
         _skillSystem = GetComponent<SkillSystem>();
         _spawnPos    = transform.position;
+        _routeAnchor = _spawnPos;
 
         // needsMovement élargit la condition historique (canFight seul) à "canFight OU route" —
         // un PNJ ambulant non-combattant a besoin d'un NavMeshAgent pour marcher, exactement
@@ -243,8 +251,10 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // passif qui encaisse sans riposter voit aussi son dialogue interrompu par un coup reçu).
         if (IsTalking) EndDialogue();
 
+        // ?. ajouté ici pour la même raison qu'au garde de Update() : un canFight PNJ sans
+        // NavMeshAgent n'a plus de CombatAIController, _combatAI.ForceEngage(...) planterait sinon.
         if (!isDead && data != null && data.canFight)
-            _combatAI.ForceEngage(source);
+            _combatAI?.ForceEngage(source);
     }
 
     // =========================================================
@@ -260,7 +270,12 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // même si data.canFight est false, sinon ce return couperait court avant d'y arriver.
         TickPatrolRoute();
 
-        if (data == null || !data.canFight) return;
+        // _combatAI == null ajouté ici : un canFight PNJ sans NavMeshAgent sur son prefab n'a plus
+        // de CombatAIController depuis le garde ajouté en Task 1 (_agent != null requis avant de
+        // l'instancier) — sans ce check, PollChannelInterrupt()/Tick() plus bas plantent en
+        // NullReferenceException à CHAQUE frame au lieu de se contenter de l'avertissement déjà
+        // loggé dans Awake(). Trouvé en revue de code avant exécution.
+        if (data == null || !data.canFight || _combatAI == null) return;
 
         // Poll d'interrupt de canalisation — DOIT rester avant le freeze CC ci-dessous : un hard
         // CC doit interrompre la canalisation EN COURS, pas être bloqué par le early-return sur
@@ -297,6 +312,16 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     private void TickPatrolRoute()
     {
         if (!isPatrolRoute || patrolPoints.Count < 2) return;
+        if (_agent == null || !_agent.isActiveAndEnabled || !_agent.isOnNavMesh || IsDashing) return; // agent indisponible (Pull/Push, hors navmesh...) — ne pas spammer SetDestination/pathPending dans le vide
+
+        // Self-heal : si talkingTo est resté non-nul alors que la fenêtre de dialogue n'est plus
+        // ouverte (fermée via le bouton "Fermer"/Escape, qui passent par DialogueUI directement
+        // sans repasser par PNJ.EndDialogue()), on le détecte ici plutôt que de geler la route
+        // pour toujours. Ne couvre pas le cas où un AUTRE PNJ a pris la fenêtre (DialogueUI reste
+        // "ouverte", juste avec un interlocuteur différent) — ce cas-là reste le trou de cycle de
+        // vie pré-existant signalé dans la spec, à valider avec Florian.
+        if (IsTalking && (DialogueUI.Instance == null || !DialogueUI.Instance.IsOpen))
+            talkingTo = null;
         if (IsTalking) return;                                                    // dialogue gèle la marche
         if (_combatAI != null && _combatAI.CurrentState != CombatAIState.Patrol) return; // combat/retour en cours
 
@@ -310,19 +335,30 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         Transform current = patrolPoints[_routeIndex];
         if (current == null) return; // point supprimé de la scène après assignation — reste figé plutôt que planter
 
-        _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, transform.position);
+        _routeAnchor = transform.position;
+        _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, _routeAnchor);
 
-        if (_agent != null) _agent.SetDestination(current.position);
+        // SetDestination une seule fois par point visé (pas par frame) — CombatAIController.
+        // TickPatrol fait pareil ; ré-émettre le même chemin à chaque Update() était le design
+        // initial du plan, mais pathPending peut encore valoir true au moment où on le relit juste
+        // après l'avoir ré-émis, ce qui aurait pu empêcher toute détection d'arrivée — trouvé en
+        // revue de code avant exécution.
+        if (current != _lastRouteTarget)
+        {
+            _agent.SetDestination(current.position);
+            _lastRouteTarget = current;
+        }
 
-        if (_agent != null && !_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.3f)
+        if (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.3f)
         {
             // Invoke AVANT l'avance d'index — le hook rapporte le point qu'on vient d'atteindre,
             // pas le prochain visé.
             OnReachedRoutePoint?.Invoke(this, _routeIndex);
 
-            _routeIndex     = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
-            _routeWaiting   = true;
-            _routeWaitTimer = waitAtPointSeconds;
+            _routeIndex      = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
+            _routeWaiting    = true;
+            _routeWaitTimer  = waitAtPointSeconds;
+            _lastRouteTarget = null; // force un nouveau SetDestination() vers le point suivant
         }
     }
 
@@ -555,7 +591,14 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
     public void SelectOption(DialogueOption option, Player player)
     {
-        if (option == null || activeDialogue == null) return;
+        // option == null = DialogueUI.OnClickClose() ("Fermer"/"Partir"/Escape) — AVANT cette
+        // correction, ce early-return laissait talkingTo non-nul pour toujours : inoffensif tant
+        // que rien ne lisait IsTalking hors de PNJ.cs, mais TickPatrolRoute() en dépend maintenant
+        // pour geler la marche pendant un dialogue — sans EndDialogue() ici, la route ne reprenait
+        // plus jamais après le premier dialogue fermé par ce bouton. Trouvé en revue de code avant
+        // exécution.
+        if (option == null) { EndDialogue(); return; }
+        if (activeDialogue == null) return;
 
         HandleDialogueAction(option.action, player);
 
@@ -819,9 +862,15 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     // =========================================================
     public SkillData       BasicAttackSkill  => data?.basicAttackSkill;
     public List<SkillData> SecondarySkills   => data?.skills;
-    public float           PatrolRadius      => data != null ? data.patrolRadius : 0f;
+    // isPatrolRoute coupe la patrouille aléatoire du combat (PatrolRadius=0) et déplace son ancre
+    // de laisse (LeashAnchor) sur _routeAnchor au lieu de _spawnPos — sinon les deux systèmes se
+    // marchent dessus : TickPatrol ferait vagabonder le PNJ loin de son point d'arrêt pendant
+    // waitAtPointSeconds, et LeashAnchor resterait figé sur le Point A d'origine (jamais mis à
+    // jour par le ré-ancrage de TickPatrolRoute), faisant boucler Engage/Return dès que la route
+    // s'éloigne de plus de leashRadius du Point A — trouvé en revue de code avant exécution.
+    public float           PatrolRadius      => isPatrolRoute ? 0f : (data != null ? data.patrolRadius : 0f);
     public float           LeashDistance     => data != null ? data.leashRadius : 0f;
-    public Vector3         LeashAnchor       => _spawnPos;
+    public Vector3         LeashAnchor       => isPatrolRoute ? _routeAnchor : _spawnPos;
     public bool            AutoEngageOnSight => data != null && data.aiType == MobAIType.Aggressive;
 
     public bool HasAnyEnemyNearby() => enemyList.Count > 0;
@@ -896,6 +945,15 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         currentMana        = maxMana;
         transform.position = _spawnPos;
         _routeIndex         = 0; // sinon le PNJ réapparaît au Point A mais vise encore un point loin dans la route
+        _routeWaiting       = false;
+        _lastRouteTarget    = null;
+        // Re-ancrage sur _spawnPos (PAS _routeAnchor) — sans ça, un PNJ mort en plein combat loin
+        // sur sa route respawn au Point A mais son CombatAIController croit encore que son "chez-
+        // soi" est l'ancien point de combat : NotifyDeath() ne remet pas CurrentState à Patrol, un
+        // respawn en Engage/Return viserait alors ce point lointain au lieu du Point A où le PNJ
+        // vient de réapparaître. Trouvé en revue de code avant exécution.
+        _routeAnchor = _spawnPos;
+        _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, _spawnPos);
         _combatAI?.ResetCooldowns();
 
         foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = true;
