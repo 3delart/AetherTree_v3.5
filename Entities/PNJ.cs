@@ -189,6 +189,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
                 SetMaxHP          (data.baseMaxHP);
                 SetMaxMana        (data.baseMaxMana);
                 SetRegenHP        (data.baseRegenHP);
+                SetRegenMana      (data.baseRegenMana);
                 SetAttackDamageMin(data.attackDamage);
                 SetAttackDamageMax(data.attackDamage);
                 SetMoveSpeed      (data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed);
@@ -650,7 +651,8 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     private void InteractHarborMaster(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
-        // TODO Phase 8 : HarborUI.Instance?.Open(data.availableDestinations, player)
+        // TODO Phase 8 : HarborUI.Instance?.Open(player) — champs destinations/intervalles
+        // retirés de PNJData le 2026-10-04 (jamais utilisés, à redéfinir avec le vrai système).
         Debug.Log("[PNJ/Capitaine] HarborUI Phase 8");
     }
 
@@ -941,7 +943,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public void OnEngageStart() { }
 
     /// <summary>PAS de reset HP/Mana instantané pour PNJ (contrairement à Mob.OnReturnToPatrol())
-    /// — décision explicite de Florian, baseRegenHP suffit.</summary>
+    /// — décision explicite de Florian, baseRegenHP/baseRegenMana suffisent.</summary>
     public void OnReturnToPatrol()
     {
         aggroSet.Clear();

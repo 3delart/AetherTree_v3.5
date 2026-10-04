@@ -27,33 +27,63 @@ using System.Collections.Generic;
 public class PNJData : ScriptableObject
 {
     // ── Identité ──────────────────────────────────────────────
+    // Réorganisation complète 2026-10-04 (demande Florian) — ordre d'affichage Identité →
+    // Dialogue → Mort & Respawn (canDie) → Combat (canFight) → Animation, chaque bloc ShowIf
+    // sur sa propre condition plutôt que dispersé par PNJType comme avant.
     [Header("Identité")]
     [Tooltip("Clé technique STABLE — ne change jamais. Convention : snake_case, préfixe \"pnj_\"\n" +
              "(ex: \"pnj_forgeron_braven\"). Ne JAMAIS afficher au joueur — voir pnjName pour l'affichage.")]
     public string  pnjID;
     public string  pnjName = "PNJ";
     public PNJType pnjType = PNJType.Decorative;
-    public Sprite  portrait;
 
-    // ── Dialogue ──────────────────────────────────────────────
-    [Header("Dialogue")]
-    public DialogueData defaultDialogue;
-
-    // ── Boutique — PNJType.Merchant (modèle composable §13.2) ─────────────
     // shopSpecialty remplace l'ancien éclatement en PNJType séparés (Forge/Antiquarian/
     // Cordonnier/Cook/Tinkerer/Jeweler/Hatter/CraftStation) — ces 8 types ne faisaient QUE
     // sélectionner un bundle d'onglets (voir PNJTypeExtensions.GetTabs() plus bas), jamais un
-    // rôle d'interaction différent (StartDialogue(SelectDialogue(player), player) partout,
-    // vérifié avant fusion — voir PNJ.InteractMerchant). None = boutique seule, comportement
-    // de l'ancien PNJType.Merchant. Demande Florian 2026-10-04.
-    [ShowIf(nameof(pnjType), PNJType.Merchant, Header = "Boutique (PNJType.Merchant)")]
+    // rôle d'interaction différent. None = boutique seule, comportement de l'ancien
+    // PNJType.Merchant. Demande Florian 2026-10-04.
+    [ShowIf(nameof(pnjType), PNJType.Merchant)]
     public ShopSpecialty shopSpecialty = ShopSpecialty.None;
 
+    public Sprite portrait;
+
+    // ── Dialogue ──────────────────────────────────────────────
+    [Header("Dialogue")]
+    // Masqué si pnjType = Purification (voir purificationDialogueByAuraRank juste en dessous) —
+    // demande Florian 2026-10-04, assumé : un PNJ Purification bien configuré remplit ses 6
+    // rangs d'aura, le fallback defaultDialogue que purificationDialogueByAuraRank utilise en
+    // interne pour une entrée vide/manquante ne sert alors jamais en pratique. Liste explicite
+    // (pas d'opérateur "différent de" sur ShowIf) — à compléter si un futur PNJType est ajouté
+    // et doit aussi afficher ce champ.
+#pragma warning disable CS0618 // Rarity/FactionNPC obsolètes mais toujours valides pour ce champ
+    [ShowIf(nameof(pnjType), PNJType.Merchant, PNJType.Quest, PNJType.HarborMaster, PNJType.Guard,
+        PNJType.Decorative, PNJType.Rarity, PNJType.FactionNPC)]
+    public DialogueData defaultDialogue;
+#pragma warning restore CS0618
+
+    // ── Purification (PNJType.Purification) — spec §2.5 ────────
+    // Coût de rachat par palier : pas sur ce PNJData, lu directement sur le PrestigeAuraData
+    // PARTAGÉ du joueur (Player.prestigeAuraData.auraTiers[rank].purificationAerisCost/
+    // purificationResource/purificationResourceQty) — voir PNJ.TryPurifyAura.
+    [Tooltip("Texte d'accueil différent selon le palier Aura ACTUEL du joueur — index = auraRank " +
+             "(0=Normal, 1=Terni, ... 5=Déchu). Une entrée vide/absente retombe sur defaultDialogue " +
+             "(valeur gelée telle qu'elle était avant de masquer ce champ pour Purification, voir " +
+             "ci-dessus). Chaque dialogue garde la même option \"Purifier mon Aura\" " +
+             "(DialogueAction.PurifyAura), seul le texte de vœux change. Florian, 2026-09-29 : " +
+             "\"il faudrait un dialogue différent en fonction du rang de l'aura\".")]
+    [ShowIf(nameof(pnjType), PNJType.Purification, Header = "Purification (PNJType.Purification)")]
+    public List<DialogueData> purificationDialogueByAuraRank = new List<DialogueData>();
+
+    // ── Quête ─────────────────────────────────────────────────
+    [ShowIf(nameof(pnjType), PNJType.Quest, Header = "Quête (PNJType.Quest)")]
+    public List<QuestData> availableQuests = new List<QuestData>();
+
+    // ── Boutique — PNJType.Merchant (modèle composable §13.2) ─────────────
     // Une seule liste — ShopEntry.item est un ScriptableObject générique (WeaponData,
     // ResourceData, SkillData, PermanentSkillData, PassiveSkillData...), ShopUI dispatch
     // déjà par type. Un PNJ "coach" qui vend des skills utilise cette même liste, glisser
     // les SkillData dedans — pas de liste séparée.
-    [ShowIf(nameof(pnjType), PNJType.Merchant)]
+    [ShowIf(nameof(pnjType), PNJType.Merchant, Header = "Boutique (PNJType.Merchant)")]
     public List<ShopEntry> shopItems = new List<ShopEntry>();
 
     // ── Antiquaire (shopSpecialty.Antiquarian) ─────────────────
@@ -65,10 +95,6 @@ public class PNJData : ScriptableObject
         AndField = nameof(pnjType), AndValue = PNJType.Merchant)]
     public bool canInsertRunes   = false;
 
-    // ── Quête ─────────────────────────────────────────────────
-    [ShowIf(nameof(pnjType), PNJType.Quest, Header = "Quête (PNJType.Quest)")]
-    public List<QuestData> availableQuests = new List<QuestData>();
-
     // ── PNJ Faction (obsolète, gardé pour compat assets existants) ──
 #pragma warning disable CS0618
     [ShowIf(nameof(pnjType), PNJType.FactionNPC, Header = "Faction (PNJType.FactionNPC)")]
@@ -77,40 +103,15 @@ public class PNJData : ScriptableObject
     public DialogueData hostileDialogue;
 #pragma warning restore CS0618
 
-    // ── Purification (PNJType.Purification) — spec §2.5 ────────
-    // Coût de rachat par palier : pas sur ce PNJData, lu directement sur le PrestigeAuraData
-    // PARTAGÉ du joueur (Player.prestigeAuraData.auraTiers[rank].purificationAerisCost/
-    // purificationResource/purificationResourceQty) — voir PNJ.TryPurifyAura.
-    [Tooltip("Texte d'accueil différent selon le palier Aura ACTUEL du joueur — index = auraRank " +
-             "(0=Normal, 1=Terni, ... 5=Déchu). Une entrée vide/absente retombe sur defaultDialogue. " +
-             "Chaque dialogue garde la même option \"Purifier mon Aura\" (DialogueAction.PurifyAura), " +
-             "seul le texte de vœux change. Florian, 2026-09-29 : \"il faudrait un dialogue différent " +
-             "en fonction du rang de l'aura\".")]
-    [ShowIf(nameof(pnjType), PNJType.Purification, Header = "Purification (PNJType.Purification)")]
-    public List<DialogueData> purificationDialogueByAuraRank = new List<DialogueData>();
-
-    // ── Capitaine de Port ─────────────────────────────────────
-    [ShowIf(nameof(pnjType), PNJType.HarborMaster, Header = "Capitaine de Port (PNJType.HarborMaster)")]
-    public List<string> availableDestinations = new List<string>();
-    [ShowIf(nameof(pnjType), PNJType.HarborMaster)]
-    public float departureIntervalMin = 300f;
-    [ShowIf(nameof(pnjType), PNJType.HarborMaster)]
-    public float departureIntervalMax = 900f;
-
     // ── Mort & Respawn ────────────────────────────────────────
     [Header("Mort & Respawn")]
-    [Tooltip("false = invulnérable (civils, décoratifs).\ntrue = peut mourir et respawner.")]
+    [Tooltip("false = invulnérable (civils, décoratifs) ET jamais ciblé par un mob (voir\n" +
+             "Mob.RefreshEnemyList()).\ntrue = peut être attaqué, mourir et respawner.")]
     public bool  canDie       = false;
     [Tooltip("Délai de respawn en secondes après mort. 0 = pas de respawn.")]
     [ShowIf(nameof(canDie), true)]
     public float respawnDelay = 60f;
 
-    // ── Déplacement ───────────────────────────────────────────
-    [Header("Déplacement")]
-    [Tooltip("Vitesse de déplacement de base (patrouille, déambulation).")]
-    public float baseMoveSpeed = 2f;
-
-    // ── Stats défensives — PNJ canDie uniquement ──────────────
     // Même pipeline que MobData — CombatSystem lit sur Entity. Masqué si canDie = false — un
     // PNJ invulnérable n'est plus jamais ciblé par un mob (voir Mob.RefreshEnemyList(), demande
     // Florian 2026-10-04), ces stats n'ont donc plus aucun effet pour lui.
@@ -146,10 +147,23 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public float baseRegenHP = 2f;
 
+    [Tooltip("Regen Mana/s hors combat. 0 = pas de regen. Ajouté 2026-10-04 (demande Florian) —\n" +
+             "branché sur l'infra Entity.SetRegenMana déjà existante, jusqu'ici jamais utilisée\n" +
+             "côté PNJ.")]
+    [ShowIf(nameof(canFight), true)]
+    public float baseRegenMana = 0f;
+
     [Tooltip("Dégâts de base de l'attaque — utilisés par CombatSystem.CalculateMobDamage() " +
              "via Entity.AttackDamageMin/Max.\nIgnoré si basicAttackSkill calcule ses propres dégâts via ratios.")]
     [ShowIf(nameof(canFight), true)]
     public float attackDamage = 15f;
+
+    [Tooltip("Chance de critique [0..1]. Poussé sur Entity via SetCritChance().")]
+    [ShowIf(nameof(canFight), true)]
+    public float critChance     = 0.03f;
+    [Tooltip("Multiplicateur dégâts critique. Base 1.5f.")]
+    [ShowIf(nameof(canFight), true)]
+    public float critMultiplier = 1.5f;
 
     [Tooltip("Catégorie d'arme — détermine quelle défense de la cible s'applique. GDD §3.1.")]
     [ShowIf(nameof(canFight), true)]
@@ -164,6 +178,8 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public List<SkillData> skills = new List<SkillData>();
 
+    // ── IA de combat — non listés explicitement par Florian dans la réorganisation 2026-10-04,
+    // laissés ici sous canFight (position inchangée, juste déplacés après skills) ──
     [Tooltip("Rayon de détection des ennemis (Mobs). Équivalent de detectionRange sur MobData.")]
     [ShowIf(nameof(canFight), true)]
     public float aggroRadius = 15f;
@@ -188,45 +204,6 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public MobAIType aiType = MobAIType.Aggressive;
 
-    // ── Animations locomotion ──────────────────────────────────
-    // Consommées par CombatEntityAnimatorController — même mécanisme que MobData (voir son
-    // commentaire). Groupé sous canFight : un PNJ non combattant n'a pas de NavMeshAgent, donc
-    // pas de Walk/Chase à distinguer (voir Awake() — _agent n'existe que si canFight).
-    [Tooltip("Catégorie de rig — pilote l'auto-fill des clips ci-dessous depuis " +
-             "MobAnimationPresets (voir OnValidate) quand un champ est vide. N'écrase jamais " +
-             "un clip déjà assigné à la main.")]
-    public AnimationType animationType = AnimationType.Humanoid;
-    [Header("Animations locomotion")]
-    [Tooltip("Anim jouée à l'arrêt hors combat. Toujours affiché (même hors canFight — un PNJ\n" +
-             "statique respire quand même).")]
-    public AnimationClip idleClip;
-    [Tooltip("Variantes supplémentaires d'idleClip — une est tirée au hasard à chaque retour au\n" +
-             "repos (évite de rejouer toujours la même pose). Optionnel : vide = toujours idleClip,\n" +
-             "comportement inchangé.")]
-    public List<AnimationClip> idleClipVariants = new List<AnimationClip>();
-    [Tooltip("Anim de déplacement en Patrol (déambulation). Nécessite canFight (sans NavMeshAgent,\n" +
-             "jamais joué).")]
-    [ShowIf(nameof(canFight), true)]
-    public AnimationClip walkClip;
-    [Tooltip("Anim de déplacement en Engage (poursuite/combat rapproché) — distincte de Walk\n" +
-             "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController. Nécessite\n" +
-             "canFight.")]
-    [ShowIf(nameof(canFight), true)]
-    public AnimationClip chaseClip;
-    [Tooltip("Anim de mort — jouée une fois via PlayDeath() avant le début de la séquence de\n" +
-             "respawn (masquage renderers/collider). Optionnel : si null, aucune anim n'est jouée\n" +
-             "et aucun délai n'est ajouté — voir PNJ.RespawnCoroutine(). Toujours affiché (même\n" +
-             "hors canFight — un PNJ non-combattant peut quand même mourir, voir canDie).")]
-    public AnimationClip deathClip;
-
-    // ── Critique ──────────────────────────────────────────────
-    [Tooltip("Chance de critique [0..1]. Poussé sur Entity via SetCritChance().")]
-    [ShowIf(nameof(canFight), true)]
-    public float critChance     = 0.03f;
-    [Tooltip("Multiplicateur dégâts critique. Base 1.5f.")]
-    [ShowIf(nameof(canFight), true)]
-    public float critMultiplier = 1.5f;
-
     // ── Effets On-Hit — PNJ canFight uniquement. Avant le 2026-10-04 ces effets reçus
     // restaient actifs même hors canFight (un garde passif pouvait avoir Thorns en encaissant
     // sans riposter) — changé sur demande explicite de Florian : gater comme le reste du bloc
@@ -247,6 +224,40 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
 
+    // ── Animation ──────────────────────────────────────────────
+    // Consommées par CombatEntityAnimatorController — même mécanisme que MobData (voir son
+    // commentaire). baseMoveSpeed déplacé ici depuis son ancien bloc "Déplacement" séparé
+    // (demande Florian 2026-10-04 — regroupé avec le reste de l'animation/déplacement).
+    [Header("Animation")]
+    [Tooltip("Catégorie de rig — pilote l'auto-fill des clips ci-dessous depuis " +
+             "MobAnimationPresets (voir OnValidate) quand un champ est vide. N'écrase jamais " +
+             "un clip déjà assigné à la main.")]
+    public AnimationType animationType = AnimationType.Humanoid;
+    [Tooltip("Vitesse de déplacement de base (patrouille, déambulation).")]
+    public float baseMoveSpeed = 2f;
+    [Tooltip("Anim jouée à l'arrêt hors combat. Toujours affiché (même hors canFight — un PNJ\n" +
+             "statique respire quand même).")]
+    public AnimationClip idleClip;
+    [Tooltip("Variantes supplémentaires d'idleClip — une est tirée au hasard à chaque retour au\n" +
+             "repos (évite de rejouer toujours la même pose). Optionnel : vide = toujours idleClip,\n" +
+             "comportement inchangé.")]
+    public List<AnimationClip> idleClipVariants = new List<AnimationClip>();
+    [Tooltip("Anim de déplacement en Patrol/déambulation. Toujours affiché (PAS limité à canFight\n" +
+             "depuis l'ajout de PNJ.isPatrolRoute — un PNJ ambulant non-combattant a aussi un\n" +
+             "NavMeshAgent et en a besoin ; ShowIf ne sait pas exprimer canFight OU isPatrolRoute\n" +
+             "sur deux champs différents, donc traité comme idleClip/deathClip ci-dessous).")]
+    public AnimationClip walkClip;
+    [Tooltip("Anim de déplacement en Engage (poursuite/combat rapproché) — distincte de Walk\n" +
+             "même à vitesse égale, voir IsChasing sur CombatEntityAnimatorController. Nécessite\n" +
+             "canFight (combat uniquement, pas de \"chase\" en patrol route).")]
+    [ShowIf(nameof(canFight), true)]
+    public AnimationClip chaseClip;
+    [Tooltip("Anim de mort — jouée une fois via PlayDeath() avant le début de la séquence de\n" +
+             "respawn (masquage renderers/collider). Optionnel : si null, aucune anim n'est jouée\n" +
+             "et aucun délai n'est ajouté — voir PNJ.RespawnCoroutine(). Toujours affiché (même\n" +
+             "hors canFight — un PNJ non-combattant peut quand même mourir, voir canDie).")]
+    public AnimationClip deathClip;
+
     // =========================================================
     // VALIDATION EDITOR
     // =========================================================
@@ -265,11 +276,13 @@ public class PNJData : ScriptableObject
                              "ce PNJ peut attaquer mais est invulnérable. Intentionnel ?");
 
         // AnimationType.None = PNJ fixe qui ne doit recevoir AUCUN clip, point — zéro auto-fill
-        // (même règle que MobData, voir son OnValidate). Sinon (types normaux) : idle + death
-        // toujours remplis (même hors combat — Inspector les affiche toujours, voir ShowIf sur
-        // walkClip/chaseClip juste en dessous ; death gardé derrière canDie — inutile si ce PNJ
-        // ne peut pas mourir) ; walk/chase réservés aux PNJ canFight (sans NavMeshAgent, ils ne
-        // joueront jamais — demande Florian : pas de clip inutile posé).
+        // (même règle que MobData, voir son OnValidate). Sinon (types normaux) : idle + walk
+        // toujours auto-remplis si possible (walk élargi du canFight-only au toujours depuis le
+        // 2026-10-04 — un PNJ ambulant non-combattant, PNJ.isPatrolRoute, a aussi besoin d'un
+        // walkClip ; PNJData ne connaît pas ce champ scène-only, donc pas moyen de conditionner
+        // l'auto-fill dessus précisément, autant le traiter comme idle) ; death réservé à
+        // canDie (inutile sinon) ; chase réservé à canFight (un PNJ sans CombatAIController ne
+        // joue jamais d'anim "chase", même en patrol route).
         if (animationType != AnimationType.None)
         {
             var preset = MobAnimationPresets.FindAsset()?.GetPreset(animationType);
@@ -279,9 +292,9 @@ public class PNJData : ScriptableObject
                 if ((idleClipVariants == null || idleClipVariants.Count == 0) && preset.idleClipVariants.Count > 0)
                     idleClipVariants = new List<AnimationClip>(preset.idleClipVariants);
                 if (canDie && deathClip == null) deathClip = preset.deathClip;
+                if (walkClip == null) walkClip = preset.walkClip;
                 if (canFight)
                 {
-                    if (walkClip  == null) walkClip  = preset.walkClip;
                     if (chaseClip == null) chaseClip = preset.chaseClip;
                 }
             }
