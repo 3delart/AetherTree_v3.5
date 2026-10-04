@@ -770,7 +770,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case DialogueAction.OpenPNJWindow:       PNJWindowUI.Instance?.Open(data, player); _awaitingSecondaryPanel = true; break;
             case DialogueAction.OpenRuneUI:         Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");   break;
             case DialogueAction.OpenFusionUI:       FusionUI.Instance?.Open(data, player); _awaitingSecondaryPanel = true; break;
-            case DialogueAction.OpenQuestLog:       Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");  break;
+            case DialogueAction.OpenQuestLog:       PNJQuestBoardUI.Instance?.Open(data, player); _awaitingSecondaryPanel = true; break;
             case DialogueAction.OpenTeleportUI:     Debug.Log("[PNJ] OpenTeleportUI — HarborUI Phase 8"); break;
             case DialogueAction.PurifyAura:         TryPurifyAura(player); break;
             case DialogueAction.CloseDialogue:      EndDialogue(); break;
