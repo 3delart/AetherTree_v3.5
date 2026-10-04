@@ -201,6 +201,10 @@ public class BuffInstance : StatusEffectInstance
 
     public float remainingShield;
 
+    // Même rôle que DebuffInstance._tickAccum, pour BuffType.Regeneration (seul cas qui applique
+    // un montant continu via taux × deltaTime dans Tick() ci-dessous).
+    private FractionalAccumulator _regenAccum;
+
     public BuffInstance(BuffData data, Entity source) : base(data, source)
     {
         remainingShield = data.shieldAmount;
@@ -217,8 +221,14 @@ public class BuffInstance : StatusEffectInstance
             case BuffType.Regeneration:
                 // HoT — soin progressif sur la durée (§3.1.1.2)
                 // GetHealPerSecond supporte Flat et Percent (% MaxHP)
+                // Accumulateur au lieu d'un Heal(heal) direct — même raison que DebuffInstance._tickAccum :
+                // heal est calculé en taux × deltaTime, fractionnaire à chaque frame.
                 float heal = BuffData.GetHealPerSecond(target.MaxHP) * deltaTime;
-                if (heal > 0f) target.Heal(heal);
+                if (heal > 0f)
+                {
+                    int whole = _regenAccum.ExtractWhole(heal);
+                    if (whole > 0) target.Heal(whole);
+                }
                 break;
 
             // Shield, DefenseUp, DodgeUp, Haste, AttackUp, CritChanceUp, CritDamageUp, Barrier :
