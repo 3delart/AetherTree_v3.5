@@ -184,7 +184,11 @@ public class PNJQuestBoardUI : MonoBehaviour
         bool isSecretLocked = isLocked && quest.questRank == QuestRank.Secret;
 
         var rankLabel = go.transform.Find("RankLabel")?.GetComponent<TextMeshProUGUI>();
-        if (rankLabel != null) rankLabel.text = RankLabel(quest.questRank);
+        if (rankLabel != null)
+        {
+            rankLabel.text  = RankLabel(quest.questRank);
+            rankLabel.color = RankColor(quest.questRank, isLocked ? 0.5f : 1f);
+        }
 
         // Secret verrouillée : ni le nom ni le vrai rang ne doivent spoiler la quête — seul
         // "Secrète"/"???" apparaît, tant que CanAccept est faux.
@@ -374,5 +378,18 @@ public class PNJQuestBoardUI : MonoBehaviour
         QuestRank.Event     => "Événement",
         QuestRank.Secret    => "Secrète",
         _                   => ""
+    };
+
+    // Mêmes valeurs que QuestJournalUI.RankColor/QuestTrackerUI.RankColor — cohérence visuelle
+    // entre les 3 UI de quête du projet.
+    private static Color RankColor(QuestRank rank, float alpha) => rank switch
+    {
+        QuestRank.Main      => new Color(1.0f, 0.85f, 0.2f,  alpha),
+        QuestRank.Secondary => new Color(0.7f, 0.85f, 1.0f,  alpha),
+        QuestRank.Daily     => new Color(0.6f, 0.95f, 0.65f, alpha),
+        QuestRank.Guild     => new Color(0.9f, 0.65f, 1.0f,  alpha),
+        QuestRank.Event     => new Color(1.0f, 0.65f, 0.35f, alpha),
+        QuestRank.Secret    => new Color(0.7f, 0.7f,  0.75f, alpha),
+        _                   => new Color(1f,   1f,    1f,    alpha)
     };
 }
