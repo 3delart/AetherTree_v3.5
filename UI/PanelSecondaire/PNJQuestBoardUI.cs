@@ -32,10 +32,10 @@ using System.Collections.Generic;
 //   QuestCard (racine, avec un Button)
 //     ├── RankLabel        (TextMeshProUGUI)
 //     ├── QuestName        (TextMeshProUGUI)
-//     ├── StatusBadge      (GameObject — Image pill)
-//     │     └── BadgeText  (TextMeshProUGUI, enfant de StatusBadge)
-//     ├── LockIcon         (GameObject — Image cadenas)
-//     └── RequirementText  (TextMeshProUGUI)
+//     ├── RequirementText  (TextMeshProUGUI) — prérequis ou "Secret" si verrouillée
+//     ├── LockOverlay      (GameObject — masque la carte quand verrouillée)
+//     └── StatusBadge      (GameObject — Image pill, optionnel pour l'instant)
+//           └── BadgeText  (TextMeshProUGUI, enfant de StatusBadge)
 // =============================================================
 
 public class PNJQuestBoardUI : MonoBehaviour
@@ -193,7 +193,7 @@ public class PNJQuestBoardUI : MonoBehaviour
 
         var statusBadge = go.transform.Find("StatusBadge")?.gameObject;
         var badgeText    = statusBadge?.transform.Find("BadgeText")?.GetComponent<TextMeshProUGUI>();
-        var lockIcon     = go.transform.Find("LockIcon")?.gameObject;
+        var lockIcon     = go.transform.Find("LockOverlay")?.gameObject;
         var reqText      = go.transform.Find("RequirementText")?.GetComponent<TextMeshProUGUI>();
 
         if (isLocked)
