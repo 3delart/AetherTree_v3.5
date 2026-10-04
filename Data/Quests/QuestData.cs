@@ -188,6 +188,13 @@ public class QuestData : ScriptableObject
                         "ce prérequis sera TOUJOURS considéré non rempli pour ce type d'item.");
             }
         }
+
+        if (objectives != null)
+        {
+            foreach (var o in objectives)
+                if (o != null && string.IsNullOrEmpty(o.objectiveID))
+                    o.objectiveID = System.Guid.NewGuid().ToString("N").Substring(0, 8);
+        }
     }
 #endif
 }
@@ -206,6 +213,11 @@ public class QuestObjective
     public string groupID = "";
 
     public QuestObjectiveType type = QuestObjectiveType.Kill;
+
+    [Tooltip("Clé technique STABLE — ne change jamais, utilisée pour la sauvegarde de la\n" +
+             "progression (voir QuestSystem.GetSaveData/LoadSaveData). Auto-remplie si vide,\n" +
+             "ne JAMAIS afficher au joueur.")]
+    public string objectiveID = "";
 
     [Tooltip("Kill / Boss — glisser le MobData")]
     [ShowIf(nameof(type), QuestObjectiveType.Kill, QuestObjectiveType.Boss)]
