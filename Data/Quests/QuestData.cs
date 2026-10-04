@@ -215,8 +215,10 @@ public class QuestObjective
     [ShowIf(nameof(type), QuestObjectiveType.TalkTo)]
     public PNJData targetPNJ;
 
-    [Tooltip("Deliver / Gather / Craft — glisser le SO item")]
-    [ShowIf(nameof(type), QuestObjectiveType.Deliver, QuestObjectiveType.Gather, QuestObjectiveType.Craft)]
+    [Tooltip("Gather / Craft — glisser le SO item (doit hériter de ItemData, ex: ResourceData,\n" +
+             "ConsumableData, WeaponData... — un item Gem/Rune, qui n'hérite pas d'ItemData, ne\n" +
+             "peut pas être ciblé par ce type d'objectif)")]
+    [ShowIf(nameof(type), QuestObjectiveType.Gather, QuestObjectiveType.Craft)]
     public ScriptableObject targetItem;
 
     [Tooltip("Explore — ID de zone (string)")]
@@ -234,7 +236,6 @@ public class QuestObjective
         QuestObjectiveType.Kill    => targetMob  != null ? targetMob.mobName  : "",
         QuestObjectiveType.Boss    => targetMob  != null ? targetMob.mobName  : "",
         QuestObjectiveType.TalkTo  => targetPNJ  != null ? targetPNJ.pnjName  : "",
-        QuestObjectiveType.Deliver => targetItem != null ? targetItem.name    : "",
         QuestObjectiveType.Gather  => targetItem != null ? targetItem.name    : "",
         QuestObjectiveType.Craft   => targetItem != null ? targetItem.name    : "",
         QuestObjectiveType.Explore => targetZoneID,
@@ -250,4 +251,7 @@ public class QuestObjective
 }
 
 // =============================================================
-public enum QuestObjectiveType { Kill = 0, TalkTo = 1, Deliver = 2, Gather = 3, Explore = 4, Craft = 5, Boss = 6 }
+// 2 retiré (2026-10-04) — Deliver fusionné dans Gather (même mécanique exacte, zéro asset
+// n'utilisait cet ordinal — vérifié par grep direct sur les .asset avant suppression). Ordinal 2
+// jamais réutilisé.
+public enum QuestObjectiveType { Kill = 0, TalkTo = 1, Gather = 3, Explore = 4, Craft = 5, Boss = 6 }
