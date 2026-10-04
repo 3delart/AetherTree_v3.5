@@ -55,17 +55,17 @@ public class DialogueData : ScriptableObject
 }
 
 // ── Stage de dialogue ─────────────────────────────────────────
+// isDynamicQuestStage retiré le 2026-10-04 (Florian) — ancien système "une quête à la
+// fois générée à runtime dans la bulle", remplacé par PNJQuestBoardUI (panel séparé,
+// toutes les quêtes du PNJ en grille), ouvert via une option DialogueAction.OpenQuestLog.
 [System.Serializable]
 public class DialogueStage
 {
     [Tooltip("Identifiant unique du stage dans ce dialogue")]
     public int    stageID   = 0;
 
-    [Tooltip("Si coché : texte et boutons calculés à runtime selon l'état des quêtes du PNJ.\nUtilisé par les PNJ Quest — Accepter / Récupérer / Partir générés automatiquement.")]
-    public bool   isDynamicQuestStage = false;
-
     [TextArea(2, 6)]
-    [Tooltip("Texte affiché dans la bulle du PNJ (ignoré si isDynamicQuestStage est coché)")]
+    [Tooltip("Texte affiché dans la bulle du PNJ")]
     public string text      = "";
 
     // ── Conditions d'accès — GDD v30 §19.1 ───────────────────

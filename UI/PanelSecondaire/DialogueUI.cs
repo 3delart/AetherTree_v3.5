@@ -9,13 +9,13 @@ using System.Collections.Generic;
 // AetherTree GDD v31 — §19 / §25
 //
 // Un seul panel pour tous les PNJ — Merchant, Blacksmith, Quest...
-// Les quêtes s'intègrent via stages dynamiques (isDynamicQuestStage)
-// et via DialogueAction.AcceptQuest / TurnInQuest sur les options.
-//
-// Pour un PNJ Quest :
-//   Stage 0  : texte normal "Bonjour..."
-//   Stage 10 : isDynamicQuestStage = true → texte calculé à runtime
-//              boutons Accepter / Récupérer / Partir générés auto
+// Dialogue 100% statique (texte + options fixes définis sur le DialogueData) —
+// l'ancien système de stage dynamique (isDynamicQuestStage, une quête à la fois
+// générée à runtime dans la bulle) est retiré le 2026-10-04 (Florian) au profit
+// de PNJQuestBoardUI (panel séparé, grille de toutes les quêtes du PNJ) —
+// ouvert via une option DialogueAction.OpenQuestLog. Les options statiques
+// AcceptQuest/TurnInQuest (DialogueOption.questData) restent utilisables pour
+// une quête ponctuelle directement intégrée à un stage de dialogue.
 //
 // QuestDialogueUI → SUPPRIMÉ.
 //
@@ -98,12 +98,7 @@ public class DialogueUI : MonoBehaviour
             SetPortrait(_currentPNJ.data.portrait, _currentPNJ.data.pnjType);
         }
 
-        // Stage dynamique quête : texte calculé à runtime
-        string text = stage.isDynamicQuestStage && _currentPNJ?.data != null && _currentPlayer != null
-            ? BuildQuestText(_currentPNJ.data, _currentPlayer)
-            : stage.text;
-
-        SetText(txtDialogue, text);
+        SetText(txtDialogue, stage.text);
         BuildOptions(stage);
     }
 
@@ -123,50 +118,6 @@ public class DialogueUI : MonoBehaviour
     public bool IsOpen => panelDialogue != null && panelDialogue.activeSelf;
 
     // =========================================================
-    // TEXTE DYNAMIQUE QUÊTE
-    // Équivalent de get_dialogue_for_quests() (Python v0.1)
-    // =========================================================
-
-    private string BuildQuestText(PNJData data, Player player)
-    {
-        if (QuestSystem.Instance == null || data.availableQuests == null)
-            return "Je n'ai rien pour toi pour le moment.";
-
-        // 1. Quête complétée à valider ?
-        foreach (var q in data.availableQuests)
-        {
-            if (q == null) continue;
-            if (QuestSystem.Instance.GetQuestState(q) == QuestState.Completed)
-                return $"Ho, tu as terminé '{q.questName}' ! Voici ta récompense.";
-        }
-
-        // 2. Quête en cours ?
-        foreach (var q in data.availableQuests)
-        {
-            if (q == null) continue;
-            if (QuestSystem.Instance.GetQuestState(q) == QuestState.Active)
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine($"Alors {player.entityName}, tu avances sur '{q.questName}' ?");
-                foreach (int idx in q.GetActiveObjectiveIndices())
-                    sb.AppendLine($"• {q.objectives[idx].description}  {q.objectives[idx].ProgressLabel}");
-                return sb.ToString().TrimEnd();
-            }
-        }
-
-        // 3. Nouvelle quête disponible ?
-        foreach (var q in data.availableQuests)
-        {
-            if (q == null) continue;
-            if (QuestSystem.Instance.CanAccept(q, player))
-                return $"J'ai une mission pour toi : {q.description}";
-        }
-
-        // 4. Rien
-        return $"Merci {player.entityName}, je n'ai plus rien pour toi pour le moment.";
-    }
-
-    // =========================================================
     // OPTIONS
     // =========================================================
 
@@ -174,13 +125,6 @@ public class DialogueUI : MonoBehaviour
     {
         ClearOptions();
         if (panelOptions == null || optionButtonPrefab == null) return;
-
-        // Stage quête dynamique → boutons générés selon l'état
-        if (stage.isDynamicQuestStage && _currentPNJ?.data != null && _currentPlayer != null)
-        {
-            BuildQuestButtons(_currentPNJ.data, _currentPlayer);
-            return;
-        }
 
         // Stage normal
         if (stage.options == null || stage.options.Count == 0)
@@ -211,67 +155,6 @@ public class DialogueUI : MonoBehaviour
         return $"{baseLabel} ({tiers[rank].purificationAerisCost} Aeris)";
     }
 
-    private void BuildQuestButtons(PNJData data, Player player)
-    {
-        if (QuestSystem.Instance == null) return;
-        ClearOptions();
-
-        // Priorité 1 : quête complétée → Récupérer seulement
-        foreach (var q in data.availableQuests)
-        {
-            if (q == null) continue;
-            if (QuestSystem.Instance.GetQuestState(q) == QuestState.Completed)
-            {
-                var captured = q;
-                SpawnButton("Récupérer", () =>
-                {
-                    QuestSystem.Instance.TurnInQuest(captured, player);
-                    SetText(txtDialogue, BuildQuestText(data, player));
-                    BuildQuestButtons(data, player);
-                });
-                SpawnButton("Partir", OnClickClose);
-                return;
-            }
-        }
-
-        // Priorité 2 : quête en cours → pas de Accepter
-        foreach (var q in data.availableQuests)
-        {
-            if (q == null) continue;
-            if (QuestSystem.Instance.GetQuestState(q) == QuestState.Active)
-            {
-                SpawnButton("Partir", OnClickClose);
-                return;
-            }
-        }
-
-        // Priorité 3 : première quête disponible → Accepter
-        foreach (var q in data.availableQuests)
-        {
-            if (q == null) continue;
-            if (QuestSystem.Instance.CanAccept(q, player))
-            {
-                var captured = q;
-                SpawnButton("Accepter", () =>
-                {
-                    QuestSystem.Instance.AcceptQuest(captured, player);
-                    CloseDialogue();
-                });
-                SpawnButton("Partir", OnClickClose);
-                return;
-            }
-        }
-
-        SpawnButton("Partir", OnClickClose);
-    }
-
-    private void RefreshQuestStage()
-    {
-        if (_currentPNJ?.data == null || _currentPlayer == null) return;
-        SetText(txtDialogue, BuildQuestText(_currentPNJ.data, _currentPlayer));
-        BuildQuestButtons(_currentPNJ.data, _currentPlayer);
-    }
-
     // =========================================================
     // CLIC OPTION NORMALE
     // =========================================================
@@ -290,7 +173,8 @@ public class DialogueUI : MonoBehaviour
                 if (option.questData != null && _currentPlayer != null)
                 {
                     QuestSystem.Instance?.AcceptQuest(option.questData, _currentPlayer);
-                    RefreshQuestStage();
+                    _currentPNJ?.SelectOption(option, _currentPlayer);
+                    CloseDialogue();
                     return;
                 }
                 break;
@@ -298,7 +182,8 @@ public class DialogueUI : MonoBehaviour
                 if (option.questData != null && _currentPlayer != null)
                 {
                     QuestSystem.Instance?.TurnInQuest(option.questData, _currentPlayer);
-                    RefreshQuestStage();
+                    _currentPNJ?.SelectOption(option, _currentPlayer);
+                    CloseDialogue();
                     return;
                 }
                 break;

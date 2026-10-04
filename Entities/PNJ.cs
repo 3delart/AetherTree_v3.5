@@ -733,7 +733,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         if (currentStage.options == null || currentStage.options.Count == 0)
         {
             DialogueUI.Instance?.ShowStage(currentStage);
-            if (!currentStage.isDynamicQuestStage) EndDialogue();
+            EndDialogue();
             return;
         }
 
