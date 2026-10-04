@@ -247,20 +247,29 @@ public class QuestObjective
     [ShowIf(nameof(type), QuestObjectiveType.Kill, QuestObjectiveType.Boss)]
     public MobData targetMob;
 
-    [Tooltip("TalkTo — glisser le PNJData")]
-    [ShowIf(nameof(type), QuestObjectiveType.TalkTo)]
+    [Tooltip("TalkTo — glisser le PNJData.\n" +
+             "DeliverToPNJ — PNJ auquel livrer l'item.\n" +
+             "Escort — PNJ ambulant (patrol route) à escorter jusqu'à son dernier point.")]
+    [ShowIf(nameof(type), QuestObjectiveType.TalkTo, QuestObjectiveType.DeliverToPNJ, QuestObjectiveType.Escort)]
     public PNJData targetPNJ;
 
-    [Tooltip("Gather / Craft — glisser le SO item (doit hériter de ItemData, ex: ResourceData,\n" +
-             "ConsumableData, WeaponData... — un item Gem/Rune, qui n'hérite pas d'ItemData, ne\n" +
-             "peut pas être ciblé par ce type d'objectif)")]
-    [ShowIf(nameof(type), QuestObjectiveType.Gather, QuestObjectiveType.Craft)]
+    [Tooltip("Gather / Craft / DeliverToPNJ — glisser le SO item (doit hériter de ItemData, ex:\n" +
+             "ResourceData, ConsumableData, WeaponData... — un item Gem/Rune, qui n'hérite pas\n" +
+             "d'ItemData, ne peut pas être ciblé par ce type d'objectif). Pour DeliverToPNJ : cet\n" +
+             "item est donné directement au joueur à l'acceptation de la quête (voir AcceptQuest),\n" +
+             "puis consommé quand il parle au PNJ cible (targetPNJ ci-dessus) en le tenant encore.")]
+    [ShowIf(nameof(type), QuestObjectiveType.Gather, QuestObjectiveType.Craft, QuestObjectiveType.DeliverToPNJ)]
     public ScriptableObject targetItem;
 
     [Tooltip("Explore — glisser le prefab de la zone (composant ZoneTrigger de CE prefab, pas une\n" +
              "instance de scène). Plus de string zoneID tapée à la main (ZoneData retiré 2026-10-04).")]
     [ShowIf(nameof(type), QuestObjectiveType.Explore)]
     public ZoneTrigger targetZonePrefab;
+
+    [Tooltip("DungeonComplete — glisser le DungeonData du donjon à terminer (victoire — voir\n" +
+             "InstanceSession.EndRun, Success uniquement, Failure/Left ne comptent jamais).")]
+    [ShowIf(nameof(type), QuestObjectiveType.DungeonComplete)]
+    public DungeonData targetDungeon;
 
     public int requiredCount = 1;
     public int currentCount  = 0;
@@ -272,10 +281,13 @@ public class QuestObjective
     {
         QuestObjectiveType.Kill    => targetMob  != null ? targetMob.mobName  : "",
         QuestObjectiveType.Boss    => targetMob  != null ? targetMob.mobName  : "",
-        QuestObjectiveType.TalkTo  => targetPNJ  != null ? targetPNJ.pnjName  : "",
-        QuestObjectiveType.Gather  => targetItem != null ? targetItem.name    : "",
-        QuestObjectiveType.Craft   => targetItem != null ? targetItem.name    : "",
-        QuestObjectiveType.Explore => targetZonePrefab != null ? targetZonePrefab.zoneID : "",
+        QuestObjectiveType.TalkTo       => targetPNJ  != null ? targetPNJ.pnjName  : "",
+        QuestObjectiveType.Gather       => targetItem != null ? targetItem.name    : "",
+        QuestObjectiveType.Craft        => targetItem != null ? targetItem.name    : "",
+        QuestObjectiveType.Explore      => targetZonePrefab != null ? targetZonePrefab.zoneID : "",
+        QuestObjectiveType.DeliverToPNJ => targetPNJ  != null ? targetPNJ.pnjName  : "",
+        QuestObjectiveType.DungeonComplete => targetDungeon != null ? targetDungeon.displayName : "",
+        QuestObjectiveType.Escort       => targetPNJ  != null ? targetPNJ.pnjName  : "",
         _                          => ""
     };
 
@@ -291,4 +303,12 @@ public class QuestObjective
 // 2 retiré (2026-10-04) — Deliver fusionné dans Gather (même mécanique exacte, zéro asset
 // n'utilisait cet ordinal — vérifié par grep direct sur les .asset avant suppression). Ordinal 2
 // jamais réutilisé.
-public enum QuestObjectiveType { Kill = 0, TalkTo = 1, Gather = 3, Explore = 4, Craft = 5, Boss = 6 }
+public enum QuestObjectiveType
+{
+    Kill = 0, TalkTo = 1, Gather = 3, Explore = 4, Craft = 5, Boss = 6,
+
+    // ── Ajoutés 2026-10-04 (Florian) ─────────────────────────
+    DeliverToPNJ    = 7, // Livraison PNJ→PNJ — item donné à l'accept, consommé au TalkTo cible
+    DungeonComplete = 8, // Terminer un donjon précis (InstanceSession.EndRun Success uniquement)
+    Escort          = 9, // PNJ ambulant (patrol route) atteint son dernier point de route
+}
