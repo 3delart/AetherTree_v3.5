@@ -120,6 +120,17 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// dans ce cas).</summary>
     public CombatAIState CurrentState => _combatAI != null ? _combatAI.CurrentState : CombatAIState.Patrol;
 
+    // ── Patrol Route — état privé ──────────────────────────────
+    private int   _routeIndex     = 0;
+    private bool  _routeWaiting   = false;
+    private float _routeWaitTimer = 0f;
+
+    /// <summary>Déclenché à CHAQUE arrivée à un point de la route (pas seulement le dernier) —
+    /// pointIndex donne l'index dans patrolPoints. Pas encore consommé — point d'accroche pour une
+    /// future récompense de quête (QuestSystem), à brancher lors de la revue dialogue/quest-giver/
+    /// quête multi-step (hors scope ici, voir la spec).</summary>
+    public event System.Action<PNJ, int> OnReachedRoutePoint;
+
     // =========================================================
     // INITIALISATION
     // =========================================================
@@ -240,6 +251,11 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     {
         base.Update();
         if (isDead) return;
+
+        // TickPatrolRoute() AVANT ce early-return — un PNJ ambulant NON-combattant doit marcher
+        // même si data.canFight est false, sinon ce return couperait court avant d'y arriver.
+        TickPatrolRoute();
+
         if (data == null || !data.canFight) return;
 
         // Poll d'interrupt de canalisation — DOIT rester avant le freeze CC ci-dessous : un hard
@@ -265,6 +281,45 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         if (isCCd) return;
 
         _combatAI.Tick();
+    }
+
+    /// <summary>Marche dirigée A→B→...→boucle sur patrolPoints[0] — système INDÉPENDANT du combat/
+    /// de la patrouille aléatoire (CombatAIController.Patrol, réservée aux Gardes). Zéro ligne de
+    /// CombatAIController.cs n'est touchée : ce PNJ se contente de ré-appeler sa méthode PUBLIQUE
+    /// Initialize() (pure assignation de champs, déjà appelée une fois dans Awake(), rappel sans
+    /// risque) pour déplacer son "chez-soi" de combat sur la position actuelle de la route — si un
+    /// combat démarre, CombatAIController.Return ramène ainsi vers LÀ, pas vers le Point A
+    /// d'origine. Voir docs/superpowers/specs/2026-10-04-pnj-patrol-route-design.md.</summary>
+    private void TickPatrolRoute()
+    {
+        if (!isPatrolRoute || patrolPoints.Count < 2) return;
+        if (IsTalking) return;                                                    // dialogue gèle la marche
+        if (_combatAI != null && _combatAI.CurrentState != CombatAIState.Patrol) return; // combat/retour en cours
+
+        if (_routeWaiting)
+        {
+            _routeWaitTimer -= Time.deltaTime;
+            if (_routeWaitTimer <= 0f) _routeWaiting = false;
+            return;
+        }
+
+        Transform current = patrolPoints[_routeIndex];
+        if (current == null) return; // point supprimé de la scène après assignation — reste figé plutôt que planter
+
+        _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, transform.position);
+
+        if (_agent != null) _agent.SetDestination(current.position);
+
+        if (_agent != null && !_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.3f)
+        {
+            // Invoke AVANT l'avance d'index — le hook rapporte le point qu'on vient d'atteindre,
+            // pas le prochain visé.
+            OnReachedRoutePoint?.Invoke(this, _routeIndex);
+
+            _routeIndex     = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
+            _routeWaiting   = true;
+            _routeWaitTimer = waitAtPointSeconds;
+        }
     }
 
     // =========================================================
@@ -832,6 +887,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         currentHP          = maxHP;
         currentMana        = maxMana;
         transform.position = _spawnPos;
+        _routeIndex         = 0; // sinon le PNJ réapparaît au Point A mais vise encore un point loin dans la route
         _combatAI?.ResetCooldowns();
 
         foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = true;
