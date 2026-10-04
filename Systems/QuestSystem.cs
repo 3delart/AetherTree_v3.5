@@ -41,8 +41,21 @@ public class QuestSystem : MonoBehaviour
 
     public void Resubscribe() { Unsubscribe(); Subscribe(); }
 
-    private void Subscribe()   => GameEventBus.OnMobKilled += HandleMobKilled;
-    private void Unsubscribe() => GameEventBus.OnMobKilled -= HandleMobKilled;
+    private void Subscribe()
+    {
+        GameEventBus.OnMobKilled     += HandleMobKilled;
+        GameEventBus.OnItemAction    += HandleItemAction;
+        GameEventBus.OnZoneEntered   += HandleZoneEntered;
+        GameEventBus.OnRecipeCrafted += HandleRecipeCrafted;
+    }
+
+    private void Unsubscribe()
+    {
+        GameEventBus.OnMobKilled     -= HandleMobKilled;
+        GameEventBus.OnItemAction    -= HandleItemAction;
+        GameEventBus.OnZoneEntered   -= HandleZoneEntered;
+        GameEventBus.OnRecipeCrafted -= HandleRecipeCrafted;
+    }
 
     // =========================================================
     // ACCEPT
@@ -225,6 +238,132 @@ public class QuestSystem : MonoBehaviour
                         quest           = quest,
                         action          = QuestAction.ObjectiveUpdated,
                         objectiveIndex  = idx,
+                    });
+                }
+            }
+
+            CheckCompletion(quest);
+        }
+    }
+
+    // =========================================================
+    // PROGRESSION RÉCOLTE (Gather) — via ItemEvent.Pickup
+    // =========================================================
+
+    private void HandleItemAction(ItemEvent e)
+    {
+        if (e.action != ItemAction.Pickup) return;
+        if (string.IsNullOrEmpty(e.itemID)) return;
+
+        foreach (var kvp in _activeData)
+        {
+            if (_states[kvp.Key] != QuestState.Active) continue;
+
+            QuestData quest       = kvp.Value;
+            var       activeIndices = quest.GetActiveObjectiveIndices();
+
+            foreach (int idx in activeIndices)
+            {
+                var obj = quest.objectives[idx];
+                if (obj.type != QuestObjectiveType.Gather) continue;
+
+                var targetData = obj.targetItem as ItemData;
+                if (targetData == null || targetData.itemID != e.itemID) continue;
+
+                bool wasComplete = obj.IsComplete;
+                obj.Increment(e.quantity > 0 ? e.quantity : 1);
+
+                if (!wasComplete)
+                {
+                    Debug.Log($"[QUEST] {quest.questName} · {obj.description} : {obj.ProgressLabel}");
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                    });
+                }
+            }
+
+            CheckCompletion(quest);
+        }
+    }
+
+    // =========================================================
+    // PROGRESSION EXPLORATION (Explore) — via ZoneEvent
+    // =========================================================
+    // ZoneEvent est publié à CHAQUE tick périodique dans la zone, pas seulement à l'entrée —
+    // sans risque ici : Increment() retourne immédiatement si IsComplete est déjà vrai, et
+    // requiredCount vaut 1 pour ce type dans l'usage courant (entrer dans la zone suffit).
+
+    private void HandleZoneEntered(ZoneEvent e)
+    {
+        if (string.IsNullOrEmpty(e.zoneID)) return;
+
+        foreach (var kvp in _activeData)
+        {
+            if (_states[kvp.Key] != QuestState.Active) continue;
+
+            QuestData quest       = kvp.Value;
+            var       activeIndices = quest.GetActiveObjectiveIndices();
+
+            foreach (int idx in activeIndices)
+            {
+                var obj = quest.objectives[idx];
+                if (obj.type != QuestObjectiveType.Explore) continue;
+                if (obj.targetZoneID != e.zoneID) continue;
+
+                bool wasComplete = obj.IsComplete;
+                obj.Increment();
+
+                if (!wasComplete)
+                {
+                    Debug.Log($"[QUEST] {quest.questName} · {obj.description} : {obj.ProgressLabel}");
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                    });
+                }
+            }
+
+            CheckCompletion(quest);
+        }
+    }
+
+    // =========================================================
+    // PROGRESSION CRAFT (Craft) — via RecipeCraftedEvent
+    // =========================================================
+
+    private void HandleRecipeCrafted(RecipeCraftedEvent e)
+    {
+        if (e.recipe == null || e.recipe.result == null) return;
+
+        foreach (var kvp in _activeData)
+        {
+            if (_states[kvp.Key] != QuestState.Active) continue;
+
+            QuestData quest       = kvp.Value;
+            var       activeIndices = quest.GetActiveObjectiveIndices();
+
+            foreach (int idx in activeIndices)
+            {
+                var obj = quest.objectives[idx];
+                if (obj.type != QuestObjectiveType.Craft) continue;
+                if ((obj.targetItem as ItemData) != e.recipe.result) continue;
+
+                bool wasComplete = obj.IsComplete;
+                obj.Increment(e.quantity > 0 ? e.quantity : 1);
+
+                if (!wasComplete)
+                {
+                    Debug.Log($"[QUEST] {quest.questName} · {obj.description} : {obj.ProgressLabel}");
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
                     });
                 }
             }
