@@ -195,6 +195,15 @@ public class QuestData : ScriptableObject
                 if (o != null && string.IsNullOrEmpty(o.objectiveID))
                     o.objectiveID = System.Guid.NewGuid().ToString("N").Substring(0, 8);
         }
+
+        if (objectives != null)
+        {
+            foreach (var o in objectives)
+                if (o != null && o.type == QuestObjectiveType.Boss && o.targetMob != null && !o.targetMob.IsBoss())
+                    Debug.LogWarning($"[QUEST] {questName} : objectif Boss '{o.description}' pointe vers " +
+                        $"'{o.targetMob.mobName}' qui n'est pas un boss (MobData.IsBoss() == false) — " +
+                        "probable erreur de configuration.");
+        }
     }
 #endif
 }
