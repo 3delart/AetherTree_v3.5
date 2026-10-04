@@ -71,8 +71,18 @@ public class PNJWindowUI : MonoBehaviour
 
         BuildTabs();
 
-        var tabs = pnjData.shopSpecialty.GetTabs();
+        var tabs = GetTabsFor(pnjData);
         if (tabs.Count > 0) ShowTab(tabs[0]); // toujours Boutique — 1er de la liste
+    }
+
+    /// <summary>Onglets de ShopSpecialty + Quête ajoutée en dernier SI ce PNJ a des quêtes à
+    /// offrir — un Merchant peut aussi être donneur de quêtes (Florian, 2026-10-04).</summary>
+    private List<PNJTabID> GetTabsFor(PNJData pnjData)
+    {
+        var tabs = pnjData.shopSpecialty.GetTabs();
+        if (pnjData.availableQuests != null && pnjData.availableQuests.Count > 0)
+            tabs.Add(PNJTabID.Quest);
+        return tabs;
     }
 
     public void Close()
@@ -82,6 +92,7 @@ public class PNJWindowUI : MonoBehaviour
         RarityUI.Instance?.Close();
         CraftPanelUI.Instance?.Close();
         FusionUI.Instance?.Close();
+        PNJQuestBoardUI.Instance?.Close();
         if (placeholderPanel != null) placeholderPanel.SetActive(false);
         if (panel != null) panel.SetActive(false);
 
@@ -99,7 +110,7 @@ public class PNJWindowUI : MonoBehaviour
         ClearTabs();
         if (tabButtonPrefab == null || tabsContent == null || _pnjData == null) return;
 
-        foreach (PNJTabID tab in _pnjData.shopSpecialty.GetTabs())
+        foreach (PNJTabID tab in GetTabsFor(_pnjData))
         {
             var go = Instantiate(tabButtonPrefab, tabsContent);
             _tabButtons.Add(go);
@@ -134,6 +145,7 @@ public class PNJWindowUI : MonoBehaviour
         PNJTabID.CraftIntermediaire => "Craft",
         PNJTabID.CraftGantsBottes   => "Craft",
         PNJTabID.CraftBijoux        => "Craft",
+        PNJTabID.Quest              => "Quêtes",
         _                           => tab.ToString(),
     };
 
@@ -151,7 +163,8 @@ public class PNJWindowUI : MonoBehaviour
                            tab == PNJTabID.CraftIntermediaire || tab == PNJTabID.CraftGantsBottes ||
                            tab == PNJTabID.CraftBijoux;
         bool showFusion = tab == PNJTabID.Fusion;
-        bool showPlaceholder = !showShop && !showForge && !showRarity && !showCraft && !showFusion;
+        bool showQuest  = tab == PNJTabID.Quest;
+        bool showPlaceholder = !showShop && !showForge && !showRarity && !showCraft && !showFusion && !showQuest;
 
         if (showShop) ShopUI.Instance?.OpenShop(_pnjData, _player);
         else          ShopUI.Instance?.CloseShop();
@@ -167,6 +180,9 @@ public class PNJWindowUI : MonoBehaviour
 
         if (showFusion) FusionUI.Instance?.Open(_pnjData, _player);
         else             FusionUI.Instance?.Close();
+
+        if (showQuest) PNJQuestBoardUI.Instance?.Open(_pnjData, _player);
+        else            PNJQuestBoardUI.Instance?.Close();
 
         if (placeholderPanel != null) placeholderPanel.SetActive(showPlaceholder);
         if (showPlaceholder) SetText(placeholderText, $"{GetTabLabel(tab)} — bientôt disponible");

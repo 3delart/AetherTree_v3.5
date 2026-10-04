@@ -427,6 +427,11 @@ public enum PNJTabID
 
     CraftGantsBottes    = 11,  // Cordonnier — craft de base, distinct de Fusion
     CraftBijoux         = 12,  // Bijoutier — craft de base, distinct de Gemmes
+
+    // Ajouté 2026-10-04 (Florian) — un Merchant peut aussi donner des quêtes. PAS retourné par
+    // GetTabs() ci-dessous (qui ne regarde que ShopSpecialty) — ajouté conditionnellement par
+    // PNJWindowUI selon pnjData.availableQuests, voir PNJWindowUI.GetTabsFor().
+    Quest               = 13,
 }
 
 // ── PNJ ayant une Boutique (ShopUI) — modèle composable §13.2 ────────────────
