@@ -934,5 +934,17 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(transform.position, _combatAI != null ? _combatAI.EngageRange : 0f);
         }
+
+        if (isPatrolRoute && patrolPoints != null)
+        {
+            Gizmos.color = Color.green;
+            for (int i = 0; i < patrolPoints.Count; i++)
+            {
+                if (patrolPoints[i] == null) continue;
+                Gizmos.DrawSphere(patrolPoints[i].position, 0.3f);
+                Transform next = patrolPoints[(i + 1) % patrolPoints.Count];
+                if (next != null) Gizmos.DrawLine(patrolPoints[i].position, next.position);
+            }
+        }
     }
 }
