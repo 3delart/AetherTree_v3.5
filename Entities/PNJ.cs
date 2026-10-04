@@ -155,6 +155,13 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     private bool       _awaitingDisappear = false;
     private bool       _routeHidden       = false;
     private float      _routeHideTimer    = 0f;
+    // Un bouton de dialogue "Ouvrir boutique/forge/..." dispatche l'action PUIS ferme le dialogue
+    // (nextStageID = -1) dans la foulée — IsTalking redevient donc faux pendant que le joueur est
+    // encore dans la boutique, et la route repartait en plein shopping. Posé par
+    // HandleDialogueAction() quand il déclenche un de ces panneaux, relu/effacé par
+    // IsSecondaryPanelOpen() une fois ce panneau refermé. Trouvé en test manuel par Florian (PNJ
+    // ambulant marchand).
+    private bool       _awaitingSecondaryPanel = false;
 
     /// <summary>Déclenché à CHAQUE arrivée à un point de la route (pas seulement le dernier) —
     /// pointIndex donne l'index dans patrolPoints. Pas encore consommé — point d'accroche pour une
@@ -331,6 +338,27 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         _combatAI.Tick();
     }
 
+    /// <summary>true tant qu'un panneau secondaire déclenché par CE PNJ (boutique/forge/rareté/
+    /// fenêtre PNJ/fusion) reste ouvert — _awaitingSecondaryPanel, posé par HandleDialogueAction(),
+    /// s'efface tout seul dès que le panneau concerné se referme (peu importe comment : bouton
+    /// Fermer du panneau lui-même, Escape, etc. — contrairement au talkingTo/DialogueUI.IsOpen de
+    /// plus haut, pas besoin d'un self-heal séparé ici puisqu'on relit l'état du panneau à CHAQUE
+    /// frame au lieu de se fier à un événement de fermeture).</summary>
+    private bool IsSecondaryPanelOpen()
+    {
+        if (!_awaitingSecondaryPanel) return false;
+
+        bool anyOpen =
+            (ShopUI.Instance      != null && ShopUI.Instance.gameObject.activeSelf)      ||
+            (ForgeUI.Instance     != null && ForgeUI.Instance.gameObject.activeSelf)     ||
+            (RarityUI.Instance    != null && RarityUI.Instance.gameObject.activeSelf)    ||
+            (PNJWindowUI.Instance != null && PNJWindowUI.Instance.gameObject.activeSelf) ||
+            (FusionUI.Instance    != null && FusionUI.Instance.gameObject.activeSelf);
+
+        if (!anyOpen) _awaitingSecondaryPanel = false; // panneau refermé — libère la route
+        return anyOpen;
+    }
+
     /// <summary>Marche dirigée A→B→...→boucle sur patrolPoints[0] — système INDÉPENDANT du combat/
     /// de la patrouille aléatoire (CombatAIController.Patrol, réservée aux Gardes). Zéro ligne de
     /// CombatAIController.cs n'est touchée : ce PNJ se contente de ré-appeler sa méthode PUBLIQUE
@@ -384,6 +412,14 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             // donner un ordre à l'agent, mais ne l'arrêtait pas : un SetDestination() déjà émis
             // continue d'être suivi par le NavMeshAgent tout seul, dialogue ouvert ou non — trouvé
             // en test manuel par Florian (le PNJ continuait de marcher pendant le dialogue).
+            if (_agent.hasPath) { _agent.ResetPath(); _lastRouteTarget = null; }
+            return;
+        }
+
+        if (IsSecondaryPanelOpen())
+        {
+            // Même traitement que IsTalking ci-dessus — un bouton "Ouvrir boutique" ferme le
+            // dialogue tout en laissant le panneau ouvert, donc IsTalking seul ne suffit plus.
             if (_agent.hasPath) { _agent.ResetPath(); _lastRouteTarget = null; }
             return;
         }
@@ -787,12 +823,15 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     {
         switch (action)
         {
-            case DialogueAction.OpenShop:           ShopUI.Instance?.OpenShop(data, player); break;
-            case DialogueAction.OpenForge:          ForgeUI.Instance?.Open(); break;
-            case DialogueAction.OpenRarity:          RarityUI.Instance?.Open(); break;
-            case DialogueAction.OpenPNJWindow:       PNJWindowUI.Instance?.Open(data, player); break;
+            // _awaitingSecondaryPanel = true sur les 5 actions qui ouvrent un panneau SECONDAIRE —
+            // le dialogue qui les déclenche se ferme juste après (nextStageID = -1), donc IsTalking
+            // seul ne suffit plus à geler la route pendant que ce panneau reste ouvert.
+            case DialogueAction.OpenShop:           ShopUI.Instance?.OpenShop(data, player); _awaitingSecondaryPanel = true; break;
+            case DialogueAction.OpenForge:          ForgeUI.Instance?.Open(); _awaitingSecondaryPanel = true; break;
+            case DialogueAction.OpenRarity:          RarityUI.Instance?.Open(); _awaitingSecondaryPanel = true; break;
+            case DialogueAction.OpenPNJWindow:       PNJWindowUI.Instance?.Open(data, player); _awaitingSecondaryPanel = true; break;
             case DialogueAction.OpenRuneUI:         Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");   break;
-            case DialogueAction.OpenFusionUI:       FusionUI.Instance?.Open(data, player); break;
+            case DialogueAction.OpenFusionUI:       FusionUI.Instance?.Open(data, player); _awaitingSecondaryPanel = true; break;
             case DialogueAction.OpenQuestLog:       Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");  break;
             case DialogueAction.OpenHarborUI:       Debug.Log("[PNJ] OpenHarborUI — HarborUI Phase 8"); break;
             case DialogueAction.TriggerGuildCreation: TryCreateGuild(player); break;
