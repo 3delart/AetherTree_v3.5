@@ -432,7 +432,7 @@ public class QuestJournalUI : MonoBehaviour
         QuestRank.Daily     => "Quotidienne",
         QuestRank.Guild     => "Guilde",
         QuestRank.Event     => "Événement",
-        QuestRank.Hidden    => "Cachée",
+        QuestRank.Secret    => "Secrète",
         _                   => ""
     };
 
@@ -443,7 +443,7 @@ public class QuestJournalUI : MonoBehaviour
         QuestRank.Daily     => new Color(0.6f, 0.95f, 0.65f, alpha),
         QuestRank.Guild     => new Color(0.9f, 0.65f, 1.0f,  alpha),
         QuestRank.Event     => new Color(1.0f, 0.65f, 0.35f, alpha),
-        QuestRank.Hidden    => new Color(0.7f, 0.7f,  0.75f, alpha),
+        QuestRank.Secret    => new Color(0.7f, 0.7f,  0.75f, alpha),
         _                   => new Color(1f,   1f,    1f,    alpha)
     };
 }

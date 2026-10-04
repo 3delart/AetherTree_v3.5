@@ -224,7 +224,9 @@ public class QuestData : ScriptableObject
 }
 
 // =============================================================
-public enum QuestRank { Main = 0, Secondary = 1, Daily = 2, Guild = 3, Event = 4, Hidden = 5 }
+// Hidden renommé Secret le 2026-10-04 (Florian) — même ordinal 5, pas de FormerlySerializedAs
+// nécessaire (rename d'enum, pas de champ — Unity sérialise par ordinal, jamais par nom).
+public enum QuestRank { Main = 0, Secondary = 1, Daily = 2, Guild = 3, Event = 4, Secret = 5 }
 
 // =============================================================
 [System.Serializable]

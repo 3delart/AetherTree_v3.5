@@ -293,7 +293,7 @@ public class QuestTrackerUI : MonoBehaviour
         QuestRank.Daily     => new Color(0.6f,  0.95f, 0.65f),
         QuestRank.Guild     => new Color(0.9f,  0.65f, 1.0f),
         QuestRank.Event     => new Color(1.0f,  0.65f, 0.35f),
-        QuestRank.Hidden    => new Color(0.75f, 0.75f, 0.8f),
+        QuestRank.Secret    => new Color(0.75f, 0.75f, 0.8f),
         _                   => Color.white
     };
 }
