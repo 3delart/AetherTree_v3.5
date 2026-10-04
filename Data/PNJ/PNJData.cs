@@ -38,7 +38,6 @@ public class PNJData : ScriptableObject
     // ── Dialogue ──────────────────────────────────────────────
     [Header("Dialogue")]
     public DialogueData defaultDialogue;
-    public DialogueData knownPlayerDialogue;
     public DialogueData highReputationDialogue;
     [Tooltip("Rang de Réputation Monde minimum pour le dialogue premium (0 = désactivé)")]
     public int reputationDialogueThreshold = 0;

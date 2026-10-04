@@ -97,10 +97,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
     public float hiddenDurationSeconds = 5f;
 
-    // ── Mémoire joueurs connus ────────────────────────────────
-    // Persisté via SaveSystem — GDD v3.5 §3.4
-    private HashSet<string> knownPlayerIDs = new HashSet<string>();
-
     // ── Dialogue actif ────────────────────────────────────────
     private DialogueData  activeDialogue = null;
     private DialogueStage currentStage   = null;
@@ -212,8 +208,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
         // Fige le snapshot — RequestRecalculate() repartira de ces valeurs
         SnapshotBaseStats();
-
-        LoadKnownPlayersFromPrefs();
 
         // Cache des composants combat
         _skillSystem = GetComponent<SkillSystem>();
@@ -588,8 +582,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case PNJType.CraftStation: InteractGenericShop(player);  break;
             case PNJType.Purification: InteractPurification(player); break;
         }
-
-        RegisterKnownPlayer(player);
     }
 
     // ── Marchand ──────────────────────────────────────────────
@@ -717,9 +709,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             player.prestigeRank >= data.reputationDialogueThreshold)
             return data.highReputationDialogue;
 
-        if (data.knownPlayerDialogue != null && IsKnownPlayer(player))
-            return data.knownPlayerDialogue;
-
         return data.defaultDialogue;
     }
 
@@ -742,19 +731,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         {
             Debug.LogWarning($"[PNJ] {data.pnjName} : DialogueData sans stage.");
             return;
-        }
-
-        if (IsKnownPlayer(player))
-        {
-            while (currentStage != null && currentStage.skipIfKnown)
-            {
-                if (currentStage.options != null && currentStage.options.Count > 0)
-                {
-                    int nextID = currentStage.options[0].nextStageID;
-                    currentStage = nextID >= 0 ? dialogue.GetStage(nextID) : null;
-                }
-                else break;
-            }
         }
 
         if (currentStage == null)
@@ -922,44 +898,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         FloatingText.Spawn("Aura purifiée", player.transform.position + Vector3.up * 2f, new Color(0.6f, 0.9f, 1f));
         Debug.Log($"[PNJ/Purification] Aura {rank} → {rank - 1} — {aerisCost} Aeris" +
             (needsResource ? $" + {resourceQty}x {tier.purificationResource.name}" : "") + ".");
-    }
-
-    // =========================================================
-    // MÉMOIRE JOUEURS — GDD v3.5 §3.4
-    // =========================================================
-
-    public void RegisterKnownPlayer(Player player)
-    {
-        if (player == null) return;
-        string id = player.entityName;
-        if (knownPlayerIDs.Add(id))
-        {
-            SaveKnownPlayersToPrefs();
-            Debug.Log($"[PNJ] {data.pnjName} mémorise le joueur : {id}");
-        }
-    }
-
-    private string PrefsKey => $"PNJ_Known_{data?.name ?? gameObject.name}";
-
-    private void SaveKnownPlayersToPrefs()
-    {
-        PlayerPrefs.SetString(PrefsKey, string.Join("|", knownPlayerIDs));
-        PlayerPrefs.Save();
-    }
-
-    private void LoadKnownPlayersFromPrefs()
-    {
-        string saved = PlayerPrefs.GetString(PrefsKey, "");
-        if (string.IsNullOrEmpty(saved)) return;
-        knownPlayerIDs.Clear();
-        foreach (string id in saved.Split('|'))
-            if (!string.IsNullOrEmpty(id)) knownPlayerIDs.Add(id);
-    }
-
-    public bool IsKnownPlayer(Player player)
-    {
-        if (player == null) return false;
-        return knownPlayerIDs.Contains(player.entityName); // TODO: player.playerID
     }
 
     // =========================================================

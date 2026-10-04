@@ -60,9 +60,6 @@ public class DialogueStage
     [Tooltip("Identifiant unique du stage dans ce dialogue")]
     public int    stageID   = 0;
 
-    [Tooltip("Si coché : ce stage est sauté automatiquement quand le joueur est déjà connu du PNJ.\nUtile pour le stage de présentation (stage 0).")]
-    public bool   skipIfKnown = false;
-
     [Tooltip("Si coché : texte et boutons calculés à runtime selon l'état des quêtes du PNJ.\nUtilisé par les PNJ Quest — Accepter / Récupérer / Partir générés automatiquement.")]
     public bool   isDynamicQuestStage = false;
 

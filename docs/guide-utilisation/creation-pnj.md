@@ -51,7 +51,6 @@ combattant, mais s'applique identiquement à n'importe quel `pnjType`.
 | `pnjName` | Nom affiché au joueur. |
 | `pnjType` | Voir [Vue d'ensemble](#vue-densemble) — conditionne les champs "Boutique"/spécifiques qui apparaissent plus bas dans l'Inspector (`ShowIf`). |
 | `defaultDialogue` | Dialogue par défaut, premier contact. |
-| `knownPlayerDialogue` | Dialogue affiché si le joueur est déjà connu (voir `RegisterKnownPlayer`, persisté via `PlayerPrefs`). |
 | `highReputationDialogue` + `reputationDialogueThreshold` | Dialogue premium si `player.worldReputationRank` ≥ seuil (0 = désactivé). |
 
 Pour un PNJ purement dialogue (`Decorative`, `Merchant`...), c'est suffisant — passer directement
