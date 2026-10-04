@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 using System.Collections.Generic;
 
 // =============================================================
@@ -99,7 +100,11 @@ public class CombatVagueData : ScriptableObject, IInstanceConfig
     [Header("Récompenses")]
     [Tooltip("Formule descriptive — voir GDD §14.5.1. Calcul réel implémenté au chantier contenu.")]
     public string rewardAerisFormula    = "1000 * niveau du joueur";
-    public string rewardWorldRepFormula = "50 * tranche du joueur";
+    // Renommé rewardWorldRepFormula → rewardPrestigeFormula le 2026-10-04 (Florian : toute
+    // référence à réputation passe par prestige maintenant) — juste une string descriptive,
+    // calcul réel pas encore implémenté (voir tooltip ci-dessus).
+    [FormerlySerializedAs("rewardWorldRepFormula")]
+    public string rewardPrestigeFormula = "50 * tranche du joueur";
 
     // ── IInstanceConfig ───────────────────────────────────────
     public string InstanceID     => eventID;

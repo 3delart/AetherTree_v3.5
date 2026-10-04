@@ -113,10 +113,23 @@ public class ShopUI : MonoBehaviour
         {
             if (entry?.item == null) continue;
 
-            bool reputationLocked = _player.prestigeRank < entry.requiredPrestigeRank;
-            bool exhausted        = ShopStockRegistry.Instance != null
+            bool prestigeLocked = _player.prestigeRank < entry.requiredPrestigeRank;
+            bool exhausted      = ShopStockRegistry.Instance != null
                                  && ShopStockRegistry.Instance.IsExhausted(_pnjData.pnjName, entry);
-            bool locked           = reputationLocked || exhausted;
+
+            // Incompatibilité d'arme — ne concerne que SkillData/PassiveSkillData/
+            // PermanentSkillData (compatibleWeapons), jamais les items d'équipement/
+            // consommables. Bloque l'achat comme prestigeLocked/exhausted — demande Florian :
+            // "le PNJ ne devrait pas pouvoir vendre quelque chose qui n'est pas compatible".
+            bool incompatible = false;
+            if (entry.item is SkillData sdCheck)
+                incompatible = !sdCheck.IsCompatibleWith(GetEquippedWeaponFamily());
+            else if (entry.item is PassiveSkillData pasCheck)
+                incompatible = !pasCheck.IsCompatibleWith(GetEquippedWeaponFamily());
+            else if (entry.item is PermanentSkillData permCheck)
+                incompatible = !permCheck.IsCompatibleWith(GetEquippedWeaponFamily());
+
+            bool locked = prestigeLocked || exhausted || incompatible;
 
             Sprite icon = GetEntryIcon(entry);
 
@@ -134,6 +147,7 @@ public class ShopUI : MonoBehaviour
                 price                : entry.aerisCost,
                 locked               : locked,
                 exhausted            : exhausted,
+                incompatible         : incompatible,
                 priceLabel           : exhausted ? "Acheté" : null,
                 tooltipItem          : previewItem,
                 tooltipSkill         : previewSkill,
@@ -210,7 +224,13 @@ public class ShopUI : MonoBehaviour
         return Mathf.RoundToInt(baseCost * (1f + malus));
     }
 
-    private GameObject SpawnCell(Sprite icon, int price, bool locked, bool exhausted = false, string priceLabel = null,
+    /// <summary>Famille de l'arme actuellement équipée (UnArmed si aucune) — utilisé pour
+    /// l'overlay/le blocage "IsIncompatible" de la grille.</summary>
+    private WeaponType GetEquippedWeaponFamily()
+        => (_player?.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
+
+    private GameObject SpawnCell(Sprite icon, int price, bool locked, bool exhausted = false, bool incompatible = false,
+        string priceLabel = null,
         InventoryItem tooltipItem = null, SkillData tooltipSkill = null, PermanentSkillData tooltipPermanentSkill = null,
         PassiveSkillData tooltipPassiveSkill = null)
     {
@@ -256,6 +276,13 @@ public class ShopUI : MonoBehaviour
         var exhaustedOverlay = go.transform.Find("ExhaustedOverlay")?.GetComponent<Image>();
         if (exhaustedOverlay != null)
             exhaustedOverlay.gameObject.SetActive(exhausted);
+
+        // Overlay rouge "IsIncompatible" — même enfant/même sens que SkillBar/PassifBar/
+        // SkillLibrary (demande Florian). Distinct de LockOverlay (prestige) pour que le
+        // joueur comprenne POURQUOI c'est bloqué, pas juste "verrouillé".
+        var incompatibleOverlay = go.transform.Find("IncompatibleOverlay")?.GetComponent<Image>();
+        if (incompatibleOverlay != null)
+            incompatibleOverlay.gameObject.SetActive(incompatible);
 
         // Cherche le Button sur la racine OU dans les enfants — interactable/listener
         // gérés par l'appelant (RefreshGrid), pas ici.

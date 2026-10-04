@@ -50,8 +50,7 @@ combattant, mais s'applique identiquement à n'importe quel `pnjType`.
 | `pnjID` | Clé technique stable (auto-remplie si vide). |
 | `pnjName` | Nom affiché au joueur. |
 | `pnjType` | Voir [Vue d'ensemble](#vue-densemble) — conditionne les champs "Boutique"/spécifiques qui apparaissent plus bas dans l'Inspector (`ShowIf`). |
-| `defaultDialogue` | Dialogue par défaut, premier contact. |
-| `highReputationDialogue` + `reputationDialogueThreshold` | Dialogue premium si `player.worldReputationRank` ≥ seuil (0 = désactivé). |
+| `defaultDialogue` | Dialogue unique, pas de filtre/sélection (retiré 2026-10-04). |
 
 Pour un PNJ purement dialogue (`Decorative`, `Merchant`...), c'est suffisant — passer directement
 à la [création du prefab](#étape-2--préparer-le-prefab) sans toucher aux champs Combat.

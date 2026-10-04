@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 using System.Collections.Generic;
 
 // =============================================================
@@ -93,8 +94,14 @@ public class DialogueStage
     [Tooltip("ID d'item ajouté à l'inventaire à l'entrée (vide = aucun)")]
     public string rewardItemID     = "";
 
-    [Tooltip("Points de Réputation Monde accordés (peut être négatif)")]
-    public int   rewardWorldRep    = 0;
+    // Renommé rewardWorldRep → rewardPrestige le 2026-10-04 (Florian : "toute référence à
+    // réputation doit passer par prestige maintenant") — le code appelait déjà
+    // player.AddPrestige(stage.rewardWorldRep) depuis le renommage worldReputation→Prestige
+    // (voir Player.cs/CharacterPanelUI.cs), seul CE nom de champ+tooltip était resté à l'ancien
+    // vocabulaire. FormerlySerializedAs préserve la valeur sur les DialogueData existants.
+    [FormerlySerializedAs("rewardWorldRep")]
+    [Tooltip("Points de Prestige accordés (peut être négatif)")]
+    public int   rewardPrestige    = 0;
 
     [Tooltip("Options cliquables proposées au joueur. Vide = fin de conversation.")]
     public List<DialogueOption> options = new List<DialogueOption>();

@@ -746,8 +746,8 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         if (!string.IsNullOrEmpty(stage.rewardItemID))
             Debug.Log($"[PNJ] Récompense item : {stage.rewardItemID} (InventorySystem Phase 5)");
 
-        if (stage.rewardWorldRep != 0)
-            player.AddPrestige(stage.rewardWorldRep);
+        if (stage.rewardPrestige != 0)
+            player.AddPrestige(stage.rewardPrestige);
     }
 
     private void HandleDialogueAction(DialogueAction action, Player player)

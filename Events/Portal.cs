@@ -30,7 +30,7 @@ public enum PortalGateType
     None                 = 0, // Comportement actuel — libre, aucun changement pour l'existant
     RequiresDungeonEntry = 1, // InstanceSession.PendingInstance valide pour ce portail précis
     RequiresTierUnlock   = 2, // Player.HasUnlockedTier(targetTier)
-    RequiresConditions   = 3, // ET de tous les critères renseignés : mobs, leviers, niveau, quêtes, réputation
+    RequiresConditions   = 3, // ET de tous les critères renseignés : mobs, leviers, niveau, quêtes, prestige
                               // (anciennement RequiresTrigger — même ordinal 3, aucune donnée sérialisée à migrer)
 }
 
@@ -318,7 +318,7 @@ public class Portal : MonoBehaviour
 
     /// <summary>Alimente le panel de donjon avec ce que ce portail exige encore. Les mobs sont
     /// versés dans un ensemble partagé (dédoublonné entre portails, le panel les additionne en
-    /// « Ennemis vaincus x / y » sans noms) ; leviers, niveau, quêtes et réputation deviennent
+    /// « Ennemis vaincus x / y » sans noms) ; leviers, niveau, quêtes et prestige deviennent
     /// des lignes. Ignore les portails qui ne sont pas RequiresConditions ou sont cachés.
     ///
     /// Leviers : JAMAIS de compteur par défaut (showActivatableCount = false) — voir son tooltip.
