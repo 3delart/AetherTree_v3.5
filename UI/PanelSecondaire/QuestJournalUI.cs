@@ -32,6 +32,11 @@ public class QuestJournalUI : MonoBehaviour
     public Transform  detailParent;
     public GameObject questDetailPrefab;
 
+    [Header("Actions")]
+    [Tooltip("Visible uniquement quand la quête sélectionnée est Active (masqué sinon) —\n" +
+             "assigner le GameObject Bouton dans le prefab de détail.")]
+    public Button abandonButton;
+
     [Header("Récompenses items — Prefab")]
     [Tooltip("Prefab avec Image 'Icon' + TextMeshProUGUI 'Label'.\nInstancié pour chaque item récompense.")]
     public GameObject rewardItemEntryPrefab;
@@ -66,6 +71,7 @@ public class QuestJournalUI : MonoBehaviour
     private void Start()
     {
         closeButton?.onClick.AddListener(Close);
+        abandonButton?.onClick.AddListener(OnAbandonClicked);
         EnsureRaycastBlocker();
         GameEventBus.OnQuestAction += OnQuestAction;
         GameEventBus.OnMobKilled   += OnMobKilled;
@@ -239,6 +245,19 @@ public class QuestJournalUI : MonoBehaviour
         Debug.Log($"[QUEST] Suivi {quest.questName} : {(isNowTracked ? "activé ✓" : "désactivé")}");
     }
 
+    private void OnAbandonClicked()
+    {
+        if (_selectedQuest == null || QuestSystem.Instance == null) return;
+        if (QuestSystem.Instance.GetQuestState(_selectedQuest) != QuestState.Active) return;
+
+        var player = FindObjectOfType<Player>();
+        if (!QuestSystem.Instance.AbandonQuest(_selectedQuest, player)) return;
+
+        _selectedQuest = null;
+        ClearDetail();
+        RefreshList();
+    }
+
     // =========================================================
     // DÉTAIL
     // =========================================================
@@ -256,6 +275,9 @@ public class QuestJournalUI : MonoBehaviour
         if (_detailRank != null) { _detailRank.text = RankLabel(quest.questRank); _detailRank.color = RankColor(quest.questRank, 0.85f); }
         if (_detailDescription != null)
             _detailDescription.text = !string.IsNullOrEmpty(quest.description) ? quest.description : "Aucune description.";
+
+        if (abandonButton != null)
+            abandonButton.gameObject.SetActive(QuestSystem.Instance?.GetQuestState(quest) == QuestState.Active);
 
         RefreshObjectifsText(quest);
         RefreshRewards(quest);
