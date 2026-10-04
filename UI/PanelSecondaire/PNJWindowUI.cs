@@ -71,7 +71,7 @@ public class PNJWindowUI : MonoBehaviour
 
         BuildTabs();
 
-        var tabs = pnjData.pnjType.GetTabs();
+        var tabs = pnjData.shopSpecialty.GetTabs();
         if (tabs.Count > 0) ShowTab(tabs[0]); // toujours Boutique — 1er de la liste
     }
 
@@ -99,7 +99,7 @@ public class PNJWindowUI : MonoBehaviour
         ClearTabs();
         if (tabButtonPrefab == null || tabsContent == null || _pnjData == null) return;
 
-        foreach (PNJTabID tab in _pnjData.pnjType.GetTabs())
+        foreach (PNJTabID tab in _pnjData.shopSpecialty.GetTabs())
         {
             var go = Instantiate(tabButtonPrefab, tabsContent);
             _tabButtons.Add(go);

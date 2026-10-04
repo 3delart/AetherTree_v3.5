@@ -560,12 +560,9 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         switch (data.pnjType)
         {
             case PNJType.Merchant:     InteractMerchant(player);     break;
-            case PNJType.Forge:        InteractForge(player);        break;
-#pragma warning disable CS0618 // Rarity — retiré du design (Pari est un onglet de Forge), ordinal gardé
+#pragma warning disable CS0618 // Rarity — retiré du design (Pari est un onglet de shopSpecialty.Forge), ordinal gardé
             case PNJType.Rarity:       InteractRarity(player);       break;
 #pragma warning restore CS0618
-            case PNJType.Antiquarian:  InteractAntiquarian(player);  break;
-            case PNJType.Cordonnier:   InteractCordonnier(player);   break;
             case PNJType.Quest:        InteractQuest(player);        break;
             case PNJType.Guard:        InteractGuard(player);        break;
             case PNJType.Decorative:   InteractDecorative(player);   break;
@@ -573,63 +570,36 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case PNJType.FactionNPC:   InteractFactionNPC(player);   break;
 #pragma warning restore CS0618
             case PNJType.HarborMaster: InteractHarborMaster(player); break;
-            case PNJType.Cook:         InteractGenericShop(player);  break;
-            case PNJType.Tinkerer:     InteractGenericShop(player);  break;
-            case PNJType.Jeweler:      InteractGenericShop(player);  break;
-            case PNJType.Hatter:       InteractGenericShop(player);  break;
-            case PNJType.CraftStation: InteractGenericShop(player);  break;
             case PNJType.Purification: InteractPurification(player); break;
         }
     }
 
-    // ── Marchand ──────────────────────────────────────────────
+    // ── Marchand (toute spécialité — shopSpecialty pilote les onglets, voir
+    // PNJTypeExtensions.GetTabs()) ──────────────────────────────
+    // N'ouvre PAS la fenêtre directement — le dialogue s'affiche d'abord, la fenêtre
+    // (PNJWindowUI, onglets résolus depuis shopSpecialty) ne s'ouvre que quand le joueur
+    // clique l'option dont l'Action = DialogueAction.OpenPNJWindow (voir HandleDialogueAction
+    // ci-dessous — seul point de dispatch, DialogueUI.OnOptionClicked ne fait que forwarder
+    // le clic via SelectOption()). Fusionné depuis InteractForge/InteractGenericShop/
+    // InteractAntiquarian/InteractCordonnier — identiques, voir commentaire PNJType.Merchant
+    // dans PNJData.cs. Demande Florian 2026-10-04.
     private void InteractMerchant(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
-    }
 
-    // ── PNJ composables génériques (Cook/Tinkerer/Jeweler/Hatter/CraftStation) ──
-    // Dialogue d'abord — la fenêtre (PNJWindowUI → CraftPanelUI/ShopUI selon l'onglet)
-    // ne s'ouvre qu'au clic sur l'option dont Action = OpenPNJWindow, même schéma
-    // que Merchant/Forge/Antiquaire ci-dessus.
-    private void InteractGenericShop(Player player)
-    {
-        StartDialogue(SelectDialogue(player), player);
-    }
-
-    // ── Forgeron ──────────────────────────────────────────────
-    // N'ouvre PAS la fenêtre directement — le dialogue s'affiche d'abord,
-    // la fenêtre Forge (Boutique/Craft Équipement/Upgrade/Pari) s'ouvre seulement
-    // quand le joueur clique l'option dont l'Action = DialogueAction.OpenForge (voir
-    // HandleDialogueAction ci-dessous — seul point de dispatch, DialogueUI.OnOptionClicked
-    // ne fait que forwarder le clic via SelectOption()).
-    private void InteractForge(Player player)
-    {
-        StartDialogue(SelectDialogue(player), player);
+        // TODO Phase 6 : RuneUI.Instance?.Open(data, player) — seule spécialité encore un
+        // stub (DialogueAction.OpenRuneUI), les autres (Forge/Cordonnier/Cook/Tinkerer/
+        // Jeweler/Hatter/CraftStation) ouvrent déjà une fenêtre réelle.
+        if (data.shopSpecialty == ShopSpecialty.Antiquarian)
+            Debug.Log($"[PNJ/Antiquaire] {data.pnjName} — identification:{data.canIdentifyRunes} insertion:{data.canInsertRunes} (RuneUI Phase 6)");
     }
 
     // ── PNJ Rareté ────────────────────────────────────────────
-    // Même schéma que le Forgeron : dialogue d'abord, RarityUI ne s'ouvre
+    // Même schéma que Merchant : dialogue d'abord, RarityUI ne s'ouvre
     // qu'au clic sur l'option dont l'Action = DialogueAction.OpenRarity.
     private void InteractRarity(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
-    }
-
-    // ── Antiquaire ────────────────────────────────────────────
-    private void InteractAntiquarian(Player player)
-    {
-        StartDialogue(SelectDialogue(player), player);
-        // TODO Phase 6 : RuneUI.Instance?.Open(data, player)
-        Debug.Log($"[PNJ/Antiquaire] {data.pnjName} — identification:{data.canIdentifyRunes} insertion:{data.canInsertRunes} (RuneUI Phase 6)");
-    }
-
-    // ── Cordonnier ────────────────────────────────────────────
-    private void InteractCordonnier(Player player)
-    {
-        StartDialogue(SelectDialogue(player), player);
-        // TODO Phase 6 : fenêtre Cordonnier (Boutique/Fusion) — Instance?.Open(player)
-        Debug.Log("[PNJ/Cordonnier] Fenêtre Fusion Phase 6");
     }
 
     // ── Quête ─────────────────────────────────────────────────

@@ -123,7 +123,7 @@ public enum DialogueAction
 {
     None                 = 0,  // Aucune action — juste navigation de stage
     OpenShop             = 1,  // Ouvre ShopUI (Merchant)
-    OpenForge            = 2,  // Ouvre ForgeUI — onglet Upgrade actuel (PNJType.Forge) — TODO Phase 6
+    OpenForge            = 2,  // Ouvre ForgeUI — onglet Upgrade actuel (shopSpecialty.Forge) — TODO Phase 6
     OpenRarity           = 3,  // Ouvre RarityUI (Rarity) — pari de rareté GDD §3.4.8
     OpenRuneUI           = 4,  // Ouvre RuneUI identification/insertion (Antiquarian) — TODO Phase 6
     OpenFusionUI         = 5,  // Ouvre FusionUI Gants/Bottes (FusionNPC) — TODO Phase 6

@@ -53,7 +53,6 @@ public class DialogueUI : MonoBehaviour
 
     [Header("Couleurs fond portrait par type")]
     public Color colorMerchant   = new Color(0.20f, 0.60f, 0.20f);
-    public Color colorBlacksmith = new Color(0.60f, 0.30f, 0.10f);
     public Color colorGuard      = new Color(0.50f, 0.50f, 0.60f);
     public Color colorQuest      = new Color(0.20f, 0.40f, 0.60f);
     public Color colorDecorative = new Color(0.35f, 0.35f, 0.35f);
@@ -353,8 +352,10 @@ public class DialogueUI : MonoBehaviour
 
     private Color GetPortraitColor(PNJType type) => type switch
     {
+        // Merchant couvre toute spécialité boutique depuis le 2026-10-04 (ex-Forge/Antiquarian/
+        // Cordonnier/Cook/Tinkerer/Jeweler/Hatter/CraftStation, voir PNJData.shopSpecialty) —
+        // même couleur de portrait pour toutes, pas de teinte par spécialité (jamais demandé).
         PNJType.Merchant   => colorMerchant,
-        PNJType.Forge      => colorBlacksmith,
         PNJType.Guard      => colorGuard,
         PNJType.Quest      => colorQuest,
         PNJType.Decorative => colorDecorative,
