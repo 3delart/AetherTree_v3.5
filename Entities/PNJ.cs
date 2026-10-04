@@ -354,6 +354,18 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
         if (_agent == null || !_agent.isActiveAndEnabled || !_agent.isOnNavMesh || IsDashing) return; // agent indisponible (Pull/Push, hors navmesh...) — ne pas spammer SetDestination/pathPending dans le vide
 
+        // Ré-ancrage du _spawnPos INTERNE de CombatAIController — À CHAQUE frame, MÊME pendant un
+        // dialogue/combat, PAS seulement pendant la marche (contrairement à _routeAnchor plus bas,
+        // qui lui reste figé pendant le combat pour garder un leash qui a un sens). Initialize()
+        // est une pure assignation de champs (vérifié dans CombatAIController.cs — aucun effet de
+        // bord sur CurrentState/cooldowns/cible en cours), donc aucun risque à la rappeler aussi
+        // souvent. Sans ce ré-ancrage continu, TickReturn() viserait encore la position d'il y a
+        // plusieurs secondes (la dernière fois que la route avait tourné, AVANT le combat) au lieu
+        // d'ici-et-maintenant, et ramènerait le PNJ marcher vers un point déjà quitté avant de
+        // reprendre sa route — trouvé en test manuel par Florian ("repart depuis sa position de
+        // fin de combat, pas de retour à l'ancien point").
+        _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, transform.position);
+
         // Self-heal : si talkingTo est resté non-nul alors que la fenêtre de dialogue n'est plus
         // ouverte (fermée via le bouton "Fermer"/Escape, qui passent par DialogueUI directement
         // sans repasser par PNJ.EndDialogue()), on le détecte ici plutôt que de geler la route
@@ -362,8 +374,29 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // vie pré-existant signalé dans la spec, à valider avec Florian.
         if (IsTalking && (DialogueUI.Instance == null || !DialogueUI.Instance.IsOpen))
             talkingTo = null;
-        if (IsTalking) return;                                                    // dialogue gèle la marche
-        if (_combatAI != null && _combatAI.CurrentState != CombatAIState.Patrol) return; // combat/retour en cours
+
+        if (IsTalking)
+        {
+            // Le PNJ s'arrête NET à sa position actuelle pendant le dialogue au lieu de continuer
+            // sa route en tâche de fond — ResetPath() coupe le chemin en cours, _lastRouteTarget =
+            // null force un SetDestination() frais vers le MÊME point à la reprise (pas de saut
+            // d'index). Avant ce correctif, l'early-return ci-dessous empêchait seulement de RE-
+            // donner un ordre à l'agent, mais ne l'arrêtait pas : un SetDestination() déjà émis
+            // continue d'être suivi par le NavMeshAgent tout seul, dialogue ouvert ou non — trouvé
+            // en test manuel par Florian (le PNJ continuait de marcher pendant le dialogue).
+            if (_agent.hasPath) { _agent.ResetPath(); _lastRouteTarget = null; }
+            return;
+        }
+
+        if (_combatAI != null && _combatAI.CurrentState != CombatAIState.Patrol)
+        {
+            // Le combat a pu repositionner l'agent n'importe où (poursuite d'une cible, retour) —
+            // forcer un SetDestination() frais à la reprise plutôt que de se fier à un cache
+            // _lastRouteTarget périmé qui ferait croire que l'agent vise déjà le bon point alors
+            // que son chemin réel a été écrasé entre-temps par CombatAIController.
+            _lastRouteTarget = null;
+            return;
+        }
 
         if (_routeWaiting)
         {
@@ -385,8 +418,11 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         Transform current = patrolPoints[_routeIndex];
         if (current == null) return; // point supprimé de la scène après assignation — reste figé plutôt que planter
 
+        // Figé ici (pas rafraîchi pendant le combat, contrairement au ré-ancrage continu plus haut)
+        // — LeashAnchor ci-dessous lit cette valeur pour plafonner la distance de poursuite
+        // pendant un combat ; si elle suivait aussi la position courante en temps réel, le leash
+        // ne vaudrait plus jamais rien (toujours ~0 de distance par rapport à soi-même).
         _routeAnchor = transform.position;
-        _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, _routeAnchor);
 
         // SetDestination une seule fois par point visé (pas par frame) — CombatAIController.
         // TickPatrol fait pareil ; ré-émettre le même chemin à chaque Update() était le design
