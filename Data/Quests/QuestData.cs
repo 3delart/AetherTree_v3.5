@@ -257,9 +257,10 @@ public class QuestObjective
     [ShowIf(nameof(type), QuestObjectiveType.Gather, QuestObjectiveType.Craft)]
     public ScriptableObject targetItem;
 
-    [Tooltip("Explore — ID de zone (string)")]
+    [Tooltip("Explore — glisser le prefab de la zone (composant ZoneTrigger de CE prefab, pas une\n" +
+             "instance de scène). Plus de string zoneID tapée à la main (ZoneData retiré 2026-10-04).")]
     [ShowIf(nameof(type), QuestObjectiveType.Explore)]
-    public string targetZoneID = "";
+    public ZoneTrigger targetZonePrefab;
 
     public int requiredCount = 1;
     public int currentCount  = 0;
@@ -274,7 +275,7 @@ public class QuestObjective
         QuestObjectiveType.TalkTo  => targetPNJ  != null ? targetPNJ.pnjName  : "",
         QuestObjectiveType.Gather  => targetItem != null ? targetItem.name    : "",
         QuestObjectiveType.Craft   => targetItem != null ? targetItem.name    : "",
-        QuestObjectiveType.Explore => targetZoneID,
+        QuestObjectiveType.Explore => targetZonePrefab != null ? targetZonePrefab.zoneID : "",
         _                          => ""
     };
 

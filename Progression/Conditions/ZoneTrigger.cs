@@ -22,18 +22,29 @@ using UnityEngine;
 // ZoneChecker choisir le bon selon ses propres mustBeAFK/atNight — voir
 // ZoneChecker.Evaluate().
 //
-// Brancher sur prefab :
+// Brancher sur prefab (un prefab PAR ZONE depuis le 2026-10-04 — plus de ZoneData séparé) :
 //   1. Ajouter un SphereCollider (ou BoxCollider) sur le prefab
 //   2. Cocher "Is Trigger"
 //   3. Ajouter ce composant
-//   4. Assigner le ZoneData correspondant
+//   4. Remplir zoneID/isOutdoor/isDungeon/isPvP directement sur CE prefab
 // =============================================================
 
 [RequireComponent(typeof(Collider))]
 public class ZoneTrigger : MonoBehaviour
 {
+    // Remplace l'ancien ZoneData (ScriptableObject séparé, retiré le 2026-10-04 — Florian :
+    // "pas un ZoneData mais un prefab") — chaque zone est désormais SON PROPRE prefab (variante de
+    // Prefab_ZoneTrigger), ces 4 champs configurés directement dessus. ConditionData/ZoneChecker
+    // et QuestObjective référencent ce composant SUR LE PREFAB directement (zonePrefab), pas
+    // besoin d'instancier pour lire zoneID — évite tout string tapé à la main en double (zone
+    // posée en scène ET zone référencée dans une condition/quête = EXACTEMENT le même asset).
     [Header("Zone")]
-    public ZoneData zoneData;
+    [Tooltip("ID unique de CETTE zone (ce prefab). Ex : 'zone_sous_arbre', 'zone_fontaine_nord'.")]
+    public string zoneID = "";
+    public bool   isOutdoor = true;
+    public bool   isDungeon = false;
+    [Tooltip("True = zone PvP activé.")]
+    public bool   isPvP     = false;
 
     [Header("Tick")]
     [Tooltip("Intervalle en secondes entre chaque ZoneEvent de tick. 0 = pas de tick.")]
@@ -150,18 +161,18 @@ public class ZoneTrigger : MonoBehaviour
 
     private void PublishZoneEvent(bool isFinalExit)
     {
-        if (zoneData == null || _player == null) return;
+        if (string.IsNullOrEmpty(zoneID) || _player == null) return;
 
         var e = new ZoneEvent
         {
-            zoneID                       = zoneData.zoneID,
+            zoneID                       = zoneID,
             timeSpentSeconds             = _timeInZone,
             totalTimeSeconds             = isFinalExit ? _timeInZone : 0f,
             continuousAFKSeconds         = _continuousAFKTime,
             continuousNightSeconds       = _continuousNightTime,
             continuousAFKAndNightSeconds = _continuousAFKNightTime,
             isAFK              = _player.IsAFK,
-            isDungeon          = zoneData.isDungeon,
+            isDungeon          = isDungeon,
             dungeonSolo        = false,   // géré par DungeonManager si besoin
             dungeonNoHit       = false,
             dungeonTimeSeconds = 0f,

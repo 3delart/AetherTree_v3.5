@@ -7,11 +7,15 @@ using UnityEditor;
 // Path : Assets/Scripts/Editor/ZoneTriggerMenu.cs
 //
 // Menu : AetherTree > Créer Prefab ZoneTrigger
-// À exécuter UNE fois. Crée Assets/Prefabs/Prefab_ZoneTrigger.prefab (SphereCollider en trigger,
-// rayon 3 — petit trigger fonctionnel, pas une région de map) + ZoneTrigger ; s'il existe déjà, le
-// sélectionne. Glisser ensuite le prefab dans une scène, ajuster la taille à la zone voulue, et
-// assigner un ZoneData. Sert UNIQUEMENT aux conditions (AFK/temps passé dans la zone, voir
-// ZoneChecker) — pour nommer une région de map sur la minimap, voir BiomeZone/BiomeData à la place.
+// À exécuter UNE fois pour créer le prefab GÉNÉRIQUE de départ. Crée
+// Assets/Prefabs/Prefab_ZoneTrigger.prefab (SphereCollider en trigger, rayon 3 — petit trigger
+// fonctionnel, pas une région de map) + ZoneTrigger ; s'il existe déjà, le sélectionne. Pour
+// CHAQUE zone réelle : dupliquer ce prefab (ou en faire une Variant) dans Assets/Prefabs/Zones/,
+// ajuster la taille du collider à la zone voulue, remplir zoneID/isOutdoor/isDungeon/isPvP
+// directement sur CETTE copie — un prefab PAR zone depuis le 2026-10-04 (plus de ZoneData séparé),
+// glissé en scène ET référencé par ConditionData/ZoneChecker ou QuestObjective (objectif Explore)
+// qui pointent DIRECTEMENT sur ce prefab. Sert UNIQUEMENT aux conditions (AFK/temps passé dans la
+// zone, voir ZoneChecker) — pour nommer une région de map sur la minimap, voir BiomeZone/BiomeData.
 // =============================================================
 public static class ZoneTriggerMenu
 {
