@@ -11,6 +11,12 @@ using UnityEditor;
 // des valeurs listées dans l'attribut. Supporte enum (comparaison par nom,
 // robuste aux réordonnancements) et bool.
 //
+// NE COUVRE QUE LES CHAMPS SCALAIRES — confirmé par log diagnostique le 2026-10-04 : Unity
+// n'invoque JAMAIS ce drawer pour un champ List<>/array dans l'Inspector par défaut (limitation
+// Unity, pas un bug de ce fichier). Pour masquer une liste conditionnellement, voir
+// ShowIfEditor.cs — classe de base d'Editor réutilisable qui contourne le problème en dessinant
+// chaque propriété elle-même plutôt que de compter sur ce drawer pour les champs List<>/array.
+//
 // Deux points délicats gérés ici :
 //   - Header conditionnel : dessiné par CE drawer (attribute.Header) plutôt
 //     que via [Header] classique, qui resterait affiché même masqué.
@@ -28,13 +34,6 @@ public class ShowIfPropertyDrawer : PropertyDrawer
 
     public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
     {
-        // DIAGNOSTIC TEMPORAIRE 2026-10-04 — à retirer une fois le bug List<>/array identifié.
-        // Sans filtre cette fois (le filtre isArray/propertyType de la version précédente a pu
-        // être la raison du silence côté Console) — log absolument TOUT appel.
-        Debug.Log($"[ShowIf DIAG] GetPropertyHeight appelé pour {property.propertyPath} — " +
-                  $"isArray={property.isArray}, propertyType={property.propertyType}, " +
-                  $"IsVisible={IsVisible(property)}");
-
         if (!IsVisible(property))
         {
             // Un List<T>/array laissé DÉPLIÉ (property.isExpanded = true, réglé par un clic
@@ -119,58 +118,7 @@ public class ShowIfPropertyDrawer : PropertyDrawer
         EditorGUI.PropertyField(position, property, fieldLabel, true);
     }
 
-    private bool IsVisible(SerializedProperty property)
-    {
-        var showIf = (ShowIfAttribute)attribute;
-
-        if (!MatchesAny(property, showIf.conditionField, showIf.values)) return false;
-
-        // AndField optionnel — condition ET secondaire (voir ShowIfAttribute.AndField).
-        // Absente (null) par défaut → n'affecte aucun des usages existants à un seul champ.
-        if (showIf.AndField != null && !MatchesAny(property, showIf.AndField, new[] { showIf.AndValue }))
-            return false;
-
-        // ExcludeField optionnel — condition d'exclusion, slot INDÉPENDANT d'AndField (voir
-        // ShowIfAttribute.ExcludeField). Absente (null) par défaut → aucun effet sur les
-        // usages existants.
-        if (showIf.ExcludeField != null && MatchesAny(property, showIf.ExcludeField, new[] { showIf.ExcludeValue }))
-            return false;
-
-        return true;
-    }
-
-    /// <summary>Résout le champ frère `fieldName` (chemin relatif, robuste dans les listes/objets
-    /// imbriqués — ex: "effects.Array.data[0].effectType", contrairement à un simple
-    /// Replace(property.name, ...) qui peut matcher au mauvais endroit) et retourne true si sa
-    /// valeur correspond à AU MOINS UNE des `values` fournies.</summary>
-    private bool MatchesAny(SerializedProperty property, string fieldName, object[] values)
-    {
-        int lastDot = property.propertyPath.LastIndexOf('.');
-        string siblingPath = lastDot >= 0
-            ? property.propertyPath.Substring(0, lastDot + 1) + fieldName
-            : fieldName;
-
-        SerializedProperty condition = property.serializedObject.FindProperty(siblingPath);
-        if (condition == null) return true; // champ introuvable — n'échoue pas silencieusement en masquant tout
-
-        foreach (var value in values)
-        {
-            switch (condition.propertyType)
-            {
-                case SerializedPropertyType.Enum:
-                    int index = condition.enumValueIndex;
-                    if (index >= 0 && index < condition.enumNames.Length &&
-                        condition.enumNames[index] == value.ToString())
-                        return true;
-                    break;
-
-                case SerializedPropertyType.Boolean:
-                    if (value is bool b && condition.boolValue == b)
-                        return true;
-                    break;
-            }
-        }
-        return false;
-    }
+    private bool IsVisible(SerializedProperty property) =>
+        ShowIfEvaluator.IsVisible(property, (ShowIfAttribute)attribute);
 }
 #endif
