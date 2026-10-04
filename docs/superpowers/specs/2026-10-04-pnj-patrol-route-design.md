@@ -116,12 +116,25 @@ if (needsMovement)
     if (_animatorController == null)
         _animatorController = gameObject.AddComponent<CombatEntityAnimatorController>();
 
-    _agent = GetComponent<NavMeshAgent>();   // doit déjà exister sur le prefab (même exigence qu'aujourd'hui pour canFight)
-    _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
-    SetMoveSpeed(data.baseMoveSpeed);
+    _agent = GetComponent<NavMeshAgent>();
+    if (_agent == null)
+    {
+        // Avant ce chantier, seuls les PNJ canFight avaient besoin d'un NavMeshAgent sur leur
+        // prefab — un PNJ non-combattant existant n'en a jamais eu. Avertir plutôt que planter
+        // au prochain `_agent.speed = ...` (et plus tard dans TickPatrolRoute) : pas d'ajout
+        // automatique, un NavMeshAgent auto-ajouté par Unity a des réglages par défaut qui ne
+        // correspondent presque jamais au PNJ réel (rayon/hauteur de collision).
+        Debug.LogWarning($"[PNJ] {name} : besoin de mouvement (canFight ou isPatrolRoute) " +
+                          "mais aucun NavMeshAgent sur le prefab — l'ajouter manuellement.");
+    }
+    else
+    {
+        _agent.speed = data.combatMoveSpeed > 0f ? data.combatMoveSpeed : data.baseMoveSpeed;
+        SetMoveSpeed(data.baseMoveSpeed);
+    }
 }
 
-if (data != null && data.canFight)
+if (data != null && data.canFight && _agent != null)
 {
     _combatAI = gameObject.AddComponent<CombatAIController>();
     _combatAI.Initialize(this, _agent, _skillSystem, this, _animatorController, _spawnPos);
@@ -132,6 +145,11 @@ if (isPatrolRoute && patrolPoints.Count < 2)
 if (isPatrolRoute && data != null && data.walkClip == null)
     Debug.LogWarning($"[PNJ] {name} : isPatrolRoute = true mais data.walkClip non assigné.");
 ```
+
+Le garde `_agent != null` sur la branche `canFight` est nécessaire pour la même raison :
+`CombatAIController` a `[RequireComponent(typeof(NavMeshAgent))]`, donc `AddComponent<
+CombatAIController>()` sans agent préexistant ferait ajouter par Unity un agent aux réglages par
+défaut au lieu d'avertir clairement — ce garde préserve le même filet que ci-dessus.
 
 **Migration requise côté Unity (pas du code)** : un PNJ non-combattant qui devient ambulant doit
 avoir un `NavMeshAgent` posé manuellement sur son prefab — jusqu'ici seuls les PNJ `canFight`
@@ -173,7 +191,10 @@ private void TickPatrolRoute()
 
     if (_agent != null) _agent.SetDestination(current.position);
 
-    if (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.3f)
+    // _agent peut être null si Awake() a loggé "aucun NavMeshAgent" (voir Attache des
+    // composants) — sans ce garde, un PNJ mal configuré planterait ici au lieu de rester
+    // simplement immobile avec l'avertissement déjà affiché.
+    if (_agent != null && !_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.3f)
     {
         OnReachedRoutePoint?.Invoke(this, _routeIndex);   // hook quest, voir plus bas — AVANT l'avance d'index
 
@@ -292,7 +313,7 @@ dessinés, aide Florian à poser ses points dans l'éditeur sans deviner.
 ## Portée volontairement exclue (pour cette session)
 
 - Toute intégration réelle avec `QuestData`/`QuestSystem` pour la récompense à l'arrivée — seul
-  l'événement `OnReachedRouteEnd` est posé, rien d'autre ne l'écoute encore.
+  l'événement `OnReachedRoutePoint` est posé, rien d'autre ne l'écoute encore.
 - Dialogue multi-step, quest-giver, conditions de prérequis — hors scope, revue séparée prévue.
 - Vrai mode "escort" dépendant de la distance au joueur — explicitement refusé par Florian pour
   cette itération (le PNJ marche à son rythme, indépendant du joueur).
