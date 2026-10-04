@@ -695,6 +695,32 @@ public class InventoryItem
     // ── Rétrocompat ───────────────────────────────────────────
     public string RarityLabel => CountLabel;
 
+    /// <summary>Le ItemData sous-jacent, quel que soit le type concret — null pour Rune/Gem/
+    /// Cosmétique/Talisman (n'héritent pas de ItemData, voir Data/ItemData.cs). Utilisé pour
+    /// publier un ItemEvent générique (ex: ItemAction.Pickup) sans dupliquer le switch partout.</summary>
+    public ItemData GetItemData()
+    {
+        if (WeaponInstance     != null) return WeaponInstance.data;
+        if (ArmorInstance      != null) return ArmorInstance.data;
+        if (HelmetInstance     != null) return HelmetInstance.data;
+        if (GlovesInstance     != null) return GlovesInstance.data;
+        if (BootsInstance      != null) return BootsInstance.data;
+        if (JewelryInstance    != null) return JewelryInstance.data;
+        if (SpiritInstance     != null) return SpiritInstance.data;
+        if (ConsumableInstance != null) return ConsumableInstance.data;
+        if (ResourceInstance   != null) return ResourceInstance.data;
+        return null;
+    }
+
+    /// <summary>Quantité représentée par cet InventoryItem — compteur de stack pour les
+    /// stackables, 1 pour tout équipement (toujours unitaire).</summary>
+    public int GetQuantity()
+    {
+        if (ConsumableInstance != null) return ConsumableInstance.quantity;
+        if (ResourceInstance   != null) return ResourceInstance.quantity;
+        return 1;
+    }
+
     /// <summary>Texte affiché dans la cellule inventaire — quantité pour stackables, rien pour équipements.</summary>
     public string CellLabel
     {

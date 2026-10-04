@@ -198,9 +198,17 @@ public class QuestData : ScriptableObject
 
         if (objectives != null)
         {
+            var seenIDs = new System.Collections.Generic.HashSet<string>();
             foreach (var o in objectives)
-                if (o != null && string.IsNullOrEmpty(o.objectiveID))
+            {
+                if (o == null) continue;
+                // Vide (nouvel objectif) OU déjà vu (objectif dupliqué via "+" dans l'Inspector,
+                // qui copie objectiveID avec le reste) — les deux cas doivent regénérer, sinon
+                // deux objectifs partagent la même clé de sauvegarde (voir LoadSaveData).
+                if (string.IsNullOrEmpty(o.objectiveID) || seenIDs.Contains(o.objectiveID))
                     o.objectiveID = System.Guid.NewGuid().ToString("N").Substring(0, 8);
+                seenIDs.Add(o.objectiveID);
+            }
         }
 
         if (objectives != null)

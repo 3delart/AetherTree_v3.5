@@ -81,7 +81,7 @@ public class QuestTrackerUI : MonoBehaviour
     private void OnQuestAction(QuestEvent e)
     {
         if (e.quest != null &&
-            (e.action == QuestAction.TurnedIn || e.action == QuestAction.Failed))
+            (e.action == QuestAction.TurnedIn || e.action == QuestAction.Failed || e.action == QuestAction.Abandoned))
             _trackedQuestIDs.Remove(e.quest.questID);
         _dirty = true;
     }

@@ -156,10 +156,19 @@ public class ResourceNode : MonoBehaviour
             new InventoryItem(data.CreateInstance(qty))) ?? false;
 
         if (added)
+        {
             FloatingText.Spawn(
                 $"+{qty} {data.displayName.Get(LocalizationManager.CurrentLanguage)}",
                 transform.position + Vector3.up * 1.5f,
                 new Color(0.8f, 0.65f, 0.2f));
+
+            GameEventBus.Publish(new ItemEvent
+            {
+                itemID   = data.itemID,
+                action   = ItemAction.Pickup,
+                quantity = qty,
+            });
+        }
         else
             FloatingText.Spawn("Inventaire plein !",
                 transform.position + Vector3.up * 1.5f, Color.red);

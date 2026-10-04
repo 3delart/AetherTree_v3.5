@@ -145,6 +145,8 @@ public class QuestSystem : MonoBehaviour
             Debug.LogWarning($"[QUEST] {quest.questName} : inventaire insuffisant " +
                 $"({InventorySystem.Instance.EmptySlotCount} emplacement(s) libre(s), " +
                 $"{eligibleRewards.Count} récompense(s) à octroyer) — turn-in refusé, rien n'est accordé.");
+            FloatingText.Spawn("Inventaire plein !",
+                player.transform.position + Vector3.up * 2f, Color.red);
             return false;
         }
 
@@ -267,7 +269,7 @@ public class QuestSystem : MonoBehaviour
             foreach (int idx in activeIndices)
             {
                 var obj = quest.objectives[idx];
-                if (obj.type != QuestObjectiveType.Kill) continue;
+                if (obj.type != QuestObjectiveType.Kill && obj.type != QuestObjectiveType.Boss) continue;
 
                 // Vérifie si le mob correspond (comparaison nom, insensible à la casse)
                 if (!string.IsNullOrEmpty(obj.TargetName) &&
@@ -339,9 +341,14 @@ public class QuestSystem : MonoBehaviour
     // =========================================================
     // PROGRESSION EXPLORATION (Explore) — via ZoneEvent
     // =========================================================
-    // ZoneEvent est publié à CHAQUE tick périodique dans la zone, pas seulement à l'entrée —
-    // sans risque ici : Increment() retourne immédiatement si IsComplete est déjà vrai, et
-    // requiredCount vaut 1 pour ce type dans l'usage courant (entrer dans la zone suffit).
+    // ZoneEvent (ZoneTrigger.cs, système partagé pré-existant, pas touché par ce chantier) n'est
+    // publié qu'au premier tick périodique (tickIntervalSeconds, 60s par défaut) ou à la sortie
+    // de la zone — PAS immédiatement à l'entrée. Un objectif Explore peut donc valider avec un
+    // délai allant jusqu'à tickIntervalSeconds si le joueur reste dans la zone, ou seulement à la
+    // sortie s'il tick est désactivé (tickIntervalSeconds = 0). Réduire tickIntervalSeconds sur le
+    // ZoneTrigger concerné (champ Inspector déjà public) atténue le délai sans toucher au code.
+    // Sans risque de sur-comptage : Increment() retourne immédiatement si IsComplete est déjà
+    // vrai, et requiredCount vaut 1 pour ce type dans l'usage courant.
 
     private void HandleZoneEntered(ZoneEvent e)
     {
@@ -534,6 +541,12 @@ public class QuestSystem : MonoBehaviour
                 if (questByID.TryGetValue(entry.questID, out var quest))
                 {
                     _activeData[entry.questID] = quest;
+
+                    // ResetProgress AVANT d'appliquer les entrées sauvegardées : currentCount vit
+                    // sur le ScriptableObject partagé (peut déjà porter une valeur périmée — un
+                    // objectif sans entrée correspondante, ex. objectiveID vide/dupliqué ou ancien
+                    // format de save, doit retomber à 0, pas garder une valeur fortuite de l'asset).
+                    quest.ResetProgress();
 
                     if (entry.objectiveEntries != null)
                     {

@@ -32,11 +32,6 @@ public class QuestJournalUI : MonoBehaviour
     public Transform  detailParent;
     public GameObject questDetailPrefab;
 
-    [Header("Actions")]
-    [Tooltip("Visible uniquement quand la quête sélectionnée est Active (masqué sinon) —\n" +
-             "assigner le GameObject Bouton dans le prefab de détail.")]
-    public Button abandonButton;
-
     [Header("Récompenses items — Prefab")]
     [Tooltip("Prefab avec Image 'Icon' + TextMeshProUGUI 'Label'.\nInstancié pour chaque item récompense.")]
     public GameObject rewardItemEntryPrefab;
@@ -52,6 +47,7 @@ public class QuestJournalUI : MonoBehaviour
     private TextMeshProUGUI _objectifsText;
     private TextMeshProUGUI _xpRewardsText;
     private TextMeshProUGUI _aerisRewardsText;
+    private Button          _abandonButton;
 
     // Container dans lequel on instancie les rewardItemEntryPrefab
     private Transform _itemsRewardsContainer;
@@ -71,7 +67,6 @@ public class QuestJournalUI : MonoBehaviour
     private void Start()
     {
         closeButton?.onClick.AddListener(Close);
-        abandonButton?.onClick.AddListener(OnAbandonClicked);
         EnsureRaycastBlocker();
         GameEventBus.OnQuestAction += OnQuestAction;
         GameEventBus.OnMobKilled   += OnMobKilled;
@@ -276,8 +271,8 @@ public class QuestJournalUI : MonoBehaviour
         if (_detailDescription != null)
             _detailDescription.text = !string.IsNullOrEmpty(quest.description) ? quest.description : "Aucune description.";
 
-        if (abandonButton != null)
-            abandonButton.gameObject.SetActive(QuestSystem.Instance?.GetQuestState(quest) == QuestState.Active);
+        if (_abandonButton != null)
+            _abandonButton.gameObject.SetActive(QuestSystem.Instance?.GetQuestState(quest) == QuestState.Active);
 
         RefreshObjectifsText(quest);
         RefreshRewards(quest);
@@ -296,6 +291,14 @@ public class QuestJournalUI : MonoBehaviour
         _detailName        = entete?.Find("QuestName")       ?.GetComponent<TextMeshProUGUI>();
         _detailRank        = entete?.Find("QuestRank")       ?.GetComponent<TextMeshProUGUI>();
         _detailDescription = entete?.Find("QuestDescription")?.GetComponent<TextMeshProUGUI>();
+
+        // Bouton Abandonner — résolu ICI (et pas via un champ Inspector) car ce prefab est
+        // Instantiate/Destroy à chaque ouverture : un champ sérialisé viserait l'asset prefab,
+        // jamais l'instance vivante. Cherché sous "QuestEntete" — même convention que les
+        // TextMeshProUGUI voisins ; nommer un GameObject "AbandonButton" dans le prefab pour qu'il
+        // soit trouvé.
+        _abandonButton = entete?.Find("AbandonButton")?.GetComponent<Button>();
+        _abandonButton?.onClick.AddListener(OnAbandonClicked);
 
         _objectifsText = root.Find("QuestObjective")?.Find("QuestObjectifs")?.GetComponent<TextMeshProUGUI>();
 
@@ -413,6 +416,7 @@ public class QuestJournalUI : MonoBehaviour
         }
 
         _detailName = _detailRank = _detailDescription = _objectifsText = null;
+        _abandonButton = null;
         _xpRewardsText = _aerisRewardsText = null;
         _itemsRewardsContainer = null;
     }

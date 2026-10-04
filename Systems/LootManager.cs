@@ -138,6 +138,15 @@ public class LootManager : MonoBehaviour
         if (InventorySystem.Instance.AddItem(item))
         {
             Debug.Log($"[LOOT] {winner.entityName} a reçu {item.Name} ({mobName}).");
+
+            var itemData = item.GetItemData();
+            if (itemData != null)
+                GameEventBus.Publish(new ItemEvent
+                {
+                    itemID   = itemData.itemID,
+                    action   = ItemAction.Pickup,
+                    quantity = item.GetQuantity(),
+                });
         }
         else
         {
