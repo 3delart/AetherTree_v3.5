@@ -76,9 +76,26 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public List<Transform> patrolPoints = new List<Transform>();
 
     [Tooltip("Temps d'arrêt (idle) à CHAQUE point avant de repartir vers le suivant, y compris\n" +
-             "au bouclage sur patrolPoints[0].")]
+             "au bouclage sur patrolPoints[0] (ignoré au DERNIER point si loopRoute = false, voir\n" +
+             "waitBeforeDisappearSeconds ci-dessous).")]
     [ShowIf(nameof(isPatrolRoute), true)]
     public float waitAtPointSeconds = 3f;
+
+    [Tooltip("Coché (défaut) = boucle sans fin sur patrolPoints[0] (comportement historique).\n" +
+             "Décoché = s'arrête au DERNIER point de la liste au lieu de reboucler — voir\n" +
+             "waitBeforeDisappearSeconds / hiddenDurationSeconds ci-dessous.")]
+    [ShowIf(nameof(isPatrolRoute), true)]
+    public bool loopRoute = true;
+
+    [Tooltip("Idle au DERNIER point avant de disparaître (loopRoute = false uniquement) — distinct\n" +
+             "de waitAtPointSeconds, pour régler ce point final indépendamment des autres.")]
+    [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
+    public float waitBeforeDisappearSeconds = 3f;
+
+    [Tooltip("Durée pendant laquelle le PNJ est complètement absent (invisible, inattaquable,\n" +
+             "non-interactible) avant de réapparaître à patrolPoints[0] et reprendre la route.")]
+    [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
+    public float hiddenDurationSeconds = 5f;
 
     // ── Mémoire joueurs connus ────────────────────────────────
     // Persisté via SaveSystem — GDD v3.5 §3.4
@@ -131,6 +148,13 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     // compare toujours contre LeashAnchor, que Initialize() ne touche pas) — trouvé en revue de
     // code avant exécution, pas en test manuel.
     private Vector3    _routeAnchor      = Vector3.zero;
+    // _awaitingDisappear : le cycle _routeWaiting EN COURS est celui du DERNIER point en mode
+    // loopRoute = false — à son expiration, TickPatrolRoute() doit disparaître au lieu de
+    // reboucler normalement. Un simple bool plutôt qu'un enum d'état séparé : évite de toucher
+    // à la logique _routeWaiting déjà en place (revue + corrigée), un seul if de plus à sa sortie.
+    private bool       _awaitingDisappear = false;
+    private bool       _routeHidden       = false;
+    private float      _routeHideTimer    = 0f;
 
     /// <summary>Déclenché à CHAQUE arrivée à un point de la route (pas seulement le dernier) —
     /// pointIndex donne l'index dans patrolPoints. Pas encore consommé — point d'accroche pour une
@@ -245,6 +269,11 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     // =========================================================
     public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null)
     {
+        // _routeHidden AVANT base.TakeDamage() — le PNJ est censé être complètement absent entre
+        // deux passages de route (loopRoute = false), pas juste invisible : aucun dégât ne doit
+        // passer, même via une attaque de zone qui ne dépend pas du Collider désactivé.
+        if (_routeHidden) return;
+
         base.TakeDamage(amount, sourceElement, source);
 
         // Coupe un dialogue en cours AVANT ForceEngage() — s'applique même si !canFight (un PNJ
@@ -312,6 +341,17 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     private void TickPatrolRoute()
     {
         if (!isPatrolRoute || patrolPoints.Count < 2) return;
+
+        // _routeHidden AVANT le guard _agent ci-dessous — Disappear() désactive volontairement
+        // l'agent/renderer/collider le temps de l'absence, le guard renverrait donc toujours vrai
+        // et ce timer ne décompterait jamais si on le testait après.
+        if (_routeHidden)
+        {
+            _routeHideTimer -= Time.deltaTime;
+            if (_routeHideTimer <= 0f) ReappearAtRouteStart();
+            return;
+        }
+
         if (_agent == null || !_agent.isActiveAndEnabled || !_agent.isOnNavMesh || IsDashing) return; // agent indisponible (Pull/Push, hors navmesh...) — ne pas spammer SetDestination/pathPending dans le vide
 
         // Self-heal : si talkingTo est resté non-nul alors que la fenêtre de dialogue n'est plus
@@ -328,7 +368,17 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         if (_routeWaiting)
         {
             _routeWaitTimer -= Time.deltaTime;
-            if (_routeWaitTimer <= 0f) _routeWaiting = false;
+            if (_routeWaitTimer <= 0f)
+            {
+                _routeWaiting = false;
+                // Ce cycle de wait était celui du dernier point en mode loopRoute = false — à son
+                // expiration, on disparaît au lieu de reboucler normalement vers patrolPoints[0].
+                if (_awaitingDisappear)
+                {
+                    _awaitingDisappear = false;
+                    Disappear();
+                }
+            }
             return;
         }
 
@@ -355,11 +405,64 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             // pas le prochain visé.
             OnReachedRoutePoint?.Invoke(this, _routeIndex);
 
-            _routeIndex      = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
-            _routeWaiting    = true;
-            _routeWaitTimer  = waitAtPointSeconds;
+            bool isLastPoint = _routeIndex == patrolPoints.Count - 1;
+            if (!loopRoute && isLastPoint)
+            {
+                // Pas d'avance d'index ici — ReappearAtRouteStart() le remet à 0 explicitement
+                // quand l'absence se termine, un peu plus loin.
+                _awaitingDisappear = true;
+                _routeWaiting      = true;
+                _routeWaitTimer    = waitBeforeDisappearSeconds;
+            }
+            else
+            {
+                _routeIndex     = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
+                _routeWaiting   = true;
+                _routeWaitTimer = waitAtPointSeconds;
+            }
             _lastRouteTarget = null; // force un nouveau SetDestination() vers le point suivant
         }
+    }
+
+    /// <summary>Rend le PNJ complètement absent (renderer/collider/agent désactivés, Interact()/
+    /// TakeDamage() no-op via _routeHidden) pendant hiddenDurationSeconds — appelé uniquement
+    /// depuis TickPatrolRoute() quand loopRoute = false et que le dernier point vient d'idle.</summary>
+    private void Disappear()
+    {
+        _routeHidden    = true;
+        _routeHideTimer = hiddenDurationSeconds;
+        SetRouteVisualAndCollision(false);
+    }
+
+    /// <summary>Fin de l'absence — réapparaît directement à patrolPoints[0] (Warp, pas de marche
+    /// de retour : le PNJ était complètement absent, pas juste invisible sur place) et reprend la
+    /// route depuis le début.</summary>
+    private void ReappearAtRouteStart()
+    {
+        _routeHidden = false;
+        SetRouteVisualAndCollision(true);
+
+        _routeIndex      = 0;
+        _lastRouteTarget = null;
+
+        Transform start = patrolPoints.Count > 0 ? patrolPoints[0] : null;
+        if (start != null)
+        {
+            transform.position = start.position;
+            if (_agent != null && _agent.isOnNavMesh) _agent.Warp(start.position);
+            _routeAnchor = start.position;
+            _combatAI?.Initialize(this, _agent, _skillSystem, this, _animatorController, _routeAnchor);
+        }
+    }
+
+    /// <summary>Bascule renderer/collider/agent — utilisé par Disappear()/ReappearAtRouteStart()
+    /// uniquement. Ne touche PAS isDead/RespawnCoroutine() : ce n'est pas une mort, juste une
+    /// absence scénique entre deux passages de route.</summary>
+    private void SetRouteVisualAndCollision(bool visible)
+    {
+        foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = visible;
+        foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = visible;
+        if (_agent != null) _agent.enabled = visible;
     }
 
     // =========================================================
@@ -372,7 +475,9 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// </summary>
     public void Interact(Player player)
     {
-        if (player == null || data == null || isDead) return;
+        // _routeHidden : PNJ complètement absent entre deux passages de route (loopRoute = false)
+        // — pas interactible, même si un joueur réussit à cliquer où son Collider désactivé était.
+        if (player == null || data == null || isDead || _routeHidden) return;
         if (Vector3.Distance(transform.position, player.transform.position) > interactionRadius)
             return;
         // Pas de dialogue en plein combat — cohérent avec TakeDamage() qui ferme un dialogue déjà
@@ -946,6 +1051,8 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         transform.position = _spawnPos;
         _routeIndex         = 0; // sinon le PNJ réapparaît au Point A mais vise encore un point loin dans la route
         _routeWaiting       = false;
+        _awaitingDisappear  = false;
+        _routeHidden        = false; // si mort pendant l'absence scénique (loopRoute = false) — le code de mort/respawn gère déjà sa propre ré-activation renderer/collider plus bas, pas besoin de SetRouteVisualAndCollision() ici
         _lastRouteTarget    = null;
         // Re-ancrage sur _spawnPos (PAS _routeAnchor) — sans ça, un PNJ mort en plein combat loin
         // sur sa route respawn au Point A mais son CombatAIController croit encore que son "chez-
@@ -1000,6 +1107,13 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             {
                 if (patrolPoints[i] == null) continue;
                 Gizmos.DrawSphere(patrolPoints[i].position, 0.3f);
+
+                // Pas de ligne de fermeture dernier→premier quand loopRoute = false — le PNJ ne
+                // reboucle pas en marchant (il disparaît puis réapparaît directement au premier
+                // point), une ligne ici suggérerait à tort une marche de retour continue.
+                bool isLastSegment = i == patrolPoints.Count - 1;
+                if (isLastSegment && !loopRoute) continue;
+
                 Transform next = patrolPoints[(i + 1) % patrolPoints.Count];
                 if (next != null) Gizmos.DrawLine(patrolPoints[i].position, next.position);
             }
