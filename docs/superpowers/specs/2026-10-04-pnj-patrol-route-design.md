@@ -66,7 +66,7 @@ selon la map. `PNJData` (asset SO) ne change pas du tout pour cette fonctionnali
 Nouveaux champs sur `PNJ.cs` :
 
 ```csharp
-public enum PatrolEndBehavior { LoopBackAndForth, WaitThenRespawnAtStart, StopAtEnd }
+public enum PatrolEndBehavior { LoopBackAndForth, LoopToStart, WaitThenRespawnAtStart, StopAtEnd }
 
 [Header("Patrol Route (PNJ ambulant)")]
 [Tooltip("Active la marche dirigée A→B→... — système INDÉPENDANT de la patrouille de combat\n" +
@@ -175,6 +175,12 @@ private void AdvanceRoute()
                 _routeDirection = -1;
                 _routeIndex += _routeDirection;
                 break;
+            case PatrolEndBehavior.LoopToStart:
+                // Boucle fermée — PAS de retour en arrière par les mêmes points : direction
+                // reste +1, saut direct à l'index 0 (le NavMeshAgent trace lui-même le chemin
+                // le plus court jusqu'à Point[0], qui ne repasse pas forcément par B).
+                _routeIndex = 0;
+                break;
             case PatrolEndBehavior.StopAtEnd:
                 isPatrolRoute = false;   // s'arrête définitivement, plus jamais réévalué
                 break;
@@ -199,9 +205,13 @@ private void AdvanceRoute()
 }
 ```
 
-Trace de vérification sur une route à 3 points (A=0, B=1, C=2) : index visité après chaque
-arrivée = 0(A)→1(B)→2(C, atEnd, flip)→1(B)→0(A, atStart, flip)→1(B)→2(C, atEnd, flip)→... —
-va-et-vient propre, jamais d'index hors limites.
+Trace de vérification sur une route à 3 points (A=0, B=1, C=2) :
+
+- `LoopBackAndForth` : 0(A)→1(B)→2(C, atEnd, flip)→1(B)→0(A, atStart, flip)→1(B)→2(C, flip)→...
+  — va-et-vient, repasse par B dans les deux sens, jamais d'index hors limites.
+- `LoopToStart` : 0(A)→1(B)→2(C, atEnd, saut)→0(A)→1(B)→2(C, saut)→... — boucle fermée, revient
+  direct à A sans jamais repasser par B en sens inverse (le trajet C→A est tracé par le
+  NavMeshAgent, pas forcément une ligne qui repasse par B).
 
 `WaitThenRespawnRoutine()` réutilise le MÊME style que `RespawnCoroutine()` existant (cacher
 renderers/colliders, attendre, réapparaître) mais déclenché par l'ARRIVÉE, pas par la mort :
@@ -351,9 +361,11 @@ Pas de framework de test automatisé — vérification manuelle en Play Mode par
    actuel après le combat — SANS retourner au Point A.
 5. Cas limite : combat déclenché alors qu'un dialogue était ouvert → vérifier que le dialogue se
    ferme tout seul et que le PNJ passe directement au combat.
-6. Tester `endBehavior = LoopBackAndForth` sur une route à 2 points → va-et-vient infini observé.
-7. Tester `endBehavior = WaitThenRespawnAtStart` → attente au bout, disparition, réapparition au
+6. Tester `endBehavior = LoopBackAndForth` sur une route à 3 points → va-et-vient A↔B↔C infini.
+7. Tester `endBehavior = LoopToStart` sur la même route à 3 points → boucle fermée A→B→C→A→...,
+   jamais de retour en arrière par B.
+8. Tester `endBehavior = WaitThenRespawnAtStart` → attente au bout, disparition, réapparition au
    Point A après le délai, reprise de la marche depuis le début.
-8. Vérifier qu'un PNJ Garde existant (`isPatrolRoute = false`) n'a AUCUN changement de
+9. Vérifier qu'un PNJ Garde existant (`isPatrolRoute = false`) n'a AUCUN changement de
    comportement (patrouille aléatoire inchangée) — confirme que les deux systèmes sont bien
    restés séparés.
