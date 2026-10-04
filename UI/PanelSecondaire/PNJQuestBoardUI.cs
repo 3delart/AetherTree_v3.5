@@ -30,6 +30,8 @@ using System.Collections.Generic;
 //
 // Prefab de carte (questCardPrefab) attendu :
 //   QuestCard (racine, avec un Button)
+//     ├── CardBorder       (Image — PREMIER enfant, légèrement plus grand que la carte,
+//     │                      teinté par QuestRank derrière le reste, effet cadre coloré)
 //     ├── RankLabel        (TextMeshProUGUI)
 //     ├── QuestName        (TextMeshProUGUI)
 //     ├── RequirementText  (TextMeshProUGUI) — prérequis ou "Secret" si verrouillée
@@ -182,13 +184,17 @@ public class PNJQuestBoardUI : MonoBehaviour
         _cardObjects.Add(go);
 
         bool isSecretLocked = isLocked && quest.questRank == QuestRank.Secret;
+        Color rankColor     = RankColor(quest.questRank, isLocked ? 0.5f : 1f);
 
         var rankLabel = go.transform.Find("RankLabel")?.GetComponent<TextMeshProUGUI>();
         if (rankLabel != null)
         {
             rankLabel.text  = RankLabel(quest.questRank);
-            rankLabel.color = RankColor(quest.questRank, isLocked ? 0.5f : 1f);
+            rankLabel.color = rankColor;
         }
+
+        var cardBorder = go.transform.Find("CardBorder")?.GetComponent<Image>();
+        if (cardBorder != null) cardBorder.color = rankColor;
 
         // Secret verrouillée : ni le nom ni le vrai rang ne doivent spoiler la quête — seul
         // "Secrète"/"???" apparaît, tant que CanAccept est faux.
