@@ -24,9 +24,13 @@ using UnityEngine;
 public class ZoneChecker : ConditionCheckerBase
 {
     [Header("Zone")]
-    [Tooltip("Glisser le prefab de la zone (composant ZoneTrigger de CE prefab, pas une instance\n" +
-             "de scène) — vide = n'importe quelle zone. Plus de ZoneData séparé (retiré 2026-10-04).")]
-    public ZoneTrigger zone = null;
+    [Tooltip("ID de zone (string) — doit correspondre EXACTEMENT au zoneID tapé sur l'instance\n" +
+             "ZoneTrigger placée en scène. Vide = n'importe quelle zone.\n" +
+             "Pas de référence directe possible : le prefab ZoneTrigger est générique et réutilisé\n" +
+             "partout avec un zoneID différent par instance (override de scène) — un asset Project\n" +
+             "(ConditionData) ne peut pas référencer une instance de scène précise de façon fiable\n" +
+             "(cassé en build / hors de cette scène). Florian, 2026-10-04.")]
+    public string zoneID = "";
 
     [Header("Durée")]
     [Tooltip("Durée minimum en secondes pour que l'event compte. 0 = pas de restriction.")]
@@ -55,7 +59,7 @@ public class ZoneChecker : ConditionCheckerBase
             Debug.Log($"[ZONECHECKER] zoneID={e.zoneID} isFinalExit={e.isFinalExit} isAFK={e.isAFK} duration={e.timeSpentSeconds}");
 
         // ── Zone ─────────────────────────────────────────────
-        if (zone != null && e.zoneID != zone.zoneID)            return false;
+        if (!string.IsNullOrEmpty(zoneID) && e.zoneID != zoneID) return false;
 
         // ── Type d'event ──────────────────────────────────────
         if (onlyFinalExit && !e.isFinalExit)                   return false;

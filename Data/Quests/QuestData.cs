@@ -261,10 +261,12 @@ public class QuestObjective
     [ShowIf(nameof(type), QuestObjectiveType.Gather, QuestObjectiveType.Craft, QuestObjectiveType.DeliverToPNJ)]
     public ScriptableObject targetItem;
 
-    [Tooltip("Explore — glisser le prefab de la zone (composant ZoneTrigger de CE prefab, pas une\n" +
-             "instance de scène). Plus de string zoneID tapée à la main (ZoneData retiré 2026-10-04).")]
+    [Tooltip("Explore — ID de zone (string), doit correspondre EXACTEMENT au zoneID tapé sur\n" +
+             "l'instance ZoneTrigger placée en scène. Pas de référence directe possible — le prefab\n" +
+             "ZoneTrigger est générique et réutilisé partout avec un zoneID différent par instance\n" +
+             "(même limitation que ZoneChecker.zoneID, voir ce fichier).")]
     [ShowIf(nameof(type), QuestObjectiveType.Explore)]
-    public ZoneTrigger targetZonePrefab;
+    public string targetZoneID = "";
 
     [Tooltip("DungeonComplete — glisser le DungeonData du donjon à terminer (victoire — voir\n" +
              "InstanceSession.EndRun, Success uniquement, Failure/Left ne comptent jamais).")]
@@ -284,7 +286,7 @@ public class QuestObjective
         QuestObjectiveType.TalkTo       => targetPNJ  != null ? targetPNJ.pnjName  : "",
         QuestObjectiveType.Gather       => targetItem != null ? targetItem.name    : "",
         QuestObjectiveType.Craft        => targetItem != null ? targetItem.name    : "",
-        QuestObjectiveType.Explore      => targetZonePrefab != null ? targetZonePrefab.zoneID : "",
+        QuestObjectiveType.Explore      => targetZoneID,
         QuestObjectiveType.DeliverToPNJ => targetPNJ  != null ? targetPNJ.pnjName  : "",
         QuestObjectiveType.DungeonComplete => targetDungeon != null ? targetDungeon.displayName : "",
         QuestObjectiveType.Escort       => targetPNJ  != null ? targetPNJ.pnjName  : "",

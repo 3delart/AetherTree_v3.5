@@ -404,7 +404,7 @@ public class QuestSystem : MonoBehaviour
             {
                 var obj = quest.objectives[idx];
                 if (obj.type != QuestObjectiveType.Explore) continue;
-                if (obj.targetZonePrefab == null || obj.targetZonePrefab.zoneID != e.zoneID) continue;
+                if (obj.targetZoneID != e.zoneID) continue;
 
                 bool wasComplete = obj.IsComplete;
                 obj.Increment();
