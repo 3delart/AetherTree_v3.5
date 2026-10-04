@@ -186,7 +186,13 @@ public class PNJQuestBoardUI : MonoBehaviour
         bool isSecretLocked = isLocked && quest.questRank == QuestRank.Secret;
         Color rankColor     = RankColor(quest.questRank, isLocked ? 0.5f : 1f);
 
-        var rankLabel = go.transform.Find("RankLabel")?.GetComponent<TextMeshProUGUI>();
+        // Les enfants (RankLabel/QuestName/...) peuvent vivre directement sous la racine OU sous
+        // un sous-conteneur de layout (ex: "Panelquest") — Transform.Find ne cherche que les
+        // enfants DIRECTS, donc on détecte lequel des deux existe une fois ici plutôt que de
+        // supposer une profondeur fixe.
+        Transform content = go.transform.Find("Panelquest") ?? go.transform;
+
+        var rankLabel = content.Find("RankLabel")?.GetComponent<TextMeshProUGUI>();
         if (rankLabel != null)
         {
             rankLabel.text  = RankLabel(quest.questRank);
@@ -198,13 +204,13 @@ public class PNJQuestBoardUI : MonoBehaviour
 
         // Secret verrouillée : ni le nom ni le vrai rang ne doivent spoiler la quête — seul
         // "Secrète"/"???" apparaît, tant que CanAccept est faux.
-        var nameText = go.transform.Find("QuestName")?.GetComponent<TextMeshProUGUI>();
+        var nameText = content.Find("QuestName")?.GetComponent<TextMeshProUGUI>();
         if (nameText != null) nameText.text = isSecretLocked ? "???" : quest.questName;
 
-        var statusBadge = go.transform.Find("StatusBadge")?.gameObject;
+        var statusBadge = content.Find("StatusBadge")?.gameObject;
         var badgeText    = statusBadge?.transform.Find("BadgeText")?.GetComponent<TextMeshProUGUI>();
-        var lockIcon     = go.transform.Find("LockOverlay")?.gameObject;
-        var reqText      = go.transform.Find("RequirementText")?.GetComponent<TextMeshProUGUI>();
+        var lockIcon     = content.Find("LockOverlay")?.gameObject;
+        var reqText      = content.Find("RequirementText")?.GetComponent<TextMeshProUGUI>();
 
         if (isLocked)
         {
