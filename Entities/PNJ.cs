@@ -239,6 +239,10 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     {
         base.TakeDamage(amount, sourceElement, source);
 
+        // Coupe un dialogue en cours AVANT ForceEngage() — s'applique même si !canFight (un PNJ
+        // passif qui encaisse sans riposter voit aussi son dialogue interrompu par un coup reçu).
+        if (IsTalking) EndDialogue();
+
         if (!isDead && data != null && data.canFight)
             _combatAI.ForceEngage(source);
     }
@@ -335,6 +339,10 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         if (player == null || data == null || isDead) return;
         if (Vector3.Distance(transform.position, player.transform.position) > interactionRadius)
             return;
+        // Pas de dialogue en plein combat — cohérent avec TakeDamage() qui ferme un dialogue déjà
+        // ouvert dès qu'un coup arrive (voir plus bas) : le combat et le dialogue ne se mélangent
+        // jamais, dans aucun des deux sens.
+        if (_combatAI != null && _combatAI.CurrentState == CombatAIState.Engage) return;
 
         talkingTo = player;
 
