@@ -45,6 +45,14 @@ public class DebuffInstance : StatusEffectInstance
     public DebuffData DebuffData => (DebuffData)data;
     public DebuffType DebuffType => DebuffData.debuffType;
 
+    // UN SEUL accumulateur pour les 3 cas Dot/ManaDrain/HpDrain ci-dessous — PAS un bug de
+    // partage d'état : DebuffType est fixé une fois à la création de l'instance (voir le
+    // constructeur juste en dessous) et ne change jamais, donc UNE instance donnée ne tique
+    // jamais plus d'un seul de ces 3 cas. Deux Poison stackés sur la même cible sont déjà DEUX
+    // instances de DebuffInstance séparées (voir StatusEffectSystem, liste d'instances actives),
+    // chacune avec son propre _tickAccum — aucun risque de mélange entre stacks.
+    private FractionalAccumulator _tickAccum;
+
     public DebuffInstance(DebuffData data, Entity source) : base(data, source) { }
 
     public override void Tick(Entity target, float deltaTime)
@@ -63,9 +71,15 @@ public class DebuffInstance : StatusEffectInstance
             case DebuffType.Dot:
                 // Poison — le flag healReduction est géré à part via OnApply/OnExpire
                 // dans StatusEffectSystem, indépendant du calcul de dégâts ici.
+                // Accumulateur au lieu d'un TakeDamage(dmg) direct — dmg est calculé en
+                // DPS × deltaTime, donc fractionnaire à CHAQUE frame (ex: 10 DPS à 60 FPS =
+                // 0.16/frame) ; arrondir directement l'arrondirait à 0 pour toujours.
                 float dmg = ComputeDotDps(target) * deltaTime;
                 if (dmg > 0f)
-                    target.TakeDamage(dmg, DebuffData.damageElement, source);
+                {
+                    int whole = _tickAccum.ExtractWhole(dmg);
+                    if (whole > 0) target.TakeDamage(whole, DebuffData.damageElement, source);
+                }
                 break;
 
             case DebuffType.ManaDrain:
@@ -81,8 +95,12 @@ public class DebuffInstance : StatusEffectInstance
                 float drain = drainRate * deltaTime;
                 if (drain > 0f)
                 {
-                    target.SpendMana(drain);
-                    source?.RecoverMana(drain);
+                    int whole = _tickAccum.ExtractWhole(drain);
+                    if (whole > 0)
+                    {
+                        target.SpendMana(whole);
+                        source?.RecoverMana(whole);
+                    }
                 }
                 break;
 
@@ -101,8 +119,12 @@ public class DebuffInstance : StatusEffectInstance
                 float hpDrain = hpDrainRate * deltaTime;
                 if (hpDrain > 0f)
                 {
-                    target.TakeDamage(hpDrain, ElementType.Neutral, source);
-                    source?.Heal(hpDrain);
+                    int whole = _tickAccum.ExtractWhole(hpDrain);
+                    if (whole > 0)
+                    {
+                        target.TakeDamage(whole, ElementType.Neutral, source);
+                        source?.Heal(whole);
+                    }
                 }
                 break;
 
