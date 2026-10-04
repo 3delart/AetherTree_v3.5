@@ -981,19 +981,21 @@ public class Player : Entity
     // DÉGÂTS & MORT
     // =========================================================
 
-    public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null)
+    public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null, bool skipDamageReduction = false)
     {
         float hpBefore = currentHP;
 
         // Réduction de dégâts reçus Neutre rang 4+ — GDD §6.3
-        if (elementalSystem != null)
+        // skipDamageReduction : déjà appliquée en amont par l'appelant (StatusEffectInstance.cs,
+        // DoT/HpDrain continus) sur le delta fractionnaire — voir Entity.TakeDamage pour le détail.
+        if (!skipDamageReduction && elementalSystem != null)
         {
             float neutralReduction = elementalSystem.GetNeutralDamageReduction();
             if (neutralReduction > 0f)
                 amount *= (1f - neutralReduction);
         }
 
-        base.TakeDamage(amount, sourceElement, source);
+        base.TakeDamage(amount, sourceElement, source, skipDamageReduction);
 
         // Entrée en combat uniquement si une source réelle a infligé les dégâts (pas un
         // coût HP de skill ou autre auto-infligé qui passerait par TakeDamage).
@@ -1020,6 +1022,13 @@ public class Player : Entity
         if (hpBefore > 1f && currentHP <= 1f)
             activityCounter.Increment(CounterKeys.SURVIVE_1HP);
     }
+
+    /// <summary>Override Entity.GetIncomingDamageReductionMultiplier() — réduction Neutre rang
+    /// 4+ (GDD §6.3), même formule que le bloc dans TakeDamage() ci-dessus. Consommé par
+    /// StatusEffectInstance.cs pour réduire le delta fractionnaire d'un DoT/HpDrain continu
+    /// avant extraction d'un entier.</summary>
+    public override float GetIncomingDamageReductionMultiplier() =>
+        elementalSystem != null ? Mathf.Clamp01(1f - elementalSystem.GetNeutralDamageReduction()) : 1f;
 
     // =========================================================
     // KNOCKBACK — GDD v3.5 §3.1.1.1
@@ -1545,7 +1554,12 @@ public class Player : Entity
         // hérité automatiquement des méthodes arrondies d'Entity.cs. Trouvé en écrivant la spec
         // (inventaire exhaustif des sites de mutation) : ce site bypassait tout, pas rapporté
         // par Florian en test manuel.
-        currentHP   = Mathf.Round(maxHP   * hpPercent);
+        // Max(1f, ...) tant que hpPercent > 0 — même filet que le floor OnFatalHit d'Entity.
+        // TakeDamage (currentHP = 1f) : sans lui, un hpPercent très faible sur un maxHP modeste
+        // (ex: 1% de 40 = 0.4 → arrondi à 0) laisserait isDead == false avec currentHP == 0, un
+        // état incohérent ("vivant" mais à 0 HP) que plusieurs checks ailleurs traitent comme
+        // mort. Trouvé en revue finale.
+        currentHP   = hpPercent   > 0f ? Mathf.Max(1f, Mathf.Round(maxHP   * hpPercent))   : 0f;
         currentMana = Mathf.Round(maxMana * manaPercent);
         PassiveSkillSystem.Instance?.ResetCombat();
         // L'état Animator "Death" n'a aucune transition de sortie automatique (tient la pose

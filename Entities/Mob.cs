@@ -410,7 +410,7 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
     // GDD v3.5 §3.3
     // =========================================================
 
-    public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null)
+    public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null, bool skipDamageReduction = false)
     {
         if (isDead) return;
 
@@ -436,7 +436,7 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
             damageContributions[attacker] += amount;
         }
 
-        base.TakeDamage(amount, sourceElement, source);
+        base.TakeDamage(amount, sourceElement, source, skipDamageReduction);
 
         // ── Aggro automatique — GDD v3.5 §3.3 ────────────────
         // Tout mob agressé entre en combat même s'il est Passif. `source` BRUT, pas `attacker`

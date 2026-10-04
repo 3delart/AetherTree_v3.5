@@ -48,9 +48,13 @@ public class DebuffInstance : StatusEffectInstance
     // UN SEUL accumulateur pour les 3 cas Dot/ManaDrain/HpDrain ci-dessous — PAS un bug de
     // partage d'état : DebuffType est fixé une fois à la création de l'instance (voir le
     // constructeur juste en dessous) et ne change jamais, donc UNE instance donnée ne tique
-    // jamais plus d'un seul de ces 3 cas. Deux Poison stackés sur la même cible sont déjà DEUX
-    // instances de DebuffInstance séparées (voir StatusEffectSystem, liste d'instances actives),
-    // chacune avec son propre _tickAccum — aucun risque de mélange entre stacks.
+    // jamais plus d'un seul de ces 3 cas, aucun risque de mélange entre Dot/ManaDrain/HpDrain
+    // sur le même _tickAccum. Si un type donné stack en plusieurs instances distinctes (voir
+    // StatusEffectSystem.StackableDebuffTypes), chaque instance a de toute façon son propre
+    // _tickAccum (champ d'instance, pas statique) — correction en revue finale : seul un sous-
+    // ensemble des types stack réellement, un recast d'un type non-stackable RAFRAÎCHIT
+    // l'instance existante au lieu d'en créer une seconde, mais ça ne change rien à l'absence de
+    // mélange entre les 3 cas ci-dessus.
     private FractionalAccumulator _tickAccum;
 
     public DebuffInstance(DebuffData data, Entity source) : base(data, source) { }
@@ -74,11 +78,16 @@ public class DebuffInstance : StatusEffectInstance
                 // Accumulateur au lieu d'un TakeDamage(dmg) direct — dmg est calculé en
                 // DPS × deltaTime, donc fractionnaire à CHAQUE frame (ex: 10 DPS à 60 FPS =
                 // 0.16/frame) ; arrondir directement l'arrondirait à 0 pour toujours.
-                float dmg = ComputeDotDps(target) * deltaTime;
+                // Réduction de dégâts entrants (Neutre rang 4+ côté Player) appliquée sur le
+                // delta FRACTIONNAIRE avant extraction — sinon TakeDamage(whole,...) la
+                // ré-appliquerait sur un petit entier déjà arrondi et la requantiserait en
+                // tout-ou-rien (trouvé en revue finale, voir skipDamageReduction sur
+                // Entity.TakeDamage).
+                float dmg = ComputeDotDps(target) * deltaTime * target.GetIncomingDamageReductionMultiplier();
                 if (dmg > 0f)
                 {
                     int whole = _tickAccum.ExtractWhole(dmg);
-                    if (whole > 0) target.TakeDamage(whole, DebuffData.damageElement, source);
+                    if (whole > 0) target.TakeDamage(whole, DebuffData.damageElement, source, skipDamageReduction: true);
                 }
                 break;
 
@@ -116,13 +125,17 @@ public class DebuffInstance : StatusEffectInstance
                 float hpDrainRate = DebuffData.hpDrainModifier == ModifierType.Percent
                     ? target.MaxHP * DebuffData.hpDrainPerSecond
                     : DebuffData.hpDrainPerSecond;
-                float hpDrain = hpDrainRate * deltaTime;
+                // Même raison que le Dot ci-dessus — réduction appliquée avant extraction, pas
+                // après. whole reste PARTAGÉ entre le dégât cible et le soin lanceur (vol de vie
+                // 1:1) : le lanceur drain donc exactement ce qu'il parvient à arracher APRÈS
+                // réduction de la cible, pas le montant brut pré-réduction.
+                float hpDrain = hpDrainRate * deltaTime * target.GetIncomingDamageReductionMultiplier();
                 if (hpDrain > 0f)
                 {
                     int whole = _tickAccum.ExtractWhole(hpDrain);
                     if (whole > 0)
                     {
-                        target.TakeDamage(whole, ElementType.Neutral, source);
+                        target.TakeDamage(whole, ElementType.Neutral, source, skipDamageReduction: true);
                         source?.Heal(whole);
                     }
                 }
@@ -222,12 +235,14 @@ public class BuffInstance : StatusEffectInstance
                 // HoT — soin progressif sur la durée (§3.1.1.2)
                 // GetHealPerSecond supporte Flat et Percent (% MaxHP)
                 // Accumulateur au lieu d'un Heal(heal) direct — même raison que DebuffInstance._tickAccum :
-                // heal est calculé en taux × deltaTime, fractionnaire à chaque frame.
-                float heal = BuffData.GetHealPerSecond(target.MaxHP) * deltaTime;
+                // heal est calculé en taux × deltaTime, fractionnaire à chaque frame. Réduction
+                // Poison appliquée sur ce delta fractionnaire avant extraction — même raison que
+                // Entity.ApplyRegen (voir skipPoisonReduction sur Entity.Heal).
+                float heal = BuffData.GetHealPerSecond(target.MaxHP) * deltaTime * target.GetHealReductionMultiplier();
                 if (heal > 0f)
                 {
                     int whole = _regenAccum.ExtractWhole(heal);
-                    if (whole > 0) target.Heal(whole);
+                    if (whole > 0) target.Heal(whole, skipPoisonReduction: true);
                 }
                 break;
 

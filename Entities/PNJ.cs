@@ -274,14 +274,14 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     // ripostait que si HandleCombatAI() retrouvait un ennemi par coïncidence via le scan de
     // proximité classique)
     // =========================================================
-    public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null)
+    public override void TakeDamage(float amount, ElementType sourceElement = ElementType.Neutral, Entity source = null, bool skipDamageReduction = false)
     {
         // _routeHidden AVANT base.TakeDamage() — le PNJ est censé être complètement absent entre
         // deux passages de route (loopRoute = false), pas juste invisible : aucun dégât ne doit
         // passer, même via une attaque de zone qui ne dépend pas du Collider désactivé.
         if (_routeHidden) return;
 
-        base.TakeDamage(amount, sourceElement, source);
+        base.TakeDamage(amount, sourceElement, source, skipDamageReduction);
 
         // Coupe un dialogue en cours AVANT ForceEngage() — s'applique même si !canFight (un PNJ
         // passif qui encaisse sans riposter voit aussi son dialogue interrompu par un coup reçu).

@@ -380,8 +380,11 @@ public abstract class Entity : MonoBehaviour
         // entier s'est accumulé — voir docs/superpowers/specs/2026-10-04-integer-hp-mana-design.md.
         if (regenHP > 0f)
         {
-            int whole = _regenHPAccum.ExtractWhole(regenHP);
-            if (whole > 0) Heal(whole);
+            // Réduction Poison appliquée sur le delta FRACTIONNAIRE avant extraction — sinon
+            // Heal(whole) la ré-appliquerait sur un petit entier déjà arrondi et la requantiserait
+            // en tout-ou-rien (trouvé en revue finale, voir doc de skipPoisonReduction sur Heal()).
+            int whole = _regenHPAccum.ExtractWhole(regenHP * GetHealReductionMultiplier());
+            if (whole > 0) Heal(whole, skipPoisonReduction: true);
         }
         if (regenMana > 0f)
         {
@@ -504,9 +507,18 @@ public abstract class Entity : MonoBehaviour
     /// Inflige des dégâts bruts (déjà calculés par CombatSystem).
     /// Override dans Player et Mob pour ajouter des effets spécifiques.
     /// </summary>
+    /// <summary>skipDamageReduction : réservé aux sources CONTINUES (DoT/HpDrain dans
+    /// StatusEffectInstance.cs), qui ont déjà appliqué GetIncomingDamageReductionMultiplier() sur
+    /// le delta FRACTIONNAIRE avant extraction d'un entier via FractionalAccumulator — sans ce
+    /// flag, Player.TakeDamage ré-appliquerait sa réduction Neutre sur le petit entier déjà
+    /// extrait, qui se requantise alors en tout-ou-rien (une réduction de 20-40% appliquée à 1-2
+    /// points arrondit presque toujours à la même valeur, annulant silencieusement la réduction).
+    /// Les appelants one-shot (SkillSystem, etc.) laissent ce paramètre à false — comportement
+    /// inchangé. Trouvé en revue finale de ce chantier.</summary>
     public virtual void TakeDamage(float amount,
                                    ElementType sourceElement = ElementType.Neutral,
-                                   Entity source = null)
+                                   Entity source = null,
+                                   bool skipDamageReduction = false)
     {
         if (isDead || amount <= 0f) return;
 
@@ -555,6 +567,13 @@ public abstract class Entity : MonoBehaviour
         if (source != null)
             ApplyOnHitReceivedEffects(amount, source);
     }
+
+    /// <summary>Multiplicateur de réduction des dégâts entrants propre à cette entité (1f = aucune
+    /// réduction) — override dans Player pour sa réduction Neutre rang 4+ (GDD §6.3), Mob/PNJ
+    /// n'en ont aucune aujourd'hui. Consommé par StatusEffectInstance.cs (Dot/HpDrain) pour
+    /// réduire le delta FRACTIONNAIRE avant extraction d'un entier via FractionalAccumulator —
+    /// voir le commentaire de skipDamageReduction sur TakeDamage() ci-dessus.</summary>
+    public virtual float GetIncomingDamageReductionMultiplier() => 1f;
 
     /// <summary>Effets On-Hit infligés actifs sur cette entité (équipement+permanents pour
     /// Player, MobData/PNJData pour Mob/PNJ). Null par défaut — override dans les sous-classes
@@ -684,13 +703,20 @@ public abstract class Entity : MonoBehaviour
     // SOIN
     // =========================================================
 
-    public virtual void Heal(float amount)
+    /// <summary>skipPoisonReduction : réservé aux sources CONTINUES (régénération passive, HoT),
+    /// qui ont déjà appliqué GetHealReductionMultiplier() sur le delta FRACTIONNAIRE avant
+    /// extraction d'un entier via FractionalAccumulator — sans ce flag, Heal() ré-appliquerait la
+    /// réduction Poison sur le petit entier déjà extrait, qui se requantise alors en tout-ou-rien
+    /// (un soin de 1 réduit de 30% redevient 0.7 → arrondi à 1, réduction ignorée ; réduit de 60%
+    /// → 0.4 → arrondi à 0, soin totalement bloqué). Les appelants one-shot (HealOnHit, etc.)
+    /// laissent ce paramètre à false — comportement inchangé. Trouvé en revue finale.</summary>
+    public virtual void Heal(float amount, bool skipPoisonReduction = false)
     {
         if (isDead || amount <= 0f) return;
 
         // Poison — réduit les soins reçus. GDD v3.5 §3.1.1.1.
         // La réduction s'applique à toutes les entités (pas seulement le joueur).
-        if (statusEffects != null)
+        if (!skipPoisonReduction && statusEffects != null)
         {
             float reduction = statusEffects.GetPoisonHealReduction();
             if (reduction > 0f)
@@ -702,6 +728,13 @@ public abstract class Entity : MonoBehaviour
         if (amount <= 0f) return; // un soin qui arrondit à 0 ne doit rien appliquer
         currentHP = Mathf.Min(maxHP, currentHP + amount);
     }
+
+    /// <summary>Multiplicateur de réduction de soin Poison (1f = aucune réduction), générique à
+    /// toute entité (pas juste Player) — voir skipPoisonReduction sur Heal() ci-dessus.
+    /// Consommé par ApplyRegen() et par StatusEffectInstance.cs (Regeneration/HoT) pour réduire
+    /// le delta FRACTIONNAIRE avant extraction d'un entier via FractionalAccumulator.</summary>
+    public float GetHealReductionMultiplier() =>
+        statusEffects != null ? Mathf.Clamp01(1f - statusEffects.GetPoisonHealReduction()) : 1f;
 
     // =========================================================
     // MANA
