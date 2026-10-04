@@ -15,7 +15,7 @@ using System.Collections.Generic;
 //   FusionNPC    → FusionUI (TODO Phase 6)
 //   Quest        → QuestUI (TODO Phase 7)
 //   FactionNPC   → Services faction Solthars / Umbrans (TODO Phase 9)
-//   HarborMaster → Navigation bateau (TODO Phase 8)
+//   Teleporter   → Téléportation vers une destination choisie (TODO Phase 8)
 //   Guard        → IA combat mobs + dialogue neutre
 //   Decorative   → Dialogue lore/ambiance uniquement
 //
@@ -570,7 +570,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 #pragma warning disable CS0618
             case PNJType.FactionNPC:   InteractFactionNPC(player);   break;
 #pragma warning restore CS0618
-            case PNJType.HarborMaster: InteractHarborMaster(player); break;
+            case PNJType.Teleporter:   InteractTeleporter(player);   break;
             case PNJType.Purification: InteractPurification(player); break;
         }
     }
@@ -647,13 +647,12 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         Debug.Log($"[PNJ/Faction] {data.pnjName} ({data.faction}) — FactionSystem Phase 9");
     }
 
-    // ── Capitaine de Port ─────────────────────────────────────
-    private void InteractHarborMaster(Player player)
+    // ── Téléporteur ───────────────────────────────────────────
+    private void InteractTeleporter(Player player)
     {
         StartDialogue(SelectDialogue(player), player);
-        // TODO Phase 8 : HarborUI.Instance?.Open(player) — champs destinations/intervalles
-        // retirés de PNJData le 2026-10-04 (jamais utilisés, à redéfinir avec le vrai système).
-        Debug.Log("[PNJ/Capitaine] HarborUI Phase 8");
+        // TODO Phase 8 : HarborUI.Instance?.Open(data.availableDestinations, player)
+        Debug.Log("[PNJ/Téléporteur] HarborUI Phase 8");
     }
 
     // =========================================================
@@ -765,7 +764,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case DialogueAction.OpenRuneUI:         Debug.Log("[PNJ] OpenRuneUI — RuneUI Phase 6");   break;
             case DialogueAction.OpenFusionUI:       FusionUI.Instance?.Open(data, player); _awaitingSecondaryPanel = true; break;
             case DialogueAction.OpenQuestLog:       Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");  break;
-            case DialogueAction.OpenHarborUI:       Debug.Log("[PNJ] OpenHarborUI — HarborUI Phase 8"); break;
+            case DialogueAction.OpenTeleportUI:     Debug.Log("[PNJ] OpenTeleportUI — HarborUI Phase 8"); break;
             case DialogueAction.PurifyAura:         TryPurifyAura(player); break;
             case DialogueAction.CloseDialogue:      EndDialogue(); break;
         }

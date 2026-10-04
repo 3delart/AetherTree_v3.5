@@ -56,7 +56,7 @@ public class PNJData : ScriptableObject
     // (pas d'opérateur "différent de" sur ShowIf) — à compléter si un futur PNJType est ajouté
     // et doit aussi afficher ce champ.
 #pragma warning disable CS0618 // Rarity/FactionNPC obsolètes mais toujours valides pour ce champ
-    [ShowIf(nameof(pnjType), PNJType.Merchant, PNJType.Quest, PNJType.HarborMaster, PNJType.Guard,
+    [ShowIf(nameof(pnjType), PNJType.Merchant, PNJType.Quest, PNJType.Teleporter, PNJType.Guard,
         PNJType.Decorative, PNJType.Rarity, PNJType.FactionNPC)]
     public DialogueData defaultDialogue;
 #pragma warning restore CS0618
@@ -73,6 +73,17 @@ public class PNJData : ScriptableObject
              "\"il faudrait un dialogue différent en fonction du rang de l'aura\".")]
     [ShowIf(nameof(pnjType), PNJType.Purification, Header = "Purification (PNJType.Purification)")]
     public List<DialogueData> purificationDialogueByAuraRank = new List<DialogueData>();
+
+    // ── Téléportation (PNJType.Teleporter) ──────────────────────
+    // Rétabli 2026-10-04 — retiré puis remis dans la même session : "ne sert à rien" était faux,
+    // c'est la liste de destinations proposées en dialogue pour s'y téléporter (Florian). Les
+    // anciens départureIntervalMin/Max (délai de départ façon bateau) ne sont PAS rétablis — ne
+    // collent plus au concept téléportation instantanée ; à rajouter si un futur besoin de
+    // cooldown/délai apparaît.
+    [Tooltip("Noms des destinations proposées — HarborUI (TODO Phase 8) les affichera en boutons\n" +
+             "cliquables depuis le dialogue.")]
+    [ShowIf(nameof(pnjType), PNJType.Teleporter, Header = "Téléportation (PNJType.Teleporter)")]
+    public List<string> availableDestinations = new List<string>();
 
     // ── Quête ─────────────────────────────────────────────────
     [ShowIf(nameof(pnjType), PNJType.Quest, Header = "Quête (PNJType.Quest)")]
@@ -314,7 +325,7 @@ public class PNJData : ScriptableObject
 //
 // Depuis §13.2 : la plupart des PNJ marchands suivent le même modèle — une Boutique
 // (achat/vente, ShopUI) + un ou plusieurs onglets complémentaires propres à leur métier.
-// Seuls Guard/Decorative/Quest/HarborMaster/Purification restent dialogue-only, sans fenêtre.
+// Seuls Guard/Decorative/Quest/Teleporter/Purification restent dialogue-only, sans fenêtre.
 //
 // PNJType.Merchant couvre TOUTE boutique, quelle que soit sa spécialité — voir
 // ShopSpecialty/shopSpecialty plus bas. Avant le 2026-10-04, chaque spécialité (Forge/
@@ -360,10 +371,13 @@ public enum PNJType
     // suppression. Ordinal 7 jamais réutilisé.
 
     [System.Obsolete("Retiré du design (2026) — quêtes de faction pas prioritaires actuellement. " +
-                      "Ordinal gardé pour ne pas décaler HarborMaster/Guard/Decorative déjà sérialisés.")]
+                      "Ordinal gardé pour ne pas décaler Teleporter/Guard/Decorative déjà sérialisés.")]
     FactionNPC    = 8,  // RETIRÉ, placeholder
 
-    HarborMaster  = 9,  // Navigation bateau — choix de destination (dialogue seul)
+    // Renommé HarborMaster → Teleporter le 2026-10-04 (même ordinal 9, aucune migration
+    // d'asset) — Florian : "c'est pas forcément un bateau, c'est un PNJ qui propose des
+    // destinations (map) à qui se téléporter".
+    Teleporter    = 9,  // Téléportation — choix de destination en dialogue (dialogue seul)
     Guard         = 10, // Dialogue neutre + IA combat mobs proches (dialogue seul)
     Decorative    = 11, // Ambiance, lore, rumeurs — pas de service (dialogue seul)
 

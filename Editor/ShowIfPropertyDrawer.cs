@@ -28,6 +28,11 @@ public class ShowIfPropertyDrawer : PropertyDrawer
 
     public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
     {
+        // DIAGNOSTIC TEMPORAIRE 2026-10-04 — à retirer une fois le bug List<>/array identifié.
+        if (property.isArray && property.propertyType != SerializedPropertyType.String)
+            Debug.Log($"[ShowIf DIAG] {property.propertyPath} — IsVisible={IsVisible(property)}, " +
+                      $"isExpanded={property.isExpanded}, arraySize={property.arraySize}");
+
         if (!IsVisible(property))
         {
             // Un List<T>/array laissé DÉPLIÉ (property.isExpanded = true, réglé par un clic

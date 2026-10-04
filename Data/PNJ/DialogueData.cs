@@ -130,7 +130,10 @@ public enum DialogueAction
     // 6 retiré (2026-09-07) — OpenMetierUI, métier jamais implémenté. Zéro handler dans
     // DialogueUI — vérifié avant suppression. Ordinal 6 jamais réutilisé.
     OpenQuestLog         = 7,  // Ouvre QuestUI (Quest) — TODO Phase 7
-    OpenHarborUI         = 8,  // Ouvre navigation bateau (HarborMaster) — TODO Phase 8
+    // Renommé OpenHarborUI → OpenTeleportUI le 2026-10-04 (même ordinal 8, aucune migration —
+    // zéro .asset avec action: 8, vérifié avant renommage) — suit PNJType.HarborMaster →
+    // Teleporter.
+    OpenTeleportUI       = 8,  // Ouvre l'UI de choix de destination (Teleporter) — TODO Phase 8
 
     // 9 retiré (2026-10-04) — TriggerGuildCreation, PNJType.Mayor retiré (jamais implémenté).
     // Zéro .asset avec action: 9 — vérifié avant suppression. Ordinal 9 jamais réutilisé.
