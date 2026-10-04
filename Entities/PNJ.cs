@@ -656,19 +656,14 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
     // =========================================================
     // SÉLECTION DU DIALOGUE
-    // GDD v3.5 §3.4 — dialogue selon réputation + mémoire
+    // Un seul dialogue par défaut, pas de filtre — demande Florian 2026-10-04 (retrait de
+    // la ladder réputation/connu). `player` gardé en paramètre pour ne pas devoir toucher
+    // chaque site d'appel si une sélection redevient nécessaire plus tard.
     // =========================================================
 
     private DialogueData SelectDialogue(Player player)
     {
-        if (data == null) return null;
-
-        if (data.reputationDialogueThreshold > 0 &&
-            data.highReputationDialogue != null &&
-            player.prestigeRank >= data.reputationDialogueThreshold)
-            return data.highReputationDialogue;
-
-        return data.defaultDialogue;
+        return data?.defaultDialogue;
     }
 
     // =========================================================
