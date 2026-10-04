@@ -111,9 +111,7 @@ public class QuestData : ScriptableObject
     public string    description = "";
 
     [Header("Prérequis")]
-    public int       minLevel          = 1;
-    [Tooltip("Quête à compléter avant celle-ci (chaîne de quêtes)")]
-    public QuestData prerequisiteQuest = null;
+    public RequirementSet requirements = new RequirementSet();
 
     [Header("Objectifs")]
     [Tooltip("True = séquentiels (avec groupID pour le mix)\nFalse = tous actifs simultanément")]
@@ -178,6 +176,18 @@ public class QuestData : ScriptableObject
     {
         if (string.IsNullOrEmpty(questID))
             questID = name;
+
+        if (requirements?.requirements != null)
+        {
+            foreach (var r in requirements.requirements)
+            {
+                if (r == null || r.field != RequirementField.ItemOwned || r.item == null) continue;
+                if (!(r.item is ResourceData) && !(r.item is ConsumableData))
+                    Debug.LogWarning($"[QUEST] {questName} : prérequis ItemOwned sur '{r.item.name}' — " +
+                        "InventorySystem.GetItemCount ne sait compter que ResourceData/ConsumableData, " +
+                        "ce prérequis sera TOUJOURS considéré non rempli pour ce type d'item.");
+            }
+        }
     }
 #endif
 }
