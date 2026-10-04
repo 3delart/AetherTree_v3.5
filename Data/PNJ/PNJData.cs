@@ -62,15 +62,6 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(pnjType), PNJType.Quest, Header = "Quête (PNJType.Quest)")]
     public List<QuestData> availableQuests = new List<QuestData>();
 
-    // ── Maire ─────────────────────────────────────────────────
-    [ShowIf(nameof(pnjType), PNJType.Mayor, Header = "Maire (PNJType.Mayor)")]
-    public DialogueData guildUnlockDialogue;
-    [ShowIf(nameof(pnjType), PNJType.Mayor)]
-    public DialogueData guildNotReadyDialogue;
-    [Tooltip("Coût en Aeris pour créer une guilde — GDD v3.5 §3.4")]
-    [ShowIf(nameof(pnjType), PNJType.Mayor)]
-    public int guildCreationCost = 0;
-
     // ── PNJ Faction (obsolète, gardé pour compat assets existants) ──
 #pragma warning disable CS0618
     [ShowIf(nameof(pnjType), PNJType.FactionNPC, Header = "Faction (PNJType.FactionNPC)")]
@@ -293,7 +284,7 @@ public class PNJData : ScriptableObject
 //
 // Depuis §13.2 : la plupart des PNJ marchands suivent le même modèle — une Boutique
 // (achat/vente, ShopUI) + un ou plusieurs onglets complémentaires propres à leur métier.
-// Seuls Guard/Decorative/Mayor/Quest/HarborMaster restent dialogue-only, sans fenêtre.
+// Seuls Guard/Decorative/Quest/HarborMaster restent dialogue-only, sans fenêtre.
 //
 // Ordinaux figés : Unity sérialise un enum par sa position int, pas son nom (voir
 // [[project_aethertree_passive_system_unification]] pour le précédent qui a motivé cette
@@ -321,7 +312,11 @@ public enum PNJType
     // suppression. Ordinal 5 jamais réutilisé.
 
     Quest         = 6,  // Donneur de quêtes — conditions + récompenses
-    Mayor         = 7,  // Création de guilde — dialogue conditionnel
+
+    // 7 retiré (2026-10-04) — Mayor, création de guilde jamais implémentée (TryCreateGuild
+    // n'était qu'un TODO GuildSystem). Florian : "il ne sert à rien actuellement, on le refera
+    // si jamais" — zéro .asset avec pnjType: 7, zéro champ guild* non-défaut — vérifié avant
+    // suppression. Ordinal 7 jamais réutilisé.
 
     [System.Obsolete("Retiré du design (2026) — quêtes de faction pas prioritaires actuellement. " +
                       "Ordinal gardé pour ne pas décaler HarborMaster/Guard/Decorative déjà sérialisés.")]

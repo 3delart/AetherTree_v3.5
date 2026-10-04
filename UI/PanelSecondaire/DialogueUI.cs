@@ -55,7 +55,6 @@ public class DialogueUI : MonoBehaviour
     public Color colorMerchant   = new Color(0.20f, 0.60f, 0.20f);
     public Color colorBlacksmith = new Color(0.60f, 0.30f, 0.10f);
     public Color colorGuard      = new Color(0.50f, 0.50f, 0.60f);
-    public Color colorMayor      = new Color(0.60f, 0.50f, 0.10f);
     public Color colorQuest      = new Color(0.20f, 0.40f, 0.60f);
     public Color colorDecorative = new Color(0.35f, 0.35f, 0.35f);
     public Color colorDefault    = new Color(0.25f, 0.25f, 0.25f);
@@ -357,7 +356,6 @@ public class DialogueUI : MonoBehaviour
         PNJType.Merchant   => colorMerchant,
         PNJType.Forge      => colorBlacksmith,
         PNJType.Guard      => colorGuard,
-        PNJType.Mayor      => colorMayor,
         PNJType.Quest      => colorQuest,
         PNJType.Decorative => colorDecorative,
         _                  => colorDefault

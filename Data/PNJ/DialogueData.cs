@@ -131,7 +131,10 @@ public enum DialogueAction
     // DialogueUI — vérifié avant suppression. Ordinal 6 jamais réutilisé.
     OpenQuestLog         = 7,  // Ouvre QuestUI (Quest) — TODO Phase 7
     OpenHarborUI         = 8,  // Ouvre navigation bateau (HarborMaster) — TODO Phase 8
-    TriggerGuildCreation = 9,  // Lance la création de guilde (Mayor)
+
+    // 9 retiré (2026-10-04) — TriggerGuildCreation, PNJType.Mayor retiré (jamais implémenté).
+    // Zéro .asset avec action: 9 — vérifié avant suppression. Ordinal 9 jamais réutilisé.
+
     AcceptQuest          = 10, // Accepte une quête (QuestNPC) — questData assignée sur le stage
     TurnInQuest          = 11, // Rend une quête complétée au PNJ donneur
     CloseDialogue        = 12, // Ferme le dialogue
@@ -145,5 +148,5 @@ public enum DialogueAction
 
     // ── Ajouté 2026-09-29 — PNJ Purification, spec Prestige/Aura §2.5 ──────────
     PurifyAura           = 14, // Rachète le palier d'Aura courant (PNJ.TryPurifyAura) —
-                                // pas d'écran dédié, dialogue-only comme Mayor/Guard.
+                                // pas d'écran dédié, dialogue-only comme Guard.
 }

@@ -14,7 +14,6 @@ using System.Collections.Generic;
 //   Antiquarian  → RuneUI (TODO Phase 6)
 //   FusionNPC    → FusionUI (TODO Phase 6)
 //   Quest        → QuestUI (TODO Phase 7)
-//   Mayor        → Dialogue conditionnel + création guilde
 //   FactionNPC   → Services faction Solthars / Umbrans (TODO Phase 9)
 //   HarborMaster → Navigation bateau (TODO Phase 8)
 //   Guard        → IA combat mobs + dialogue neutre
@@ -570,7 +569,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case PNJType.Quest:        InteractQuest(player);        break;
             case PNJType.Guard:        InteractGuard(player);        break;
             case PNJType.Decorative:   InteractDecorative(player);   break;
-            case PNJType.Mayor:        InteractMayor(player);        break;
 #pragma warning disable CS0618
             case PNJType.FactionNPC:   InteractFactionNPC(player);   break;
 #pragma warning restore CS0618
@@ -668,15 +666,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 
         dialogue ??= SelectDialogue(player);
         if (dialogue != null) StartDialogue(dialogue, player);
-    }
-
-    // ── Maire ─────────────────────────────────────────────────
-    private void InteractMayor(Player player)
-    {
-        DialogueData dialogue = player.CanCreateGuild()
-            ? (data.guildUnlockDialogue   ?? data.defaultDialogue)
-            : (data.guildNotReadyDialogue ?? data.defaultDialogue);
-        StartDialogue(dialogue, player);
     }
 
     // ── PNJ Faction ───────────────────────────────────────────
@@ -810,7 +799,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             case DialogueAction.OpenFusionUI:       FusionUI.Instance?.Open(data, player); _awaitingSecondaryPanel = true; break;
             case DialogueAction.OpenQuestLog:       Debug.Log("[PNJ] OpenQuestLog — QuestUI Phase 7");  break;
             case DialogueAction.OpenHarborUI:       Debug.Log("[PNJ] OpenHarborUI — HarborUI Phase 8"); break;
-            case DialogueAction.TriggerGuildCreation: TryCreateGuild(player); break;
             case DialogueAction.PurifyAura:         TryPurifyAura(player); break;
             case DialogueAction.CloseDialogue:      EndDialogue(); break;
         }
@@ -822,22 +810,6 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         currentStage   = null;
         talkingTo      = null;
         DialogueUI.Instance?.CloseDialogue();
-    }
-
-    // =========================================================
-    // CRÉATION DE GUILDE — GDD v3.5 §3.4
-    // =========================================================
-
-    private void TryCreateGuild(Player player)
-    {
-        if (!player.CanCreateGuild())
-        {
-            Debug.Log("[PNJ/Maire] Condition non remplie — 20 membres uniques requis.");
-            return;
-        }
-        // TODO: vérifier Aeris joueur >= data.guildCreationCost
-        // TODO: GuildSystem.Instance?.CreateGuild(player, data.guildCreationCost)
-        Debug.Log($"[PNJ/Maire] Création de guilde débloquée — Coût : {data.guildCreationCost} Aeris (Phase 9)");
     }
 
     // =========================================================

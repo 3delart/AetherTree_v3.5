@@ -1489,8 +1489,6 @@ public class Player : Entity
         GameEventBus.Publish(new SocialEvent { action = SocialAction.GroupLeader, otherPlayerID = playerID });
     }
 
-    public bool CanCreateGuild() => uniqueGroupMembersLed.Count >= 20;
-
     // =========================================================
     // PROGRESSION
     // =========================================================
