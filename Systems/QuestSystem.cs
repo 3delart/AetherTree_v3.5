@@ -490,7 +490,7 @@ public class QuestSystem : MonoBehaviour
     // SAUVEGARDE / CHARGEMENT
     // =========================================================
 
-    /// <summary>Retourne les données de sauvegarde (état + compteurs).</summary>
+    /// <summary>Retourne les données de sauvegarde (état + compteurs par objectiveID).</summary>
     public List<QuestSaveEntry> GetSaveData()
     {
         var list = new List<QuestSaveEntry>();
@@ -501,14 +501,20 @@ public class QuestSystem : MonoBehaviour
             if (_activeData.TryGetValue(kvp.Key, out var quest))
             {
                 foreach (var obj in quest.objectives)
-                    entry.objectiveCounts.Add(obj.currentCount);
+                    entry.objectiveEntries.Add(new QuestObjectiveSaveEntry
+                    {
+                        objectiveID  = obj.objectiveID,
+                        currentCount = obj.currentCount
+                    });
             }
             list.Add(entry);
         }
         return list;
     }
 
-    /// <summary>Restaure l'état depuis la sauvegarde.</summary>
+    /// <summary>Restaure l'état depuis la sauvegarde — match par objectiveID, pas par index
+    /// positionnel (réordonner/insérer un objectif entre un save et un load ne corrompt plus la
+    /// progression restaurée).</summary>
     public void LoadSaveData(List<QuestSaveEntry> entries, List<QuestData> allQuests)
     {
         if (entries == null || allQuests == null) return;
@@ -528,8 +534,16 @@ public class QuestSystem : MonoBehaviour
                 if (questByID.TryGetValue(entry.questID, out var quest))
                 {
                     _activeData[entry.questID] = quest;
-                    for (int i = 0; i < entry.objectiveCounts.Count && i < quest.objectives.Count; i++)
-                        quest.objectives[i].currentCount = entry.objectiveCounts[i];
+
+                    if (entry.objectiveEntries != null)
+                    {
+                        foreach (var savedObj in entry.objectiveEntries)
+                        {
+                            if (string.IsNullOrEmpty(savedObj.objectiveID)) continue;
+                            var target = quest.objectives.Find(o => o.objectiveID == savedObj.objectiveID);
+                            if (target != null) target.currentCount = savedObj.currentCount;
+                        }
+                    }
                 }
             }
         }
@@ -574,9 +588,16 @@ public class QuestSystem : MonoBehaviour
 // STRUCTURE SAUVEGARDE
 // =============================================================
 [System.Serializable]
+public class QuestObjectiveSaveEntry
+{
+    public string objectiveID  = "";
+    public int    currentCount = 0;
+}
+
+[System.Serializable]
 public class QuestSaveEntry
 {
     public string     questID = "";
     public QuestState state   = QuestState.None;
-    public List<int>  objectiveCounts = new List<int>();
+    public List<QuestObjectiveSaveEntry> objectiveEntries = new List<QuestObjectiveSaveEntry>();
 }

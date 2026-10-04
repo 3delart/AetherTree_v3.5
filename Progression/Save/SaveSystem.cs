@@ -603,9 +603,16 @@ public class SaveSystem : MonoBehaviour
         var entries = QuestSystem.Instance.GetSaveData();
         var result  = new List<SavedQuest>();
         foreach (var e in entries)
-            result.Add(new SavedQuest {
-                questID = e.questID, state = e.state,
-                objectiveCounts = e.objectiveCounts });
+        {
+            var saved = new SavedQuest { questID = e.questID, state = e.state };
+            foreach (var o in e.objectiveEntries)
+                saved.objectiveEntries.Add(new SavedQuestObjective
+                {
+                    objectiveID  = o.objectiveID,
+                    currentCount = o.currentCount
+                });
+            result.Add(saved);
+        }
         return result;
     }
 
@@ -934,9 +941,17 @@ public class SaveSystem : MonoBehaviour
             var allQuests = FindAllQuests();
             var entries   = new List<QuestSaveEntry>();
             foreach (var q in p.quests)
-                entries.Add(new QuestSaveEntry {
-                    questID = q.questID, state = q.state,
-                    objectiveCounts = q.objectiveCounts });
+            {
+                var entry = new QuestSaveEntry { questID = q.questID, state = q.state };
+                if (q.objectiveEntries != null)
+                    foreach (var o in q.objectiveEntries)
+                        entry.objectiveEntries.Add(new QuestObjectiveSaveEntry
+                        {
+                            objectiveID  = o.objectiveID,
+                            currentCount = o.currentCount
+                        });
+                entries.Add(entry);
+            }
             QuestSystem.Instance.LoadSaveData(entries, allQuests);
         }
 

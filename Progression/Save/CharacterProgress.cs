@@ -185,11 +185,18 @@ public class SavedSkillSlot
 
 // ── Quête sauvegardée ─────────────────────────────────────────
 [System.Serializable]
+public class SavedQuestObjective
+{
+    public string objectiveID;
+    public int    currentCount;
+}
+
+[System.Serializable]
 public class SavedQuest
 {
     public string     questID;
     public QuestState state;
-    public List<int>  objectiveCounts = new List<int>();
+    public List<SavedQuestObjective> objectiveEntries = new List<SavedQuestObjective>();
 }
 
 
