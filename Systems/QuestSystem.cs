@@ -89,13 +89,15 @@ public class QuestSystem : MonoBehaviour
         // Remet les compteurs à zéro (important pour les quotidiennes)
         quest.ResetProgress();
 
-        // DeliverToPNJ — l'item à livrer est donné directement ici, pas ramassé en jeu (voir
-        // QuestObjective.targetItem). Restreint à ResourceData/ConsumableData (seuls types que
-        // GrantDeliveryItem sait instancier/compter via InventorySystem) — même restriction déjà
-        // documentée sur le champ.
+        // DeliverToPNJ + autoGrantItem — l'item à livrer est donné directement ici, pas ramassé
+        // en jeu (voir QuestObjective.targetItem). Restreint à ResourceData/ConsumableData (seuls
+        // types que GrantDeliveryItem sait instancier/compter via InventorySystem) — même
+        // restriction déjà documentée sur le champ. Si autoGrantItem est décoché, rien n'est
+        // donné ici — le joueur doit se procurer l'item lui-même avant de pouvoir le livrer (le
+        // NotifyTalkTo de livraison vérifie déjà juste "le tient-il", peu importe comment).
         if (quest.objectives != null)
             foreach (var obj in quest.objectives)
-                if (obj.type == QuestObjectiveType.DeliverToPNJ)
+                if (obj.type == QuestObjectiveType.DeliverToPNJ && obj.autoGrantItem)
                     GrantDeliveryItem(obj, player);
 
         Debug.Log($"[QUEST] Acceptée : {quest.questName}");

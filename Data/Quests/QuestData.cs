@@ -257,11 +257,18 @@ public class QuestObjective
 
     [Tooltip("Gather / Craft / DeliverToPNJ — glisser le SO item (doit hériter de ItemData, ex:\n" +
              "ResourceData, ConsumableData, WeaponData... — un item Gem/Rune, qui n'hérite pas\n" +
-             "d'ItemData, ne peut pas être ciblé par ce type d'objectif). Pour DeliverToPNJ : cet\n" +
-             "item est donné directement au joueur à l'acceptation de la quête (voir AcceptQuest),\n" +
-             "puis consommé quand il parle au PNJ cible (targetPNJ ci-dessus) en le tenant encore.")]
+             "d'ItemData, ne peut pas être ciblé par ce type d'objectif). Pour DeliverToPNJ : voir\n" +
+             "autoGrantItem ci-dessous pour savoir SI cet item est donné au joueur ou à trouver\n" +
+             "par lui-même — dans les deux cas, consommé quand il parle au PNJ cible en le tenant.")]
     [ShowIf(nameof(type), QuestObjectiveType.Gather, QuestObjectiveType.Craft, QuestObjectiveType.DeliverToPNJ)]
     public ScriptableObject targetItem;
+
+    [Tooltip("DeliverToPNJ uniquement. Coché (défaut) : l'item est donné directement au joueur à\n" +
+             "l'acceptation de la quête (voir QuestSystem.AcceptQuest) — \"le PNJ lui donne l'objet\n" +
+             "à transmettre\". Décoché : rien n'est donné, le joueur doit se procurer l'item\n" +
+             "lui-même (achat, craft, récolte...) avant de pouvoir le livrer — \"apporte-moi X\".")]
+    [ShowIf(nameof(type), QuestObjectiveType.DeliverToPNJ)]
+    public bool autoGrantItem = true;
 
     [Tooltip("Explore — ID de zone (string), doit correspondre EXACTEMENT au zoneID tapé sur\n" +
              "l'instance ZoneTrigger placée en scène. Pas de référence directe possible — le prefab\n" +
