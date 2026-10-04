@@ -110,15 +110,20 @@ public class PNJData : ScriptableObject
     [Tooltip("Vitesse de déplacement de base (patrouille, déambulation).")]
     public float baseMoveSpeed = 2f;
 
-    // ── Stats défensives — tous les PNJ ──────────────────────
-    // Même pipeline que MobData — CombatSystem lit sur Entity.
-    // Les PNJ non combattants gardent ces valeurs pour encaisser
-    // quelques coups si un mob attaque un village.
-    [Header("Stats défensives")]
+    // ── Stats défensives — PNJ canDie uniquement ──────────────
+    // Même pipeline que MobData — CombatSystem lit sur Entity. Masqué si canDie = false — un
+    // PNJ invulnérable n'est plus jamais ciblé par un mob (voir Mob.RefreshEnemyList(), demande
+    // Florian 2026-10-04), ces stats n'ont donc plus aucun effet pour lui.
+    [Tooltip("Visible uniquement si canDie = true — un PNJ invulnérable n'est jamais ciblé par un mob, ces valeurs n'ont alors aucun effet.")]
+    [ShowIf(nameof(canDie), true, Header = "Stats défensives (canDie)")]
     public float meleeDefense  = 10f;
+    [ShowIf(nameof(canDie), true)]
     public float rangedDefense = 8f;
+    [ShowIf(nameof(canDie), true)]
     public float magicDefense  = 5f;
+    [ShowIf(nameof(canDie), true)]
     public float precision     = 10f;
+    [ShowIf(nameof(canDie), true)]
     public float dodge         = 5f;
 
     // ── Combat — PNJ canFight ─────────────────────────────────
@@ -222,19 +227,24 @@ public class PNJData : ScriptableObject
     [ShowIf(nameof(canFight), true)]
     public float critMultiplier = 1.5f;
 
-    // ── Effets On-Hit — actifs même hors canFight (un garde peut avoir Thorns) ──
+    // ── Effets On-Hit — PNJ canFight uniquement. Avant le 2026-10-04 ces effets reçus
+    // restaient actifs même hors canFight (un garde passif pouvait avoir Thorns en encaissant
+    // sans riposter) — changé sur demande explicite de Florian : gater comme le reste du bloc
+    // combat, un PNJ non-combattant n'a plus de réaction/résistance possible.
     [Header("Effets On-Hit reçus")]
+    [ShowIf(nameof(canFight), true)]
     public List<OnHitReceivedEffectEntry> onHitReceivedEffects = new List<OnHitReceivedEffectEntry>();
     [Header("Effets On-Hit infligés")]
     [ShowIf(nameof(canFight), true)]
     public List<OnHitDealtEffectEntry> onHitDealtEffects = new List<OnHitDealtEffectEntry>();
 
-    // ── Résistances aux debuffs — actives même hors canFight, même raison que
-    // onHitReceivedEffects ci-dessus (un PNJ non-combattant peut quand même être attaqué) ──
+    // ── Résistances aux debuffs — PNJ canFight uniquement, même changement que
+    // onHitReceivedEffects ci-dessus (demande Florian 2026-10-04) ──
     [Header("Résistances aux debuffs (innées, indépendantes de tout équipement)")]
     [Tooltip("Même mécanisme que la résistance équipement du joueur (DebuffResistanceEntry) — " +
              "un PNJ n'a pas d'équipement, ce champ le remplace. resistChance = 1 sur un " +
              "DebuffType = immunité totale.")]
+    [ShowIf(nameof(canFight), true)]
     public List<DebuffResistanceEntry> debuffResistances = new List<DebuffResistanceEntry>();
 
     // =========================================================

@@ -263,7 +263,11 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
     private void RefreshEnemyList()
     {
         enemyList.Clear();
-        aggroSet.RemoveWhere(e => e == null || e.isDead);
+        // canDie == false exclu ici en plus de null/isDead — un PNJ invulnérable ne doit jamais
+        // être une cible valide pour un mob (demande Florian 2026-10-04), peu importe comment il
+        // a pu entrer dans aggroSet (ex: ForceEngage avant un éventuel changement de canDie en
+        // cours de partie).
+        aggroSet.RemoveWhere(e => e == null || e.isDead || (e is PNJ pnjAggro && pnjAggro.data != null && !pnjAggro.data.canDie));
 
         // Passive (spec §5bis) : PAS de scan de proximité — ce mob ne cible QUE ce qui l'a
         // frappé (aggroSet, fusionné plus bas). Déviation assumée du GDD §3.7 tel qu'écrit
@@ -289,9 +293,13 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
                 // if (pet != null && !pet.isDead && !enemyList.Contains(pet))
                 //     enemyList.Add(pet);
 
-                // PNJ — les mobs ciblent tous les PNJ (GDD v3.5 §3.4 : tous peuvent mourir)
+                // PNJ — ne cible que les PNJ canDie = true (un PNJ invulnérable n'a rien à faire
+                // dans une liste d'ennemis : un mob ne peut de toute façon jamais le tuer, autant
+                // ne jamais l'engager). Demande Florian 2026-10-04 — avant ça, tout PNJ non-mort
+                // était ciblé sans condition (GDD v3.5 §3.4 d'origine supposait "tous peuvent
+                // mourir", plus vrai depuis l'ajout de canDie).
                 PNJ pnj = col.GetComponentInParent<PNJ>();
-                if (pnj != null && !pnj.isDead)
+                if (pnj != null && !pnj.isDead && pnj.data != null && pnj.data.canDie)
                 {
                     if (!enemyList.Contains(pnj))
                         enemyList.Add(pnj);
