@@ -140,6 +140,14 @@ public class QuestSystem : MonoBehaviour
                 $"famille d'arme {playerFamily} — toutes les entrées étaient filtrées, vérifier la " +
                 "configuration si ce n'est pas voulu.");
 
+        if (InventorySystem.Instance != null && InventorySystem.Instance.EmptySlotCount < eligibleRewards.Count)
+        {
+            Debug.LogWarning($"[QUEST] {quest.questName} : inventaire insuffisant " +
+                $"({InventorySystem.Instance.EmptySlotCount} emplacement(s) libre(s), " +
+                $"{eligibleRewards.Count} récompense(s) à octroyer) — turn-in refusé, rien n'est accordé.");
+            return false;
+        }
+
         _states[quest.questID] = QuestState.TurnedIn;
 
         // XP

@@ -45,6 +45,7 @@ public class InventorySystem : MonoBehaviour
 
     public int  Count  => _items.Count;
     public bool IsFull => _items.Count >= MAX_SLOTS;
+    public int EmptySlotCount => Mathf.Max(0, MAX_SLOTS - _items.Count);
 
     public List<InventoryItem> GetConsommables()
     {
