@@ -205,6 +205,34 @@ public class QuestSystem : MonoBehaviour
     }
 
     // =========================================================
+    // ABANDON
+    // =========================================================
+
+    /// <summary>Abandonne une quête Active ou Completed — remet sa progression à zéro et son
+    /// état à None. Retourne true si l'abandon a réussi.</summary>
+    public bool AbandonQuest(QuestData quest, Player player)
+    {
+        if (quest == null) return false;
+
+        var state = GetQuestState(quest.questID);
+        if (state != QuestState.Active && state != QuestState.Completed) return false;
+
+        quest.ResetProgress();
+        _states[quest.questID] = QuestState.None;
+        _activeData.Remove(quest.questID);
+
+        Debug.Log($"[QUEST] Abandonnée : {quest.questName}");
+
+        GameEventBus.Publish(new QuestEvent
+        {
+            quest  = quest,
+            action = QuestAction.Abandoned,
+            player = player,
+        });
+        return true;
+    }
+
+    // =========================================================
     // ÉTAT
     // =========================================================
 

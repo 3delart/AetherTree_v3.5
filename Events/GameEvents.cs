@@ -193,7 +193,7 @@ public struct StatsChangedEvent
 
 // ── Quête ────────────────────────────────────────────────────
 // Publié par : QuestSystem
-public enum QuestAction { Accepted, ObjectiveUpdated, Completed, TurnedIn, Failed }
+public enum QuestAction { Accepted, ObjectiveUpdated, Completed, TurnedIn, Failed, Abandoned }
 public struct QuestEvent
 {
     public QuestData   quest;
