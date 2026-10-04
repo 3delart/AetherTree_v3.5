@@ -498,6 +498,13 @@ public abstract class Entity : MonoBehaviour
 
         if (amount <= 0f) return;
 
+        // Arrondi APRÈS l'absorption de Shield (pas avant) — c'est le montant RÉELLEMENT
+        // appliqué à currentHP qui doit être entier, pas le montant brut pré-absorption (qui
+        // n'est jamais directement soustrait de currentHP, juste utilisé pour calculer combien
+        // le Shield encaisse).
+        amount = Mathf.Round(amount);
+        if (amount <= 0f) return; // un montant qui arrondit à 0 ne doit déclencher aucun effet on-hit
+
         currentHP = Mathf.Max(0f, currentHP - amount);
 
         if (currentHP <= 0f)
@@ -670,6 +677,8 @@ public abstract class Entity : MonoBehaviour
         }
 
         if (amount <= 0f) return;
+        amount    = Mathf.Round(amount);
+        if (amount <= 0f) return; // un soin qui arrondit à 0 ne doit rien appliquer
         currentHP = Mathf.Min(maxHP, currentHP + amount);
     }
 
@@ -679,7 +688,7 @@ public abstract class Entity : MonoBehaviour
 
     public virtual void SpendMana(float amount)
     {
-        currentMana = Mathf.Max(0f, currentMana - amount);
+        currentMana = Mathf.Max(0f, currentMana - Mathf.Round(amount));
     }
 
     /// <summary>Coût en HP d'un skill (SkillData.hpCost) — PAS des dégâts : pas de check
@@ -689,13 +698,13 @@ public abstract class Entity : MonoBehaviour
     /// filet de sécurité, jamais censé s'activer en pratique.</summary>
     public virtual void SpendHP(float amount)
     {
-        currentHP = Mathf.Max(0f, currentHP - amount);
+        currentHP = Mathf.Max(0f, currentHP - Mathf.Round(amount));
     }
 
     public virtual void RecoverMana(float amount)
     {
         if (isDead) return;
-        currentMana = Mathf.Min(maxMana, currentMana + amount);
+        currentMana = Mathf.Min(maxMana, currentMana + Mathf.Round(amount));
     }
 
     public bool HasMana(float amount) => currentMana >= amount;
@@ -819,13 +828,16 @@ public abstract class Entity : MonoBehaviour
 
     public void SetMaxHP(float value)
     {
-        maxHP     = Mathf.Max(1f, value);
+        // Arrondi AVANT le Max(1f, ...) — sinon un maxHP calculé à 0.6 passerait le plancher à
+        // 1f (comportement correct) mais un maxHP calculé à 1.6 donnerait maxHP=1.6 (pas entier)
+        // au lieu de 2. L'ordre Round PUIS Max garantit un maxHP toujours entier ET jamais < 1.
+        maxHP     = Mathf.Max(1f, Mathf.Round(value));
         currentHP = Mathf.Clamp(currentHP, 0f, maxHP);
     }
 
     public void SetMaxMana(float value)
     {
-        maxMana     = Mathf.Max(0f, value);
+        maxMana     = Mathf.Max(0f, Mathf.Round(value));
         currentMana = Mathf.Clamp(currentMana, 0f, maxMana);
     }
 
