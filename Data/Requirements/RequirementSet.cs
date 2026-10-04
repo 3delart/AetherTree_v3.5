@@ -74,6 +74,21 @@ public class Requirement
                 return true;
         }
     }
+
+    /// <summary>Texte court affiché au joueur pour CE prérequis seul (ex: "Niveau 15 requis") —
+    /// utilisé par les panels de quête pour expliquer pourquoi une entrée est verrouillée.</summary>
+    public string Describe() => field switch
+    {
+        RequirementField.Level        => $"Niveau {minLevel} requis",
+        RequirementField.PrestigeRank => $"Rang de Prestige {minPrestigeRank} requis",
+        RequirementField.QuestState   => quest != null
+            ? $"Quête « {quest.questName} » requise"
+            : "Prérequis de quête",
+        RequirementField.ItemOwned    => item != null
+            ? $"{Mathf.Max(1, itemCount)}× {item.displayName.Get(LocalizationManager.CurrentLanguage)} requis"
+            : "Objet requis",
+        _ => "Prérequis non rempli",
+    };
 }
 
 [Serializable]
@@ -113,5 +128,16 @@ public class RequirementSet
         }
 
         return reverseMatch ? !result : result;
+    }
+
+    /// <summary>Texte court du PREMIER prérequis non rempli pour ce joueur (ex: "Niveau 15
+    /// requis") — utilisé par les panels de quête sur une carte verrouillée. Vide si tout est
+    /// déjà rempli ou si la liste est vide.</summary>
+    public string DescribeFirstUnmet(Player player)
+    {
+        if (requirements == null) return "";
+        foreach (var r in requirements)
+            if (r != null && !r.IsMet(player)) return r.Describe();
+        return "";
     }
 }
