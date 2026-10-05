@@ -182,6 +182,15 @@ public class ConsoBarUI : MonoBehaviour
             return;
         }
 
+        if (data.consumableType == ConsumableType.AetherEcho)
+        {
+            // PAS de ConsumeAndRefresh ici — l'item n'est consommé qu'au clic Valider du panel,
+            // voir AetherEchoPromptUI/ChatSystem.TrySendPlayerMessage. Annuler le panel laisse
+            // l'item totalement intact (voir spec, Florian 2026-10-05).
+            AetherEchoPromptUI.Instance?.Open(_player);
+            return;
+        }
+
         if (data.consumableType != ConsumableType.Potion && data.consumableType != ConsumableType.Food)
         {
             Debug.Log($"[ConsoBarUI] {data.consumableType} pas encore implémenté à l'usage.");
@@ -248,6 +257,11 @@ public class ConsoBarUI : MonoBehaviour
     /// l'assignation (par référence SO, pas par instance — voir CharacterProgress.consoBarSlots).</summary>
     public ConsumableData GetSlotData(int index)
         => (index >= 0 && index < _slotUIs.Length) ? _slotUIs[index]?.CurrentConso : null;
+
+    /// <summary>Instance réellement assignée au slot — utilisé par ConsoDropSlot pour l'échange
+    /// slot↔slot (contrairement à GetSlotData, qui ne renvoie que le SO).</summary>
+    public ConsumableInstance GetSlotInstance(int index)
+        => (index >= 0 && index < _slotUIs.Length) ? _slotUIs[index]?.CurrentInstance : null;
 }
 
 // =============================================================
@@ -386,16 +400,52 @@ public class ConsoSlotBarUI : MonoBehaviour, IPointerClickHandler
 // Poser automatiquement par ConsoBarUI.Awake() sur chaque slot.
 // Accepte un InventoryItem de type ConsumableInstance.
 // =============================================================
-public class ConsoDropSlot : MonoBehaviour, IDropHandler
+public class ConsoDropSlot : MonoBehaviour, IDropHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     [HideInInspector] public int slotIndex = 0;
 
     private Player _player;
 
+    // Drag ORIGINE depuis un slot déjà rempli (échange slot↔slot) — exige l'Inventaire ouvert,
+    // même garde-fou que le clic droit de ConsoSlotBarUI.OnPointerClick (geste volontaire, pas un
+    // drag accidentel en plein combat). Un seul slot-source actif à la fois.
+    private static ConsoDropSlot _draggingSlot;
+
     private void Start() => _player = UnityEngine.Object.FindObjectOfType<Player>();
+
+    public void OnBeginDrag(PointerEventData eventData)
+    {
+        if (InventoryUI.Instance == null || !InventoryUI.Instance.gameObject.activeSelf) return;
+        var instance = ConsoBarUI.Instance?.GetSlotInstance(slotIndex);
+        if (instance == null) return;
+
+        _draggingSlot = this;
+        DragGhost.Begin(instance.Icon, Color.white, new Vector2(48f, 48f), eventData);
+    }
+
+    public void OnDrag(PointerEventData eventData) => DragGhost.Move(eventData);
+
+    public void OnEndDrag(PointerEventData eventData)
+    {
+        _draggingSlot = null;
+        DragGhost.End();
+    }
 
     public void OnDrop(PointerEventData e)
     {
+        // ── Échange slot↔slot — priorité sur un drop venant de l'inventaire ──
+        if (_draggingSlot != null)
+        {
+            if (_draggingSlot != this)
+            {
+                var a = ConsoBarUI.Instance?.GetSlotInstance(_draggingSlot.slotIndex);
+                var b = ConsoBarUI.Instance?.GetSlotInstance(slotIndex);
+                ConsoBarUI.Instance?.AssignConsoInstance(slotIndex, a);
+                ConsoBarUI.Instance?.AssignConsoInstance(_draggingSlot.slotIndex, b);
+            }
+            return;
+        }
+
         var item = InventoryUI.DraggedItem;
         if (item == null) return;
 
