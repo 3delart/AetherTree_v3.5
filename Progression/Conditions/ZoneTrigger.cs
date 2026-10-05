@@ -129,6 +129,13 @@ public class ZoneTrigger : MonoBehaviour
         _continuousAFKTime      = 0f;
         _continuousNightTime    = 0f;
         _continuousAFKNightTime = 0f;
+
+        // Publish immédiat à l'entrée (durée 0) — avant, seuls le tick périodique
+        // (tickIntervalSeconds, 60s par défaut) ou la sortie publiaient un ZoneEvent, trop lent
+        // pour un objectif de quête Explore (requiredCount=1, "y être" suffit — pas besoin
+        // d'attendre une minute). Sans effet sur les conditions à durée (minTotalSeconds) :
+        // durée 0 ici, elles continuent de dépendre du tick/sortie comme avant (Florian, 2026-10-05).
+        PublishZoneEvent(isFinalExit: false);
     }
 
     private void OnTriggerExit(Collider other)
