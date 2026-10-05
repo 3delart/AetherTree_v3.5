@@ -58,7 +58,15 @@ public class DirectMessageSystem : MonoBehaviour
             return false;
 
         var conv = GetOrCreateConversation(targetPlayerName);
-        conv.messages.Add(new ChatLine { channel = ChatChannel.Private, sender = player.entityName, text = text });
+        conv.messages.Add(new ChatLine
+        {
+            channel   = ChatChannel.Private,
+            sender    = player.entityName,
+            text      = text,
+            timestamp = System.DateTime.Now, // oublié à l'origine — restait DateTime.MinValue
+                                              // (00:00), trouvé par Florian après ajout de
+                                              // l'affichage de l'heure sur le fil DM, 2026-10-05.
+        });
 
         SocialUI.Instance?.RefreshDMIfOpen(targetPlayerName);
         return true;
