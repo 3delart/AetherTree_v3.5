@@ -340,16 +340,31 @@ public class SocialUI : MonoBehaviour
         if (_player == null) _player = FindObjectOfType<Player>();
         if (_player == null) return;
 
+        string text = threadInput.text;
+
+        // Symétrie avec le raccourci "/Nom message" du dock global (ChatUI.OnSendClicked) — un MP
+        // envoyé DEPUIS SocialUI doit aussi apparaître dans le flux unifié (tagué Private,
+        // filtrable), pas seulement dans la conversation DM. Avant ce fix, seul le sens
+        // dock→SocialUI postait aux deux endroits ; SocialUI→dock ne postait qu'à
+        // DirectMessageSystem (Florian, 2026-10-05 : "le chat ne reçoit pas les messages du
+        // socialUI").
+        ChatSystem.Instance?.TrySendPlayerMessage(ChatChannel.Private, text, _player, _selectedConversation);
+
         bool sent = DirectMessageSystem.Instance != null
-            && DirectMessageSystem.Instance.SendDM(_selectedConversation, threadInput.text, _player);
+            && DirectMessageSystem.Instance.SendDM(_selectedConversation, text, _player);
         if (sent) threadInput.text = "";
     }
 
     /// <summary>Appelé par DirectMessageSystem après un SendDM — rafraîchit la liste (dernier
-    /// message) et le fil si c'est la conversation actuellement affichée.</summary>
+    /// message) et le fil si c'est la conversation actuellement affichée. Vérifie la visibilité
+    /// RÉELLE du panel (activeInHierarchy) plutôt que _isOpen seul — _isOpen ne se met à jour que
+    /// via OpenOnTab/ToggleTab/Close, et peut désynchroniser si le panel est ouvert par un autre
+    /// chemin (ex: un bouton HUD générique qui fait juste SetActive) — trouvé après le rapport de
+    /// Florian "le socialUI ne se refresh pas lors d'ajout de message", 2026-10-05.</summary>
     public void RefreshDMIfOpen(string playerName)
     {
-        if (!_isOpen || currentTab != SocialTab.Chat) return;
+        bool panelVisible = socialPanel != null && socialPanel.activeInHierarchy;
+        if (!panelVisible || currentTab != SocialTab.Chat) return;
         RefreshConversationList();
         if (_selectedConversation == playerName) RefreshThread();
     }
