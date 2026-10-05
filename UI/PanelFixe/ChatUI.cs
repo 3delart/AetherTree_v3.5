@@ -86,9 +86,13 @@ public class ChatUI : MonoBehaviour
     private Player _player;
 
     // Canaux TOUJOURS listés dans le picker, dans cet ordre — AetherEcho est ajouté/retiré
-    // dynamiquement en plus de ceux-ci (voir RefreshChannelPicker).
+    // dynamiquement en plus de ceux-ci (voir RefreshChannelPicker). Nearby EN PREMIER (pas Guild) :
+    // Guild refuse TOUJOURS (pas de GuildSystem) et poste sa ligne de refus en Système, invisible
+    // tant que la vue n'est pas explicitement sur le filtre Système — avec Guild par défaut
+    // (index 0), le tout premier clic sur Envoyer semblait ne rien faire (bug trouvé en lisant le
+    // code après le rapport de Florian, 2026-10-05 : "le bouton envoyer n'envoie pas").
     private static readonly ChatChannel[] BaseSendableChannels =
-        { ChatChannel.Guild, ChatChannel.Private, ChatChannel.Nearby };
+        { ChatChannel.Nearby, ChatChannel.Private, ChatChannel.Guild };
 
     private List<ChatChannel> _pickerChannels = new List<ChatChannel>();
     private bool _lastHasAetherEcho = false;
