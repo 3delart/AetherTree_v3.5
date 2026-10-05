@@ -53,14 +53,31 @@ public class QuestTrackerUI : MonoBehaviour
 
     private void Start()
     {
-        GameEventBus.OnQuestAction += OnQuestAction;
-        GameEventBus.OnMobKilled   += OnMobKilled;
+        Subscribe();
 
         if (reduceButton != null)
             reduceButton.onClick.AddListener(ToggleReduce);
 
         UpdateReduceButtonText();
         StartCoroutine(InitDelayed());
+    }
+
+    // GameEventBus.Reset() (appelé à CHAQUE changement de scène, ex: entrée/sortie de donjon)
+    // désabonne tout — sans Resubscribe() listé dans Reset(), ce tracker arrêtait de recevoir
+    // OnQuestAction/OnMobKilled dès le premier changement de scène de la session, pour de bon
+    // (jamais réabonné, trouvé en testant une quête DungeonComplete — Florian, 2026-10-05).
+    public void Resubscribe() { Unsubscribe(); Subscribe(); }
+
+    private void Subscribe()
+    {
+        GameEventBus.OnQuestAction += OnQuestAction;
+        GameEventBus.OnMobKilled   += OnMobKilled;
+    }
+
+    private void Unsubscribe()
+    {
+        GameEventBus.OnQuestAction -= OnQuestAction;
+        GameEventBus.OnMobKilled   -= OnMobKilled;
     }
 
     private IEnumerator InitDelayed()
@@ -72,11 +89,7 @@ public class QuestTrackerUI : MonoBehaviour
         Refresh();
     }
 
-    private void OnDestroy()
-    {
-        GameEventBus.OnQuestAction -= OnQuestAction;
-        GameEventBus.OnMobKilled   -= OnMobKilled;
-    }
+    private void OnDestroy() => Unsubscribe();
 
     private void OnQuestAction(QuestEvent e)
     {

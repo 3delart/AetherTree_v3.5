@@ -68,15 +68,27 @@ public class QuestJournalUI : MonoBehaviour
     {
         closeButton?.onClick.AddListener(Close);
         EnsureRaycastBlocker();
+        Subscribe();
+    }
+
+    // GameEventBus.Reset() (chaque changement de scène) désabonne tout — sans Resubscribe()
+    // listé dans Reset(), ce panel arrêtait de recevoir OnQuestAction/OnMobKilled dès le premier
+    // changement de scène, pour de bon (même bug que QuestTrackerUI — Florian, 2026-10-05).
+    public void Resubscribe() { Unsubscribe(); Subscribe(); }
+
+    private void Subscribe()
+    {
         GameEventBus.OnQuestAction += OnQuestAction;
         GameEventBus.OnMobKilled   += OnMobKilled;
     }
 
-    private void OnDestroy()
+    private void Unsubscribe()
     {
         GameEventBus.OnQuestAction -= OnQuestAction;
         GameEventBus.OnMobKilled   -= OnMobKilled;
     }
+
+    private void OnDestroy() => Unsubscribe();
 
     private void EnsureRaycastBlocker()
     {

@@ -510,24 +510,18 @@ public class QuestSystem : MonoBehaviour
 
     private void HandleInstanceCompleted(InstanceCompletedEvent e)
     {
-        Debug.Log($"[DIAG-DONJON] HandleInstanceCompleted reçu instanceID={e.instanceID}, " +
-            $"_activeData.Count={_activeData.Count}");
         if (string.IsNullOrEmpty(e.instanceID)) return;
 
         foreach (var kvp in _activeData)
         {
-            Debug.Log($"[DIAG-DONJON]   quête active candidate : {kvp.Key}, état={_states[kvp.Key]}");
             if (_states[kvp.Key] != QuestState.Active) continue;
 
             QuestData quest       = kvp.Value;
             var       activeIndices = quest.GetActiveObjectiveIndices();
-            Debug.Log($"[DIAG-DONJON]   {quest.questName} activeIndices.Count={activeIndices.Count}");
 
             foreach (int idx in activeIndices)
             {
                 var obj = quest.objectives[idx];
-                Debug.Log($"[DIAG-DONJON]     objectif[{idx}] type={obj.type}, " +
-                    $"targetDungeon={(obj.targetDungeon != null ? obj.targetDungeon.InstanceID : "NULL")}");
                 if (obj.type != QuestObjectiveType.DungeonComplete) continue;
                 if (obj.targetDungeon == null || obj.targetDungeon.InstanceID != e.instanceID) continue;
 

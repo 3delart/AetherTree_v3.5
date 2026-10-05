@@ -501,8 +501,6 @@ public class Mob : Entity, ICombatAIProfile, ICombatAnimatorProfile
         // matcher à la main).
         if (isDungeonBoss)
         {
-            Debug.Log($"[DIAG-DONJON] Mob.Die() : isDungeonBoss=true pour {entityName}, " +
-                $"InstanceSession.Instance={(InstanceSession.Instance != null ? "non-null" : "NULL")}");
             InstanceSession.Instance?.OnBossKilled(this);
         }
         else if (data != null && data.mobType == MobType.DungeonMob

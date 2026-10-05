@@ -88,6 +88,8 @@ public static class GameEventBus
         LootManager.Instance?.Resubscribe();
         AerisSystem.Instance?.Resubscribe();
         QuestSystem.Instance?.Resubscribe();
+        QuestTrackerUI.Instance?.Resubscribe();
+        QuestJournalUI.Instance?.Resubscribe();
         CharacterPanelUI.Instance?.Resubscribe();
         PassiveSkillSystem.Instance?.Resubscribe();
 
