@@ -64,6 +64,19 @@ public class DirectMessageSystem : MonoBehaviour
         return true;
     }
 
+    /// <summary>Appelé UNIQUEMENT par SaveSystem au chargement — recrée une conversation avec ses
+    /// messages déjà existants (pas de re-validation, les données viennent de la sauvegarde du
+    /// joueur lui-même). Écrase toute conversation existante du même nom (ne devrait jamais
+    /// arriver au chargement normal, _conversations est vide à ce moment).</summary>
+    public void RestoreConversation(string otherPlayerName, List<ChatLine> messages)
+    {
+        if (string.IsNullOrEmpty(otherPlayerName) || messages == null) return;
+
+        var conv = new DMConversation { otherPlayerName = otherPlayerName };
+        conv.messages.AddRange(messages);
+        _conversations.Add(conv);
+    }
+
     /// <summary>Supprime entièrement la conversation avec ce joueur (fil + entrée dans la liste) —
     /// appelé par SocialUI sur clic du bouton Supprimer. Renvoie false si aucune conversation
     /// n'existait avec ce nom (no-op silencieux côté appelant).</summary>

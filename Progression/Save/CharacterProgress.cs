@@ -209,6 +209,26 @@ public class SavedConditionProgress
     public List<bool> entryCompleted = new List<bool>();
 }
 
+// ── Conversation DM sauvegardée ─────────────────────────────────
+// Scope volontairement limité aux DM (DirectMessageSystem) — le chat global (ChatSystem) reste
+// éphémère, décision explicite reconfirmée (Florian, 2026-10-05 : "juste les DM").
+[System.Serializable]
+public class SavedDMLine
+{
+    public int    channel;   // cast de ChatChannel en int — toujours Private pour un DM
+    public string sender;
+    public string text;
+    public string timestamp; // DateTime sérialisé en string ISO, même pattern que SavedMail.sentAt
+    public string recipient;
+}
+
+[System.Serializable]
+public class SavedDMConversation
+{
+    public string otherPlayerName;
+    public List<SavedDMLine> messages = new List<SavedDMLine>();
+}
+
 // ── Mail sauvegardé ───────────────────────────────────────────
 [System.Serializable]
 public class SavedMail
@@ -353,9 +373,19 @@ public class CharacterProgress
     // Réclamations quotidiennes de quête — voir Player.questDailyClaims/ClaimDailyQuest.
     public List<Player.QuestDailyClaim> questDailyClaims = new List<Player.QuestDailyClaim>();
 
+
+    // Quêtes suivies manuellement (bouton "Suivi" du QuestJournalUI) — voir
+    // QuestTrackerUI._trackedQuestIDs/GetTrackedQuestIDs/SetTrackedQuestIDs. État UI pur (pas sur
+    // Player), même convention que skillBarSlots/consoBarSlots ci-dessus (lu/écrit directement
+    // sur le singleton UI au lieu d'un champ Player).
+    public List<string> trackedQuestIDs = new List<string>();
+
     // ⑫ Progression conditions en cours
     public List<SavedConditionProgress> conditionProgresses = new List<SavedConditionProgress>();
 
     // ⑬ Mails (Mailbox)
     public List<SavedMail> mails = new List<SavedMail>();
+
+    // ⑭ Conversations DM (DirectMessageSystem) — le chat global (ChatSystem) reste éphémère
+    public List<SavedDMConversation> dmConversations = new List<SavedDMConversation>();
 }

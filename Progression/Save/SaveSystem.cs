@@ -425,6 +425,9 @@ public class SaveSystem : MonoBehaviour
         if (QuestSystem.Instance != null)
             progress.quests = CollectQuests();
 
+        if (QuestTrackerUI.Instance != null)
+            progress.trackedQuestIDs = QuestTrackerUI.Instance.GetTrackedQuestIDs();
+
         // ⑪ Jauge élémentaire
         var elemental = player.GetElementalSystem();
         if (elemental != null)
@@ -433,6 +436,10 @@ public class SaveSystem : MonoBehaviour
         // ⑬ Mails
         if (MailboxSystem.Instance != null)
             CollectMails(progress);
+
+        // ⑭ Conversations DM — scope volontairement limité aux DM, le chat global reste éphémère
+        if (DirectMessageSystem.Instance != null)
+            CollectDMConversations(progress);
 
         return progress;
     }
@@ -680,6 +687,33 @@ public class SaveSystem : MonoBehaviour
         }
     }
 
+    // ── Conversations DM ──────────────────────────────────────
+
+    private void CollectDMConversations(CharacterProgress p)
+    {
+        var conversations = DirectMessageSystem.Instance.GetConversations();
+        if (conversations == null) return;
+
+        foreach (var conv in conversations)
+        {
+            if (conv == null) continue;
+
+            var saved = new SavedDMConversation { otherPlayerName = conv.otherPlayerName };
+            foreach (var line in conv.messages)
+            {
+                saved.messages.Add(new SavedDMLine
+                {
+                    channel   = (int)line.channel,
+                    sender    = line.sender,
+                    text      = line.text,
+                    timestamp = line.timestamp.ToString("o"),
+                    recipient = line.recipient,
+                });
+            }
+            p.dmConversations.Add(saved);
+        }
+    }
+
     // =========================================================
     // APPLICATION — CharacterProgress → Player
     // =========================================================
@@ -839,6 +873,9 @@ public class SaveSystem : MonoBehaviour
         // ⑬ Mails
         RestoreMails(p.mails);
 
+        // ⑭ Conversations DM
+        RestoreDMConversations(p.dmConversations);
+
         // ⑤ Items — en coroutine
         StartCoroutine(LoadItemsDelayed(player, p));
         GameEventBus.PublishSaveLoaded();
@@ -910,6 +947,38 @@ public class SaveSystem : MonoBehaviour
         }
     }
 
+    // ── Restauration conversations DM ─────────────────────────
+
+    private void RestoreDMConversations(List<SavedDMConversation> saved)
+    {
+        if (saved == null || saved.Count == 0) return;
+        if (DirectMessageSystem.Instance == null) return;
+
+        foreach (var conv in saved)
+        {
+            if (conv == null || string.IsNullOrEmpty(conv.otherPlayerName)) continue;
+
+            var messages = new List<ChatLine>();
+            foreach (var line in conv.messages)
+            {
+                DateTime timestamp = DateTime.Now;
+                if (!string.IsNullOrEmpty(line.timestamp))
+                    DateTime.TryParse(line.timestamp, out timestamp);
+
+                messages.Add(new ChatLine
+                {
+                    channel   = (ChatChannel)line.channel,
+                    sender    = line.sender,
+                    text      = line.text,
+                    timestamp = timestamp,
+                    recipient = line.recipient,
+                });
+            }
+
+            DirectMessageSystem.Instance.RestoreConversation(conv.otherPlayerName, messages);
+        }
+    }
+
     // ── Restauration items ────────────────────────────────────
 
     private IEnumerator LoadItemsDelayed(Player player, CharacterProgress p)
@@ -960,6 +1029,9 @@ public class SaveSystem : MonoBehaviour
             }
             QuestSystem.Instance.LoadSaveData(entries, allQuests);
         }
+
+        if (QuestTrackerUI.Instance != null)
+            QuestTrackerUI.Instance.SetTrackedQuestIDs(p.trackedQuestIDs);
 
         var elemental = player.GetElementalSystem();
         if (elemental != null && p.elementAffinities != null && p.elementAffinities.Count > 0)
