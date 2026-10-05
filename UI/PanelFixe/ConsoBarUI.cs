@@ -458,11 +458,14 @@ public class ConsoDropSlot : MonoBehaviour, IDropHandler, IBeginDragHandler, IDr
 
         var conso = item.ConsumableInstance;
 
-        // Seuls Potion/Food/TeleportItem ont un sens dans une barre d'action utilisable en un
+        // Potion/Food/TeleportItem/AetherEcho ont un sens dans une barre d'action utilisable en un
         // clic — DungeonKey (passe par le Portal gaté, pas la barre), RewardChest (s'ouvre depuis
-        // l'inventaire) et Other (effet non défini) sont exclus.
+        // l'inventaire) et Other (effet non défini) sont exclus. AetherEcho ajouté 2026-10-05 —
+        // oublié à la création du type, UseConsumable le gère depuis le début (ouvre
+        // AetherEchoPromptUI) mais le drop lui-même était silencieusement refusé avant ce fix.
         ConsumableType type = conso.data.consumableType;
-        if (type != ConsumableType.Potion && type != ConsumableType.Food && type != ConsumableType.TeleportItem)
+        if (type != ConsumableType.Potion && type != ConsumableType.Food
+            && type != ConsumableType.TeleportItem && type != ConsumableType.AetherEcho)
         {
             UnityEngine.Debug.Log($"[CONSO DROP] {conso.Name} ({type}) ne peut pas être placé dans la ConsoBar.");
             return;
