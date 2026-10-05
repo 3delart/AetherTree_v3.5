@@ -8,20 +8,19 @@ using System.Collections.Generic;
 // Path : Assets/Scripts/UI/PanelFixe/ChatUI.cs
 // AetherTree GDD v31 — voir docs/superpowers/specs/2026-10-05-chat-system-design.md
 //
-// UN SEUL flux (toutes les lignes mélangées, préfixées/colorées par canal) — PAS des onglets qui
-// cachent les autres canaux (design initial faux, corrigé après inspiration Nostale réelle :
+// UN SEUL flux (toutes les lignes mélangées, COLORÉES par canal — plus de préfixe texte "[Canal]",
+// retiré 2026-10-05 : la couleur suffit à distinguer, voir ChannelColor/Refresh) — PAS des onglets
+// qui cachent les autres canaux (design initial faux, corrigé après inspiration Nostale réelle :
 // Nostale a une fenêtre unique avec un filtre de catégorie, pas des onglets séparés).
 //
 // FilterBar — PAS 5 toggles indépendants : un sélecteur à choix UNIQUE (comme des tabs/radio),
 // géré avec de simples Button (pas de Toggle construit côté Editor). "Monde" N'EST PLUS un vrai
 // canal d'envoi (voir ChatSystem.ChatChannel, World retiré 2026-10-05) — c'est juste le mode
-// d'affichage AGRÉGÉ : Alentour + Guilde + Privé réunis (+ Écho d'Aether, qui ignore TOUJOURS le
-// mode choisi, voir plus bas). Système reste TOUJOURS à part, jamais inclus dans l'agrégat Monde
-// — seul son propre bouton l'affiche (Florian, 2026-10-05). Cliquer Alentour/Guilde/Privé/Système
-// isole CE SEUL canal (le reste disparaît de la vue, mais pas de l'historique ni de l'envoi).
-//
-// Écho d'Aether IGNORE TOUJOURS le mode de filtre choisi (aucun bouton dédié) — c'est sa raison
-// d'être, voir spec section "Nostale : le haut-parleur ignore le filtre de vue temporaire".
+// d'affichage AGRÉGÉ : Alentour + Guilde + Privé + Écho d'Aether réunis. Système reste TOUJOURS à
+// part, jamais inclus dans l'agrégat Monde — seul son propre bouton l'affiche (Florian,
+// 2026-10-05). Cliquer Alentour/Guilde/Privé/Système isole CE SEUL canal (le reste disparaît de
+// la vue, mais pas de l'historique ni de l'envoi) — Écho d'Aether disparaît aussi sous ces filtres
+// spécifiques (n'ignore plus le mode choisi, accepté comme compromis — Florian, 2026-10-05).
 //
 // SETUP HIERARCHY attendu (Florian construit, ce script fait les Find()/assignations en Inspector
 // comme pour les autres UI de cette session) :
@@ -185,16 +184,15 @@ public class ChatUI : MonoBehaviour
     // AFFICHAGE
     // =========================================================
 
-    /// <summary>"Monde" = vue agrégée Alentour+Guilde+Privé (pas un vrai canal, voir en-tête) —
-    /// Système n'y est JAMAIS inclus, seul son propre mode l'affiche. Écho d'Aether ignore
-    /// TOUJOURS le mode choisi, peu importe lequel.</summary>
+    /// <summary>"Monde" = vue agrégée Alentour+Guilde+Privé+Écho d'Aether (pas un vrai canal, voir
+    /// en-tête) — Système n'y est JAMAIS inclus, seul son propre mode l'affiche. Écho d'Aether
+    /// N'ignore PLUS le mode choisi (revu 2026-10-05, Florian) — visible uniquement sous "Monde",
+    /// masqué comme les autres sous un filtre spécifique (Alentour/Guilde/Privé/Système), tant pis.</summary>
     private bool IsChannelVisible(ChatChannel channel)
     {
-        if (channel == ChatChannel.AetherEcho) return true;
-
         return _filterMode switch
         {
-            FilterMode.Aggregate => channel == ChatChannel.Nearby || channel == ChatChannel.Guild || channel == ChatChannel.Private,
+            FilterMode.Aggregate => channel == ChatChannel.Nearby || channel == ChatChannel.Guild || channel == ChatChannel.Private || channel == ChatChannel.AetherEcho,
             FilterMode.Nearby    => channel == ChatChannel.Nearby,
             FilterMode.Guild     => channel == ChatChannel.Guild,
             FilterMode.Private   => channel == ChatChannel.Private,
@@ -310,7 +308,10 @@ public class ChatUI : MonoBehaviour
 
             string sender = BuildSenderLabel(line);
             string timePrefix = timeTxt == null ? $"{timeStr} " : ""; // déjà affiché à part sinon
-            txt.text  = $"{timePrefix}{ChannelPrefix(line.channel)} {sender}{line.text}";
+            // Plus de préfixe texte "[Canal]" — la couleur (ChannelColor) suffit à distinguer le
+            // canal, le préfixe faisait doublon (Florian, 2026-10-05). ChannelPrefix() reste
+            // utilisé ailleurs (labels du picker d'envoi, qui n'ont pas de couleur).
+            txt.text  = $"{timePrefix}{sender}{line.text}";
             txt.color = ChannelColor(line.channel);
 
             // Raccourci MP — clic sur une ligne avec expéditeur (pas Système) ouvre directement
