@@ -187,6 +187,39 @@ public class Player : Entity
         return true;
     }
 
+    // ── Réclamation quotidienne de quête — même convention que DungeonPrestigeClaim ci-dessus
+    // (date réelle "yyyy-MM-dd", pas une notion de jour in-game). Voir QuestSystem.CanAccept/
+    // TurnInQuest (Florian, 2026-10-05).
+    [System.Serializable]
+    public class QuestDailyClaim
+    {
+        public string questID;
+        public string lastClaimDate;
+    }
+
+    [HideInInspector] public List<QuestDailyClaim> questDailyClaims = new List<QuestDailyClaim>();
+
+    /// <summary>Enregistre la réclamation du jour pour cette quête — appelé par
+    /// QuestSystem.TurnInQuest() UNIQUEMENT pour une quête questRank == Daily, au moment où elle
+    /// passe TurnedIn. Pas un "Try" qui bloque : TurnInQuest a déjà sa propre garde d'état, ceci
+    /// se contente d'enregistrer la date pour que CanAccept sache quand la reproposer.</summary>
+    public void ClaimDailyQuest(string questID)
+    {
+        string today = System.DateTime.Now.ToString("yyyy-MM-dd");
+        var existing = questDailyClaims.Find(c => c.questID == questID);
+        if (existing != null) existing.lastClaimDate = today;
+        else questDailyClaims.Add(new QuestDailyClaim { questID = questID, lastClaimDate = today });
+    }
+
+    /// <summary>True si cette quête quotidienne a déjà été réclamée AUJOURD'HUI (date réelle) —
+    /// false si jamais réclamée ou réclamée un jour antérieur (prête à être re-proposée).</summary>
+    public bool HasClaimedDailyQuestToday(string questID)
+    {
+        string today = System.DateTime.Now.ToString("yyyy-MM-dd");
+        var existing = questDailyClaims.Find(c => c.questID == questID);
+        return existing != null && existing.lastClaimDate == today;
+    }
+
     /// <summary>
     /// Les 3 passifs RÉELLEMENT actifs (slots P1/P2/P3 de la PassifBar, GDD §7.5 —
     /// "assignés hors combat"), choisis parmi unlockedPassives. Seuls ceux-ci sont

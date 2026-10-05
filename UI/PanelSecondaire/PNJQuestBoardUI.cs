@@ -162,6 +162,12 @@ public class PNJQuestBoardUI : MonoBehaviour
             if (quest == null || QuestSystem.Instance == null) continue;
 
             QuestState state      = QuestSystem.Instance.GetQuestState(quest);
+
+            // Quotidienne TurnedIn mais nouveau jour réel commencé — traitée comme neuve (None)
+            // pour tout le reste de la boucle (isLocked, badge...), pas un cas spécial de plus.
+            if (state == QuestState.TurnedIn && QuestSystem.Instance.IsDailyResettable(quest, _player))
+                state = QuestState.None;
+
             if (state == QuestState.TurnedIn) continue; // plus rien à offrir sur ce PNJ
 
             bool canAccept = QuestSystem.Instance.CanAccept(quest, _player);

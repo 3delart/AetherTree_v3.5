@@ -144,10 +144,11 @@ public class QuestSystem : MonoBehaviour
         if (string.IsNullOrEmpty(quest.questID)) return false;
 
         // Déjà acceptée ou terminée ? — reste du ressort de QuestSystem, pas de RequirementSet :
-        // une quête ne doit jamais se re-proposer déjà active/terminée, indépendamment de ses
-        // propres prérequis.
+        // une quête ne doit jamais se re-proposer déjà active/terminée, SAUF une quotidienne dont
+        // un nouveau jour réel a commencé depuis la dernière réclamation (voir IsDailyResettable).
         var state = GetQuestState(quest.questID);
-        if (state == QuestState.Active || state == QuestState.TurnedIn) return false;
+        if (state == QuestState.Active) return false;
+        if (state == QuestState.TurnedIn && !IsDailyResettable(quest, player)) return false;
 
         if (!(quest.requirements == null || quest.requirements.IsMet(player))) return false;
 
@@ -162,6 +163,13 @@ public class QuestSystem : MonoBehaviour
 
         return true;
     }
+
+    /// <summary>True si cette quête quotidienne (questRank == Daily), déjà TurnedIn, peut être
+    /// reproposée — un nouveau jour réel a commencé depuis la dernière réclamation (voir
+    /// Player.ClaimDailyQuest/HasClaimedDailyQuestToday). Toujours false pour un autre rang.</summary>
+    public bool IsDailyResettable(QuestData quest, Player player)
+        => quest != null && quest.questRank == QuestRank.Daily && player != null
+        && !player.HasClaimedDailyQuestToday(quest.questID);
 
     /// <summary>Cherche l'instance PNJ vivante en scène portant ce PNJData — un PNJData seul (SO)
     /// ne sait pas s'il est en train d'attendre au départ de sa route, seule l'instance en scène
@@ -215,6 +223,11 @@ public class QuestSystem : MonoBehaviour
         }
 
         _states[quest.questID] = QuestState.TurnedIn;
+
+        // Quotidienne : enregistre la date de réclamation — voir IsDailyResettable/CanAccept,
+        // qui la reproposeront dès le prochain jour réel.
+        if (quest.questRank == QuestRank.Daily)
+            player.ClaimDailyQuest(quest.questID);
 
         // Retrait des objets de quête purs (Gather + consumeOnTurnIn) — avant les récompenses,
         // libère potentiellement de la place. Ne bloque jamais le turn-in si l'item a disparu
