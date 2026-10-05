@@ -104,7 +104,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// <summary>True uniquement pendant l'attente initiale à patrolPoints[0], avant le premier
     /// départ de ce cycle (durée = patrolPoints[0].waitSeconds). Lu par QuestSystem.CanAccept
     /// pour un objectif Escort ciblant ce PNJ.</summary>
-    public bool IsAcceptingEscort => isPatrolRoute && !loopRoute && _routeIndex == 0 && _routeWaiting;
+    public bool IsAcceptingEscort => isPatrolRoute && !loopRoute && _routeWaiting && _isAtStartWait;
 
     // ── Dialogue actif ────────────────────────────────────────
     private DialogueData  activeDialogue = null;
@@ -146,6 +146,12 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     private int       _routeIndex       = 0;
     private bool      _routeWaiting     = false;
     private float     _routeWaitTimer   = 0f;
+    // _routeIndex représente la PROCHAINE cible, pas le point où le PNJ attend actuellement — il
+    // est incrémenté AU MOMENT où le wait commence (voir TickPatrolRoute). Donc _routeIndex == 0
+    // n'est JAMAIS vrai pendant le wait au point 0 (déjà passé à 1) — IsAcceptingEscort a besoin
+    // de ce flag séparé, posé AVANT l'incrément, effacé au départ (Florian, 2026-10-05 — bug
+    // trouvé en testant Escort, resté verrouillé tout le temps de l'attente initiale).
+    private bool      _isAtStartWait    = false;
     private Transform _lastRouteTarget  = null; // évite un SetDestination() par frame — un seul appel par point visé
     // _routeAnchor est le "chez-soi" de combat pendant la route — distinct de _spawnPos (figé au
     // Point A d'origine). Alimente LeashAnchor/PatrolRadius ci-dessous : sans lui, un PNJ ambulant
@@ -443,7 +449,8 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             _routeWaitTimer -= Time.deltaTime;
             if (_routeWaitTimer <= 0f)
             {
-                _routeWaiting = false;
+                _routeWaiting  = false;
+                _isAtStartWait = false; // départ — plus dans la fenêtre d'acceptation Escort
                 // Ce cycle de wait était celui du dernier point en mode loopRoute = false — à son
                 // expiration, on disparaît au lieu de reboucler normalement vers patrolPoints[0].
                 if (_awaitingDisappear)
@@ -503,6 +510,10 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             }
             else
             {
+                // AVANT l'incrément : vrai si le point qu'on vient d'atteindre (et sur lequel on va
+                // attendre) est le point 0 — _routeIndex est réassigné juste en dessous pour viser
+                // la PROCHAINE cible, donc "_routeIndex == 0" ne serait déjà plus vrai après.
+                _isAtStartWait  = _routeIndex == 0 && !loopRoute;
                 _routeIndex     = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
                 _routeWaiting   = true;
                 _routeWaitTimer = waitHere;
@@ -1029,6 +1040,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         transform.position = _spawnPos;
         _routeIndex         = 0; // sinon le PNJ réapparaît au Point A mais vise encore un point loin dans la route
         _routeWaiting       = false;
+        _isAtStartWait      = false;
         _awaitingDisappear  = false;
         _routeHidden        = false; // si mort pendant l'absence scénique (loopRoute = false) — le code de mort/respawn gère déjà sa propre ré-activation renderer/collider plus bas, pas besoin de SetRouteVisualAndCollision() ici
         _lastRouteTarget    = null;
