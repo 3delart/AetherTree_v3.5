@@ -358,14 +358,25 @@ public class SocialUI : MonoBehaviour
     }
 
     /// <summary>Supprime la conversation entière (fil + entrée dans la liste) — pas juste un
-    /// message. Désélectionne après coup : RefreshThread() sur _selectedConversation == null
-    /// vide le fil (voir son propre early-return).</summary>
+    /// message. Confirmation via le popup partagé ConfirmationUI (même pattern que l'abandon de
+    /// quête, QuestJournalUI) avant toute suppression réelle.</summary>
     private void OnDeleteConversationClicked()
     {
         if (string.IsNullOrEmpty(_selectedConversation)) return;
 
-        DirectMessageSystem.Instance?.DeleteConversation(_selectedConversation);
-        _selectedConversation = null;
+        string captured = _selectedConversation;
+        ConfirmationUI.Instance.OpenConfirmFlow("Supprimer",
+            $"Supprimer la conversation avec {captured} ? L'historique sera perdu.",
+            _ => ConfirmDeleteConversation(captured));
+    }
+
+    /// <summary>conversation passée explicitement (pas relue depuis _selectedConversation) — la
+    /// popup peut rester ouverte un moment, _selectedConversation pourrait changer entre-temps si
+    /// le joueur clique une autre conversation dans la liste avant de confirmer.</summary>
+    private void ConfirmDeleteConversation(string playerName)
+    {
+        DirectMessageSystem.Instance?.DeleteConversation(playerName);
+        if (_selectedConversation == playerName) _selectedConversation = null;
 
         RefreshConversationList();
         RefreshThread();
