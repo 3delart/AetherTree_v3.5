@@ -257,8 +257,29 @@ public class QuestJournalUI : MonoBehaviour
         if (_selectedQuest == null || QuestSystem.Instance == null) return;
         if (QuestSystem.Instance.GetQuestState(_selectedQuest) != QuestState.Active) return;
 
+        var captured = _selectedQuest;
+
+        if (ConfirmationUI.Instance == null)
+        {
+            // Pas de popup câblée — abandon direct plutôt que bloquer silencieusement l'action.
+            ConfirmAbandon(captured);
+            return;
+        }
+
+        ConfirmationUI.Instance.OpenConfirmFlow("Abandonner",
+            $"Abandonner « {captured.questName} » ? Ta progression sera perdue.",
+            _ => ConfirmAbandon(captured));
+    }
+
+    /// <summary>quest passé explicitement (pas relu depuis _selectedQuest) — la popup de
+    /// confirmation est modale, mais autant ne pas dépendre de cette garantie pour agir sur la
+    /// BONNE quête si jamais la sélection changeait entre le clic et la confirmation.</summary>
+    private void ConfirmAbandon(QuestData quest)
+    {
+        if (quest == null || QuestSystem.Instance == null) return;
+
         var player = FindObjectOfType<Player>();
-        if (!QuestSystem.Instance.AbandonQuest(_selectedQuest, player)) return;
+        if (!QuestSystem.Instance.AbandonQuest(quest, player)) return;
 
         _selectedQuest = null;
         ClearDetail();
