@@ -143,7 +143,11 @@ public class ChatUI : MonoBehaviour
     private void Subscribe()   => GameEventBus.OnChatMessage += OnChatMessage;
     private void Unsubscribe() => GameEventBus.OnChatMessage -= OnChatMessage;
 
-    private void OnChatMessage(ChatMessageEvent e) => _dirty = true;
+    private void OnChatMessage(ChatMessageEvent e)
+    {
+        Debug.Log($"[CHATUI-DIAG] OnChatMessage reçu — canal={e.channel}, sender={e.sender}, texte={e.text}");
+        _dirty = true;
+    }
 
     private void Update()
     {
@@ -234,17 +238,31 @@ public class ChatUI : MonoBehaviour
             if (go != null) Destroy(go);
         _lineObjects.Clear();
 
-        if (ChatSystem.Instance == null || messageContent == null || chatLinePrefab == null) return;
+        if (ChatSystem.Instance == null || messageContent == null || chatLinePrefab == null)
+        {
+            Debug.Log($"[CHATUI-DIAG] Refresh STOP — ChatSystem.Instance={(ChatSystem.Instance != null ? "ok" : "NULL")}, " +
+                      $"messageContent={(messageContent != null ? "ok" : "NULL — assigné en Inspector ?")}, " +
+                      $"chatLinePrefab={(chatLinePrefab != null ? "ok" : "NULL — assigné en Inspector ?")}");
+            return;
+        }
+
+        int historyCount = ChatSystem.Instance.GetHistory().Count;
+        int shown = 0;
 
         foreach (var line in ChatSystem.Instance.GetHistory())
         {
             if (!IsChannelVisible(line.channel)) continue;
+            shown++;
 
             var go = Instantiate(chatLinePrefab, messageContent);
             _lineObjects.Add(go);
 
             var txt = go.GetComponentInChildren<TextMeshProUGUI>();
-            if (txt == null) continue;
+            if (txt == null)
+            {
+                Debug.Log("[CHATUI-DIAG] Ligne instanciée mais AUCUN TextMeshProUGUI trouvé dedans (GetComponentInChildren a échoué) — texte jamais affiché.");
+                continue;
+            }
 
             string sender = string.IsNullOrEmpty(line.sender) ? "" : $"{line.sender} : ";
             txt.text  = $"{ChannelPrefix(line.channel)} {sender}{line.text}";
@@ -261,6 +279,8 @@ public class ChatUI : MonoBehaviour
                 btn.onClick.AddListener(() => SocialUI.Instance?.OpenDMWith(captured));
             }
         }
+
+        Debug.Log($"[CHATUI-DIAG] Refresh terminé — historique total={historyCount}, lignes affichées après filtre={shown} (mode={_filterMode}).");
     }
 
     // =========================================================
@@ -301,9 +321,13 @@ public class ChatUI : MonoBehaviour
 
     private void OnSendClicked()
     {
-        if (inputField == null || string.IsNullOrWhiteSpace(inputField.text)) return;
+        Debug.Log("[CHATUI-DIAG] OnSendClicked appelé.");
+
+        if (inputField == null) { Debug.Log("[CHATUI-DIAG] STOP — inputField non assigné en Inspector."); return; }
+        if (string.IsNullOrWhiteSpace(inputField.text)) { Debug.Log("[CHATUI-DIAG] STOP — texte vide."); return; }
+
         if (_player == null) _player = FindObjectOfType<Player>();
-        if (_player == null) return;
+        if (_player == null) { Debug.Log("[CHATUI-DIAG] STOP — Player introuvable (FindObjectOfType a renvoyé null)."); return; }
 
         ChatChannel channel = ChatChannel.Nearby; // défaut si picker vide/absent
         if (channelPicker != null && _pickerChannels.Count > 0)
@@ -311,8 +335,12 @@ public class ChatUI : MonoBehaviour
             int index = Mathf.Clamp(channelPicker.value, 0, _pickerChannels.Count - 1);
             channel = _pickerChannels[index];
         }
+        Debug.Log($"[CHATUI-DIAG] channelPicker={(channelPicker != null ? "assigné" : "NULL")}, " +
+                  $"_pickerChannels.Count={_pickerChannels.Count}, canal choisi={channel}, " +
+                  $"ChatSystem.Instance={(ChatSystem.Instance != null ? "présent" : "NULL")}.");
 
         bool sent = ChatSystem.Instance != null && ChatSystem.Instance.TrySendPlayerMessage(channel, inputField.text, _player);
+        Debug.Log($"[CHATUI-DIAG] TrySendPlayerMessage({channel}) a renvoyé {sent}.");
         if (sent) inputField.text = "";
 
         // Le dernier Écho d'Aether vient peut-être d'être consommé — re-synchronise le picker

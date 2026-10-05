@@ -174,6 +174,7 @@ public class ChatSystem : MonoBehaviour
         _history.Add(new ChatLine { channel = channel, sender = sender, text = text });
         if (_history.Count > MAX_HISTORY) _history.RemoveAt(0);
 
+        Debug.Log($"[CHATSYS-DIAG] AddLine — canal={channel}, sender={sender}, texte={text}, historique={_history.Count} ligne(s). Publication GameEventBus.OnChatMessage...");
         GameEventBus.Publish(new ChatMessageEvent { channel = channel, sender = sender, text = text });
     }
 
