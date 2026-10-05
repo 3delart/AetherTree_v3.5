@@ -16,12 +16,14 @@ using UnityEngine;
 // réutilisation côté sélection de dialogue PNJ (chantier séparé, en pause)
 // prévue mais pas branchée ici.
 //
-// 4 types seulement — pas de "Reputation" par faction : Player ne stocke
+// 4 types au départ — pas de "Reputation" par faction : Player ne stocke
 // aucun score par faction (seul prestigeRank existe), un tel champ serait
 // non fonctionnel (vérifié avant d'écrire ce fichier, voir le spec).
+// WeaponFamily ajouté le 2026-10-05 (Florian) — même WeaponType.GetStartingFamily() que le
+// filtre de récompense (QuestRewardItem.requiredWeaponFamily), même regroupement.
 // =============================================================
 
-public enum RequirementField { Level, PrestigeRank, QuestState, ItemOwned }
+public enum RequirementField { Level, PrestigeRank, QuestState, ItemOwned, WeaponFamily }
 
 [Serializable]
 public class Requirement
@@ -47,6 +49,12 @@ public class Requirement
     [ShowIf(nameof(field), RequirementField.ItemOwned)]
     public int itemCount = 1;
 
+    [Tooltip("Famille de départ de l'arme équipée (WeaponType.GetStartingFamily(), même\n" +
+             "regroupement que QuestRewardItem.requiredWeaponFamily) — ex: réserver une quête\n" +
+             "aux joueurs équipés d'un Arc, d'une Épée...")]
+    [ShowIf(nameof(field), RequirementField.WeaponFamily)]
+    public WeaponType requiredWeaponFamily = WeaponType.Any;
+
     /// <summary>True si CE prérequis seul est rempli pour ce joueur.</summary>
     public bool IsMet(Player player)
     {
@@ -70,6 +78,11 @@ public class Requirement
                 return InventorySystem.Instance != null
                     && InventorySystem.Instance.GetItemCount(item) >= Mathf.Max(1, itemCount);
 
+            case RequirementField.WeaponFamily:
+                if (requiredWeaponFamily == WeaponType.Any) return true; // Any = pas de restriction
+                WeaponType playerFamily = (player.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
+                return playerFamily == requiredWeaponFamily;
+
             default:
                 return true;
         }
@@ -87,6 +100,9 @@ public class Requirement
         RequirementField.ItemOwned    => item != null
             ? $"{Mathf.Max(1, itemCount)}× {item.displayName.Get(LocalizationManager.CurrentLanguage)} requis"
             : "Objet requis",
+        RequirementField.WeaponFamily => requiredWeaponFamily != WeaponType.Any
+            ? $"Arme requise : {requiredWeaponFamily}"
+            : "Prérequis non rempli",
         _ => "Prérequis non rempli",
     };
 }
