@@ -137,6 +137,13 @@ public class PassiveSkillData : ScriptableObject
     public LocalizedText description = new LocalizedText();
     public Sprite icon;
 
+    // ── Compatibilité arme ────────────────────────────────────
+    [Header("Compatibilité arme")]
+    [Tooltip("Armes (famille de départ) avec lesquelles cette passive peut être équipée.\n" +
+             "Vide = universelle, équipable avec n'importe quelle arme (ou aucune) — même\n" +
+             "convention que SkillData.compatibleWeapons.")]
+    public List<WeaponType> compatibleWeapons = new List<WeaponType>();
+
     // ── Déclencheur ───────────────────────────────────────────
     [Header("Déclencheur")]
     [Tooltip("Événement de combat qui active cette passive.")]
@@ -181,6 +188,13 @@ public class PassiveSkillData : ScriptableObject
     // ── Helper ────────────────────────────────────────────────
     /// <summary>True si le roll de chance réussit.</summary>
     public bool RollProc() => Random.value <= procChance;
+
+    /// <summary>True si cette passive peut être équipée avec ce WeaponType — même convention
+    /// que SkillData.IsCompatibleWith (vide = compatible avec tout).</summary>
+    public bool IsCompatibleWith(WeaponType weaponType)
+        => compatibleWeapons == null || compatibleWeapons.Count == 0
+           || compatibleWeapons.Contains(weaponType)
+           || compatibleWeapons.Contains(WeaponType.Any);
 
 #if UNITY_EDITOR
     private void OnValidate()

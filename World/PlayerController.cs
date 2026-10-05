@@ -23,6 +23,14 @@ public class PlayerController : MonoBehaviour
     public float stoppingDistance = 0.1f;
     public float rotationSpeed    = 10f;
 
+    [Header("Feedback clic-déplacement")]
+    [Tooltip("Sprite du marqueur au sol — rétrécit et s'efface au point cliqué. Null = pas de " +
+             "feedback (comportement d'avant, no-op silencieux). AnyRPG research item #9.")]
+    public Sprite clickMarkerSprite;
+    public Color  clickMarkerColor     = Color.white;
+    public float  clickMarkerWorldSize = 0.6f;
+    public float  clickMarkerDuration  = 0.4f;
+
     private NavMeshAgent _agent;
     private Camera       _mainCamera;
     private Player       _player;
@@ -98,6 +106,14 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        // Clic droit pendant une visée GroundTarget (SkillBar) annule la visée au lieu de
+        // déplacer le joueur — SkillBar.UpdateGroundTargetAiming() consomme ce même clic ce
+        // frame pour couper l'aperçu. Seulement sur la frame d'appui (GetMouseButtonDown, pas
+        // MoveHeld qui reste vrai tant que le bouton est maintenu) : si le joueur garde le clic
+        // droit enfoncé après l'annulation, le mouvement normal reprend dès la frame suivante.
+        if (SkillBar.Instance != null && SkillBar.Instance.IsAwaitingGroundTarget && Input.GetMouseButtonDown(1))
+            return;
+
         if (!GameControls.MoveHeld) return;
 
         if (UIManager.Instance != null && UIManager.Instance.IsAnyPanelOpen()) return;
@@ -131,6 +147,7 @@ public class PlayerController : MonoBehaviour
         _player?.RegisterMovement();
 
         _agent.SetDestination(hit.point);
+        ClickMoveMarker.Spawn(hit.point, clickMarkerSprite, clickMarkerColor, clickMarkerWorldSize, clickMarkerDuration);
 
         Vector3 direction = (hit.point - transform.position);
         direction.y = 0f;

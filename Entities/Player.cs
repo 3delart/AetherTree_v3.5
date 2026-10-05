@@ -220,6 +220,10 @@ public class Player : Entity
         return existing != null && existing.lastClaimDate == today;
     }
 
+    // Pas de réclamation à suivre pour QuestRank.Repeatable : aucun cooldown, TurnedIn redevient
+    // immédiatement proposable (voir QuestSystem.IsRepeatableResettable) — seul le state Active
+    // bloque une double prise, déjà géré par CanAccept. Florian, 2026-10-05.
+
     /// <summary>
     /// Les 3 passifs RÉELLEMENT actifs (slots P1/P2/P3 de la PassifBar, GDD §7.5 —
     /// "assignés hors combat"), choisis parmi unlockedPassives. Seuls ceux-ci sont

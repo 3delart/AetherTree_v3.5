@@ -350,8 +350,15 @@ public class CharacterPanelUI : MonoBehaviour
 
     private void RefreshVitals()
     {
-        SetText(hpText,   $"{Mathf.CeilToInt(_player.CurrentHP)} / {Mathf.CeilToInt(_player.MaxHP)}");
-        SetText(manaText, $"{Mathf.CeilToInt(_player.CurrentMana)} / {Mathf.CeilToInt(_player.MaxMana)}");
+        // FloorToInt (pas CeilToInt) sur HP et mana — l'affichage ne doit jamais dépasser la vraie
+        // valeur disponible : 29.5 affiché "30" laissait croire qu'un skill à 30 MP était castable
+        // alors que le check réel (float brut) le refusait. Demande Florian.
+        // HP en plus : Max(1, ...) tant que CurrentHP > 0 — un floor brut affichait "0" à 0.7 HP
+        // (ENCORE EN VIE, isDead ne se déclenche qu'à HP <= 0), faisant croire à tort au joueur
+        // qu'il était mort. 0 affiché seulement quand c'est vraiment 0. Demande Florian.
+        int hpDisplay = _player.CurrentHP > 0f ? Mathf.Max(1, Mathf.FloorToInt(_player.CurrentHP)) : 0;
+        SetText(hpText,   $"{hpDisplay} / {Mathf.FloorToInt(_player.MaxHP)}");
+        SetText(manaText, $"{Mathf.FloorToInt(_player.CurrentMana)} / {Mathf.FloorToInt(_player.MaxMana)}");
 
         if (hpSlider   != null && _player.MaxHP   > 0f) hpSlider.value   = _player.HPPercent;
         if (manaSlider != null && _player.MaxMana > 0f) manaSlider.value = _player.ManaPercent;

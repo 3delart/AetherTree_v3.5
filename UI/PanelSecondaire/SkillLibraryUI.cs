@@ -30,7 +30,7 @@ using System.Linq;
 //       SkillJournal > SkillJournalText | Date | Level | Time
 // =============================================================
 
-public class SkillLibraryUI : MonoBehaviour
+public class SkillLibraryUI : MonoBehaviour, IDropHandler
 {
     public static SkillLibraryUI Instance { get; private set; }
 
@@ -90,7 +90,6 @@ public class SkillLibraryUI : MonoBehaviour
     private SkillLibraryTab      currentTab     = SkillLibraryTab.BasicAttack;
     private HashSet<ElementType> activeElements = new HashSet<ElementType>();
     private HashSet<SkillTag>    activeTags     = new HashSet<SkillTag>();
-    private bool   _isOpen = false;
     private Player _player;
 
     private Dictionary<ElementType, Button> elementButtons = new Dictionary<ElementType, Button>();
@@ -108,7 +107,34 @@ public class SkillLibraryUI : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        if (panel != null) panel.SetActive(false);
+    }
+
+    /// <summary>Overlay "IsIncompatible" live, pas figé au spawn de la grille — sinon un swap
+    /// d'arme pendant que la Library reste ouverte sur le même onglet désynchronise l'affichage
+    /// d'avec le SkillBar (qui poll chaque frame). Réutilise SkillDragSource/PassiveDragSource
+    /// déjà posés sur chaque entrée (voir SpawnSkillEntry/SpawnPassifEntry) comme référence au
+    /// skill/passif affiché — pas de script dédié par entrée.</summary>
+    private void Update()
+    {
+        if (skillGridContent == null || !IsOpen) return;
+
+        WeaponType family = GetEquippedWeaponFamily();
+        foreach (Transform entry in skillGridContent)
+        {
+            var overlay = entry.Find("IncompatibleOverlay")?.GetComponent<Image>();
+            if (overlay == null) continue;
+
+            var skillSource = entry.GetComponent<SkillDragSource>();
+            if (skillSource != null && skillSource.skill != null)
+            {
+                overlay.gameObject.SetActive(!skillSource.skill.IsCompatibleWith(family));
+                continue;
+            }
+
+            var passiveSource = entry.GetComponent<PassiveDragSource>();
+            if (passiveSource != null && passiveSource.passive != null)
+                overlay.gameObject.SetActive(!passiveSource.passive.IsCompatibleWith(family));
+        }
     }
 
     private void Start()
@@ -132,11 +158,13 @@ public class SkillLibraryUI : MonoBehaviour
         UpdateFilterTousVisual(filterTousTags,     activeTags.Count);
 
         ClearDetail();
-    }
 
-    private void Update()
-    {
-        if (GameControls.OpenSkillLibrary) Toggle();
+        // Désactivé en dernier — APRÈS tout le câblage ci-dessus, pas dans Awake() (Start()
+        // est reporté par Unity, pas synchrone avec SetActive — un self-disable en Awake()
+        // empêchait Start() de jamais tourner avant le tout premier Open(), qui appelait
+        // SwitchTab()/ClearDetail() sur un panel pas encore initialisé). Même pattern que
+        // InventoryUI.Start().
+        if (panel != null) panel.SetActive(false);
     }
 
     // =========================================================
@@ -144,7 +172,6 @@ public class SkillLibraryUI : MonoBehaviour
     // =========================================================
     public void Open()
     {
-        _isOpen = true;
         if (_player == null) _player = FindObjectOfType<Player>();
         if (panel != null) panel.SetActive(true);
         ClearDetail();
@@ -158,22 +185,59 @@ public class SkillLibraryUI : MonoBehaviour
 
     public void Close()
     {
-        _isOpen = false;
         if (panel != null) panel.SetActive(false);
     }
 
+    /// <summary>Bascule sur l'état RÉEL du GameObject (IsOpen), pas un flag séparé — un flag
+    /// dupliqué peut dériver de la réalité (vécu : double-toggle Update()+UIManager avant
+    /// centralisation du hotkey, IsOpen restait bloqué sur "ouvert" alors que le panel était
+    /// fermé, plus aucun Toggle() ne rouvrait rien). IsOpen lit directement panel.activeSelf,
+    /// aucune resynchro possible à rater.</summary>
     public void Toggle()
     {
-        if (_isOpen) Close(); else Open();
+        if (IsOpen) Close(); else Open();
+    }
+
+    /// <summary>Drag retour SkillBar/PassifBar → Library = déséquipe le slot d'origine (demande
+    /// Florian). Pas de slotIndex transporté avec le drag — on cherche juste où CE SkillData/
+    /// PassiveSkillData est actuellement équipé et on vide ce slot-là. Posé sur le panel racine
+    /// (couvre tout le Library, pas juste la grille) pour matcher le geste "relâche n'importe où
+    /// dans la fenêtre" plutôt qu'une zone de drop précise.</summary>
+    public void OnDrop(PointerEventData eventData)
+    {
+        var draggedSkill = SkillDragSource.CurrentDragging;
+        if (draggedSkill != null && SkillBar.Instance != null)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                if (SkillBar.Instance.GetSkillAtSlot(i) != draggedSkill) continue;
+                SkillBar.Instance.SetSkillAtSlot(i, null);
+                Debug.Log($"[DRAG] {draggedSkill.name} retiré de la SkillBar (retour Library).");
+                break;
+            }
+            return;
+        }
+
+        var draggedPassive = PassiveDragSource.CurrentDragging;
+        if (draggedPassive != null && PassifBarUI.Instance != null)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (PassifBarUI.Instance.GetPassifAtSlot(i) != draggedPassive) continue;
+                PassifBarUI.Instance.SetPassifAtSlot(i, null);
+                Debug.Log($"[DRAG] {draggedPassive.name} retiré de la PassifBar (retour Library).");
+                break;
+            }
+        }
     }
 
     /// <summary>Rafraîchit si le panel est ouvert. Appelé par MailboxSystem après déblocage d'un skill.</summary>
     public void RefreshIfOpen()
     {
-        if (_isOpen) { RebuildFilterBars(); RefreshGrid(); }
+        if (IsOpen) { RebuildFilterBars(); RefreshGrid(); }
     }
 
-    public bool IsOpen => _isOpen;
+    public bool IsOpen => panel != null && panel.activeSelf;
 
     // =========================================================
     // ONGLETS
@@ -389,6 +453,15 @@ private void SpawnPermanentEntry(PermanentSkillData permanent)
         var captured = permanent;
         btn.onClick.AddListener(() => ShowDetailPermanent(captured));
     }
+
+    // Overlay rouge "IsIncompatible" — même logique que SpawnSkillEntry/SpawnPassifEntry. Pas
+    // de drag source sur un Permanent (jamais équipé/déséquipé, voir commentaire plus haut),
+    // donc pas couvert par le poll live de Update() — calculé une fois au spawn seulement,
+    // suffisant ici (contrairement à SkillBar/PassifBar, rien ne force un refresh pendant que
+    // ce tab reste ouvert).
+    var incompatibleOverlay = entry.transform.Find("IncompatibleOverlay")?.GetComponent<Image>();
+    if (incompatibleOverlay != null)
+        incompatibleOverlay.gameObject.SetActive(!permanent.IsCompatibleWith(GetEquippedWeaponFamily()));
 }
 
 private void ShowDetailPermanent(PermanentSkillData permanent)
@@ -452,6 +525,11 @@ private void SpawnPassifEntry(PassiveSkillData passive)
         var captured = passive;
         btn.onClick.AddListener(() => ShowDetailPassive(captured));
     }
+
+    // Overlay rouge "IsIncompatible" — même logique que SpawnSkillEntry.
+    var incompatibleOverlay = entry.transform.Find("IncompatibleOverlay")?.GetComponent<Image>();
+    if (incompatibleOverlay != null)
+        incompatibleOverlay.gameObject.SetActive(!passive.IsCompatibleWith(GetEquippedWeaponFamily()));
 }
 
 private void ShowDetailPassive(PassiveSkillData passive)
@@ -610,7 +688,19 @@ private void ShowDetailPassive(PassiveSkillData passive)
         var tooltipTrigger = entry.GetComponent<TooltipTrigger>();
         if (tooltipTrigger == null) tooltipTrigger = entry.AddComponent<TooltipTrigger>();
         tooltipTrigger.SetSkill(skill);
+
+        // Overlay rouge "IsIncompatible" — arme en main ne matche pas compatibleWeapons,
+        // demande Florian. Calculé une fois au spawn (grille reconstruite à chaque changement
+        // d'onglet/filtre, pas besoin d'un Update() par entrée).
+        var incompatibleOverlay = entry.transform.Find("IncompatibleOverlay")?.GetComponent<Image>();
+        if (incompatibleOverlay != null)
+            incompatibleOverlay.gameObject.SetActive(!skill.IsCompatibleWith(GetEquippedWeaponFamily()));
     }
+
+    /// <summary>Famille de l'arme actuellement équipée (UnArmed si aucune) — utilisé pour
+    /// l'overlay "IsIncompatible" des entrées de grille (skills et passifs).</summary>
+    private WeaponType GetEquippedWeaponFamily()
+        => (_player?.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
 
     // =========================================================
     // PANEL DÉTAIL

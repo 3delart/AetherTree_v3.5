@@ -46,9 +46,56 @@ public class TargetingSystem : MonoBehaviour
     public Color colorSelected = new Color(1f, 0.5f, 0f);
     public Color colorEngaged  = new Color(1f, 0f,   0f);
 
+    [Header("Target Ring")]
+    [Tooltip("Anneau au sol sous la cible — même code couleur que l'Outline (orange = " +
+             "sélectionnée, rouge = engagée). Null = pas de ring (no-op silencieux). " +
+             "AnyRPG research item #2, demande Florian 2026-10-03.")]
+    public Sprite targetRingSprite;
+    public float  targetRingWorldSizeMultiplier = 1.3f; // marge au-delà du rayon du collider
+
+    [Header("Range Circle (survol tooltip skill)")]
+    [Tooltip("Cercle au sol centré sur le JOUEUR, rayon = portée du skill survolé — affiché/" +
+             "caché par TooltipTrigger en même temps que le tooltip (demande Florian 2026-10-03, " +
+             "repense du range-indicator initial). Null = pas de preview.")]
+    public Sprite rangeCirclePreviewSprite;
+    public Color  rangeCirclePreviewColor = new Color(1f, 1f, 1f, 0.35f);
+
+    [Header("Ground Target Preview (visée AoE au sol)")]
+    [Tooltip("Cercle au sol qui suit la souris pendant la visée d'un skill GroundTarget (clic " +
+             "slot → ce cercle apparaît → clic sol confirme) — rayon = skill.aoeRadius. Couleur " +
+             "normale si à portée, rouge si hors portée. Piloté par SkillBar.Show/HideGroundTarget" +
+             "Preview. Demande Florian 2026-10-03 : \"comme les autres jeux\". Null = pas de preview.")]
+    public Sprite groundTargetPreviewSprite;
+    public Color  groundTargetPreviewColor        = new Color(1f, 1f, 1f, 0.35f);
+    public Color  groundTargetPreviewInvalidColor = new Color(1f, 0f, 0f, 0.35f);
+
+    [Header("Cone Preview (visée directionnelle)")]
+    [Tooltip("Secteur généré par code (pas de sprite — l'angle varie par skill via coneHalfAngle, " +
+             "impossible à représenter avec une texture fixe) qui suit la direction souris pendant " +
+             "la visée d'un skill Cone. Toujours valide (pas de notion de hors-portée pour une " +
+             "direction) — une seule couleur. Demande Florian 2026-10-03.")]
+    public Color coneTargetPreviewColor = new Color(1f, 1f, 1f, 0.35f);
+
     // ── Références ────────────────────────────────────────────
     private Player       player;
     private NavMeshAgent _agent;
+
+    // ── Target ring (créé à la demande, un seul objet réutilisé) ──
+    private GameObject    _ringGO;
+    private SpriteRenderer _ringRenderer;
+
+    // ── Range circle preview (créé à la demande, un seul objet réutilisé) ──
+    private GameObject     _rangeCircleGO;
+    private SpriteRenderer _rangeCircleRenderer;
+
+    // ── Ground target preview (créé à la demande, un seul objet réutilisé) ──
+    private GameObject     _groundTargetGO;
+    private SpriteRenderer _groundTargetRenderer;
+
+    // ── Cone preview (mesh généré par code, créé à la demande) ──
+    private GameObject   _coneGO;
+    private Mesh         _coneMesh;
+    private MeshRenderer _coneMeshRenderer;
 
     // ── État sélection ────────────────────────────────────────
     private Entity                selectedTarget;
@@ -99,6 +146,177 @@ public class TargetingSystem : MonoBehaviour
         HandleInput();
         TickAutoAttack();
         CheckApproachCancelled();
+        UpdateTargetRing();
+    }
+
+    /// <summary>Positionne/colore l'anneau au sol sous la cible courante — mob/PNJ engagé (rouge)
+    /// prioritaire sur sélectionné (orange), puis ResourceNode sélectionné (orange, même code
+    /// couleur que son propre Outline). Caché si aucune cible ou si targetRingSprite n'est pas
+    /// assigné (feature optionnelle).</summary>
+    private void UpdateTargetRing()
+    {
+        if (targetRingSprite == null) return;
+
+        Transform targetTransform;
+        Color     ringColor;
+        Collider  col;
+
+        if (engagedTarget != null && !engagedTarget.isDead)
+        {
+            targetTransform = engagedTarget.transform;
+            ringColor       = colorEngaged;
+            col             = engagedTarget.GetComponentInChildren<Collider>();
+        }
+        else if (selectedTarget != null && !selectedTarget.isDead)
+        {
+            targetTransform = selectedTarget.transform;
+            ringColor       = colorSelected;
+            col             = selectedTarget.GetComponentInChildren<Collider>();
+        }
+        else if (selectedNode != null)
+        {
+            targetTransform = selectedNode.transform;
+            ringColor       = colorSelected;
+            col             = selectedNode.GetComponentInChildren<Collider>();
+        }
+        else
+        {
+            if (_ringGO != null) _ringGO.SetActive(false);
+            return;
+        }
+
+        if (_ringGO == null)
+        {
+            _ringGO = new GameObject("TargetRing");
+            _ringGO.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            _ringRenderer = _ringGO.AddComponent<SpriteRenderer>();
+            _ringRenderer.sprite = targetRingSprite;
+        }
+
+        _ringGO.SetActive(true);
+        _ringGO.transform.position = targetTransform.position + Vector3.up * 0.02f;
+        _ringRenderer.color = ringColor;
+
+        float radius = col != null ? Mathf.Max(col.bounds.extents.x, col.bounds.extents.z) : 0.5f;
+        float size = radius * 2f * targetRingWorldSizeMultiplier;
+        _ringGO.transform.localScale = new Vector3(size, size, 1f);
+    }
+
+    /// <summary>Affiche le cercle de portée autour du joueur — appelé par TooltipTrigger dès que
+    /// le tooltip d'un skill s'affiche (survol SkillBar/SkillLibrary). `range` vient de
+    /// SkillBar.GetEffectiveRange(skill). Taille calculée via sprite.bounds pour que `range` soit
+    /// un vrai rayon en unités monde, peu importe la résolution/PPU du sprite.</summary>
+    public void ShowRangeCirclePreview(float range)
+    {
+        if (rangeCirclePreviewSprite == null || player == null || range <= 0f) return;
+
+        if (_rangeCircleGO == null)
+        {
+            _rangeCircleGO = new GameObject("RangeCirclePreview");
+            _rangeCircleGO.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            _rangeCircleRenderer = _rangeCircleGO.AddComponent<SpriteRenderer>();
+            _rangeCircleRenderer.sprite = rangeCirclePreviewSprite;
+            _rangeCircleRenderer.color  = rangeCirclePreviewColor;
+        }
+
+        _rangeCircleGO.SetActive(true);
+        _rangeCircleGO.transform.position = player.transform.position + Vector3.up * 0.02f;
+
+        float spriteDiameter = rangeCirclePreviewSprite.bounds.size.x;
+        float scale = spriteDiameter > 0.001f ? (range * 2f) / spriteDiameter : 1f;
+        _rangeCircleGO.transform.localScale = new Vector3(scale, scale, 1f);
+    }
+
+    public void HideRangeCirclePreview()
+    {
+        if (_rangeCircleGO != null) _rangeCircleGO.SetActive(false);
+    }
+
+    /// <summary>Affiche/positionne le cercle de visée GroundTarget — appelé chaque frame par
+    /// SkillBar.UpdateGroundTargetAiming() tant que le joueur vise. `radius` = skill.aoeRadius
+    /// (rayon réel de la zone, via sprite.bounds comme ShowRangeCirclePreview — pas d'approximation
+    /// par localScale direct). `inRange` bascule la couleur normale/invalide.</summary>
+    public void ShowGroundTargetPreview(Vector3 point, float radius, bool inRange)
+    {
+        if (groundTargetPreviewSprite == null) return;
+
+        if (_groundTargetGO == null)
+        {
+            _groundTargetGO = new GameObject("GroundTargetPreview");
+            _groundTargetGO.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            _groundTargetRenderer = _groundTargetGO.AddComponent<SpriteRenderer>();
+            _groundTargetRenderer.sprite = groundTargetPreviewSprite;
+        }
+
+        _groundTargetGO.SetActive(true);
+        _groundTargetGO.transform.position = point + Vector3.up * 0.02f;
+        _groundTargetRenderer.color = inRange ? groundTargetPreviewColor : groundTargetPreviewInvalidColor;
+
+        float effectiveRadius = radius > 0f ? radius : 2f; // fallback si aoeRadius non configuré
+        float spriteDiameter  = groundTargetPreviewSprite.bounds.size.x;
+        float scale = spriteDiameter > 0.001f ? (effectiveRadius * 2f) / spriteDiameter : 1f;
+        _groundTargetGO.transform.localScale = new Vector3(scale, scale, 1f);
+    }
+
+    public void HideGroundTargetPreview()
+    {
+        if (_groundTargetGO != null) _groundTargetGO.SetActive(false);
+    }
+
+    private const int CONE_PREVIEW_SEGMENTS = 20;
+
+    /// <summary>Affiche/oriente le secteur de visée Cone — appelé chaque frame par SkillBar.
+    /// UpdateGroundTargetAiming() tant que le joueur vise. Mesh reconstruit chaque frame (secteur
+    /// léger, 20 segments) plutôt qu'un sprite : l'angle (coneHalfAngle) varie par skill, une
+    /// texture fixe ne peut pas s'adapter. `direction` doit être normalisée et à plat (Y=0).</summary>
+    public void ShowConePreview(Vector3 origin, Vector3 direction, float range, float halfAngleDegrees)
+    {
+        if (direction.sqrMagnitude < 0.0001f || range <= 0f) return;
+        direction.y = 0f;
+        direction.Normalize();
+
+        if (_coneGO == null)
+        {
+            _coneGO = new GameObject("ConePreview");
+            var filter = _coneGO.AddComponent<MeshFilter>();
+            _coneMeshRenderer = _coneGO.AddComponent<MeshRenderer>();
+            _coneMeshRenderer.material = new Material(Shader.Find("Sprites/Default"));
+            _coneMesh = new Mesh();
+            filter.mesh = _coneMesh;
+        }
+
+        _coneGO.SetActive(true);
+        _coneGO.transform.position = origin + Vector3.up * 0.02f;
+        _coneMeshRenderer.material.color = coneTargetPreviewColor;
+
+        var vertices  = new Vector3[CONE_PREVIEW_SEGMENTS + 2];
+        var triangles = new int[CONE_PREVIEW_SEGMENTS * 3];
+
+        vertices[0] = Vector3.zero; // origine locale = position du joueur (le GO y est posé)
+        float angleStep = (halfAngleDegrees * 2f) / CONE_PREVIEW_SEGMENTS;
+        for (int i = 0; i <= CONE_PREVIEW_SEGMENTS; i++)
+        {
+            float   angle = -halfAngleDegrees + angleStep * i;
+            Vector3 dir   = Quaternion.Euler(0f, angle, 0f) * direction;
+            vertices[i + 1] = dir * range;
+        }
+        for (int i = 0; i < CONE_PREVIEW_SEGMENTS; i++)
+        {
+            triangles[i * 3]     = 0;
+            triangles[i * 3 + 1] = i + 1;
+            triangles[i * 3 + 2] = i + 2;
+        }
+
+        _coneMesh.Clear();
+        _coneMesh.vertices  = vertices;
+        _coneMesh.triangles = triangles;
+        _coneMesh.RecalculateNormals();
+        _coneMesh.RecalculateBounds();
+    }
+
+    public void HideConePreview()
+    {
+        if (_coneGO != null) _coneGO.SetActive(false);
     }
 
     // =========================================================

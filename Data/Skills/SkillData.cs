@@ -504,7 +504,8 @@ public class SkillData : ScriptableObject
     public bool IsCompatibleWith(WeaponType weaponType)
     {
         return compatibleWeapons == null || compatibleWeapons.Count == 0
-               || compatibleWeapons.Contains(weaponType);
+               || compatibleWeapons.Contains(weaponType)
+               || compatibleWeapons.Contains(WeaponType.Any);
     }
 
     /// <summary>

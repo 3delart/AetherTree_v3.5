@@ -148,7 +148,8 @@ public class QuestSystem : MonoBehaviour
         // un nouveau jour réel a commencé depuis la dernière réclamation (voir IsDailyResettable).
         var state = GetQuestState(quest.questID);
         if (state == QuestState.Active) return false;
-        if (state == QuestState.TurnedIn && !IsDailyResettable(quest, player)) return false;
+        if (state == QuestState.TurnedIn && !IsDailyResettable(quest, player) && !IsRepeatableResettable(quest, player))
+            return false;
 
         if (!(quest.requirements == null || quest.requirements.IsMet(player))) return false;
 
@@ -170,6 +171,13 @@ public class QuestSystem : MonoBehaviour
     public bool IsDailyResettable(QuestData quest, Player player)
         => quest != null && quest.questRank == QuestRank.Daily && player != null
         && !player.HasClaimedDailyQuestToday(quest.questID);
+
+    /// <summary>True si cette quête est questRank == Repeatable et TurnedIn — aucun cooldown,
+    /// reproposable immédiatement une fois rendue (seul le state Active bloque une double prise
+    /// en cours, déjà géré par CanAccept). Florian, 2026-10-05 : "une fois terminée, il peut la
+    /// recommencer directement, mais ne peut pas en prendre plus d'une à la fois".</summary>
+    public bool IsRepeatableResettable(QuestData quest, Player player)
+        => quest != null && quest.questRank == QuestRank.Repeatable;
 
     /// <summary>Cherche l'instance PNJ vivante en scène portant ce PNJData — un PNJData seul (SO)
     /// ne sait pas s'il est en train d'attendre au départ de sa route, seule l'instance en scène
@@ -228,6 +236,7 @@ public class QuestSystem : MonoBehaviour
         // qui la reproposeront dès le prochain jour réel.
         if (quest.questRank == QuestRank.Daily)
             player.ClaimDailyQuest(quest.questID);
+
 
         // Retrait des objets de quête purs (Gather + consumeOnTurnIn) — avant les récompenses,
         // libère potentiellement de la place. Ne bloque jamais le turn-in si l'item a disparu
@@ -297,6 +306,25 @@ public class QuestSystem : MonoBehaviour
         return true;
     }
 
+    /// <summary>Retire de l'inventaire les items de type ResourceType.QuestDrop liés aux objectifs
+    /// de cette quête (peu importe le type d'objectif — Gather, DeliverToPNJ...) — ce sont des
+    /// items EXCLUSIFS à la quête (ex: œuf de poule auto-donné par un PNJ), ils n'ont aucune
+    /// utilité une fois la quête abandonnée. Les ressources NORMALES (ex: blé récolté pour une
+    /// livraison) ne sont PAS touchées — le joueur les garde, elles ont une valeur économique
+    /// indépendante de la quête (Florian, 2026-10-05 : cas du blé livré à un PNJ).</summary>
+    private void RemoveQuestDropItems(QuestData quest)
+    {
+        if (quest.objectives == null || InventorySystem.Instance == null) return;
+
+        foreach (var obj in quest.objectives)
+        {
+            if (obj?.targetItem is not ResourceData resource) continue;
+            if (resource.resourceType != ResourceType.QuestDrop) continue;
+
+            InventorySystem.Instance.ConsumeItem(resource, Mathf.Max(1, obj.requiredCount));
+        }
+    }
+
     // =========================================================
     // ABANDON
     // =========================================================
@@ -309,6 +337,8 @@ public class QuestSystem : MonoBehaviour
 
         var state = GetQuestState(quest.questID);
         if (state != QuestState.Active && state != QuestState.Completed) return false;
+
+        RemoveQuestDropItems(quest);
 
         quest.ResetProgress();
         _states[quest.questID] = QuestState.None;
@@ -337,6 +367,19 @@ public class QuestSystem : MonoBehaviour
 
     public QuestState GetQuestState(QuestData quest)
         => quest != null ? GetQuestState(quest.questID) : QuestState.None;
+
+    /// <summary>État "pour affichage" — normalise TurnedIn→None quand une quotidienne est à
+    /// nouveau résettable (IsDailyResettable), même règle que CanAccept. Sans cette normalisation,
+    /// une UI qui lit l'état brut contredit CanAccept (carte "Disponible" mais détail "Terminée" —
+    /// bug trouvé et corrigé sur PNJQuestBoardUI, 2026-10-05). Centralisé ici pour éviter de
+    /// dupliquer ce check dans chaque UI qui affiche un état de quête.</summary>
+    public QuestState GetEffectiveState(QuestData quest, Player player)
+    {
+        var state = GetQuestState(quest);
+        if (state == QuestState.TurnedIn && (IsDailyResettable(quest, player) || IsRepeatableResettable(quest, player)))
+            return QuestState.None;
+        return state;
+    }
 
     // =========================================================
     // PROGRESSION KILL (via GameEventBus)

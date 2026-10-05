@@ -466,6 +466,7 @@ public class QuestJournalUI : MonoBehaviour
         QuestRank.Guild     => "Guilde",
         QuestRank.Event     => "Événement",
         QuestRank.Secret    => "Secrète",
+        QuestRank.Repeatable => "Répétable",
         _                   => ""
     };
 
@@ -477,6 +478,7 @@ public class QuestJournalUI : MonoBehaviour
         QuestRank.Guild     => new Color(0.9f, 0.65f, 1.0f,  alpha),
         QuestRank.Event     => new Color(1.0f, 0.65f, 0.35f, alpha),
         QuestRank.Secret    => new Color(0.7f, 0.7f,  0.75f, alpha),
+        QuestRank.Repeatable => new Color(0.55f, 0.8f, 0.9f, alpha),
         _                   => new Color(1f,   1f,    1f,    alpha)
     };
 }

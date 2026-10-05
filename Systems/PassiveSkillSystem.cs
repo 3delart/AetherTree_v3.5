@@ -258,11 +258,16 @@ public class PassiveSkillSystem : MonoBehaviour
         Debug.Log($"[PASSIVE] {passive.name} déclenché !");
     }
 
-    /// <summary>True si cooldown OK et oncePerCombat OK.</summary>
+    /// <summary>True si cooldown OK, oncePerCombat OK, et l'arme équipée matche encore
+    /// compatibleWeapons — une passive équipée avant un swap d'arme peut devenir incompatible
+    /// (même raison que SkillBar.TryUseSlot) : reste équipée (visible, overlay rouge), mais ne
+    /// se déclenche plus tant que l'arme ne matche pas — demande Florian.</summary>
     private bool CanTrigger(PassiveSkillData passive)
     {
         if (_cooldownTimers.ContainsKey(passive)) return false;
         if (passive.oncePerCombat && _usedThisCombat.Contains(passive)) return false;
+        WeaponType equippedFamily = (_player?.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
+        if (!passive.IsCompatibleWith(equippedFamily)) return false;
         return true;
     }
 

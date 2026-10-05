@@ -137,8 +137,15 @@ public class PlayerInfosPanel : MonoBehaviour, IPointerClickHandler
             hpBar.maxValue = _player.MaxHP;
             hpBar.value    = _player.CurrentHP;
         }
+        // FloorToInt comme mpValueText plus bas — mais Max(1, ...) tant que CurrentHP > 0 : un
+        // floor brut affichait "0" à 0.7 HP, c'est-à-dire ENCORE EN VIE (isDead ne se déclenche
+        // qu'à HP <= 0) — "0" affiché faisait croire à tort au joueur qu'il était mort. 0 affiché
+        // seulement quand c'est vraiment 0. Demande Florian.
         if (hpValueText != null)
-            hpValueText.text = $"{Mathf.CeilToInt(_player.CurrentHP)} / {Mathf.CeilToInt(_player.MaxHP)}";
+        {
+            int hpDisplay = _player.CurrentHP > 0f ? Mathf.Max(1, Mathf.FloorToInt(_player.CurrentHP)) : 0;
+            hpValueText.text = $"{hpDisplay} / {Mathf.FloorToInt(_player.MaxHP)}";
+        }
 
         // Shield actif — overlay blanc superposé (Direction = Right To Left en Inspector), se
         // remplit au prorata Shield/MaxHP (voir StatusEffectSystem.GetActiveShieldAmount).
@@ -158,8 +165,12 @@ public class PlayerInfosPanel : MonoBehaviour, IPointerClickHandler
             mpBar.maxValue = _player.MaxMana;
             mpBar.value    = _player.CurrentMana;
         }
+        // FloorToInt (pas CeilToInt) — sinon 29.5 affichait "30", alors que SkillBarUI compare le
+        // float brut (29.5 < coût 30 => insuffisant) : l'affichage ne doit jamais dépasser la
+        // vraie valeur disponible, sous peine de montrer assez de mana pour un skill qu'on ne peut
+        // en fait pas lancer. Trouvé par Florian.
         if (mpValueText != null)
-            mpValueText.text = $"{Mathf.CeilToInt(_player.CurrentMana)} / {Mathf.CeilToInt(_player.MaxMana)}";
+            mpValueText.text = $"{Mathf.FloorToInt(_player.CurrentMana)} / {Mathf.FloorToInt(_player.MaxMana)}";
     }
 
     private void RefreshIcon()

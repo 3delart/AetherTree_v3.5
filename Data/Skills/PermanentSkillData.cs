@@ -40,6 +40,12 @@ public class PermanentSkillData : ScriptableObject
              "Ex: Vitalité, Attaque, Défense, Élémentaire, Mobilité...")]
     public string category = "Vitalité";
 
+    // ── Compatibilité arme ────────────────────────────────────
+    [Header("Compatibilité arme")]
+    [Tooltip("Armes (famille de départ) avec lesquelles ce permanent est utilisable.\n" +
+             "Vide = universel — même convention que SkillData/PassiveSkillData.compatibleWeapons.")]
+    public List<WeaponType> compatibleWeapons = new List<WeaponType>();
+
     // ── Bonuses permanents ────────────────────────────────────
     [Header("① Bonus stats permanents")]
     [Tooltip("Bonuses appliqués définitivement aux stats du joueur.\n" +
@@ -63,6 +69,13 @@ public class PermanentSkillData : ScriptableObject
     public List<OnHitDealtEffectEntry> onHitDealtEffects = new List<OnHitDealtEffectEntry>();
 
     // ── Helpers ───────────────────────────────────────────────
+
+    /// <summary>True si ce permanent est utilisable avec ce WeaponType — même convention que
+    /// SkillData/PassiveSkillData.IsCompatibleWith (vide = compatible avec tout).</summary>
+    public bool IsCompatibleWith(WeaponType weaponType)
+        => compatibleWeapons == null || compatibleWeapons.Count == 0
+           || compatibleWeapons.Contains(weaponType)
+           || compatibleWeapons.Contains(WeaponType.Any);
 
     /// <summary>
     /// Résumé lisible des bonuses pour le tooltip.

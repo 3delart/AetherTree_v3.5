@@ -9,8 +9,8 @@ using TMPro;
 // AetherTree GDD v30 — Section 8.1
 //
 // Glisser les 10 GameObjects SkillSlot1…SkillSlot10 dans slots[].
-// Les enfants (SkillIcon, CDOverlay, CD, MPCost, KeyBinding)
-// sont trouvés automatiquement par nom.
+// Les enfants (SkillIcon, CDOverlay, CD, MPCost, KeyBinding,
+// IncompatibleOverlay) sont trouvés automatiquement par nom.
 //
 // SlotType auto-assigné par index (GDD §8.1) :
 //   Slot 0     → SlotType.BasicAttack
@@ -27,6 +27,7 @@ public class SkillBarUI : MonoBehaviour
 
     private SkillSlotUI[] _slotUIs = new SkillSlotUI[10];
     private SkillBar      _skillBar;
+    private Player        _player;
 
     private void Awake()
     {
@@ -44,6 +45,8 @@ public class SkillBarUI : MonoBehaviour
             slot.skillIcon      = t.Find("SkillIcon") ?.GetComponent<Image>();
             slot.cdOverlay      = t.Find("CDOverlay") ?.GetComponent<Image>();
             slot.cdText         = t.Find("CD")        ?.GetComponent<TextMeshProUGUI>();
+            slot.incompatibleOverlay = t.Find("IncompatibleOverlay")?.GetComponent<Image>();
+            slot.outManaOverlay      = t.Find("OutManaOverlay")?.GetComponent<Image>();
             slot.mpCostText     = t.Find("MPCost")    ?.GetComponent<TextMeshProUGUI>();
             slot.keyBindingText = t.Find("KeyBinding")?.GetComponent<TextMeshProUGUI>();
             slot.slotIndex      = i;
@@ -63,6 +66,11 @@ public class SkillBarUI : MonoBehaviour
                            : i == 9 ? SlotType.Ultimate
                                     : SlotType.Active;
 
+            // ── Drag source — retour SkillBar → SkillLibrary (déséquipe au drop sur la
+            // Library, voir SkillLibraryUI.OnDrop) ── demande Florian.
+            slot.dragSource = slots[i].GetComponent<SkillDragSource>();
+            if (slot.dragSource == null) slot.dragSource = slots[i].AddComponent<SkillDragSource>();
+
             // Clic → utilise le slot
             var btn = slots[i].GetComponent<Button>();
             if (btn != null)
@@ -80,7 +88,12 @@ public class SkillBarUI : MonoBehaviour
         RefreshAll();
     }
 
-    private void Update() => RefreshCooldowns();
+    private void Update()
+    {
+        RefreshCooldowns();
+        RefreshCompatibility();
+        RefreshManaState();
+    }
 
     public void RefreshAll()
     {
@@ -117,6 +130,29 @@ public class SkillBarUI : MonoBehaviour
         for (int i = 0; i < _slotUIs.Length; i++)
             _slotUIs[i]?.SetCooldown(_skillBar.GetCooldownRemaining(i), _skillBar.GetCooldownTotal(i));
     }
+
+    /// <summary>Overlay rouge "IsIncompatible" sur chaque slot dont le skill équipé ne matche
+    /// plus l'arme actuellement en main (ex: swap d'arme après équipement) — demande Florian.
+    /// Famille résolue une fois par frame ici, pas par slot — évite 10× FindObjectOfType/
+    /// GetStartingFamily identiques.</summary>
+    private void RefreshCompatibility()
+    {
+        if (_player == null) _player = FindObjectOfType<Player>();
+        WeaponType family = (_player?.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
+        for (int i = 0; i < _slotUIs.Length; i++)
+            _slotUIs[i]?.SetIncompatible(family);
+    }
+
+    /// <summary>Overlay "mana insuffisante" sur chaque slot dont le skill équipé coûte plus de mana
+    /// qu'il n'en reste au joueur — demande Florian. Mana résolue une fois par frame ici, pas par
+    /// slot, même schéma que RefreshCompatibility() ci-dessus.</summary>
+    private void RefreshManaState()
+    {
+        if (_player == null) _player = FindObjectOfType<Player>();
+        float currentMana = _player != null ? _player.CurrentMana : 0f;
+        for (int i = 0; i < _slotUIs.Length; i++)
+            _slotUIs[i]?.SetOutOfMana(currentMana);
+    }
 }
 
 // =============================================================
@@ -129,6 +165,9 @@ public class SkillSlotUI : MonoBehaviour, IPointerClickHandler
     [HideInInspector] public TextMeshProUGUI cdText;
     [HideInInspector] public TextMeshProUGUI mpCostText;
     [HideInInspector] public TextMeshProUGUI keyBindingText;
+    [HideInInspector] public Image           incompatibleOverlay;
+    [HideInInspector] public Image           outManaOverlay;
+    [HideInInspector] public SkillDragSource dragSource;
     [HideInInspector] public int             slotIndex = -1;
 
     private SkillData _currentSkill;
@@ -151,16 +190,30 @@ public class SkillSlotUI : MonoBehaviour, IPointerClickHandler
 
     public void Init()
     {
-        if (cdOverlay == null) return;
-        cdOverlay.type       = Image.Type.Filled;
-        cdOverlay.fillMethod = Image.FillMethod.Radial360;
-        cdOverlay.fillAmount = 0f;
-        cdOverlay.gameObject.SetActive(false);
+        if (cdOverlay != null)
+        {
+            cdOverlay.type       = Image.Type.Filled;
+            cdOverlay.fillMethod = Image.FillMethod.Radial360;
+            cdOverlay.fillAmount = 0f;
+            cdOverlay.gameObject.SetActive(false);
+        }
+
+        // Désactivé par défaut — ne doit s'allumer QUE si Find("IncompatibleOverlay") l'a bien
+        // trouvé ET qu'un skill incompatible est détecté (RefreshCompatibility()). Si le
+        // GameObject démarre actif par défaut dans l'Inspector et que le lookup par nom échoue
+        // pour une raison quelconque (mauvais nom/hiérarchie côté prefab), rien ne viendrait
+        // jamais l'éteindre — vécu : slots vides affichant l'overlay rouge.
+        if (incompatibleOverlay != null) incompatibleOverlay.gameObject.SetActive(false);
+
+        // Même garde qu'incompatibleOverlay juste au-dessus — désactivé par défaut, ne s'allume
+        // QUE via SetOutOfMana() si le lookup par nom a bien trouvé le GameObject.
+        if (outManaOverlay != null) outManaOverlay.gameObject.SetActive(false);
     }
 
     public void SetSkill(SkillData skill)
     {
         _currentSkill = skill;
+        if (dragSource != null) dragSource.skill = skill;
         if (skillIcon != null)
         {
             if (skill == null || skill.icon == null)
@@ -199,6 +252,27 @@ public class SkillSlotUI : MonoBehaviour, IPointerClickHandler
         }
         if (skillIcon != null && _currentSkill != null)
             skillIcon.color = onCD ? DimmedColor : Color.white;
+    }
+
+    /// <summary>Overlay rouge si le skill équipé ici ne matche plus weaponFamily. Appelé chaque
+    /// frame par SkillBarUI.RefreshCompatibility() — voir sa doc.</summary>
+    public void SetIncompatible(WeaponType weaponFamily)
+    {
+        if (incompatibleOverlay == null) return;
+        bool incompatible = _currentSkill != null && !_currentSkill.IsCompatibleWith(weaponFamily);
+        incompatibleOverlay.gameObject.SetActive(incompatible);
+    }
+
+    /// <summary>Overlay "mana insuffisante" si le skill équipé ici coûte (après réduction, voir
+    /// SkillBar.GetEffectiveManaCost) plus que currentMana. Appelé chaque frame par
+    /// SkillBarUI.RefreshManaState() — voir sa doc. Jamais actif pour un skill à coût nul (attaque
+    /// de base, slot 0).</summary>
+    public void SetOutOfMana(float currentMana)
+    {
+        if (outManaOverlay == null) return;
+        bool outOfMana = _currentSkill != null && _currentSkill.manaCost > 0f
+            && SkillBar.Instance != null && currentMana < SkillBar.Instance.GetEffectiveManaCost(_currentSkill);
+        outManaOverlay.gameObject.SetActive(outOfMana);
     }
 
     public void PlayUsedFeedback() => StartCoroutine(FlashRoutine());

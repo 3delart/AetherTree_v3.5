@@ -210,6 +210,20 @@ public class QuestTrackerUI : MonoBehaviour
     public bool IsTracked(QuestData quest)
         => quest != null && _trackedQuestIDs.Contains(quest.questID);
 
+    /// <summary>Pour SaveSystem — snapshot des IDs suivis (voir CharacterProgress.trackedQuestIDs).</summary>
+    public List<string> GetTrackedQuestIDs() => new List<string>(_trackedQuestIDs);
+
+    /// <summary>Pour SaveSystem — restaure les IDs suivis depuis la save. Ne valide PAS que la
+    /// quête est encore Active (Refresh()/GetQuestsToDisplay() le fait déjà à l'affichage).</summary>
+    public void SetTrackedQuestIDs(List<string> ids)
+    {
+        _trackedQuestIDs.Clear();
+        if (ids != null)
+            foreach (var id in ids)
+                if (!string.IsNullOrEmpty(id)) _trackedQuestIDs.Add(id);
+        _dirty = true;
+    }
+
     // =========================================================
     // REFRESH
     // =========================================================
@@ -365,6 +379,7 @@ public class QuestTrackerUI : MonoBehaviour
         QuestRank.Guild     => new Color(0.9f,  0.65f, 1.0f),
         QuestRank.Event     => new Color(1.0f,  0.65f, 0.35f),
         QuestRank.Secret    => new Color(0.75f, 0.75f, 0.8f),
+        QuestRank.Repeatable => new Color(0.55f, 0.8f, 0.9f),
         _                   => Color.white
     };
 }

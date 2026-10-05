@@ -124,7 +124,14 @@ public class TooltipTrigger : MonoBehaviour,
         if (TooltipSystem.Instance == null) return;
 
         if (_item  != null) TooltipSystem.Instance.ShowItemTooltip(_item);
-        else if (_skill != null) TooltipSystem.Instance.ShowSkillTooltip(_skill);
+        else if (_skill != null)
+        {
+            TooltipSystem.Instance.ShowSkillTooltip(_skill);
+            // Cercle de portée autour du joueur pendant le survol — demande Florian 2026-10-03.
+            // Seul un SkillData actif a une portée (passifs/permanents = pas de cible).
+            float range = SkillBar.Instance != null ? SkillBar.Instance.GetEffectiveRange(_skill) : 0f;
+            TargetingSystem.Instance?.ShowRangeCirclePreview(range);
+        }
         else if (_permanentSkill != null) TooltipSystem.Instance.ShowPermanentSkillTooltip(_permanentSkill);
         else if (_passiveSkill != null) TooltipSystem.Instance.ShowPassiveSkillTooltip(_passiveSkill);
     }
@@ -134,6 +141,7 @@ public class TooltipTrigger : MonoBehaviour,
         if (_shown)
         {
             TooltipSystem.Instance?.HideTooltip();
+            TargetingSystem.Instance?.HideRangeCirclePreview();
             _shown = false;
         }
     }

@@ -314,9 +314,13 @@ public class CharacterStats
         // =========================================================
         if (player.unlockedPermanents != null)
         {
+            // Aucun permanent incompatible n'existe à ce jour (tous compatibleWeapons vide =
+            // universel) — gate posée quand même par prévoyance (demande Florian).
+            WeaponType equippedFamily = (player.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
             foreach (var p in player.unlockedPermanents)
             {
                 if (p == null) continue;
+                if (!p.IsCompatibleWith(equippedFamily)) continue;
                 AccumulateStatBonuses(p.bonuses, flatAcc, percentAcc, accResist, accDamageBonus, accPenetration, accManaCostReduction);
             }
         }

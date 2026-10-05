@@ -115,6 +115,9 @@ public class UIManager : MonoBehaviour
             case "quests":
                 QuestJournalUI.Instance?.Toggle();
                 return;
+            case "skilllibrary":
+                SkillLibraryUI.Instance?.Toggle();
+                return;
             case "statpoints":
                 StatPointUI.Instance?.gameObject.SetActive(
                     StatPointUI.Instance != null && !StatPointUI.Instance.gameObject.activeSelf);
@@ -177,6 +180,7 @@ public class UIManager : MonoBehaviour
         CharacterPanelUI.Instance?.Close();
         InventoryUI.Instance?.Close();
         QuestJournalUI.Instance?.Close();   // ← AJOUTER
+        SkillLibraryUI.Instance?.Close();
         if (StatPointUI.Instance != null)
             StatPointUI.Instance.gameObject.SetActive(false);
 
@@ -184,7 +188,7 @@ public class UIManager : MonoBehaviour
         // Panels sans controller — SetActive directement
         foreach (var kvp in _panelMap)
         {
-            if (kvp.Key == "character" || kvp.Key == "inventory") continue;
+            if (kvp.Key == "character" || kvp.Key == "inventory" || kvp.Key == "skilllibrary") continue;
             if (kvp.Value != null) kvp.Value.SetActive(false);
         }
 

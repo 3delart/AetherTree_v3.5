@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.EventSystems;
 
 // =============================================================
 // SKILLBAR.CS — Barre de sorts runtime
@@ -15,11 +16,11 @@ using UnityEngine.AI;
 //   P1, P2, P3 : Passifs (PassiveSkillData) — gérés par PassifBarUI/PassiveSkillSystem,
 //                hors de cette classe (pas de slots ici, pas de GCD).
 //
-// GCD (§8.7) :
-//   Slot 0 → pas de GCD global, cooldown = skill.cooldown de la BasicAttack équipée.
-//   Slots 1-9 → GCD_DURATION (1s) déclenché après chaque cast actif.
-//   _basicAttackLockTimer SUPPRIMÉ — le slot 0 est naturellement protégé
-//   par _cooldownTimers[0] qui est posé à skill.cooldown lors du cast.
+// GCD retiré (2026-10-03) : l'anim-lock (durée réelle du clip, voir IsAnimLocked) bloque déjà
+//   TOUS les slots jusqu'à la fin de l'anim en cours, et le cooldown propre à chaque skill
+//   empêche son propre spam — un GCD par-dessus n'avait plus d'utilité réelle que pour des
+//   skills à anim quasi nulle (cas théorique, aucun dans le roster actuel). Slot 0 protégé par
+//   _cooldownTimers[0] (posé à skill.cooldown lors du cast).
 //
 // Calls SkillSystem.Execute(skill, caster, target) — target peut être null
 //   pour Self, AoE_Self, GroundTarget, Cone.
@@ -43,11 +44,13 @@ public class SkillBar : MonoBehaviour
     private SkillData[] _slots          = new SkillData[10];
     private float[]     _cooldownTimers = new float[10];
 
-    // ── GCD §8.7 ──────────────────────────────────────────────
-    // GCD de 1s sur slots 1-9 (actifs + ultime), déclenché par tout skill actif.
-    // Slot 0 (BasicAttack) utilise uniquement son propre _cooldownTimers[0].
-    private const float GCD_DURATION = 1f;
-    private float       _gcdTimer    = 0f;
+    // Délai avant reprise de l'auto-attaque après la FIN d'une canalisation (complète ou
+    // interrompue) — la canalisation n'a pas d'équivalent d'anim-lock pour border ça
+    // naturellement (contrairement à Normal/MultiHit/Combo-step, voir IsAnimLocked), donc un
+    // petit délai fixe reste nécessaire ici pour éviter un snap-back instantané. Ancien
+    // GCD_DURATION, renommé après retrait du GCD général (2026-10-03, voir commentaire en tête
+    // de fichier) — ne sert plus qu'à cet usage précis.
+    private const float POST_CHANNEL_AUTO_ATTACK_DELAY = 1f;
 
     // Lock total tous les slots pendant un MultiHit (coroutine en cours).
     // Durée = somme des delays du hitSteps. Alimenté par LockForMultiHit().
@@ -75,6 +78,14 @@ public class SkillBar : MonoBehaviour
     private Vector3?  _pendingGroundPoint;
     private int       _pendingSlot   = -1;
     private bool      _isApproaching = false;
+
+    // ── Visée GroundTarget (clic slot → prévisualisation suit la souris → clic sol confirme) ──
+    // AnyRPG-style 2-clics, demande Florian 2026-10-03 : "click sur slot devrait... attendre un
+    // groundtarget... prévisualisation de la zone au sol jusqu'au click ground". Remplace
+    // l'ancien comportement (clic slot = cast immédiat sous la position courante de la souris).
+    private bool      _awaitingGroundTarget = false;
+    private int       _groundTargetSlot     = -1;
+    private SkillData _groundTargetSkill    = null;
 
     // ── Combo séquentiel (Méthode 2) ──────────────────────────
     // Un seul combo actif à la fois — le slot qui a initié le combo.
@@ -133,6 +144,17 @@ public class SkillBar : MonoBehaviour
     // posé à la durée du clip au lancement, indépendant du moment où le hit résout.
     private float _animLockTimer = 0f;
     public bool IsAnimLocked => _animLockTimer > 0f;
+    // Vrai pendant la visée GroundTarget (clic slot fait, en attente du clic sol de
+    // confirmation) — PlayerController s'en sert pour qu'un clic droit annule la visée au lieu
+    // de déplacer le joueur (voir UpdateGroundTargetAiming, même convention que l'annulation
+    // d'approche d'Entity).
+    public bool IsAwaitingGroundTarget => _awaitingGroundTarget;
+
+    // Skill actif demandé pendant qu'un verrou d'anim (basic attack OU autre skill) était en
+    // cours — se lance automatiquement dès la fin du verrou (FireQueuedSkill, appelé par
+    // Update()), à la place de laisser l'auto-attaque (ou rien du tout) reprendre la main entre
+    // les deux. -1 = rien en attente.
+    private int _queuedSkillSlot = -1;
 
     public bool IsChanneling => _isChanneling;
 
@@ -162,10 +184,6 @@ public class SkillBar : MonoBehaviour
             if (_cooldownTimers[i] > 0f)
                 _cooldownTimers[i] -= Time.deltaTime;
 
-        // GCD — slots 1-9 uniquement
-        if (_gcdTimer > 0f)
-            _gcdTimer -= Time.deltaTime;
-
         // Lock total pendant un MultiHit
         if (_multiHitLockTimer > 0f)
         {
@@ -176,11 +194,9 @@ public class SkillBar : MonoBehaviour
         if (_isChanneling)
         {
             var fx = _player.statusEffects;
-            bool hardCC = _player.isDead || (fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed
-                                       || fx.isKnockedBack || fx.isFeared || fx.isSilenced));
-            if (hardCC)
+            if (IsHardCC() || (fx != null && fx.isSilenced))
             {
-                InterruptChannel(voluntary: false, reason: _player.isDead ? "mort" : "CC");
+                InterruptAnyAbility(_player.isDead ? "mort" : "CC");
             }
             else if (_channelTarget != null && _channelTarget.isDead)
             {
@@ -207,7 +223,19 @@ public class SkillBar : MonoBehaviour
         }
 
         if (_animLockTimer > 0f)
+        {
             _animLockTimer -= Time.deltaTime;
+            // Pas de DelayAutoAttack ici : l'anim-lock couvre déjà toute la durée réelle de
+            // l'anim du skill (Florian voulait ce verrou dur dès le début, voir TryUseSlot) —
+            // ajouter un GCD_DURATION par-dessus après coup ne faisait que rallonger
+            // artificiellement l'attente avant la reprise de l'auto-attaque sans raison once
+            // l'anim est déjà terminée (Florian, 2026-10-03 : "si on laisse le temps de
+            // l'animation, est-ce qu'on a encore besoin d'un GCD ?" — non).
+            if (_animLockTimer <= 0f) FireQueuedSkill();
+        }
+
+        if (_awaitingGroundTarget)
+            UpdateGroundTargetAiming();
 
         if (_comboStepCooldown > 0f)
             _comboStepCooldown -= Time.deltaTime;
@@ -223,21 +251,30 @@ public class SkillBar : MonoBehaviour
         bool comboHitPending = IsPendingHit && _pendingHitSlot == _comboSlot;
         if (_comboSlot >= 0 && _comboTimer > 0f && !comboHitPending)
         {
-            var fx = _player.statusEffects;
-            bool hardCC = fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed
-                                       || fx.isKnockedBack || fx.isFeared);
-            // Silence volontairement EXCLU ici — un combo castTime 0 n'est pas une
+            // Silence volontairement EXCLU d'IsHardCC() ici — un combo castTime 0 n'est pas une
             // canalisation ; Silence bloque déjà les NOUVEAUX lancements via TryUseSlot,
             // mais n'a jamais interrompu une fenêtre d'attente ouverte avant ce plan.
+            bool hardCC = IsHardCC();
 
             _comboTimer -= Time.deltaTime;
-            if (_comboTimer <= 0f || hardCC)
+            if (hardCC)
             {
-                Debug.Log($"[SKILLBAR] Combo {(hardCC ? "interrompu (CC)" : "expiré")} sur slot {_comboSlot} — CD déclenché.");
+                InterruptAnyAbility("CC");
+            }
+            else if (_comboTimer <= 0f)
+            {
+                Debug.Log($"[SKILLBAR] Combo expiré sur slot {_comboSlot} — CD déclenché.");
                 _cooldownTimers[_comboSlot] = _comboSkill != null ? _comboSkill.cooldown : 1f;
                 ResetCombo();
             }
         }
+
+        // ── CC dur qui coupe une approche/visée sol SEULE (pas de canalisation ni combo actif
+        // ce coup-ci, déjà couverts par leurs propres blocs ci-dessus) — avant ce fix, un
+        // stun/mort pendant une simple approche-clic ou une visée GroundTarget ne l'interrompait
+        // jamais (gap trouvé en lisant le code, Florian 2026-10-05 : "point central unique").
+        if ((_isApproaching || _awaitingGroundTarget) && IsHardCC())
+            InterruptAnyAbility(_player.isDead ? "mort" : "CC");
 
         // Annulation approche
         if (_isApproaching)
@@ -279,6 +316,21 @@ public class SkillBar : MonoBehaviour
         return false;
     }
 
+    /// <summary>Lance le skill mis en attente pendant l'anim-lock en cours (basic attack OU un
+    /// autre skill actif) — voir le commentaire dans TryUseSlot() (branche IsAnimLocked). Appelé
+    /// par Update() dès que _animLockTimer retombe à 0, AVANT que TargetingSystem.TickAutoAttack()
+    /// ne puisse relancer l'auto-attaque (TryUseSlot(0) re-vérifie IsAnimLocked à chaque appel —
+    /// si ce skill se lance avec succès, il repose aussitôt son propre verrou et bloque
+    /// l'auto-attaque pour ce cycle, peu importe l'ordre d'exécution des deux Update() cette
+    /// frame-là).</summary>
+    private void FireQueuedSkill()
+    {
+        if (_queuedSkillSlot == -1) return;
+        int slot = _queuedSkillSlot;
+        _queuedSkillSlot = -1;
+        TryUseSlot(slot);
+    }
+
     // ── Utilisation ───────────────────────────────────────────
     public bool TryUseSlot(int slot, bool isAutoTick = false)
     {
@@ -286,6 +338,12 @@ public class SkillBar : MonoBehaviour
         var skill = _slots[slot];
         if (skill == null)   return false;
         if (_player == null) return false;
+
+        // Un appui MANUEL (pas le tick auto-attaque, sinon chaque cycle d'auto-attaque
+        // annulerait une visée GroundTarget en cours) sur un slot différent de celui en train
+        // de viser annule cette visée — une seule session de visée active à la fois.
+        if (_awaitingGroundTarget && _groundTargetSlot != slot && !isAutoTick)
+            StopGroundTargetAiming();
 
         // Appui manuel sur le slot 0 (pas le tick auto-attaque) alors qu'on est déjà
         // engagé sur A avec B sélectionné : bascule l'engagement vers B tout de suite,
@@ -342,6 +400,19 @@ public class SkillBar : MonoBehaviour
             }
         }
 
+        // ── Compatibilité arme ────────────────────────────────
+        // Un skill déjà équipé AVANT un swap d'arme peut devenir incompatible (ex: skill Bow
+        // équipé, puis swap vers ShortSword) — le drop en SkillBar bloque les NOUVEAUX
+        // équipements incompatibles (SkillDropTarget.IsCompatible), mais ne retire rien de ce
+        // qui est déjà en place. Ce gate couvre le cas résiduel : lancer reste impossible tant
+        // que l'arme ne matche pas, même équipé — demande Florian.
+        WeaponType equippedFamily = (_player.equippedWeapon?.weaponType ?? WeaponType.UnArmed).GetStartingFamily();
+        if (!skill.IsCompatibleWith(equippedFamily))
+        {
+            Debug.Log($"[SKILLBAR] ❌ Bloqué — {skill.name} incompatible avec l'arme équipée ({equippedFamily})");
+            return false;
+        }
+
         // ── Vérification GCD & locks ──────────────────────────
         // MultiHit, canalisation, ou anim d'un skill en cours (chantier B) → tous les slots
         // bloqués sans exception. IsAnimLocked (pas IsPendingHit/IsPendingMultiHit) : Florian
@@ -350,8 +421,27 @@ public class SkillBar : MonoBehaviour
         // clip selon où l'Animation Event est placé) — sinon un 2e skill écraserait le clip
         // en cours en plein follow-through, et l'event du 1er (s'il n'était pas encore tombé)
         // ne se déclencherait jamais.
-        if (_multiHitLockTimer > 0f || _isChanneling || IsAnimLocked)
+        if (_multiHitLockTimer > 0f || _isChanneling)
         {
+            return false;
+        }
+
+        if (IsAnimLocked)
+        {
+            // Priorité au skill actif demandé sur CE QUI VERROUILLE ACTUELLEMENT (basic attack
+            // OU un autre skill actif) — mais pas en l'interrompant : on laisse l'anim en cours
+            // se terminer normalement, puis on enchaîne directement sur le skill demandé dès que
+            // le verrou retombe, SANS rien laisser d'autre (notamment l'auto-attaque) reprendre
+            // la main entre les deux (voir FireQueuedSkill(), appelé par Update() dès que
+            // _animLockTimer touche 0). Florian, 2026-10-03 puis 2026-10-04 : le même "terminer
+            // l'action en cours puis lancer le skill à la suite" s'applique que le verrou vienne
+            // du slot 0 OU d'un autre skill — sinon l'auto-attaque se glissait entre deux skills
+            // actifs dès que le joueur enchaînait. Pas de risque de clip-stomping ici : la mise
+            // en file DIFFÈRE le lancement jusqu'à la fin réelle du clip en cours, elle ne
+            // l'interrompt jamais (contrairement à un vrai clip-stomp, qui écraserait l'anim en
+            // plein milieu) — voir commentaire plus haut sur IsAnimLocked.
+            if (slot != 0)
+                _queuedSkillSlot = slot;
             return false;
         }
 
@@ -366,9 +456,9 @@ public class SkillBar : MonoBehaviour
         }
         else
         {
-            // Actifs / ultime : bloqués par leur CD individuel ET par le GCD global.
+            // Actifs / ultime : bloqués par leur CD individuel (plus de GCD global, voir
+            // commentaire en tête de fichier).
             if (_cooldownTimers[slot] > 0f) return false;
-            if (_gcdTimer > 0f)             return false;
         }
 
         // Vérification mana
@@ -380,8 +470,12 @@ public class SkillBar : MonoBehaviour
 
         // Vérification HP — même convention que mana : bloqué si pas assez de marge,
         // jamais de mort déclenchée par le coût d'un skill (<=, pas <, pour ne jamais
-        // autoriser de retomber exactement à 0).
-        if (skill.hpCost > 0f && _player.CurrentHP <= skill.hpCost)
+        // autoriser de retomber exactement à 0). Comparé au coût ARRONDI (pas brut) — SpendHP()
+        // arrondit en interne désormais, comparer contre le brut pourrait laisser passer un cast
+        // dont le coût arrondi dépasse en fait CurrentHP (ex: hpCost 10.6, CurrentHP 11 : le
+        // check brut passe, mais SpendHP arrondirait 10.6→11 et viderait tout sans déclencher de
+        // mort). Trouvé en revue finale.
+        if (skill.hpCost > 0f && _player.CurrentHP <= Mathf.Round(skill.hpCost))
         {
             Debug.Log($"[SKILLBAR] HP insuffisants pour {skill.name}");
             return false;
@@ -464,35 +558,35 @@ public class SkillBar : MonoBehaviour
                 return false;
             }
         }
-        else if (skill.targetType == TargetType.GroundTarget)
+        else if (skill.targetType == TargetType.GroundTarget || skill.targetType == TargetType.Cone)
         {
-            // Point figé ICI, au clic — jamais re-raycasté à la résolution ni à l'arrivée
-            // d'une approche (StartInstant()/StartMultiHit()/StartChannel()/LaunchComboHit()
-            // consomment désormais ce point déjà posé, voir plus bas — même philosophie que
-            // les skills à cible Entity : commis à sa valeur d'origine, jamais réévalué en
-            // route).
-            // GroundRaycastUtil (pas Physics.Raycast direct) — un mob au collider large (Boss
-            // Géant/Invasion) entre la caméra et le sol interceptait le rayon en premier,
-            // donnant un point faux (sur le mob, pas le sol) au lieu du point réellement cliqué
-            // (Florian, 2026-10-01 — même bug que le clic-déplacement, PlayerController.cs).
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (!GroundRaycastUtil.TryRaycastGround(ray, out RaycastHit hit, 200f))
+            // Cone traité comme un "ground target" directionnel (demande Florian 2026-10-03 :
+            // "le cone aussi devrait avoir ground target") — TOUJOURS visée souris avant lancement,
+            // même si une cible est déjà sélectionnée/engagée (contrairement à Target/AoE_Target
+            // ci-dessus, qui se lance direct sur la cible existante).
+
+            // 2e appui sur CE MÊME slot pendant qu'on vise déjà → CONFIRME au point/direction
+            // souris courant, comme un clic sol — demande Florian 2026-10-03 : "appuis sur
+            // cone --> prévisu --> appui sur cone = lancement du skill". L'annulation reste
+            // réservée au clic droit/Echap (voir UpdateGroundTargetAiming).
+            if (_awaitingGroundTarget && _groundTargetSlot == slot)
             {
-                Debug.Log($"[SKILLBAR] Raycast sol manqué pour {skill.name}");
+                ConfirmAimingAtMouse();
                 return false;
             }
 
-            float dist  = Vector3.Distance(_player.transform.position, hit.point);
-            float range = skill.range > 0f ? skill.range : GetDefaultRange();
-
-            if (dist > range)
-            {
-                StartGroundApproach(skill, slot, hit.point);
-                return false;
-            }
-
-            SkillSystem.Instance?.SetGroundTargetPoint(hit.point);
-            RotateTowardsDirection(hit.point - _player.transform.position);
+            // N'ouvre la visée que si le skill est par ailleurs utilisable MAINTENANT (tous les
+            // checks stun/compat/CD/GCD/mana/HP/Aeris/item ci-dessus sont déjà passés). Le point/
+            // la direction n'est PAS figé ici — il l'est au clic de CONFIRMATION (voir
+            // UpdateGroundTargetAiming/ConfirmGroundTarget/ConfirmConeDirection ci-dessous), qui
+            // suit la souris et affiche un aperçu, comme les autres jeux. Le coût du skill n'est
+            // dépensé qu'au lancement réel (dans StartInstant/StartMultiHit/LaunchComboHit),
+            // jamais ici — même convention que l'approche vers une cible Entity trop loin
+            // (StartApproach), qui ne dépense rien non plus avant l'arrivée.
+            _awaitingGroundTarget = true;
+            _groundTargetSlot     = slot;
+            _groundTargetSkill    = skill;
+            return false;
         }
 
         // ── Combo séquentiel (Méthode 2) ─────────────────────
@@ -500,6 +594,127 @@ public class SkillBar : MonoBehaviour
 
         LaunchSkill(skill, slot, target);
         return true;
+    }
+
+    // ── Visée GroundTarget ──────────────────────────────────────
+
+    /// <summary>Poll pendant la visée GroundTarget/Cone (voir TryUseSlot) — suit la souris pour
+    /// l'aperçu (TargetingSystem.Show*Preview), confirme au clic gauche hors UI, annule au clic
+    /// droit ou Echap (même convention que l'annulation d'approche ci-dessus).</summary>
+    private void UpdateGroundTargetAiming()
+    {
+        if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
+        {
+            StopGroundTargetAiming();
+            return;
+        }
+
+        // Souris sur l'UI (ex: survol d'un autre slot) — visée toujours active, juste pas de
+        // raycast sol ce frame (même garde que PlayerController.HandleMovement).
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            return;
+
+        if (Camera.main == null) return;
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        if (!GroundRaycastUtil.TryRaycastGround(ray, out RaycastHit hit, 200f))
+            return;   // aucun point sol valide sous la souris ce frame — aperçu gelé sur le dernier affiché
+
+        if (_groundTargetSkill.targetType == TargetType.Cone)
+        {
+            // Cone : seule la DIRECTION compte (pas un point précis), même formule que
+            // TargetingSystem.ResolveDirection() (fallback souris) — aplatie sur XZ.
+            Vector3 toMouse = hit.point - _player.transform.position;
+            toMouse.y = 0f;
+            if (toMouse.sqrMagnitude < 0.001f) return; // souris trop proche du joueur, direction indéfinie ce frame
+
+            Vector3 direction = toMouse.normalized;
+            float   range     = _groundTargetSkill.range > 0f ? _groundTargetSkill.range : GetDefaultRange();
+            TargetingSystem.Instance?.ShowConePreview(_player.transform.position, direction, range, _groundTargetSkill.coneHalfAngle);
+
+            if (GameControls.TargetClick)
+                ConfirmConeDirection(direction);
+            return;
+        }
+
+        float rangeG   = _groundTargetSkill.range > 0f ? _groundTargetSkill.range : GetDefaultRange();
+        bool  inRange = Vector3.Distance(_player.transform.position, hit.point) <= rangeG;
+        TargetingSystem.Instance?.ShowGroundTargetPreview(hit.point, _groundTargetSkill.aoeRadius, inRange);
+
+        if (GameControls.TargetClick)
+            ConfirmGroundTarget(hit.point, inRange);
+    }
+
+    /// <summary>Confirme la visée en cours (GroundTarget ou Cone) au point/direction souris
+    /// ACTUEL — appelé par TryUseSlot() quand le joueur ré-appuie sur le slot en cours de visée
+    /// (voir plus haut), plutôt que d'attendre un clic gauche sur le monde. Re-raycast sa propre
+    /// copie (indépendante du poll de UpdateGroundTargetAiming) : simple et sans état partagé à
+    /// synchroniser entre les deux déclencheurs possibles de la confirmation.</summary>
+    private void ConfirmAimingAtMouse()
+    {
+        if (Camera.main == null) return;
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        if (!GroundRaycastUtil.TryRaycastGround(ray, out RaycastHit hit, 200f)) return;
+
+        if (_groundTargetSkill.targetType == TargetType.Cone)
+        {
+            Vector3 toMouse = hit.point - _player.transform.position;
+            toMouse.y = 0f;
+            if (toMouse.sqrMagnitude < 0.001f) return; // souris trop proche du joueur
+            ConfirmConeDirection(toMouse.normalized);
+            return;
+        }
+
+        float range   = _groundTargetSkill.range > 0f ? _groundTargetSkill.range : GetDefaultRange();
+        bool  inRange = Vector3.Distance(_player.transform.position, hit.point) <= range;
+        ConfirmGroundTarget(hit.point, inRange);
+    }
+
+    /// <summary>Direction Cone confirmée — pose _skillDirection (consommée plus tard par
+    /// SkillSystem à la résolution réelle, même durée de vie que SetGroundTargetPoint) puis
+    /// dispatch. Pas de notion de hors-portée pour une direction : toujours lancé direct, jamais
+    /// d'approche (StartGroundApproach n'a pas d'équivalent ici).</summary>
+    private void ConfirmConeDirection(Vector3 direction)
+    {
+        SkillData skill = _groundTargetSkill;
+        int       slot  = _groundTargetSlot;
+        StopGroundTargetAiming();
+
+        SkillSystem.Instance?.SetSkillDirection(direction);
+        RotateTowardsDirection(direction);
+        if (!TryAdvanceCombo(skill, slot, null))
+            LaunchSkill(skill, slot, null);
+    }
+
+    /// <summary>Clic sol confirmé — même dispatch que la résolution d'une approche GroundTarget
+    /// (CheckApproach ci-dessous) : hors de portée → approche, sinon lance directement. Le coût
+    /// du skill (mana/HP/Aeris/item) n'a pas encore été dépensé à ce stade — il l'est à
+    /// l'intérieur de LaunchSkill() → StartInstant/StartMultiHit/LaunchComboHit, comme pour
+    /// n'importe quel autre skill.</summary>
+    private void ConfirmGroundTarget(Vector3 point, bool inRange)
+    {
+        SkillData skill = _groundTargetSkill;
+        int       slot  = _groundTargetSlot;
+        StopGroundTargetAiming();
+
+        if (!inRange)
+        {
+            StartGroundApproach(skill, slot, point);
+            return;
+        }
+
+        SkillSystem.Instance?.SetGroundTargetPoint(point);
+        RotateTowardsDirection(point - _player.transform.position);
+        if (!TryAdvanceCombo(skill, slot, null))
+            LaunchSkill(skill, slot, null);
+    }
+
+    private void StopGroundTargetAiming()
+    {
+        _awaitingGroundTarget = false;
+        _groundTargetSlot     = -1;
+        _groundTargetSkill    = null;
+        TargetingSystem.Instance?.HideGroundTargetPreview();
+        TargetingSystem.Instance?.HideConePreview();
     }
 
     // ── Reset combo ───────────────────────────────────────────
@@ -597,16 +812,13 @@ public class SkillBar : MonoBehaviour
         if (IsComboActive && slot == _comboSlot)
         {
             SkillSystem.Instance?.ResolveExecute(skill, _player, target);
-            AdvanceComboAfterHit(slot, skill);
+            AdvanceComboAfterHit(slot);
             return;
         }
 
-        // Cone est visé à la souris (TargetingSystem.ResolveDirection() — priorité cible
-        // engagée/sélectionnée, sinon raycast souris, sinon facing) — posé juste avant le
-        // dispatch, consommé et remis à null par SkillSystem dès son premier usage plus bas
-        // (StartTrajectory ou Execute selon isTrajectory).
-        if (skill.targetType == TargetType.Cone)
-            SkillSystem.Instance?.SetSkillDirection(TargetingSystem.Instance.ResolveDirection());
+        // Cone : _skillDirection déjà posée au clic de confirmation de la visée (voir
+        // SkillBar.ConfirmConeDirection()) — ne JAMAIS la re-résoudre ici, voir
+        // EngageAndFaceTarget() pour pourquoi.
 
         // displacementType vérifié EN PREMIER — mutuellement exclusif avec isTrajectory/
         // hasDelayedImpact (voir SkillData.OnValidate), jamais les deux en même temps sur un
@@ -629,14 +841,6 @@ public class SkillBar : MonoBehaviour
         // CD déjà posé au LANCEMENT (voir StartInstant) — ne pas le reposer ici, sinon la barre
         // retombe à zéro (fin de la fenêtre d'attente) puis REMONTE aussitôt (vrai skill.cooldown
         // réappliqué), même bug que le double-cooldown corrigé aujourd'hui.
-        if (slot >= 1)
-        {
-            _gcdTimer = GCD_DURATION;
-            float autoAttackDelay = skill.animationClip != null
-                ? Mathf.Max(GCD_DURATION, skill.animationClip.length)
-                : GCD_DURATION;
-            TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
-        }
     }
 
     // ── MultiHit (chantier B) ──────────────────────────────────
@@ -701,14 +905,6 @@ public class SkillBar : MonoBehaviour
             _pendingMultiTimeout = 0f;
 
             _cooldownTimers[slot] = skill.cooldown;
-            if (slot >= 1)
-            {
-                _gcdTimer = GCD_DURATION;
-                float autoAttackDelay = skill.animationClip != null
-                    ? Mathf.Max(GCD_DURATION, skill.animationClip.length)
-                    : GCD_DURATION;
-                TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
-            }
         }
         else if (_pendingMultiTimeout <= 0f)
         {
@@ -798,9 +994,8 @@ public class SkillBar : MonoBehaviour
 
         EndChannelState();
 
-        // Cone visé à la souris — voir commentaire équivalent dans SkillBar.ResolveInstant().
-        if (skill.targetType == TargetType.Cone)
-            SkillSystem.Instance?.SetSkillDirection(TargetingSystem.Instance.ResolveDirection());
+        // Cone : _skillDirection déjà posée au clic de confirmation — voir commentaire
+        // équivalent dans SkillBar.ResolveInstant().
 
         // Même ordre de priorité que SkillBar.ResolveInstant().
         if (skill.displacementType != DisplacementType.None)
@@ -814,10 +1009,40 @@ public class SkillBar : MonoBehaviour
 
         _cooldownTimers[slot] = skill.cooldown;
         if (slot >= 1)
+            TargetingSystem.Instance?.DelayAutoAttack(POST_CHANNEL_AUTO_ATTACK_DELAY);
+    }
+
+    /// <summary>CC qui interrompt TOUT ce qui est en cours (canalisation, combo, approche, visée
+    /// sol/cone) — mort, Stun, Shocked, Freeze, Knockback, Fear. PAS Silence ici — Silence
+    /// interrompt une canalisation mais jamais un combo (nuance existante, voir son call site) ;
+    /// géré localement par l'appelant, pas dans ce helper partagé.</summary>
+    private bool IsHardCC()
+    {
+        if (_player == null)   return false;
+        if (_player.isDead)    return true;
+        var fx = _player.statusEffects;
+        return fx != null && (fx.isStunned || fx.isShocked || fx.isFreezed || fx.isKnockedBack || fx.isFeared);
+    }
+
+    /// <summary>Point central unique — coupe TOUT ce qui est en cours d'un seul appel (canalisation,
+    /// combo, approche, visée sol/cone). Remplace les déclenchements indépendants précédents, où
+    /// un CC/la mort pouvait interrompre UNE mécanique (ex: canalisation) en laissant une autre
+    /// tourner (ex: un combo en attente, une approche en cours) — bug trouvé en lisant le code,
+    /// Florian 2026-10-05. No-op sur tout ce qui n'est pas actif — sûr à appeler
+    /// inconditionnellement dès qu'un hard CC/la mort est détecté.</summary>
+    private void InterruptAnyAbility(string reason)
+    {
+        if (_isChanneling) InterruptChannel(voluntary: false, reason: reason);
+
+        if (_comboSlot >= 0)
         {
-            _gcdTimer = GCD_DURATION;
-            TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
+            Debug.Log($"[SKILLBAR] Combo interrompu ({reason}) sur slot {_comboSlot} — CD déclenché.");
+            _cooldownTimers[_comboSlot] = _comboSkill != null ? _comboSkill.cooldown : 1f;
+            ResetCombo();
         }
+
+        if (_isApproaching)        CancelApproach();
+        if (_awaitingGroundTarget) StopGroundTargetAiming();
     }
 
     /// <summary>voluntary = true (mouvement OU cible morte — ni un choix punitif du joueur ni
@@ -836,10 +1061,7 @@ public class SkillBar : MonoBehaviour
 
         _cooldownTimers[slot] = voluntary ? skill.cooldown * 0.5f : skill.cooldown;
         if (slot >= 1)
-        {
-            _gcdTimer = GCD_DURATION;
-            TargetingSystem.Instance?.DelayAutoAttack(GCD_DURATION);
-        }
+            TargetingSystem.Instance?.DelayAutoAttack(POST_CHANNEL_AUTO_ATTACK_DELAY);
 
         Debug.Log($"[SKILLBAR] Canalisation interrompue ({reason}) — CD {_cooldownTimers[slot]:F2}s.");
     }
@@ -942,10 +1164,8 @@ public class SkillBar : MonoBehaviour
     }
 
     /// <summary>Bookkeeping combo APRÈS résolution d'un coup — fenêtre suivante (icône +
-    /// timer) ou fin de combo (CD + reset). `resolvedSkill` = le SkillData du coup qui vient
-    /// de résoudre (parent au step 0, sinon le step lui-même) — utilisé pour la durée
-    /// d'auto-attack-delay (anim du DERNIER coup, pas du parent).</summary>
-    private void AdvanceComboAfterHit(int slot, SkillData resolvedSkill)
+    /// timer) ou fin de combo (CD + reset).</summary>
+    private void AdvanceComboAfterHit(int slot)
     {
         _comboStep++;
         _comboStepCooldown = _comboSkill.comboStepInterval;
@@ -954,14 +1174,6 @@ public class SkillBar : MonoBehaviour
         {
             Debug.Log($"[SKILLBAR] Combo terminé sur slot {slot}.");
             _cooldownTimers[slot] = _comboSkill.cooldown;
-            if (slot >= 1)
-            {
-                _gcdTimer = GCD_DURATION;
-                float autoAttackDelay = resolvedSkill.animationClip != null
-                    ? Mathf.Max(GCD_DURATION, resolvedSkill.animationClip.length)
-                    : GCD_DURATION;
-                TargetingSystem.Instance?.DelayAutoAttack(autoAttackDelay);
-            }
             ResetCombo();
             SkillBarUI.Instance?.RefreshSlot(slot);
         }
@@ -1079,8 +1291,10 @@ public class SkillBar : MonoBehaviour
 
     /// <summary>Coût en mana réel d'un skill après réduction PAR élément (paliers Esprit, etc.
     /// — StatType.ManaCostReductionX, voir Entity.GetManaCostReduction). Utilisé pour le check
-    /// de mana disponible ET la dépense réelle, jamais skill.manaCost brut directement.</summary>
-    private float GetEffectiveManaCost(SkillData skill)
+    /// de mana disponible ET la dépense réelle, jamais skill.manaCost brut directement. Public —
+    /// SkillBarUI.RefreshManaState() en a besoin pour l'overlay "mana insuffisante", même calcul
+    /// que le check de TryUseSlot ci-dessus, pas de duplication de la formule côté UI.</summary>
+    public float GetEffectiveManaCost(SkillData skill)
     {
         float reduction = Mathf.Clamp01(_player.GetManaCostReduction(skill.PrimaryElement));
         return skill.manaCost * (1f - reduction);
@@ -1132,10 +1346,12 @@ public class SkillBar : MonoBehaviour
     /// lissage, l'action doit partir orientée dès la 1ère frame). Appelé au clic (ExecuteSkill)
     /// pour un skill instant, ou au LANCEMENT d'une canalisation (StartChannel) — jamais à la
     /// résolution, l'engagement/l'orientation doivent être immédiats dans les deux cas.
-    /// Cone oriente aussi le perso (vers la même direction souris que SetSkillDirection()
-    /// résoudra à la résolution) — pas d'Engage/EngageFromSkill pour autant, Cone n'a pas de
-    /// cible Entity. GroundTarget est orienté séparément, là où le point cliqué est connu
-    /// (TryUseSlot()/CheckApproach(), avant l'appel à cette méthode).
+    /// GroundTarget ET Cone sont orientés séparément, AVANT l'appel à cette méthode : GroundTarget
+    /// là où le point cliqué est connu (TryUseSlot()/CheckApproach()), Cone au clic de
+    /// confirmation de la visée (SkillBar.ConfirmConeDirection(), qui pose aussi _skillDirection —
+    /// ne JAMAIS appeler TargetingSystem.ResolveDirection() ici, ça écraserait la direction visée
+    /// à la souris par celle d'une cible déjà engagée/sélectionnée si une existe, alors que Cone
+    /// vise TOUJOURS à la souris, cible ou pas — demande Florian 2026-10-03).
     /// </summary>
     private void EngageAndFaceTarget(SkillData skill, int slot, Entity target)
     {
@@ -1151,13 +1367,6 @@ public class SkillBar : MonoBehaviour
             else           TargetingSystem.Instance?.EngageFromSkill(target);
 
             RotateTowardsDirection(target.transform.position - _player.transform.position);
-        }
-        else if (skill.targetType == TargetType.Cone)
-        {
-            Vector3 dir = TargetingSystem.Instance != null
-                ? TargetingSystem.Instance.ResolveDirection()
-                : _player.transform.forward;
-            RotateTowardsDirection(dir);
         }
     }
 
@@ -1176,6 +1385,15 @@ public class SkillBar : MonoBehaviour
     {
         if (_player == null) return 2.5f;
         return _player.weaponCategory == WeaponCategory.Ranged ? 10f : 2.5f;
+    }
+
+    /// <summary>Portée effective d'un skill (son `range` propre, sinon la portée par défaut selon
+    /// l'arme) — exposé pour le cercle de portée au survol du tooltip (TooltipTrigger), qui n'a
+    /// pas accès à GetDefaultRange (private).</summary>
+    public float GetEffectiveRange(SkillData skill)
+    {
+        if (skill == null) return 0f;
+        return skill.range > 0f ? skill.range : GetDefaultRange();
     }
 
     /// <summary>Distance effective vers une cible, ajustée du rayon (XZ) de son collider — une
@@ -1225,12 +1443,7 @@ public class SkillBar : MonoBehaviour
         if (_pendingMultiSlot == slot)
             return Mathf.Max(0f, _pendingMultiTimeout);
 
-        // Slot 0 : CD individuel seulement (pas de GCD global sur la basic).
-        // Slots 1-9 : max entre le CD individuel et le GCD restant.
-        float individual = Mathf.Max(0f, _cooldownTimers[slot]);
-        if (slot >= 1)
-            return Mathf.Max(individual, Mathf.Max(0f, _gcdTimer));
-        return individual;
+        return Mathf.Max(0f, _cooldownTimers[slot]);
     }
 
     public float GetCooldownTotal(int slot)
@@ -1251,9 +1464,6 @@ public class SkillBar : MonoBehaviour
         if (_pendingMultiSlot == slot && _pendingMultiSkill != null && _pendingMultiSkill.animationClip != null)
             return Mathf.Max(_pendingMultiSkill.cooldown, _pendingMultiSkill.animationClip.length);
 
-        // Slots 1-9 : si le GCD est plus long que le CD individuel, on base sur GCD_DURATION.
-        if (slot >= 1 && _gcdTimer > _cooldownTimers[slot])
-            return GCD_DURATION;
         if (_slots[slot].animationClip != null)
             return Mathf.Max(_slots[slot].cooldown, _slots[slot].animationClip.length);
         return _slots[slot].cooldown;
@@ -1285,9 +1495,7 @@ public class SkillBar : MonoBehaviour
             total += step.delay;
         // Ajoute une petite marge pour couvrir le dernier hit
         total += 0.3f;
-        _multiHitLockTimer = total;
-        _gcdTimer          = Mathf.Max(_gcdTimer, total); // bloque aussi les actifs
-        // Slot 0 bloqué via _multiHitLockTimer — pas de _gcdTimer sur slot 0
+        _multiHitLockTimer = total; // bloque déjà TOUS les slots (0 compris), voir TryUseSlot
         Debug.Log($"[SKILLBAR] MultiHit lock {total:F2}s pour {skill.name}");
     }
 }
