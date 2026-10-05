@@ -239,6 +239,7 @@ public struct ChatMessageEvent
     public string      sender; // "" pour une ligne Système
     public string      text;
     public System.DateTime timestamp;
+    public string      recipient; // UNIQUEMENT pour Private — voir ChatSystem.ChatLine.recipient
 }
 
 // ── Mail reçu ────────────────────────────────────────────────

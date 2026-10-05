@@ -33,9 +33,11 @@ public enum ChatChannel { Guild, Private, Nearby, System, AetherEcho }
 public class ChatLine
 {
     public ChatChannel   channel;
-    public string        sender; // "" pour une ligne Système
+    public string        sender;    // "" pour une ligne Système
     public string        text;
     public System.DateTime timestamp;
+    public string         recipient; // UNIQUEMENT pour Private — à qui le message est adressé,
+                                      // voir ChatUI.Refresh ("À X" si sender == nous, "De X" sinon).
 }
 
 public class ChatSystem : MonoBehaviour
@@ -118,8 +120,10 @@ public class ChatSystem : MonoBehaviour
     /// <summary>Appelé par ChatUI quand le joueur valide sa saisie. Renvoie false si refusé
     /// (Guild sans GuildSystem, AetherEcho sans item en stock OU disparu entre la sélection du
     /// canal et l'envoi). System n'est JAMAIS un canal d'envoi valide ici — lecture seule, voir
-    /// PostSystemMessage.</summary>
-    public bool TrySendPlayerMessage(ChatChannel channel, string text, Player player)
+    /// PostSystemMessage. `recipient` n'a de sens QUE pour ChatChannel.Private (nom du
+    /// destinataire, voir ChatUI.OnSendClicked "/NomDuJoueur message") — ignoré pour tout autre
+    /// canal.</summary>
+    public bool TrySendPlayerMessage(ChatChannel channel, string text, Player player, string recipient = null)
     {
         if (string.IsNullOrWhiteSpace(text) || player == null) return false;
 
@@ -146,7 +150,11 @@ public class ChatSystem : MonoBehaviour
                 return true;
             }
 
-            default: // Private, Nearby — écho local direct (voir commentaire d'en-tête)
+            case ChatChannel.Private:
+                AddLine(ChatChannel.Private, player.entityName, text, recipient);
+                return true;
+
+            default: // Nearby — écho local direct (voir commentaire d'en-tête)
                 AddLine(channel, player.entityName, text);
                 return true;
         }
@@ -178,13 +186,13 @@ public class ChatSystem : MonoBehaviour
     // HISTORIQUE
     // =========================================================
 
-    private void AddLine(ChatChannel channel, string sender, string text)
+    private void AddLine(ChatChannel channel, string sender, string text, string recipient = null)
     {
         var now = System.DateTime.Now;
-        _history.Add(new ChatLine { channel = channel, sender = sender, text = text, timestamp = now });
+        _history.Add(new ChatLine { channel = channel, sender = sender, text = text, timestamp = now, recipient = recipient });
         if (_history.Count > MAX_HISTORY) _history.RemoveAt(0);
 
-        GameEventBus.Publish(new ChatMessageEvent { channel = channel, sender = sender, text = text, timestamp = now });
+        GameEventBus.Publish(new ChatMessageEvent { channel = channel, sender = sender, text = text, timestamp = now, recipient = recipient });
     }
 
     private void PostSystemMessage(string text) => AddLine(ChatChannel.System, "", text);

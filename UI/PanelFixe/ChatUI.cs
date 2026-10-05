@@ -235,6 +235,22 @@ public class ChatUI : MonoBehaviour
         _                      => "",
     };
 
+    /// <summary>Une ligne Private affiche "À X" (nous avons envoyé) ou "De X" (reçu — pas encore
+    /// possible en solo, mais le bon comportement une fois le réseau là) au lieu du nom brut de
+    /// l'expéditeur — voir ChatLine.recipient. Tous les autres canaux affichent juste le nom de
+    /// l'expéditeur comme avant (Florian, 2026-10-05 : "le MP doit afficher à/de destinataire,
+    /// pas notre propre nom").</summary>
+    private string BuildSenderLabel(ChatLine line)
+    {
+        if (line.channel == ChatChannel.Private && !string.IsNullOrEmpty(line.recipient))
+        {
+            bool isOutgoing = _player != null && line.sender == _player.entityName;
+            return isOutgoing ? $"À {line.recipient} : " : $"De {line.sender} : ";
+        }
+
+        return string.IsNullOrEmpty(line.sender) ? "" : $"{line.sender} : ";
+    }
+
     private void Refresh()
     {
         foreach (var go in _lineObjects)
@@ -242,6 +258,7 @@ public class ChatUI : MonoBehaviour
         _lineObjects.Clear();
 
         if (ChatSystem.Instance == null || messageContent == null || chatLinePrefab == null) return;
+        if (_player == null) _player = FindObjectOfType<Player>();
 
         foreach (var line in ChatSystem.Instance.GetHistory())
         {
@@ -269,7 +286,7 @@ public class ChatUI : MonoBehaviour
             }
             if (txt == null) continue; // prefab mal construit — aucun TMP principal trouvé
 
-            string sender     = string.IsNullOrEmpty(line.sender) ? "" : $"{line.sender} : ";
+            string sender = BuildSenderLabel(line);
             string timePrefix = timeTxt == null ? $"{timeStr} " : ""; // déjà affiché à part sinon
             txt.text  = $"{timePrefix}{ChannelPrefix(line.channel)} {sender}{line.text}";
             txt.color = ChannelColor(line.channel);
@@ -277,9 +294,16 @@ public class ChatUI : MonoBehaviour
             // Raccourci MP — clic sur une ligne avec expéditeur (pas Système) ouvre directement
             // sa conversation dans SocialUI (Florian, 2026-10-05). Toute la ligne est cliquable,
             // pas juste le nom (pas de sous-span cliquable sur un TMP simple sans tag <link>).
-            if (!string.IsNullOrEmpty(line.sender))
+            // Pour une ligne Private SORTANTE (nous l'avons envoyée), la conversation à ouvrir est
+            // celle du DESTINATAIRE, pas la nôtre — sinon clic = ouvrir un MP avec soi-même.
+            bool isOutgoingPrivate = line.channel == ChatChannel.Private
+                && !string.IsNullOrEmpty(line.recipient)
+                && _player != null && line.sender == _player.entityName;
+            string dmTarget = isOutgoingPrivate ? line.recipient : line.sender;
+
+            if (!string.IsNullOrEmpty(dmTarget))
             {
-                string captured = line.sender;
+                string captured = dmTarget;
                 var btn = go.GetComponent<Button>() ?? go.AddComponent<Button>();
                 btn.onClick.RemoveAllListeners();
                 btn.onClick.AddListener(() => SocialUI.Instance?.OpenDMWith(captured));
@@ -345,7 +369,7 @@ public class ChatUI : MonoBehaviour
                 string dmText     = text.Substring(spaceIndex + 1);
 
                 bool sentToFeed = ChatSystem.Instance != null
-                    && ChatSystem.Instance.TrySendPlayerMessage(ChatChannel.Private, dmText, _player);
+                    && ChatSystem.Instance.TrySendPlayerMessage(ChatChannel.Private, dmText, _player, targetName);
                 DirectMessageSystem.Instance?.SendDM(targetName, dmText, _player);
 
                 if (sentToFeed) inputField.text = "";
