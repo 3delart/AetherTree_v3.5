@@ -27,9 +27,13 @@ using System.Collections.Generic;
 // comme pour les autres UI de cette session) :
 //
 // ChatPanel (racine, toujours active — HUD permanent)
-//   ├── MessageScrollView
-//   │     └── Content              (Transform — parent des lignes instanciées, assigner à
+//   ├── MessageScrollView            (ScrollRect — assigner à messageScrollRect, pour l'auto-scroll)
+//   │     └── Viewport > Content     (Transform — parent des lignes instanciées, assigner à
 //   │                                messageContent)
+//   │                                Content a besoin d'un Vertical Layout Group (Child Force
+//   │                                Expand Height DÉCOCHÉ, Control Child Size Height COCHÉ) +
+//   │                                Content Size Fitter (Vertical Fit = Preferred Size), sinon
+//   │                                les lignes se resserrent au lieu de garder leur taille.
 //   ├── FilterBar (sélecteur à choix unique, PAS 5 toggles indépendants)
 //   │     ├── FilterWorld           (Button — "Monde" = vue agrégée Alentour+Guilde+Privé+Écho)
 //   │     ├── FilterGuild           (Button — isole Guilde seul)
@@ -41,7 +45,9 @@ using System.Collections.Generic;
 //   │     │                           possédé ; PAS de "Monde", plus un canal d'envoi réel)
 //   │     ├── InputField             (TMP_InputField)
 //   │     └── SendButton             (Button)
-//   └── ChatLinePrefab (prefab séparé, pas un enfant actif — glissé en Inspector)
+//   └── ChatLinePrefab (prefab séparé, pas un enfant actif — glissé en Inspector) — a besoin
+//       d'un Content Size Fitter (Vertical Fit = Preferred Size) sur sa racine pour que le
+//       Vertical Layout Group du Content lise sa vraie hauteur au lieu d'une taille fixe.
 //         ├── (TextMeshProUGUI principal, n'importe où dans le prefab)
 //         └── Time (optionnel — TextMeshProUGUI nommé "Time", affiche l'heure HH:mm à part ;
 //                    absent = l'heure est juste préfixée dans le texte principal à la place)
@@ -55,8 +61,15 @@ public class ChatUI : MonoBehaviour
     public GameObject panel;
 
     [Header("Historique")]
+    public ScrollRect messageScrollRect; // pour l'auto-scroll vers le bas (MessageScrollView)
     public Transform  messageContent;
     public GameObject chatLinePrefab;
+
+    [Tooltip("Nombre max de lignes INSTANCIÉES à l'écran en même temps (après filtre) — distinct " +
+             "du cap de 200 côté ChatSystem (qui limite le STOCKAGE). Rebuild complet à chaque " +
+             "nouveau message, donc garder ce nombre raisonnable évite de recréer des dizaines de " +
+             "GameObjects inutiles à chaque frappe.")]
+    public int maxRenderedLines = 50;
 
     [Header("Filtres — sélecteur à choix unique (Button, pas Toggle)")]
     public Button filterWorld;
@@ -260,9 +273,18 @@ public class ChatUI : MonoBehaviour
         if (ChatSystem.Instance == null || messageContent == null || chatLinePrefab == null) return;
         if (_player == null) _player = FindObjectOfType<Player>();
 
+        // Filtre d'abord, NE GARDE que les maxRenderedLines plus récentes — évite d'instancier
+        // jusqu'à 200 GameObjects (le cap de stockage de ChatSystem) à chaque nouveau message, et
+        // empêche l'affichage de surcharger visuellement (Florian, 2026-10-05).
+        var matching = new List<ChatLine>();
         foreach (var line in ChatSystem.Instance.GetHistory())
+            if (IsChannelVisible(line.channel)) matching.Add(line);
+
+        int startIndex = Mathf.Max(0, matching.Count - maxRenderedLines);
+
+        for (int i = startIndex; i < matching.Count; i++)
         {
-            if (!IsChannelVisible(line.channel)) continue;
+            var line = matching[i];
 
             var go = Instantiate(chatLinePrefab, messageContent);
             _lineObjects.Add(go);
@@ -309,6 +331,20 @@ public class ChatUI : MonoBehaviour
                 btn.onClick.AddListener(() => SocialUI.Instance?.OpenDMWith(captured));
             }
         }
+
+        ScrollToBottom();
+    }
+
+    /// <summary>Force le ScrollRect tout en bas après un rebuild — sans le ForceUpdateCanvases
+    /// préalable, le Content n'a pas encore sa taille recalculée (ContentSizeFitter) au moment où
+    /// on lit/écrit verticalNormalizedPosition, et le scroll partirait de l'ancienne taille
+    /// (Florian, 2026-10-05 : "le chat doit défiler pour avoir le dernier message en bas").
+    /// 0 = bas, 1 = haut pour un ScrollRect vertical standard Unity.</summary>
+    private void ScrollToBottom()
+    {
+        if (messageScrollRect == null) return;
+        Canvas.ForceUpdateCanvases();
+        messageScrollRect.verticalNormalizedPosition = 0f;
     }
 
     // =========================================================
