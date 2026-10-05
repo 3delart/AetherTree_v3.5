@@ -47,6 +47,16 @@ using System.Collections.Generic;
 //   Remplace l'ancienne condition if (pnjType != Guard).
 // =============================================================
 
+// Un point de route + son temps d'arrêt individuel — plus un seul waitAtPointSeconds global
+// (Florian, 2026-10-05). Voir PNJ.patrolPoints pour l'usage du premier/dernier point.
+[System.Serializable]
+public class PatrolPointEntry
+{
+    [Tooltip("Point de la SCÈNE (pas un prefab/asset).")]
+    public Transform point;
+    public float     waitSeconds = 3f;
+}
+
 [RequireComponent(typeof(SkillSystem))]
 public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
 {
@@ -71,42 +81,29 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
              "même mécanique, pas de réglage séparé.")]
     public bool isPatrolRoute = false;
 
+    [Tooltip("waitSeconds de CHAQUE entrée = temps d'arrêt (idle) à CE point avant de repartir\n" +
+             "vers le suivant. Pour le PREMIER point : fenêtre de récupération d'une quête Escort\n" +
+             "ciblant ce PNJ (voir IsAcceptingEscort) — mettre une longue valeur (ex: 300s). Pour\n" +
+             "le DERNIER point (loopRoute = false) : temps laissé au joueur pour venir parler au\n" +
+             "PNJ avant qu'il ne disparaisse (voir hiddenDurationSeconds) — longue valeur aussi si\n" +
+             "une quête Escort doit pouvoir s'y valider.")]
     [ShowIf(nameof(isPatrolRoute), true)]
-    public List<Transform> patrolPoints = new List<Transform>();
-
-    [Tooltip("Temps d'arrêt (idle) à CHAQUE point avant de repartir vers le suivant, y compris\n" +
-             "au bouclage sur patrolPoints[0] (ignoré au DERNIER point si loopRoute = false, voir\n" +
-             "waitBeforeDisappearSeconds ci-dessous).")]
-    [ShowIf(nameof(isPatrolRoute), true)]
-    public float waitAtPointSeconds = 3f;
+    public List<PatrolPointEntry> patrolPoints = new List<PatrolPointEntry>();
 
     [Tooltip("Coché (défaut) = boucle sans fin sur patrolPoints[0] (comportement historique).\n" +
              "Décoché = s'arrête au DERNIER point de la liste au lieu de reboucler — voir\n" +
-             "waitBeforeDisappearSeconds / hiddenDurationSeconds ci-dessous.")]
+             "hiddenDurationSeconds ci-dessous.")]
     [ShowIf(nameof(isPatrolRoute), true)]
     public bool loopRoute = true;
-
-    [Tooltip("Idle au DERNIER point avant de disparaître (loopRoute = false uniquement) — distinct\n" +
-             "de waitAtPointSeconds, pour régler ce point final indépendamment des autres.")]
-    [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
-    public float waitBeforeDisappearSeconds = 3f;
 
     [Tooltip("Durée pendant laquelle le PNJ est complètement absent (invisible, inattaquable,\n" +
              "non-interactible) avant de réapparaître à patrolPoints[0] et reprendre la route.")]
     [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
     public float hiddenDurationSeconds = 5f;
 
-    [Tooltip("Durée d'attente à patrolPoints[0] avant le PREMIER départ de ce cycle — distincte de\n" +
-             "waitAtPointSeconds (utilisé partout ailleurs sur la route). Pendant cette fenêtre,\n" +
-             "IsAcceptingEscort vaut true : une quête Escort ciblant ce PNJ est \"récupérable\".\n" +
-             "Dès le départ (fin de cette attente), la quête n'est plus proposable jusqu'au\n" +
-             "prochain cycle (réapparition après hiddenDurationSeconds, ou respawn après mort).")]
-    [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
-    public float escortAcceptWindowSeconds = 300f;
-
     /// <summary>True uniquement pendant l'attente initiale à patrolPoints[0], avant le premier
-    /// départ de ce cycle — voir escortAcceptWindowSeconds ci-dessus. Lu par
-    /// QuestSystem.CanAccept pour un objectif Escort ciblant ce PNJ.</summary>
+    /// départ de ce cycle (durée = patrolPoints[0].waitSeconds). Lu par QuestSystem.CanAccept
+    /// pour un objectif Escort ciblant ce PNJ.</summary>
     public bool IsAcceptingEscort => isPatrolRoute && !loopRoute && _routeIndex == 0 && _routeWaiting;
 
     // ── Dialogue actif ────────────────────────────────────────
@@ -458,7 +455,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             return;
         }
 
-        Transform current = patrolPoints[_routeIndex];
+        Transform current = patrolPoints[_routeIndex]?.point;
         if (current == null) return; // point supprimé de la scène après assignation — reste figé plutôt que planter
 
         // Figé ici (pas rafraîchi pendant le combat, contrairement au ré-ancrage continu plus haut)
@@ -492,22 +489,23 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             if (isLastPoint && data != null)
                 GameEventBus.Publish(new PNJRouteCompletedEvent { pnjData = data });
 
+            // Temps d'arrêt AU point qu'on vient d'atteindre (_routeIndex pas encore incrémenté) —
+            // réglé individuellement par point depuis patrolPoints[_routeIndex].waitSeconds.
+            float waitHere = patrolPoints[_routeIndex].waitSeconds;
+
             if (!loopRoute && isLastPoint)
             {
                 // Pas d'avance d'index ici — ReappearAtRouteStart() le remet à 0 explicitement
                 // quand l'absence se termine, un peu plus loin.
                 _awaitingDisappear = true;
                 _routeWaiting      = true;
-                _routeWaitTimer    = waitBeforeDisappearSeconds;
+                _routeWaitTimer    = waitHere;
             }
             else
             {
-                // Arrivée (donc attente) À patrolPoints[0] — avant incrément — utilise la longue
-                // fenêtre "récupération d'escorte" au lieu du wait normal entre deux points.
-                bool wasAtStart = _routeIndex == 0 && !loopRoute;
                 _routeIndex     = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
                 _routeWaiting   = true;
-                _routeWaitTimer = wasAtStart ? escortAcceptWindowSeconds : waitAtPointSeconds;
+                _routeWaitTimer = waitHere;
             }
             _lastRouteTarget = null; // force un nouveau SetDestination() vers le point suivant
         }
@@ -534,7 +532,7 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
         _routeIndex      = 0;
         _lastRouteTarget = null;
 
-        Transform start = patrolPoints.Count > 0 ? patrolPoints[0] : null;
+        Transform start = patrolPoints.Count > 0 ? patrolPoints[0]?.point : null;
         if (start != null)
         {
             transform.position = start.position;
@@ -943,8 +941,9 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     public List<SkillData> SecondarySkills   => data?.skills;
     // isPatrolRoute coupe la patrouille aléatoire du combat (PatrolRadius=0) et déplace son ancre
     // de laisse (LeashAnchor) sur _routeAnchor au lieu de _spawnPos — sinon les deux systèmes se
-    // marchent dessus : TickPatrol ferait vagabonder le PNJ loin de son point d'arrêt pendant
-    // waitAtPointSeconds, et LeashAnchor resterait figé sur le Point A d'origine (jamais mis à
+    // marchent dessus : TickPatrol ferait vagabonder le PNJ loin de son point d'arrêt pendant son
+    // temps d'attente (patrolPoints[i].waitSeconds), et LeashAnchor resterait figé sur le Point A
+    // d'origine (jamais mis à
     // jour par le ré-ancrage de TickPatrolRoute), faisant boucler Engage/Return dès que la route
     // s'éloigne de plus de leashRadius du Point A — trouvé en revue de code avant exécution.
     public float           PatrolRadius      => isPatrolRoute ? 0f : (data != null ? data.patrolRadius : 0f);
@@ -1098,8 +1097,8 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             Gizmos.color = Color.green;
             for (int i = 0; i < patrolPoints.Count; i++)
             {
-                if (patrolPoints[i] == null) continue;
-                Gizmos.DrawSphere(patrolPoints[i].position, 0.3f);
+                if (patrolPoints[i]?.point == null) continue;
+                Gizmos.DrawSphere(patrolPoints[i].point.position, 0.3f);
 
                 // Pas de ligne de fermeture dernier→premier quand loopRoute = false — le PNJ ne
                 // reboucle pas en marchant (il disparaît puis réapparaît directement au premier
@@ -1107,8 +1106,8 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
                 bool isLastSegment = i == patrolPoints.Count - 1;
                 if (isLastSegment && !loopRoute) continue;
 
-                Transform next = patrolPoints[(i + 1) % patrolPoints.Count];
-                if (next != null) Gizmos.DrawLine(patrolPoints[i].position, next.position);
+                Transform next = patrolPoints[(i + 1) % patrolPoints.Count]?.point;
+                if (next != null) Gizmos.DrawLine(patrolPoints[i].point.position, next.position);
             }
         }
     }

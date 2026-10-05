@@ -550,14 +550,26 @@ public class QuestSystem : MonoBehaviour
                 var obj = quest.objectives[idx];
                 if (obj.type != QuestObjectiveType.Escort) continue;
                 if (obj.targetPNJ == null || obj.targetPNJ != e.pnjData) continue;
-                if (obj.hasArrived) continue; // déjà marqué, rien à refaire
 
-                // Marque "arrivé" SEULEMENT — ne complète PAS l'objectif ici. La complétion
-                // exige que le joueur parle ensuite au PNJ (voir NotifyTalkTo), pas juste qu'il
-                // atteigne le point final.
-                obj.hasArrived = true;
-                Debug.Log($"[QUEST] {quest.questName} · {e.pnjData.pnjName} est arrivé — parle-lui pour valider l'escorte.");
+                // Complète directement — la quête met un objectif TalkTo (même targetPNJ) EN
+                // SÉQUENCE juste après (objectivesInOrder = true) pour exiger qu'on lui parle une
+                // fois arrivé, réutilisant NotifyTalkTo/TalkTo tel quel (Florian, 2026-10-05).
+                bool wasComplete = obj.IsComplete;
+                obj.Increment();
+
+                if (!wasComplete)
+                {
+                    Debug.Log($"[QUEST] {quest.questName} · {e.pnjData.pnjName} est arrivé : {obj.ProgressLabel}");
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                    });
+                }
             }
+
+            CheckCompletion(quest);
         }
     }
 
@@ -651,22 +663,6 @@ public class QuestSystem : MonoBehaviour
 
                     obj.Increment(obj.requiredCount);
                     Debug.Log($"[QUEST] {quest.questName} · Livraison à {pnjData.pnjName} : {obj.ProgressLabel}");
-
-                    GameEventBus.Publish(new QuestEvent
-                    {
-                        quest          = quest,
-                        action         = QuestAction.ObjectiveUpdated,
-                        objectiveIndex = idx,
-                        player         = player,
-                    });
-                }
-                else if (obj.type == QuestObjectiveType.Escort)
-                {
-                    if (obj.targetPNJ == null || obj.targetPNJ != pnjData) continue;
-                    if (!obj.hasArrived) continue; // pas encore arrivé au dernier point — rien à valider
-
-                    obj.Increment();
-                    Debug.Log($"[QUEST] {quest.questName} · Escorte de {pnjData.pnjName} validée.");
 
                     GameEventBus.Publish(new QuestEvent
                     {
