@@ -239,6 +239,7 @@ public class MailboxSystem : MonoBehaviour
 
         messages.Add(mail);
         Debug.Log($"[MAILBOX] Mail envoyé : {subject}");
+        GameEventBus.Publish(new MailReceivedEvent { subject = subject });
 
         SocialUI.Instance?.OnNewMail(mail);
     }
