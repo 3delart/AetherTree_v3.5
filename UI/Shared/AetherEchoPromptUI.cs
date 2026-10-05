@@ -13,11 +13,16 @@ using TMPro;
 // l'envoi réel (voir Systems/ChatSystem.cs — ne PAS dupliquer de logique de consommation ici).
 //
 // SETUP HIERARCHY attendu (Florian construit, même convention que UI/Shared/ConfirmationUI.cs) :
+// Ce script (AetherEchoPromptUI) doit être posé sur un GameObject TOUJOURS ACTIF — sinon Awake()
+// ne tourne jamais, Instance reste null, et ConsoBarUI.UseConsumable n'ouvre plus rien SILENCIEUSEMENT
+// (utiliser l'item ne fait plus rien, aucune erreur visible). Seul le champ `panel` (son enfant) est
+// inactif par défaut et togglé par Open()/Close() — exactement comme ConfirmationUI.cs.
 //
-// AetherEchoPromptPanel (racine, inactive par défaut)
-//   ├── MessageInput        (TMP_InputField)
-//   ├── ValidateButton      (Button)
-//   └── CancelButton        (Button)
+// AetherEchoScript (GameObject TOUJOURS ACTIF — ce script est dessus)
+//   └── AetherEchoPromptPanel (assigner sur `panel`, inactif par défaut)
+//         ├── MessageInput        (TMP_InputField)
+//         ├── ValidateButton      (Button)
+//         └── CancelButton        (Button)
 // =============================================================
 
 public class AetherEchoPromptUI : MonoBehaviour
@@ -43,6 +48,7 @@ public class AetherEchoPromptUI : MonoBehaviour
     {
         validateButton?.onClick.AddListener(OnValidateClicked);
         cancelButton  ?.onClick.AddListener(Close);
+        messageInput  ?.onSubmit.AddListener(_ => OnValidateClicked()); // Entrée envoie aussi
         Close();
     }
 

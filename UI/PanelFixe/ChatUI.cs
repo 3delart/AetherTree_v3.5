@@ -99,6 +99,7 @@ public class ChatUI : MonoBehaviour
         filterSystem ?.onValueChanged.AddListener(_ => _dirty = true);
 
         sendButton   ?.onClick.AddListener(OnSendClicked);
+        inputField   ?.onSubmit.AddListener(_ => OnSendClicked()); // Entrée envoie aussi
 
         _lastHasAetherEcho = false; // force le premier RefreshChannelPicker() du prochain Update()
         RefreshChannelPicker();
@@ -206,6 +207,15 @@ public class ChatUI : MonoBehaviour
         if (channelPicker == null) return;
         if (_player == null) _player = FindObjectOfType<Player>();
 
+        // Canal actuellement sélectionné AVANT reconstruction — sert à retrouver le même canal
+        // après coup plutôt que de garder un INDEX brut, qui pointerait vers un canal différent
+        // si AetherEcho vient de disparaître/apparaître (décalage de liste). Si ce canal n'existe
+        // plus dans la nouvelle liste (AetherEcho consommé), retombe sur World (index 0) au lieu
+        // de glisser silencieusement sur le canal suivant (trouvé en revue de code, 2026-10-05).
+        ChatChannel? previousChannel = (_pickerChannels.Count > 0 && channelPicker.value < _pickerChannels.Count)
+            ? _pickerChannels[channelPicker.value]
+            : (ChatChannel?)null;
+
         _pickerChannels = new List<ChatChannel>(BaseSendableChannels);
         if (ChatSystem.Instance != null && ChatSystem.Instance.HasAetherEcho(_player))
             _pickerChannels.Add(ChatChannel.AetherEcho);
@@ -213,10 +223,12 @@ public class ChatUI : MonoBehaviour
         var labels = new List<string>();
         foreach (var c in _pickerChannels) labels.Add(ChannelPrefix(c));
 
-        int previousIndex = Mathf.Clamp(channelPicker.value, 0, labels.Count - 1);
+        int newIndex = previousChannel.HasValue ? _pickerChannels.IndexOf(previousChannel.Value) : -1;
+        if (newIndex < 0) newIndex = 0;
+
         channelPicker.ClearOptions();
         channelPicker.AddOptions(labels);
-        channelPicker.value = previousIndex;
+        channelPicker.value = newIndex;
     }
 
     private void OnSendClicked()

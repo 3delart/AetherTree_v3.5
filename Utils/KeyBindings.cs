@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using System.Collections.Generic;
 
 // =============================================================
@@ -107,9 +108,29 @@ public static class KeyBindings
     }
 
     // ── Helpers Input ─────────────────────────────────────────
-    public static bool GetDown(string action) => Input.GetKeyDown(Get(action));
-    public static bool GetHeld(string action) => Input.GetKey(Get(action));
-    public static bool GetUp(string action)   => Input.GetKeyUp(Get(action));
+    // Bloque TOUTE touche si un champ de saisie UI (ChatUI, AetherEchoPromptUI, rebind de touche,
+    // etc.) a actuellement le focus — sans ça, taper "salut" dans le chat déclenche S/L/U/I/K/C/M/J
+    // (ouverture de panels) et les chiffres lancent des skills (trouvé en revue de code, 2026-10-05).
+    // Chokepoint unique : couvre tout ce qui passe par GameControls (la quasi-totalité des touches
+    // du jeu) — les quelques Input.GetKeyDown bruts restants ailleurs (ex: F1-F3 ConsoBar, Tab
+    // auto-attaque) ne passent PAS par ici, gap préexistant distinct, pas corrigé par ce fix.
+    private static bool IsTypingInField()
+    {
+        var es = EventSystem.current;
+        if (es == null) return false;
+        var selected = es.currentSelectedGameObject;
+        if (selected == null) return false;
+
+        var tmp = selected.GetComponent<TMPro.TMP_InputField>();
+        if (tmp != null) return tmp.isFocused;
+
+        var legacy = selected.GetComponent<UnityEngine.UI.InputField>();
+        return legacy != null && legacy.isFocused;
+    }
+
+    public static bool GetDown(string action) => !IsTypingInField() && Input.GetKeyDown(Get(action));
+    public static bool GetHeld(string action) => !IsTypingInField() && Input.GetKey(Get(action));
+    public static bool GetUp(string action)   => !IsTypingInField() && Input.GetKeyUp(Get(action));
 
     public static IEnumerable<string> AllActions => defaults.Keys;
 
