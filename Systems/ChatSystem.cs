@@ -7,16 +7,20 @@ using System.Collections.Generic;
 // AetherTree GDD v31 — voir docs/superpowers/specs/2026-10-05-chat-system-design.md
 //
 // Solo aujourd'hui (pas de réseau, voir a implémenter/AetherTree_Recap_Reseau+refactor.md) —
-// World/Private/Nearby/AetherEcho postent en ÉCHO LOCAL direct (TrySendPlayerMessage ajoute la
+// Private/Nearby/AetherEcho postent en ÉCHO LOCAL direct (TrySendPlayerMessage ajoute la
 // ligne immédiatement, comme si envoyée-et-reçue). Le jour où Mirror existe, TrySendPlayerMessage
 // est le point d'ancrage à transformer en [Command] vers le serveur — ne PAS appeler AddLine()
 // directement depuis un futur code réseau sans passer par ce point.
 //
 // Guild : toujours refusé, aucun GuildSystem n'existe (voir Data/PNJ/PNJData.cs, commentaire sur
 // le retrait de Mayor/TryCreateGuild le 2026-10-04).
+//
+// PAS de ChatChannel.World (retiré, 2026-10-05, Florian) — "Monde" n'est plus un canal d'envoi,
+// juste un MODE D'AFFICHAGE côté ChatUI (agrégat Alentour+Guilde+Privé+Écho, Système toujours à
+// part) — voir ChatUI.cs. Aucun message n'est jamais tagué World ici.
 // =============================================================
 
-public enum ChatChannel { World, Guild, Private, Nearby, System, AetherEcho }
+public enum ChatChannel { Guild, Private, Nearby, System, AetherEcho }
 
 public class ChatLine
 {
@@ -133,7 +137,7 @@ public class ChatSystem : MonoBehaviour
                 return true;
             }
 
-            default: // World, Private, Nearby — écho local direct (voir commentaire d'en-tête)
+            default: // Private, Nearby — écho local direct (voir commentaire d'en-tête)
                 AddLine(channel, player.entityName, text);
                 return true;
         }

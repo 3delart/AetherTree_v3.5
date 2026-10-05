@@ -12,8 +12,16 @@ using System.Collections.Generic;
 // cachent les autres canaux (design initial faux, corrigé après inspiration Nostale réelle :
 // Nostale a une fenêtre unique avec un filtre de catégorie, pas des onglets séparés).
 //
-// Écho d'Aether IGNORE TOUJOURS le filtre (pas de toggle dédié) — c'est sa raison d'être, voir
-// spec section "Nostale : le haut-parleur ignore le filtre de vue temporaire".
+// FilterBar — PAS 5 toggles indépendants : un sélecteur à choix UNIQUE (comme des tabs/radio),
+// géré avec de simples Button (pas de Toggle construit côté Editor). "Monde" N'EST PLUS un vrai
+// canal d'envoi (voir ChatSystem.ChatChannel, World retiré 2026-10-05) — c'est juste le mode
+// d'affichage AGRÉGÉ : Alentour + Guilde + Privé réunis (+ Écho d'Aether, qui ignore TOUJOURS le
+// mode choisi, voir plus bas). Système reste TOUJOURS à part, jamais inclus dans l'agrégat Monde
+// — seul son propre bouton l'affiche (Florian, 2026-10-05). Cliquer Alentour/Guilde/Privé/Système
+// isole CE SEUL canal (le reste disparaît de la vue, mais pas de l'historique ni de l'envoi).
+//
+// Écho d'Aether IGNORE TOUJOURS le mode de filtre choisi (aucun bouton dédié) — c'est sa raison
+// d'être, voir spec section "Nostale : le haut-parleur ignore le filtre de vue temporaire".
 //
 // SETUP HIERARCHY attendu (Florian construit, ce script fait les Find()/assignations en Inspector
 // comme pour les autres UI de cette session) :
@@ -22,15 +30,15 @@ using System.Collections.Generic;
 //   ├── MessageScrollView
 //   │     └── Content              (Transform — parent des lignes instanciées, assigner à
 //   │                                messageContent)
-//   ├── FilterBar
-//   │     ├── FilterWorld           (Button — pas Toggle, état géré en script avec retint couleur)
-//   │     ├── FilterGuild           (Button)
-//   │     ├── FilterPrivate         (Button)
-//   │     ├── FilterNearby          (Button)
-//   │     └── FilterSystem          (Button)
-//   │     (pas de FilterAetherEcho — ignore toujours le filtre)
+//   ├── FilterBar (sélecteur à choix unique, PAS 5 toggles indépendants)
+//   │     ├── FilterWorld           (Button — "Monde" = vue agrégée Alentour+Guilde+Privé+Écho)
+//   │     ├── FilterGuild           (Button — isole Guilde seul)
+//   │     ├── FilterPrivate         (Button — isole Privé seul)
+//   │     ├── FilterNearby          (Button — isole Alentour seul)
+//   │     └── FilterSystem          (Button — isole Système seul, jamais dans l'agrégat Monde)
 //   ├── InputBar
-//   │     ├── ChannelPicker          (TMP_Dropdown)
+//   │     ├── ChannelPicker          (TMP_Dropdown — Guilde/Privé/Alentour + Écho d'Aether si
+//   │     │                           possédé ; PAS de "Monde", plus un canal d'envoi réel)
 //   │     ├── InputField             (TMP_InputField)
 //   │     └── SendButton             (Button)
 //   └── ChatLinePrefab (prefab séparé, pas un enfant actif — glissé en Inspector)
@@ -48,23 +56,18 @@ public class ChatUI : MonoBehaviour
     public Transform  messageContent;
     public GameObject chatLinePrefab;
 
-    [Header("Filtres (un Button par canal, PAS AetherEcho — toujours affiché)")]
+    [Header("Filtres — sélecteur à choix unique (Button, pas Toggle)")]
     public Button filterWorld;
     public Button filterGuild;
     public Button filterPrivate;
     public Button filterNearby;
     public Button filterSystem;
 
-    // Un Button n'a pas d'état on/off intégré (contrairement à Toggle) — géré ici à la main, avec
-    // retint du bouton selon la couleur du canal (actif = couleur pleine, inactif = gris).
-    private bool _showWorld   = true;
-    private bool _showGuild   = true;
-    private bool _showPrivate = true;
-    private bool _showNearby  = true;
-    private bool _showSystem  = true;
+    private enum FilterMode { Aggregate, Nearby, Guild, Private, System }
+    private FilterMode _filterMode = FilterMode.Aggregate;
     private static readonly Color FILTER_OFF_COLOR = new Color(0.3f, 0.3f, 0.35f, 0.5f);
 
-    [Header("Couleurs par canal")]
+    [Header("Couleurs par canal (World = teinte du bouton \"Monde\" / vue agrégée uniquement, pas un canal de message)")]
     public Color colorWorld      = Color.white;
     public Color colorGuild      = new Color(0.4f, 0.85f, 0.4f);
     public Color colorPrivate    = new Color(0.9f, 0.5f,  0.8f);
@@ -85,7 +88,7 @@ public class ChatUI : MonoBehaviour
     // Canaux TOUJOURS listés dans le picker, dans cet ordre — AetherEcho est ajouté/retiré
     // dynamiquement en plus de ceux-ci (voir RefreshChannelPicker).
     private static readonly ChatChannel[] BaseSendableChannels =
-        { ChatChannel.World, ChatChannel.Guild, ChatChannel.Private, ChatChannel.Nearby };
+        { ChatChannel.Guild, ChatChannel.Private, ChatChannel.Nearby };
 
     private List<ChatChannel> _pickerChannels = new List<ChatChannel>();
     private bool _lastHasAetherEcho = false;
@@ -101,19 +104,13 @@ public class ChatUI : MonoBehaviour
     {
         Subscribe();
 
-        filterWorld  ?.onClick.AddListener(() => ToggleFilter(filterWorld,   colorWorld,   ref _showWorld));
-        filterGuild  ?.onClick.AddListener(() => ToggleFilter(filterGuild,   colorGuild,   ref _showGuild));
-        filterPrivate?.onClick.AddListener(() => ToggleFilter(filterPrivate, colorPrivate, ref _showPrivate));
-        filterNearby ?.onClick.AddListener(() => ToggleFilter(filterNearby,  colorNearby,  ref _showNearby));
-        filterSystem ?.onClick.AddListener(() => ToggleFilter(filterSystem,  colorSystem,  ref _showSystem));
+        filterWorld  ?.onClick.AddListener(() => SetFilterMode(FilterMode.Aggregate));
+        filterGuild  ?.onClick.AddListener(() => SetFilterMode(FilterMode.Guild));
+        filterPrivate?.onClick.AddListener(() => SetFilterMode(FilterMode.Private));
+        filterNearby ?.onClick.AddListener(() => SetFilterMode(FilterMode.Nearby));
+        filterSystem ?.onClick.AddListener(() => SetFilterMode(FilterMode.System));
 
-        // État visuel initial (tous actifs par défaut) — sans ça les boutons restent dans leur
-        // couleur Unity par défaut jusqu'au premier clic, incohérent avec l'état réel (tout visible).
-        ApplyFilterVisual(filterWorld,   colorWorld,   _showWorld);
-        ApplyFilterVisual(filterGuild,   colorGuild,   _showGuild);
-        ApplyFilterVisual(filterPrivate, colorPrivate, _showPrivate);
-        ApplyFilterVisual(filterNearby,  colorNearby,  _showNearby);
-        ApplyFilterVisual(filterSystem,  colorSystem,  _showSystem);
+        RefreshFilterVisuals(); // état initial : Monde (agrégat) actif par défaut
 
         sendButton   ?.onClick.AddListener(OnSendClicked);
         inputField   ?.onSubmit.AddListener(_ => OnSendClicked()); // Entrée envoie aussi
@@ -164,22 +161,40 @@ public class ChatUI : MonoBehaviour
     // AFFICHAGE
     // =========================================================
 
-    private bool IsChannelVisible(ChatChannel channel) => channel switch
+    /// <summary>"Monde" = vue agrégée Alentour+Guilde+Privé (pas un vrai canal, voir en-tête) —
+    /// Système n'y est JAMAIS inclus, seul son propre mode l'affiche. Écho d'Aether ignore
+    /// TOUJOURS le mode choisi, peu importe lequel.</summary>
+    private bool IsChannelVisible(ChatChannel channel)
     {
-        ChatChannel.AetherEcho => true, // ignore toujours le filtre
-        ChatChannel.World      => _showWorld,
-        ChatChannel.Guild      => _showGuild,
-        ChatChannel.Private    => _showPrivate,
-        ChatChannel.Nearby     => _showNearby,
-        ChatChannel.System     => _showSystem,
-        _                      => true,
-    };
+        if (channel == ChatChannel.AetherEcho) return true;
 
-    private void ToggleFilter(Button button, Color activeColor, ref bool state)
+        return _filterMode switch
+        {
+            FilterMode.Aggregate => channel == ChatChannel.Nearby || channel == ChatChannel.Guild || channel == ChatChannel.Private,
+            FilterMode.Nearby    => channel == ChatChannel.Nearby,
+            FilterMode.Guild     => channel == ChatChannel.Guild,
+            FilterMode.Private   => channel == ChatChannel.Private,
+            FilterMode.System    => channel == ChatChannel.System,
+            _                    => true,
+        };
+    }
+
+    private void SetFilterMode(FilterMode mode)
     {
-        state = !state;
-        ApplyFilterVisual(button, activeColor, state);
+        _filterMode = mode;
+        RefreshFilterVisuals();
         _dirty = true;
+    }
+
+    /// <summary>Un seul bouton actif à la fois (sélecteur à choix unique) — pas d'état "on/off"
+    /// indépendant par canal comme un vrai Toggle, juste lequel des 5 correspond au mode courant.</summary>
+    private void RefreshFilterVisuals()
+    {
+        ApplyFilterVisual(filterWorld,   colorWorld,   _filterMode == FilterMode.Aggregate);
+        ApplyFilterVisual(filterNearby,  colorNearby,  _filterMode == FilterMode.Nearby);
+        ApplyFilterVisual(filterGuild,   colorGuild,   _filterMode == FilterMode.Guild);
+        ApplyFilterVisual(filterPrivate, colorPrivate, _filterMode == FilterMode.Private);
+        ApplyFilterVisual(filterSystem,  colorSystem,  _filterMode == FilterMode.System);
     }
 
     private void ApplyFilterVisual(Button button, Color activeColor, bool isOn)
@@ -191,7 +206,6 @@ public class ChatUI : MonoBehaviour
 
     private Color ChannelColor(ChatChannel channel) => channel switch
     {
-        ChatChannel.World      => colorWorld,
         ChatChannel.Guild      => colorGuild,
         ChatChannel.Private    => colorPrivate,
         ChatChannel.Nearby     => colorNearby,
@@ -202,7 +216,6 @@ public class ChatUI : MonoBehaviour
 
     private string ChannelPrefix(ChatChannel channel) => channel switch
     {
-        ChatChannel.World      => "[Monde]",
         ChatChannel.Guild      => "[Guilde]",
         ChatChannel.Private    => "[MP]",
         ChatChannel.Nearby     => "[Alentour]",
@@ -288,7 +301,7 @@ public class ChatUI : MonoBehaviour
         if (_player == null) _player = FindObjectOfType<Player>();
         if (_player == null) return;
 
-        ChatChannel channel = ChatChannel.World;
+        ChatChannel channel = ChatChannel.Nearby; // défaut si picker vide/absent
         if (channelPicker != null && _pickerChannels.Count > 0)
         {
             int index = Mathf.Clamp(channelPicker.value, 0, _pickerChannels.Count - 1);
