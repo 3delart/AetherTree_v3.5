@@ -113,6 +113,15 @@ public class ChatUI : MonoBehaviour
     // map (ne pas répéter ce bug une 5e fois).
     public void Resubscribe() { Unsubscribe(); Subscribe(); }
 
+    /// <summary>Montre/cache le dock — appelé par UIManager sur GameControls.OpenChat (touche V,
+    /// ex-stub SocialUI.SocialTab.Chat jamais implémenté, retiré au profit de ce dock permanent —
+    /// Florian, 2026-10-05). Contrairement aux autres panels Social (toggle "ouvert/fermé" complet),
+    /// ChatUI reste un HUD permanent par défaut — cette touche ne fait que le masquer/réafficher.</summary>
+    public void ToggleVisibility()
+    {
+        if (panel != null) panel.SetActive(!panel.activeSelf);
+    }
+
     private void Subscribe()   => GameEventBus.OnChatMessage += OnChatMessage;
     private void Unsubscribe() => GameEventBus.OnChatMessage -= OnChatMessage;
 

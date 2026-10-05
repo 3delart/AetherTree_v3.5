@@ -9,8 +9,12 @@ using System.Collections.Generic;
 //
 // Touches :
 //   GameControls.OpenMail  → ouvre sur onglet Mail
-//   GameControls.OpenChat  → ouvre sur onglet Chat
 //   GameControls.OpenGuild → ouvre sur onglet Guild
+//
+// Chat retiré d'ici (2026-10-05, Florian) — l'ancien onglet Chat n'a jamais été qu'un stub vide ;
+// le vrai chat est maintenant un dock HUD permanent séparé (voir UI/PanelFixe/ChatUI.cs).
+// GameControls.OpenChat (touche V) appelle maintenant ChatUI.Instance?.ToggleVisibility()
+// directement (voir UIManager.cs), plus SocialUI du tout.
 //
 // Si déjà ouvert sur le bon onglet → ferme.
 // Cliquer un onglet → swap sans fermer.
@@ -18,8 +22,7 @@ using System.Collections.Generic;
 // Hiérarchie Unity :
 //   SocialPanel (racine)
 //     SocialTitlePanel / SocialCloseButton
-//     SocialTabs : ChatTab | GuildTab | MailTab
-//     ChatPanel    ← stub pour l'instant
+//     SocialTabs : GuildTab | MailTab
 //     GuildPanel   ← stub pour l'instant
 //     MailsPanel
 //       MailsListPanel
@@ -44,12 +47,10 @@ public class SocialUI : MonoBehaviour
     public Button     closeButton;
 
     [Header("Onglets")]
-    public Button chatTab;
     public Button guildTab;
     public Button mailTab;
 
     [Header("Sous-panels")]
-    public GameObject chatPanel;
     public GameObject guildPanel;
     public GameObject mailsPanel;
 
@@ -88,7 +89,7 @@ public class SocialUI : MonoBehaviour
     // =========================================================
     // ÉTAT INTERNE
     // =========================================================
-    public enum SocialTab { None, Chat, Guild, Mail }
+    public enum SocialTab { None, Guild, Mail }
 
     private SocialTab   currentTab    = SocialTab.None;
     private MailFilter  currentFilter = MailFilter.All;
@@ -118,7 +119,6 @@ public class SocialUI : MonoBehaviour
         closeButton?.onClick.AddListener(Close);
 
         // Onglets
-        chatTab? .onClick.AddListener(() => SwitchTab(SocialTab.Chat));
         guildTab?.onClick.AddListener(() => SwitchTab(SocialTab.Guild));
         mailTab? .onClick.AddListener(() => SwitchTab(SocialTab.Mail));
 
@@ -181,12 +181,10 @@ public class SocialUI : MonoBehaviour
         currentTab = tab;
 
         // Active le bon sous-panel, désactive les autres
-        if (chatPanel  != null) chatPanel .SetActive(tab == SocialTab.Chat);
         if (guildPanel != null) guildPanel.SetActive(tab == SocialTab.Guild);
         if (mailsPanel != null) mailsPanel.SetActive(tab == SocialTab.Mail);
 
         // Visuels onglets
-        if (chatTab  != null) chatTab .image.color = tab == SocialTab.Chat  ? TAB_ACTIVE : TAB_INACTIVE;
         if (guildTab != null) guildTab.image.color = tab == SocialTab.Guild ? TAB_ACTIVE : TAB_INACTIVE;
         if (mailTab  != null) mailTab .image.color = tab == SocialTab.Mail  ? TAB_ACTIVE : TAB_INACTIVE;
 

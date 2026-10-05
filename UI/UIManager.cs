@@ -87,8 +87,11 @@ public class UIManager : MonoBehaviour
 
         // Onglets Social — ouvrent SocialPanel sur l'onglet correspondant
         if (GameControls.OpenMail)  SocialUI.Instance?.ToggleTab(SocialUI.SocialTab.Mail);
-        if (GameControls.OpenChat)  SocialUI.Instance?.ToggleTab(SocialUI.SocialTab.Chat);
         if (GameControls.OpenGuild) SocialUI.Instance?.ToggleTab(SocialUI.SocialTab.Guild);
+
+        // Chat — dock HUD permanent séparé, pas un onglet Social (voir ChatUI.cs/SocialUI.cs,
+        // 2026-10-05) — cette touche montre/cache le dock au lieu d'ouvrir un panel.
+        if (GameControls.OpenChat) ChatUI.Instance?.ToggleVisibility();
     }
 
     // =========================================================
