@@ -527,6 +527,11 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// depuis TickPatrolRoute() quand loopRoute = false et que le dernier point vient d'idle.</summary>
     private void Disappear()
     {
+        // Échoue toute quête Escort pas encore entièrement terminée visant ce PNJ — le joueur a
+        // raté la fenêtre pour lui parler au point final avant qu'il ne disparaisse (même
+        // mécanisme que la mort, voir QuestSystem.FailEscortQuestsFor — Florian, 2026-10-05).
+        QuestSystem.Instance?.FailEscortQuestsFor(data);
+
         _routeHidden    = true;
         _routeHideTimer = hiddenDurationSeconds;
         SetRouteVisualAndCollision(false);

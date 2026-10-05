@@ -587,9 +587,12 @@ public class QuestSystem : MonoBehaviour
         }
     }
 
-    /// <summary>Échoue toute quête Active ayant un objectif Escort NON COMPLET visant ce PNJ —
-    /// appelé depuis PNJ.Die() quand un PNJ escorté meurt avant d'atteindre son dernier point.
-    /// Un objectif déjà complet (le PNJ était déjà arrivé) n'échoue jamais rétroactivement.</summary>
+    /// <summary>Échoue toute quête Active, PAS ENCORE ENTIÈREMENT TERMINÉE, ayant un objectif
+    /// Escort visant ce PNJ — appelé depuis PNJ.Die() (mort avant la fin de la route) ET
+    /// PNJ.Disappear() (le joueur a raté la fenêtre pour lui parler au point final avant qu'il ne
+    /// disparaisse — Florian, 2026-10-05). "Pas terminée" couvre les DEUX objectifs de la
+    /// séquence Escort+TalkTo, pas seulement l'Escort lui-même : atteindre le point sans avoir
+    /// pu parler ensuite échoue aussi, pas seulement ne jamais atteindre le point.</summary>
     public void FailEscortQuestsFor(PNJData pnjData)
     {
         if (pnjData == null) return;
@@ -599,13 +602,16 @@ public class QuestSystem : MonoBehaviour
             if (_states[kvp.Key] != QuestState.Active) continue;
 
             QuestData quest = kvp.Value;
-            bool hasUnmetEscort = false;
 
+            // Cette quête concerne-t-elle vraiment l'escorte de CE PNJ ? (au moins un objectif
+            // Escort le cible) — sinon un simple TalkTo partagé avec ce PNJ ailleurs dans la
+            // quête ne doit jamais déclencher un reset.
+            bool isEscortQuestForThisPNJ = false;
             foreach (var obj in quest.objectives)
-                if (obj.type == QuestObjectiveType.Escort && obj.targetPNJ == pnjData && !obj.IsComplete)
-                    hasUnmetEscort = true;
+                if (obj.type == QuestObjectiveType.Escort && obj.targetPNJ == pnjData) { isEscortQuestForThisPNJ = true; break; }
+            if (!isEscortQuestForThisPNJ) continue;
 
-            if (!hasUnmetEscort) continue;
+            if (quest.AllObjectivesComplete()) continue; // déjà tout fait (Completed, en attente de rendu) — pas un échec
 
             // Reset complet (comme AbandonQuest) plutôt qu'un état Failed persistant — la quête
             // redevient directement proposable au prochain cycle du PNJ (Florian, 2026-10-05).
@@ -615,7 +621,7 @@ public class QuestSystem : MonoBehaviour
             _activeData.Remove(quest.questID);
             quest.ResetProgress();
 
-            Debug.Log($"[QUEST] Échouée (escorte) : {quest.questName} — {pnjData.pnjName} est mort avant d'arriver. Remise à zéro.");
+            Debug.Log($"[QUEST] Échouée (escorte) : {quest.questName} — {pnjData.pnjName} n'est plus disponible (mort ou disparu sans validation). Remise à zéro.");
 
             GameEventBus.Publish(new QuestEvent
             {
