@@ -172,8 +172,8 @@ public class ChatUI : MonoBehaviour
     private string ChannelPrefix(ChatChannel channel) => channel switch
     {
         ChatChannel.World      => "[Monde]",
-        ChatChannel.Guild      => "[Famille]",
-        ChatChannel.Private    => "[Chuchotement]",
+        ChatChannel.Guild      => "[Guilde]",
+        ChatChannel.Private    => "[MP]",
         ChatChannel.Nearby     => "[Alentour]",
         ChatChannel.System     => "[Système]",
         ChatChannel.AetherEcho => "[Écho d'Aether]",
@@ -201,6 +201,17 @@ public class ChatUI : MonoBehaviour
             string sender = string.IsNullOrEmpty(line.sender) ? "" : $"{line.sender} : ";
             txt.text  = $"{ChannelPrefix(line.channel)} {sender}{line.text}";
             txt.color = ChannelColor(line.channel);
+
+            // Raccourci MP — clic sur une ligne avec expéditeur (pas Système) ouvre directement
+            // sa conversation dans SocialUI (Florian, 2026-10-05). Toute la ligne est cliquable,
+            // pas juste le nom (pas de sous-span cliquable sur un TMP simple sans tag <link>).
+            if (!string.IsNullOrEmpty(line.sender))
+            {
+                string captured = line.sender;
+                var btn = go.GetComponent<Button>() ?? go.AddComponent<Button>();
+                btn.onClick.RemoveAllListeners();
+                btn.onClick.AddListener(() => SocialUI.Instance?.OpenDMWith(captured));
+            }
         }
     }
 

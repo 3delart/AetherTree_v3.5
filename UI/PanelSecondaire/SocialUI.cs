@@ -11,10 +11,12 @@ using System.Collections.Generic;
 //   GameControls.OpenMail  → ouvre sur onglet Mail
 //   GameControls.OpenGuild → ouvre sur onglet Guild
 //
-// Chat retiré d'ici (2026-10-05, Florian) — l'ancien onglet Chat n'a jamais été qu'un stub vide ;
-// le vrai chat est maintenant un dock HUD permanent séparé (voir UI/PanelFixe/ChatUI.cs).
-// GameControls.OpenChat (touche V) appelle maintenant ChatUI.Instance?.ToggleVisibility()
-// directement (voir UIManager.cs), plus SocialUI du tout.
+// GameControls.OpenChat (touche V) ouvre/cache le dock HUD permanent séparé (voir
+// UI/PanelFixe/ChatUI.cs), PAS l'onglet Chat ci-dessous — les deux sont liés différemment :
+// l'onglet Chat ici = conversations privées PAR JOUEUR (DM), voir DirectMessageSystem.cs. Un clic
+// sur le nom d'un expéditeur dans le dock ChatUI appelle OpenDMWith(nom) pour ouvrir directement
+// la bonne conversation ici (2026-10-05, Florian — re-construit après un premier retrait par
+// erreur du stub vide précédent, confondu avec le dock global).
 //
 // Si déjà ouvert sur le bon onglet → ferme.
 // Cliquer un onglet → swap sans fermer.
@@ -22,7 +24,15 @@ using System.Collections.Generic;
 // Hiérarchie Unity :
 //   SocialPanel (racine)
 //     SocialTitlePanel / SocialCloseButton
-//     SocialTabs : GuildTab | MailTab
+//     SocialTabs : ChatTab | GuildTab | MailTab
+//     ChatPanel (onglet DM)
+//       ConversationListPanel
+//         ConversationScroll > Viewport > Content   (un ConversationEntryPrefab par conversation :
+//                                                      Avatar/Initials, Name, LastMessage, UnreadDot)
+//       ThreadPanel
+//         ThreadHeader : ThreadName (TMP)
+//         ThreadScroll > Viewport > Content          (un ThreadLinePrefab par message — TMP simple)
+//         ThreadInputBar : ThreadInput (TMP_InputField) | ThreadSendButton
 //     GuildPanel   ← stub pour l'instant
 //     MailsPanel
 //       MailsListPanel
@@ -47,12 +57,26 @@ public class SocialUI : MonoBehaviour
     public Button     closeButton;
 
     [Header("Onglets")]
+    public Button chatTab;
     public Button guildTab;
     public Button mailTab;
 
     [Header("Sous-panels")]
+    public GameObject chatPanel;
     public GameObject guildPanel;
     public GameObject mailsPanel;
+
+    // ── DM (Chat privé par joueur) ──────────────────────────────
+    [Header("DM — Liste conversations")]
+    public Transform  conversationContent;
+    public GameObject conversationEntryPrefab;
+
+    [Header("DM — Fil de conversation")]
+    public TextMeshProUGUI threadHeaderName;
+    public Transform        threadContent;
+    public GameObject       threadLinePrefab;
+    public TMP_InputField   threadInput;
+    public Button            threadSendButton;
 
     // ── MAILS ─────────────────────────────────────────────────
     [Header("Filtre mails")]
@@ -89,12 +113,15 @@ public class SocialUI : MonoBehaviour
     // =========================================================
     // ÉTAT INTERNE
     // =========================================================
-    public enum SocialTab { None, Guild, Mail }
+    public enum SocialTab { None, Chat, Guild, Mail }
 
     private SocialTab   currentTab    = SocialTab.None;
     private MailFilter  currentFilter = MailFilter.All;
     private MailMessage selectedMail  = null;
     private bool        _isOpen       = false;
+
+    private string _selectedConversation = null; // nom du joueur, "" / null = aucune sélection
+    private Player _player;
 
     private enum MailFilter { All, Unread, System, Player }
 
@@ -119,6 +146,7 @@ public class SocialUI : MonoBehaviour
         closeButton?.onClick.AddListener(Close);
 
         // Onglets
+        chatTab? .onClick.AddListener(() => SwitchTab(SocialTab.Chat));
         guildTab?.onClick.AddListener(() => SwitchTab(SocialTab.Guild));
         mailTab? .onClick.AddListener(() => SwitchTab(SocialTab.Mail));
 
@@ -132,6 +160,10 @@ public class SocialUI : MonoBehaviour
         claimButton? .onClick.AddListener(OnClaimClicked);
         deleteButton?.onClick.AddListener(OnDeleteClicked);
         replyButton? .onClick.AddListener(OnReplyClicked);
+
+        // DM
+        threadSendButton?.onClick.AddListener(OnThreadSendClicked);
+        threadInput      ?.onSubmit.AddListener(_ => OnThreadSendClicked());
 
         ClearMailDetail();
     }
@@ -164,6 +196,20 @@ public class SocialUI : MonoBehaviour
         else OpenOnTab(tab);
     }
 
+    /// <summary>Ouvre directement sur la conversation DM d'un joueur — appelé par ChatUI quand on
+    /// clique le nom d'un expéditeur dans le dock global (raccourci "MP", Florian 2026-10-05).
+    /// Crée la conversation si elle n'existe pas encore (toujours quelque chose à afficher).</summary>
+    public void OpenDMWith(string playerName)
+    {
+        if (string.IsNullOrEmpty(playerName)) return;
+        DirectMessageSystem.Instance?.GetOrCreateConversation(playerName);
+        _selectedConversation = playerName;
+
+        _isOpen = true;
+        if (socialPanel != null) socialPanel.SetActive(true);
+        SwitchTab(SocialTab.Chat);
+    }
+
     public void Close()
     {
         _isOpen    = false;
@@ -181,10 +227,12 @@ public class SocialUI : MonoBehaviour
         currentTab = tab;
 
         // Active le bon sous-panel, désactive les autres
+        if (chatPanel  != null) chatPanel .SetActive(tab == SocialTab.Chat);
         if (guildPanel != null) guildPanel.SetActive(tab == SocialTab.Guild);
         if (mailsPanel != null) mailsPanel.SetActive(tab == SocialTab.Mail);
 
         // Visuels onglets
+        if (chatTab  != null) chatTab .image.color = tab == SocialTab.Chat  ? TAB_ACTIVE : TAB_INACTIVE;
         if (guildTab != null) guildTab.image.color = tab == SocialTab.Guild ? TAB_ACTIVE : TAB_INACTIVE;
         if (mailTab  != null) mailTab .image.color = tab == SocialTab.Mail  ? TAB_ACTIVE : TAB_INACTIVE;
 
@@ -194,6 +242,98 @@ public class SocialUI : MonoBehaviour
             RefreshMailList();
             ClearMailDetail();
         }
+
+        if (tab == SocialTab.Chat)
+        {
+            RefreshConversationList();
+            RefreshThread();
+        }
+    }
+
+    // =========================================================
+    // DM (CHAT PRIVÉ PAR JOUEUR)
+    // =========================================================
+
+    /// <summary>Liste des conversations, triée alphabétiquement — pas d'ordre "dernier message"
+    /// pour l'instant (pas de timestamp sur ChatLine), amélioration possible plus tard.</summary>
+    private void RefreshConversationList()
+    {
+        if (conversationContent == null) return;
+
+        foreach (Transform child in conversationContent)
+            Destroy(child.gameObject);
+
+        var conversations = DirectMessageSystem.Instance?.GetConversations();
+        if (conversations == null || conversationEntryPrefab == null) return;
+
+        foreach (var conv in conversations)
+        {
+            var go = Instantiate(conversationEntryPrefab, conversationContent);
+
+            var nameText = go.transform.Find("Name")?.GetComponent<TextMeshProUGUI>();
+            if (nameText != null) nameText.text = conv.otherPlayerName;
+
+            var lastMsgText = go.transform.Find("LastMessage")?.GetComponent<TextMeshProUGUI>();
+            if (lastMsgText != null)
+                lastMsgText.text = conv.messages.Count > 0 ? conv.messages[conv.messages.Count - 1].text : "";
+
+            var btn = go.GetComponent<Button>();
+            if (btn != null)
+            {
+                string captured = conv.otherPlayerName;
+                btn.onClick.AddListener(() => SelectConversation(captured));
+            }
+        }
+    }
+
+    private void SelectConversation(string playerName)
+    {
+        _selectedConversation = playerName;
+        RefreshThread();
+    }
+
+    private void RefreshThread()
+    {
+        if (threadHeaderName != null)
+            threadHeaderName.text = _selectedConversation ?? "";
+
+        if (threadContent == null) return;
+
+        foreach (Transform child in threadContent)
+            Destroy(child.gameObject);
+
+        if (string.IsNullOrEmpty(_selectedConversation)) return;
+
+        var conv = DirectMessageSystem.Instance?.GetOrCreateConversation(_selectedConversation);
+        if (conv == null || threadLinePrefab == null) return;
+
+        foreach (var line in conv.messages)
+        {
+            var go  = Instantiate(threadLinePrefab, threadContent);
+            var txt = go.GetComponentInChildren<TextMeshProUGUI>();
+            if (txt != null) txt.text = $"{line.sender} : {line.text}";
+        }
+    }
+
+    private void OnThreadSendClicked()
+    {
+        if (threadInput == null || string.IsNullOrWhiteSpace(threadInput.text)) return;
+        if (string.IsNullOrEmpty(_selectedConversation)) return;
+        if (_player == null) _player = FindObjectOfType<Player>();
+        if (_player == null) return;
+
+        bool sent = DirectMessageSystem.Instance != null
+            && DirectMessageSystem.Instance.SendDM(_selectedConversation, threadInput.text, _player);
+        if (sent) threadInput.text = "";
+    }
+
+    /// <summary>Appelé par DirectMessageSystem après un SendDM — rafraîchit la liste (dernier
+    /// message) et le fil si c'est la conversation actuellement affichée.</summary>
+    public void RefreshDMIfOpen(string playerName)
+    {
+        if (!_isOpen || currentTab != SocialTab.Chat) return;
+        RefreshConversationList();
+        if (_selectedConversation == playerName) RefreshThread();
     }
 
     // =========================================================
