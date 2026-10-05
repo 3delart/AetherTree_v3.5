@@ -12,8 +12,11 @@ using System.Collections.Generic;
 // HandleDialogueAction) — panel INDÉPENDANT de PNJWindowUI (qui ne gère que
 // les PNJ Merchant/shopSpecialty, voir PNJTypeExtensions.GetTabs()).
 //
-// Une carte par quête de pnjData.availableQuests :
-//   - TurnedIn déjà rendue → pas affichée (plus rien à offrir ce PNJ dessus).
+// Une carte par quête de pnjData.availableQuests, TOUJOURS affichée (y compris TurnedIn — overlay
+// "Completed", Florian 2026-10-05), triée par priorité d'état (StatusPriority) : à rendre → en
+// cours → disponible → verrouillée → terminée (tout en bas).
+//   - TurnedIn (pas une quotidienne resettable) → overlay CompletedOverlay, carte non cliquable,
+//     badge/cadenas/texte prérequis tous masqués — rien d'autre à faire dessus.
 //   - questRank == Secret ET pas encore accessible (CanAccept faux, état
 //     None) → carte verrouillée, texte "Secret" (ne révèle PAS le vrai
 //     prérequis). Dès que CanAccept devient vrai, redevient une carte
@@ -30,14 +33,16 @@ using System.Collections.Generic;
 //
 // Prefab de carte (questCardPrefab) attendu :
 //   QuestCard (racine, avec un Button)
-//     ├── CardBorder       (Image — PREMIER enfant, légèrement plus grand que la carte,
-//     │                      teinté par QuestRank derrière le reste, effet cadre coloré)
-//     ├── RankLabel        (TextMeshProUGUI)
-//     ├── QuestName        (TextMeshProUGUI)
-//     ├── RequirementText  (TextMeshProUGUI) — prérequis ou "Secret" si verrouillée
-//     ├── LockOverlay      (GameObject — masque la carte quand verrouillée)
-//     └── StatusBadge      (GameObject — Image pill, optionnel pour l'instant)
-//           └── BadgeText  (TextMeshProUGUI, enfant de StatusBadge)
+//     ├── CardBorder        (Image — PREMIER enfant, légèrement plus grand que la carte,
+//     │                       teinté par QuestRank derrière le reste, effet cadre coloré)
+//     ├── RankLabel         (TextMeshProUGUI)
+//     ├── QuestName         (TextMeshProUGUI)
+//     ├── RequirementText   (TextMeshProUGUI) — prérequis ou "Secret" si verrouillée
+//     ├── LockOverlay       (GameObject — masque la carte quand verrouillée)
+//     ├── CompletedOverlay  (GameObject — masque la carte quand TurnedIn, contenu libre,
+//     │                       ex: un check vert + "Terminée" statique comme LockOverlay/"Locked")
+//     └── StatusBadge       (GameObject — Image pill, optionnel pour l'instant)
+//           └── BadgeText   (TextMeshProUGUI, enfant de StatusBadge)
 // =============================================================
 
 public class PNJQuestBoardUI : MonoBehaviour
@@ -147,6 +152,26 @@ public class PNJQuestBoardUI : MonoBehaviour
     // GRILLE
     // =========================================================
 
+    private class QuestCardEntry
+    {
+        public QuestData  quest;
+        public QuestState state;
+        public bool       isLocked;
+        public int        priority;
+    }
+
+    /// <summary>Priorité d'affichage — plus petit = plus haut dans la grille. Ordre choisi avec
+    /// Florian (2026-10-05) : à rendre → en cours → disponible → verrouillée → terminée (tout en
+    /// bas, overlay "Completed", plus rien à y faire).</summary>
+    private static int StatusPriority(QuestState state, bool isLocked)
+    {
+        if (state == QuestState.Completed) return 0;
+        if (state == QuestState.Active)    return 1;
+        if (state == QuestState.None && !isLocked) return 2;
+        if (state == QuestState.None && isLocked)  return 3;
+        return 4; // TurnedIn — terminée
+    }
+
     private void RefreshGrid()
     {
         foreach (var go in _cardObjects)
@@ -156,29 +181,38 @@ public class PNJQuestBoardUI : MonoBehaviour
         if (_pnjData?.availableQuests == null || questGrid == null || questCardPrefab == null) return;
 
         int disponible = 0, enCours = 0, aRendre = 0;
+        var entries = new List<QuestCardEntry>();
 
         foreach (var quest in _pnjData.availableQuests)
         {
             if (quest == null || QuestSystem.Instance == null) continue;
 
-            QuestState state      = QuestSystem.Instance.GetQuestState(quest);
+            QuestState state = QuestSystem.Instance.GetQuestState(quest);
 
             // Quotidienne TurnedIn mais nouveau jour réel commencé — traitée comme neuve (None)
-            // pour tout le reste de la boucle (isLocked, badge...), pas un cas spécial de plus.
+            // pour tout le reste (isLocked, badge, tri...), pas un cas spécial de plus.
             if (state == QuestState.TurnedIn && QuestSystem.Instance.IsDailyResettable(quest, _player))
                 state = QuestState.None;
-
-            if (state == QuestState.TurnedIn) continue; // plus rien à offrir sur ce PNJ
 
             bool canAccept = QuestSystem.Instance.CanAccept(quest, _player);
             bool isLocked  = state == QuestState.None && !canAccept;
 
-            if (state == QuestState.Active)     enCours++;
-            else if (state == QuestState.Completed) aRendre++;
-            else if (!isLocked)                 disponible++;
+            if (state == QuestState.Active)          enCours++;
+            else if (state == QuestState.Completed)  aRendre++;
+            else if (state == QuestState.None && !isLocked) disponible++;
 
-            SpawnCard(quest, state, isLocked);
+            entries.Add(new QuestCardEntry
+            {
+                quest    = quest,
+                state    = state,
+                isLocked = isLocked,
+                priority = StatusPriority(state, isLocked),
+            });
         }
+
+        entries.Sort((a, b) => a.priority.CompareTo(b.priority));
+        foreach (var entry in entries)
+            SpawnCard(entry.quest, entry.state, entry.isLocked);
 
         if (subtitleText != null)
             subtitleText.text = $"{disponible} disponible(s) · {enCours} en cours · {aRendre} à rendre";
@@ -213,12 +247,23 @@ public class PNJQuestBoardUI : MonoBehaviour
         var nameText = content.Find("QuestName")?.GetComponent<TextMeshProUGUI>();
         if (nameText != null) nameText.text = isSecretLocked ? "???" : quest.questName;
 
-        var statusBadge = content.Find("StatusBadge")?.gameObject;
-        var badgeText    = statusBadge?.transform.Find("BadgeText")?.GetComponent<TextMeshProUGUI>();
-        var lockIcon     = content.Find("LockOverlay")?.gameObject;
-        var reqText      = content.Find("RequirementText")?.GetComponent<TextMeshProUGUI>();
+        var statusBadge     = content.Find("StatusBadge")?.gameObject;
+        var badgeText       = statusBadge?.transform.Find("BadgeText")?.GetComponent<TextMeshProUGUI>();
+        var lockIcon        = content.Find("LockOverlay")?.gameObject;
+        var reqText         = content.Find("RequirementText")?.GetComponent<TextMeshProUGUI>();
+        var completedOverlay = content.Find("CompletedOverlay")?.gameObject;
 
-        if (isLocked)
+        bool isDone = state == QuestState.TurnedIn; // terminée pour de bon — plus rien à y faire
+
+        completedOverlay?.SetActive(isDone);
+
+        if (isDone)
+        {
+            statusBadge?.SetActive(false);
+            lockIcon?.SetActive(false);
+            reqText?.gameObject.SetActive(false);
+        }
+        else if (isLocked)
         {
             statusBadge?.SetActive(false);
             lockIcon?.SetActive(true);
@@ -252,13 +297,14 @@ public class PNJQuestBoardUI : MonoBehaviour
                 };
         }
 
+        bool isClickable = !isLocked && !isDone;
         var button = go.GetComponent<Button>();
         if (button != null)
         {
-            button.interactable = !isLocked;
+            button.interactable = isClickable;
             var captured = quest;
             button.onClick.RemoveAllListeners();
-            if (!isLocked) button.onClick.AddListener(() => OpenDetail(captured));
+            if (isClickable) button.onClick.AddListener(() => OpenDetail(captured));
         }
     }
 
