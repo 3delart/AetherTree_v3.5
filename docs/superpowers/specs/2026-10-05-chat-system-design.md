@@ -174,14 +174,26 @@ public enum ConsumableType
 }
 ```
 
-**Important — PAS branché dans `ConsoBarUI.UseConsumable`** : contrairement aux autres types
-(effet instantané à l'usage), l'Écho d'Aether n'a pas d'effet tant que le joueur n'a pas
-réellement envoyé un message — le consommer au moment du "clic d'usage" normal (comme une
-Potion) serait faux (le joueur pourrait annuler sans rien taper). C'est `ChatSystem
-.TrySendPlayerMessage` seul qui consomme, au moment de l'envoi réel. Si l'item est droppé dans
-une case de ConsoBar/inventaire, un double-clic/clic dessus doit simplement **ouvrir le chat
-avec Écho d'Aether pré-sélectionné comme canal d'envoi** plutôt que de le "consommer" — détail
-d'intégration UI à trancher en tâche de plan avec Florian s'il construit cette entrée.
+**`ConsoBarUI.UseConsumable` — branche dédiée, PAS le chemin effet-instantané des autres types** :
+contrairement à Potion/Food/etc., l'Écho d'Aether n'a pas d'effet tant que le joueur n'a pas
+réellement envoyé un message — le consommer au moment du "clic d'usage" normal serait faux (le
+joueur pourrait annuler sans rien taper). Décision finale (Florian, 2026-10-05) :
+
+- Utiliser un Écho d'Aether (ConsoBar OU double-clic inventaire — les deux passent déjà par
+  `UseConsumable`) ouvre un **petit panel dédié** (`UI/Shared/AetherEchoPromptUI.cs`, même
+  famille que `ConfirmationUI` déjà présent côté Abandon de quête) : un champ de saisie + 2
+  boutons, **Valider** (envoie réellement via `ChatSystem.TrySendPlayerMessage(AetherEcho, texte,
+  player)` — qui consomme l'item à ce moment précis, pas avant) et **Annuler** (ferme le panel,
+  rien n'est touché — ni l'item ni l'inventaire).
+- `UseConsumable` lui-même ne consomme RIEN pour `AetherEcho` — il se contente d'ouvrir le panel
+  et de `return` immédiatement, exactement comme s'il s'agissait d'un type "pas encore implémenté"
+  côté effet instantané (parce que ça en est un, volontairement).
+- Le panel ne connaît pas d'instance spécifique à consommer — il délègue entièrement à
+  `ChatSystem.TrySendPlayerMessage`, qui re-scanne l'inventaire lui-même (`FindAetherEchoData`,
+  déjà spécifié plus haut) au moment de l'envoi. Pas de risque de consommer un exemplaire
+  "périmé" si l'inventaire a changé entre l'ouverture du panel et le clic Valider.
+- Ce même panel n'est PAS lié à l'ouverture de `ChatUI` — fonctionne même si la fenêtre de chat
+  n'est pas affichée à l'écran (`ChatSystem.TrySendPlayerMessage` ne dépend d'aucun état UI).
 
 ### `UI/PanelFixe/ChatUI.cs` (nouveau, HUD permanent — Florian construit la Hierarchy/prefabs,
 le script fait les `Find()` comme pour les autres UI de cette session)
@@ -232,3 +244,7 @@ le script fait les `Find()` comme pour les autres UI de cette session)
 7. Changer de map (portail/donjon) puis retester 1-6 → tout doit continuer à fonctionner (vérifie
    que `Resubscribe()` est bien câblé, même bug que celui trouvé sur QuestTracker/QuestJournal
    cette session).
+8. Utiliser un Écho d'Aether depuis la ConsoBar (ou double-clic inventaire) → ouvre le panel de
+   saisie, ne consomme RIEN tant que non validé. Annuler → panel fermé, item toujours en
+   inventaire. Valider avec un texte → item consommé, ligne Écho d'Aether postée — fonctionne
+   même si `ChatUI` n'est pas à l'écran au moment de l'usage.
