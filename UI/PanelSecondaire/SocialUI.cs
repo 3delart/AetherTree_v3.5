@@ -30,7 +30,7 @@ using System.Collections.Generic;
 //         ConversationScroll > Viewport > Content   (un ConversationEntryPrefab par conversation :
 //                                                      Avatar/Initials, Name, LastMessage, UnreadDot)
 //       ThreadPanel
-//         ThreadHeader : ThreadName (TMP)
+//         ThreadHeader : ThreadName (TMP) | DeleteConversationButton (supprime fil + entrée liste)
 //         ThreadScroll > Viewport > Content          (un ThreadLinePrefab par message — TMP simple)
 //         ThreadInputBar : ThreadInput (TMP_InputField) | ThreadSendButton
 //     GuildPanel   ← stub pour l'instant
@@ -77,6 +77,7 @@ public class SocialUI : MonoBehaviour
     public GameObject       threadLinePrefab;
     public TMP_InputField   threadInput;
     public Button            threadSendButton;
+    public Button            deleteConversationButton; // supprime le fil ENTIER (thread + entrée liste)
 
     // ── MAILS ─────────────────────────────────────────────────
     [Header("Filtre mails")]
@@ -164,6 +165,7 @@ public class SocialUI : MonoBehaviour
         // DM
         threadSendButton?.onClick.AddListener(OnThreadSendClicked);
         threadInput      ?.onSubmit.AddListener(_ => OnThreadSendClicked());
+        deleteConversationButton?.onClick.AddListener(OnDeleteConversationClicked);
 
         ClearMailDetail();
     }
@@ -353,6 +355,20 @@ public class SocialUI : MonoBehaviour
         bool sent = DirectMessageSystem.Instance != null
             && DirectMessageSystem.Instance.SendDM(_selectedConversation, text, _player);
         if (sent) threadInput.text = "";
+    }
+
+    /// <summary>Supprime la conversation entière (fil + entrée dans la liste) — pas juste un
+    /// message. Désélectionne après coup : RefreshThread() sur _selectedConversation == null
+    /// vide le fil (voir son propre early-return).</summary>
+    private void OnDeleteConversationClicked()
+    {
+        if (string.IsNullOrEmpty(_selectedConversation)) return;
+
+        DirectMessageSystem.Instance?.DeleteConversation(_selectedConversation);
+        _selectedConversation = null;
+
+        RefreshConversationList();
+        RefreshThread();
     }
 
     /// <summary>Appelé par DirectMessageSystem après un SendDM — rafraîchit la liste (dernier

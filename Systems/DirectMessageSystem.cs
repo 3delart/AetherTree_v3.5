@@ -63,4 +63,22 @@ public class DirectMessageSystem : MonoBehaviour
         SocialUI.Instance?.RefreshDMIfOpen(targetPlayerName);
         return true;
     }
+
+    /// <summary>Supprime entièrement la conversation avec ce joueur (fil + entrée dans la liste) —
+    /// appelé par SocialUI sur clic du bouton Supprimer. Renvoie false si aucune conversation
+    /// n'existait avec ce nom (no-op silencieux côté appelant).</summary>
+    public bool DeleteConversation(string otherPlayerName)
+    {
+        if (string.IsNullOrEmpty(otherPlayerName)) return false;
+
+        for (int i = 0; i < _conversations.Count; i++)
+        {
+            if (_conversations[i].otherPlayerName == otherPlayerName)
+            {
+                _conversations.RemoveAt(i);
+                return true;
+            }
+        }
+        return false;
+    }
 }
