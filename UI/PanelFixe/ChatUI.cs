@@ -23,11 +23,11 @@ using System.Collections.Generic;
 //   │     └── Content              (Transform — parent des lignes instanciées, assigner à
 //   │                                messageContent)
 //   ├── FilterBar
-//   │     ├── FilterWorld           (Toggle)
-//   │     ├── FilterGuild           (Toggle)
-//   │     ├── FilterPrivate         (Toggle)
-//   │     ├── FilterNearby          (Toggle)
-//   │     └── FilterSystem          (Toggle)
+//   │     ├── FilterWorld           (Button — pas Toggle, état géré en script avec retint couleur)
+//   │     ├── FilterGuild           (Button)
+//   │     ├── FilterPrivate         (Button)
+//   │     ├── FilterNearby          (Button)
+//   │     └── FilterSystem          (Button)
 //   │     (pas de FilterAetherEcho — ignore toujours le filtre)
 //   ├── InputBar
 //   │     ├── ChannelPicker          (TMP_Dropdown)
@@ -48,12 +48,21 @@ public class ChatUI : MonoBehaviour
     public Transform  messageContent;
     public GameObject chatLinePrefab;
 
-    [Header("Filtres (un Toggle par canal, PAS AetherEcho — toujours affiché)")]
-    public Toggle filterWorld;
-    public Toggle filterGuild;
-    public Toggle filterPrivate;
-    public Toggle filterNearby;
-    public Toggle filterSystem;
+    [Header("Filtres (un Button par canal, PAS AetherEcho — toujours affiché)")]
+    public Button filterWorld;
+    public Button filterGuild;
+    public Button filterPrivate;
+    public Button filterNearby;
+    public Button filterSystem;
+
+    // Un Button n'a pas d'état on/off intégré (contrairement à Toggle) — géré ici à la main, avec
+    // retint du bouton selon la couleur du canal (actif = couleur pleine, inactif = gris).
+    private bool _showWorld   = true;
+    private bool _showGuild   = true;
+    private bool _showPrivate = true;
+    private bool _showNearby  = true;
+    private bool _showSystem  = true;
+    private static readonly Color FILTER_OFF_COLOR = new Color(0.3f, 0.3f, 0.35f, 0.5f);
 
     [Header("Couleurs par canal")]
     public Color colorWorld      = Color.white;
@@ -92,11 +101,19 @@ public class ChatUI : MonoBehaviour
     {
         Subscribe();
 
-        filterWorld  ?.onValueChanged.AddListener(_ => _dirty = true);
-        filterGuild  ?.onValueChanged.AddListener(_ => _dirty = true);
-        filterPrivate?.onValueChanged.AddListener(_ => _dirty = true);
-        filterNearby ?.onValueChanged.AddListener(_ => _dirty = true);
-        filterSystem ?.onValueChanged.AddListener(_ => _dirty = true);
+        filterWorld  ?.onClick.AddListener(() => ToggleFilter(filterWorld,   colorWorld,   ref _showWorld));
+        filterGuild  ?.onClick.AddListener(() => ToggleFilter(filterGuild,   colorGuild,   ref _showGuild));
+        filterPrivate?.onClick.AddListener(() => ToggleFilter(filterPrivate, colorPrivate, ref _showPrivate));
+        filterNearby ?.onClick.AddListener(() => ToggleFilter(filterNearby,  colorNearby,  ref _showNearby));
+        filterSystem ?.onClick.AddListener(() => ToggleFilter(filterSystem,  colorSystem,  ref _showSystem));
+
+        // État visuel initial (tous actifs par défaut) — sans ça les boutons restent dans leur
+        // couleur Unity par défaut jusqu'au premier clic, incohérent avec l'état réel (tout visible).
+        ApplyFilterVisual(filterWorld,   colorWorld,   _showWorld);
+        ApplyFilterVisual(filterGuild,   colorGuild,   _showGuild);
+        ApplyFilterVisual(filterPrivate, colorPrivate, _showPrivate);
+        ApplyFilterVisual(filterNearby,  colorNearby,  _showNearby);
+        ApplyFilterVisual(filterSystem,  colorSystem,  _showSystem);
 
         sendButton   ?.onClick.AddListener(OnSendClicked);
         inputField   ?.onSubmit.AddListener(_ => OnSendClicked()); // Entrée envoie aussi
@@ -150,13 +167,27 @@ public class ChatUI : MonoBehaviour
     private bool IsChannelVisible(ChatChannel channel) => channel switch
     {
         ChatChannel.AetherEcho => true, // ignore toujours le filtre
-        ChatChannel.World      => filterWorld   == null || filterWorld.isOn,
-        ChatChannel.Guild      => filterGuild   == null || filterGuild.isOn,
-        ChatChannel.Private    => filterPrivate == null || filterPrivate.isOn,
-        ChatChannel.Nearby     => filterNearby  == null || filterNearby.isOn,
-        ChatChannel.System     => filterSystem  == null || filterSystem.isOn,
+        ChatChannel.World      => _showWorld,
+        ChatChannel.Guild      => _showGuild,
+        ChatChannel.Private    => _showPrivate,
+        ChatChannel.Nearby     => _showNearby,
+        ChatChannel.System     => _showSystem,
         _                      => true,
     };
+
+    private void ToggleFilter(Button button, Color activeColor, ref bool state)
+    {
+        state = !state;
+        ApplyFilterVisual(button, activeColor, state);
+        _dirty = true;
+    }
+
+    private void ApplyFilterVisual(Button button, Color activeColor, bool isOn)
+    {
+        if (button == null) return;
+        var img = button.image;
+        if (img != null) img.color = isOn ? activeColor : FILTER_OFF_COLOR;
+    }
 
     private Color ChannelColor(ChatChannel channel) => channel switch
     {
