@@ -24,9 +24,10 @@ public enum ChatChannel { Guild, Private, Nearby, System, AetherEcho }
 
 public class ChatLine
 {
-    public ChatChannel channel;
-    public string      sender; // "" pour une ligne Système
-    public string      text;
+    public ChatChannel   channel;
+    public string        sender; // "" pour une ligne Système
+    public string        text;
+    public System.DateTime timestamp;
 }
 
 public class ChatSystem : MonoBehaviour
@@ -171,11 +172,12 @@ public class ChatSystem : MonoBehaviour
 
     private void AddLine(ChatChannel channel, string sender, string text)
     {
-        _history.Add(new ChatLine { channel = channel, sender = sender, text = text });
+        var now = System.DateTime.Now;
+        _history.Add(new ChatLine { channel = channel, sender = sender, text = text, timestamp = now });
         if (_history.Count > MAX_HISTORY) _history.RemoveAt(0);
 
         Debug.Log($"[CHATSYS-DIAG] AddLine — canal={channel}, sender={sender}, texte={text}, historique={_history.Count} ligne(s). Publication GameEventBus.OnChatMessage...");
-        GameEventBus.Publish(new ChatMessageEvent { channel = channel, sender = sender, text = text });
+        GameEventBus.Publish(new ChatMessageEvent { channel = channel, sender = sender, text = text, timestamp = now });
     }
 
     private void PostSystemMessage(string text) => AddLine(ChatChannel.System, "", text);

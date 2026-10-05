@@ -42,7 +42,9 @@ using System.Collections.Generic;
 //   │     ├── InputField             (TMP_InputField)
 //   │     └── SendButton             (Button)
 //   └── ChatLinePrefab (prefab séparé, pas un enfant actif — glissé en Inspector)
-//         └── (TextMeshProUGUI à la racine du prefab)
+//         ├── (TextMeshProUGUI principal, n'importe où dans le prefab)
+//         └── Time (optionnel — TextMeshProUGUI nommé "Time", affiche l'heure HH:mm à part ;
+//                    absent = l'heure est juste préfixée dans le texte principal à la place)
 // =============================================================
 
 public class ChatUI : MonoBehaviour
@@ -257,15 +259,32 @@ public class ChatUI : MonoBehaviour
             var go = Instantiate(chatLinePrefab, messageContent);
             _lineObjects.Add(go);
 
-            var txt = go.GetComponentInChildren<TextMeshProUGUI>();
+            string timeStr = line.timestamp.ToString("HH:mm");
+
+            // Champ "Time" dédié optionnel (enfant nommé "Time" avec un TextMeshProUGUI) — si
+            // absent, l'heure est juste préfixée dans le texte principal (fonctionne sans rien
+            // construire de plus côté Hierarchy). Cherche le texte PRINCIPAL en excluant
+            // explicitement "Time" (sinon GetComponentInChildren pourrait retomber dessus en
+            // premier selon l'ordre des enfants dans le prefab, et écraser l'heure avec le message).
+            var timeTxt = go.transform.Find("Time")?.GetComponent<TextMeshProUGUI>();
+            if (timeTxt != null) timeTxt.text = timeStr;
+
+            TextMeshProUGUI txt = null;
+            foreach (var t in go.GetComponentsInChildren<TextMeshProUGUI>())
+            {
+                if (t == timeTxt) continue;
+                txt = t;
+                break;
+            }
             if (txt == null)
             {
-                Debug.Log("[CHATUI-DIAG] Ligne instanciée mais AUCUN TextMeshProUGUI trouvé dedans (GetComponentInChildren a échoué) — texte jamais affiché.");
+                Debug.Log("[CHATUI-DIAG] Ligne instanciée mais AUCUN TextMeshProUGUI principal trouvé dedans — texte jamais affiché.");
                 continue;
             }
 
-            string sender = string.IsNullOrEmpty(line.sender) ? "" : $"{line.sender} : ";
-            txt.text  = $"{ChannelPrefix(line.channel)} {sender}{line.text}";
+            string sender     = string.IsNullOrEmpty(line.sender) ? "" : $"{line.sender} : ";
+            string timePrefix = timeTxt == null ? $"{timeStr} " : ""; // déjà affiché à part sinon
+            txt.text  = $"{timePrefix}{ChannelPrefix(line.channel)} {sender}{line.text}";
             txt.color = ChannelColor(line.channel);
 
             // Raccourci MP — clic sur une ligne avec expéditeur (pas Système) ouvre directement

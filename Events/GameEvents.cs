@@ -238,6 +238,7 @@ public struct ChatMessageEvent
     public ChatChannel channel;
     public string      sender; // "" pour une ligne Système
     public string      text;
+    public System.DateTime timestamp;
 }
 
 // ── Mail reçu ────────────────────────────────────────────────
