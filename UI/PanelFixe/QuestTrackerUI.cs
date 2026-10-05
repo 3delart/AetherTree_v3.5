@@ -44,6 +44,17 @@ public class QuestTrackerUI : MonoBehaviour
     private bool _dirty       = true;
     private bool _initialized = false;
 
+    // ── Compte à rebours Escort ───────────────────────────────
+    // Lignes d'objectif Escort actives — mises à jour chaque frame (pas via _dirty/Refresh, qui
+    // reconstruirait tout pour un simple changement de texte) — voir PNJ.EscortDepartureTimer.
+    private class EscortTimerLine
+    {
+        public TextMeshProUGUI text;
+        public string          baseLabel;
+        public PNJData         targetPNJ;
+    }
+    private readonly List<EscortTimerLine> _escortTimerLines = new List<EscortTimerLine>();
+
     // =========================================================
     private void Awake()
     {
@@ -103,9 +114,50 @@ public class QuestTrackerUI : MonoBehaviour
 
     private void Update()
     {
-        if (!_initialized || !_dirty) return;
-        _dirty = false;
-        Refresh();
+        if (!_initialized) return;
+
+        if (_dirty)
+        {
+            _dirty = false;
+            Refresh();
+        }
+
+        UpdateEscortTimers();
+    }
+
+    /// <summary>Met à jour le texte des lignes Escort en cours (compte à rebours avant départ du
+    /// PNJ) — PAS via Refresh()/_dirty, qui détruirait/recréerait tous les blocs pour un simple
+    /// changement de texte chaque frame.</summary>
+    private void UpdateEscortTimers()
+    {
+        if (_escortTimerLines.Count == 0) return;
+
+        foreach (var line in _escortTimerLines)
+        {
+            if (line.text == null) continue;
+
+            float remaining = FindPNJDepartureTimer(line.targetPNJ);
+            line.text.text = remaining >= 0f
+                ? $"{line.baseLabel}\nDépart dans : {FormatCountdown(remaining)}"
+                : line.baseLabel;
+        }
+    }
+
+    private static float FindPNJDepartureTimer(PNJData targetPNJ)
+    {
+        if (targetPNJ == null) return -1f;
+        foreach (var pnj in FindObjectsOfType<PNJ>())
+            if (pnj.data == targetPNJ) return pnj.EscortDepartureTimer;
+        return -1f;
+    }
+
+    private static string FormatCountdown(float seconds)
+    {
+        int total = Mathf.Max(0, Mathf.CeilToInt(seconds));
+        int h = total / 3600;
+        int m = (total % 3600) / 60;
+        int s = total % 60;
+        return h > 0 ? $"{h:00}h {m:00}min {s:00}sec" : $"{m:00}min {s:00}sec";
     }
 
     // =========================================================
@@ -167,6 +219,7 @@ public class QuestTrackerUI : MonoBehaviour
         foreach (var go in _blocks)
             if (go != null) Destroy(go);
         _blocks.Clear();
+        _escortTimerLines.Clear();
 
         // TrackerContent toujours visible
         if (trackerContent != null && !trackerContent.gameObject.activeSelf)
@@ -280,6 +333,11 @@ public class QuestTrackerUI : MonoBehaviour
             txt.color = obj.IsComplete
                 ? new Color(0.55f, 0.85f, 0.55f)
                 : new Color(0.85f, 0.85f, 0.90f);
+
+            // Escort pas encore complet — compte à rebours mis à jour chaque frame par
+            // UpdateEscortTimers(), pas ici (voir Update()).
+            if (obj.type == QuestObjectiveType.Escort && !obj.IsComplete && obj.targetPNJ != null)
+                _escortTimerLines.Add(new EscortTimerLine { text = txt, baseLabel = label, targetPNJ = obj.targetPNJ });
         }
     }
 

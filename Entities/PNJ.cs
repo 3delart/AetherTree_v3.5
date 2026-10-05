@@ -106,6 +106,11 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     /// pour un objectif Escort ciblant ce PNJ.</summary>
     public bool IsAcceptingEscort => isPatrolRoute && !loopRoute && _routeWaiting && _isAtStartWait;
 
+    /// <summary>Secondes restantes avant le départ, pendant la fenêtre IsAcceptingEscort — -1 si
+    /// hors fenêtre (déjà parti, pas encore arrivé, ou pas un PNJ Escort). Lu par QuestTrackerUI
+    /// pour afficher un compte à rebours (Florian, 2026-10-05).</summary>
+    public float EscortDepartureTimer => IsAcceptingEscort ? _routeWaitTimer : -1f;
+
     // ── Dialogue actif ────────────────────────────────────────
     private DialogueData  activeDialogue = null;
     private DialogueStage currentStage   = null;
