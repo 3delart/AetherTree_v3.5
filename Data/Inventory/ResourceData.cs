@@ -15,6 +15,10 @@ using UnityEngine;
 //   MobDrop        — drop exclusif de mob (os, écailles...)
 //   Collectible    — ramassable dans le monde via node 3D
 //   Other          — ressource générique
+//   QuestDrop      — objet de quête pur, drop de mob conditionnel (voir
+//                    LootEntry.questLootOnly) — purement une étiquette de catégorie pour s'y
+//                    retrouver dans le picker, aucune logique ne branche dessus (isBound/
+//                    vendorPrice/questLootOnly restent à régler séparément sur chaque champ)
 //
 // Une ressource Collectible utilise les champs "Node World"
 // pour être spawnée par SpawnManager et collectée via clic.
@@ -33,6 +37,10 @@ public enum ResourceType
     MobDrop        = 2,  // Drop exclusif de mob (os, écailles, fourrure...)
     Collectible    = 3,  // Ramassable dans le monde via node 3D
     Other          = 4,  // Ressource générique
+
+    // Ajouté 2026-10-05 (Florian) — étiquette de catégorie pour les objets de quête purs,
+    // distincte de MobDrop pour s'y retrouver dans le picker. Zéro effet fonctionnel propre.
+    QuestDrop      = 5,
 }
 
 [CreateAssetMenu(fileName = "res_", menuName = "AetherTree/Inventaire/ResourceData")]
