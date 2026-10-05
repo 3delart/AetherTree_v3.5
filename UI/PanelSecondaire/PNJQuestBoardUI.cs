@@ -330,6 +330,13 @@ public class PNJQuestBoardUI : MonoBehaviour
         if (detailActionButton == null) return;
 
         QuestState state = QuestSystem.Instance.GetQuestState(quest);
+
+        // Quotidienne TurnedIn mais nouveau jour réel commencé — même normalisation que
+        // RefreshGrid, sinon le détail contredit la carte (carte "Disponible", détail "En
+        // cours" bloqué — trouvé en testant une quête repassée en Daily, Florian 2026-10-05).
+        if (state == QuestState.TurnedIn && QuestSystem.Instance.IsDailyResettable(quest, _player))
+            state = QuestState.None;
+
         detailActionButton.onClick.RemoveAllListeners();
 
         switch (state)
