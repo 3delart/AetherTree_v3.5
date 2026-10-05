@@ -386,6 +386,8 @@ public class SaveSystem : MonoBehaviour
 
         progress.dungeonPrestigeClaims = new List<Player.DungeonPrestigeClaim>(player.dungeonPrestigeClaims);
 
+        progress.questDailyClaims = new List<Player.QuestDailyClaim>(player.questDailyClaims);
+
         // ⑦ SkillBar
         if (SkillBar.Instance != null)
             for (int i = 0; i < 10; i++)
@@ -774,6 +776,10 @@ public class SaveSystem : MonoBehaviour
         player.dungeonPrestigeClaims = p.dungeonPrestigeClaims != null
             ? new List<Player.DungeonPrestigeClaim>(p.dungeonPrestigeClaims)
             : new List<Player.DungeonPrestigeClaim>();
+
+        player.questDailyClaims = p.questDailyClaims != null
+            ? new List<Player.QuestDailyClaim>(p.questDailyClaims)
+            : new List<Player.QuestDailyClaim>();
 
         // ⑦ SkillBar
         if (SkillBar.Instance != null)

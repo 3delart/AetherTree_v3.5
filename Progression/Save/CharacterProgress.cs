@@ -350,6 +350,9 @@ public class CharacterProgress
     // TryClaimDailyDungeonPrestige.
     public List<Player.DungeonPrestigeClaim> dungeonPrestigeClaims = new List<Player.DungeonPrestigeClaim>();
 
+    // Réclamations quotidiennes de quête — voir Player.questDailyClaims/ClaimDailyQuest.
+    public List<Player.QuestDailyClaim> questDailyClaims = new List<Player.QuestDailyClaim>();
+
     // ⑫ Progression conditions en cours
     public List<SavedConditionProgress> conditionProgresses = new List<SavedConditionProgress>();
 
