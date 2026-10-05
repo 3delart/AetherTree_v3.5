@@ -175,7 +175,11 @@ public class QuestData : ScriptableObject
     public void ResetProgress()
     {
         if (objectives == null) return;
-        foreach (var o in objectives) o.currentCount = 0;
+        foreach (var o in objectives)
+        {
+            o.currentCount = 0;
+            o.hasArrived   = false;
+        }
     }
 
 #if UNITY_EDITOR
@@ -269,6 +273,14 @@ public class QuestObjective
              "lui-même (achat, craft, récolte...) avant de pouvoir le livrer — \"apporte-moi X\".")]
     [ShowIf(nameof(type), QuestObjectiveType.DeliverToPNJ)]
     public bool autoGrantItem = true;
+
+    [Tooltip("Escort uniquement — état runtime, ne JAMAIS éditer à la main. Devient vrai quand le\n" +
+             "PNJ atteint son dernier point de route (PNJRouteCompletedEvent) ; l'objectif ne se\n" +
+             "complète qu'ENSUITE, quand le joueur lui parle (voir QuestSystem.NotifyTalkTo). Pas\n" +
+             "persisté en sauvegarde (même limitation que la progression de route elle-même, qui ne\n" +
+             "l'est pas non plus) — remis à faux par ResetProgress().")]
+    [ShowIf(nameof(type), QuestObjectiveType.Escort)]
+    public bool hasArrived = false;
 
     [Tooltip("Explore — ID de zone (string), doit correspondre EXACTEMENT au zoneID tapé sur\n" +
              "l'instance ZoneTrigger placée en scène. Pas de référence directe possible — le prefab\n" +

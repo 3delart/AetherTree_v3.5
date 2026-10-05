@@ -96,6 +96,19 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
     [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
     public float hiddenDurationSeconds = 5f;
 
+    [Tooltip("Durée d'attente à patrolPoints[0] avant le PREMIER départ de ce cycle — distincte de\n" +
+             "waitAtPointSeconds (utilisé partout ailleurs sur la route). Pendant cette fenêtre,\n" +
+             "IsAcceptingEscort vaut true : une quête Escort ciblant ce PNJ est \"récupérable\".\n" +
+             "Dès le départ (fin de cette attente), la quête n'est plus proposable jusqu'au\n" +
+             "prochain cycle (réapparition après hiddenDurationSeconds, ou respawn après mort).")]
+    [ShowIf(nameof(isPatrolRoute), true, AndField = nameof(loopRoute), AndValue = false)]
+    public float escortAcceptWindowSeconds = 300f;
+
+    /// <summary>True uniquement pendant l'attente initiale à patrolPoints[0], avant le premier
+    /// départ de ce cycle — voir escortAcceptWindowSeconds ci-dessus. Lu par
+    /// QuestSystem.CanAccept pour un objectif Escort ciblant ce PNJ.</summary>
+    public bool IsAcceptingEscort => isPatrolRoute && !loopRoute && _routeIndex == 0 && _routeWaiting;
+
     // ── Dialogue actif ────────────────────────────────────────
     private DialogueData  activeDialogue = null;
     private DialogueStage currentStage   = null;
@@ -489,9 +502,12 @@ public class PNJ : Entity, ICombatAIProfile, ICombatAnimatorProfile
             }
             else
             {
+                // Arrivée (donc attente) À patrolPoints[0] — avant incrément — utilise la longue
+                // fenêtre "récupération d'escorte" au lieu du wait normal entre deux points.
+                bool wasAtStart = _routeIndex == 0 && !loopRoute;
                 _routeIndex     = (_routeIndex + 1) % patrolPoints.Count; // boucle automatique sur 0
                 _routeWaiting   = true;
-                _routeWaitTimer = waitAtPointSeconds;
+                _routeWaitTimer = wasAtStart ? escortAcceptWindowSeconds : waitAtPointSeconds;
             }
             _lastRouteTarget = null; // force un nouveau SetDestination() vers le point suivant
         }

@@ -149,7 +149,30 @@ public class QuestSystem : MonoBehaviour
         var state = GetQuestState(quest.questID);
         if (state == QuestState.Active || state == QuestState.TurnedIn) return false;
 
-        return quest.requirements == null || quest.requirements.IsMet(player);
+        if (!(quest.requirements == null || quest.requirements.IsMet(player))) return false;
+
+        // Escort — proposable UNIQUEMENT pendant la fenêtre d'acceptation du PNJ ambulant ciblé
+        // (PNJ.IsAcceptingEscort — attente initiale à patrolPoints[0], avant le premier départ de
+        // son cycle). Une quête avec plusieurs objectifs Escort exige que TOUS leurs PNJ cibles
+        // soient actuellement dans cette fenêtre.
+        if (quest.objectives != null)
+            foreach (var obj in quest.objectives)
+                if (obj.type == QuestObjectiveType.Escort && !IsPNJAcceptingEscort(obj.targetPNJ))
+                    return false;
+
+        return true;
+    }
+
+    /// <summary>Cherche l'instance PNJ vivante en scène portant ce PNJData — un PNJData seul (SO)
+    /// ne sait pas s'il est en train d'attendre au départ de sa route, seule l'instance en scène
+    /// le sait (voir PNJ.IsAcceptingEscort). False si le PNJ est absent de la scène (mort, caché
+    /// entre deux passages) — pas récupérable dans ce cas.</summary>
+    private bool IsPNJAcceptingEscort(PNJData targetPNJ)
+    {
+        if (targetPNJ == null) return false;
+        foreach (var pnj in UnityEngine.Object.FindObjectsOfType<PNJ>())
+            if (pnj.data == targetPNJ) return pnj.IsAcceptingEscort;
+        return false;
     }
 
     // =========================================================
@@ -527,23 +550,14 @@ public class QuestSystem : MonoBehaviour
                 var obj = quest.objectives[idx];
                 if (obj.type != QuestObjectiveType.Escort) continue;
                 if (obj.targetPNJ == null || obj.targetPNJ != e.pnjData) continue;
+                if (obj.hasArrived) continue; // déjà marqué, rien à refaire
 
-                bool wasComplete = obj.IsComplete;
-                obj.Increment();
-
-                if (!wasComplete)
-                {
-                    Debug.Log($"[QUEST] {quest.questName} · Escorte {e.pnjData.pnjName} : {obj.ProgressLabel}");
-                    GameEventBus.Publish(new QuestEvent
-                    {
-                        quest          = quest,
-                        action         = QuestAction.ObjectiveUpdated,
-                        objectiveIndex = idx,
-                    });
-                }
+                // Marque "arrivé" SEULEMENT — ne complète PAS l'objectif ici. La complétion
+                // exige que le joueur parle ensuite au PNJ (voir NotifyTalkTo), pas juste qu'il
+                // atteigne le point final.
+                obj.hasArrived = true;
+                Debug.Log($"[QUEST] {quest.questName} · {e.pnjData.pnjName} est arrivé — parle-lui pour valider l'escorte.");
             }
-
-            CheckCompletion(quest);
         }
     }
 
@@ -567,11 +581,15 @@ public class QuestSystem : MonoBehaviour
 
             if (!hasUnmetEscort) continue;
 
-            _states[quest.questID] = QuestState.Failed;
+            // Reset complet (comme AbandonQuest) plutôt qu'un état Failed persistant — la quête
+            // redevient directement proposable au prochain cycle du PNJ (Florian, 2026-10-05).
+            // L'event publié reste Failed (pas Abandoned) : distinct sémantiquement d'un abandon
+            // volontaire du joueur, même si l'état final (None) est identique.
+            _states[quest.questID] = QuestState.None;
             _activeData.Remove(quest.questID);
             quest.ResetProgress();
 
-            Debug.Log($"[QUEST] Échouée (escorte) : {quest.questName} — {pnjData.pnjName} est mort avant d'arriver.");
+            Debug.Log($"[QUEST] Échouée (escorte) : {quest.questName} — {pnjData.pnjName} est mort avant d'arriver. Remise à zéro.");
 
             GameEventBus.Publish(new QuestEvent
             {
@@ -633,6 +651,22 @@ public class QuestSystem : MonoBehaviour
 
                     obj.Increment(obj.requiredCount);
                     Debug.Log($"[QUEST] {quest.questName} · Livraison à {pnjData.pnjName} : {obj.ProgressLabel}");
+
+                    GameEventBus.Publish(new QuestEvent
+                    {
+                        quest          = quest,
+                        action         = QuestAction.ObjectiveUpdated,
+                        objectiveIndex = idx,
+                        player         = player,
+                    });
+                }
+                else if (obj.type == QuestObjectiveType.Escort)
+                {
+                    if (obj.targetPNJ == null || obj.targetPNJ != pnjData) continue;
+                    if (!obj.hasArrived) continue; // pas encore arrivé au dernier point — rien à valider
+
+                    obj.Increment();
+                    Debug.Log($"[QUEST] {quest.questName} · Escorte de {pnjData.pnjName} validée.");
 
                     GameEventBus.Publish(new QuestEvent
                     {
