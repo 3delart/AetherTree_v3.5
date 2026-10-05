@@ -97,6 +97,7 @@ public static class GameEventBus
         QuestTrackerUI.Instance?.Resubscribe();
         QuestJournalUI.Instance?.Resubscribe();
         PNJQuestBoardUI.Instance?.Resubscribe();
+        ChatSystem.Instance?.Resubscribe();
         CharacterPanelUI.Instance?.Resubscribe();
         PassiveSkillSystem.Instance?.Resubscribe();
 
