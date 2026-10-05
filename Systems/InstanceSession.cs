@@ -289,6 +289,8 @@ public class InstanceSession : MonoBehaviour
     /// spec annonces 2026-09-29) — aucune autre logique ici ne dépend de sa valeur.</summary>
     public void OnBossKilled(Mob boss)
     {
+        Debug.Log($"[DIAG-DONJON] OnBossKilled appelé — CurrentInstance=" +
+            $"{(CurrentInstance != null ? CurrentInstance.InstanceID : "NULL")}, CurrentOutcome={CurrentOutcome}");
         if (CurrentInstance == null || CurrentOutcome != InstanceOutcome.InProgress) return;
 
         // Annonce globale — réussite du donjon, visible de tous (voir AnnoncePanel, aucune
@@ -460,6 +462,7 @@ public class InstanceSession : MonoBehaviour
         // EndRun n'est appelé qu'avec Success (vérifié — Failure passe par FailureGraceRoutine
         // directement, sans EndRun) — publier ici suffit pour un objectif de quête
         // DungeonComplete, zéro risque de compter une Failure/Left comme une victoire.
+        Debug.Log($"[DIAG-DONJON] EndRun publie InstanceCompletedEvent instanceID={CurrentInstance.InstanceID}");
         GameEventBus.Publish(new InstanceCompletedEvent { instanceID = CurrentInstance.InstanceID });
 
         StartCoroutine(SuccessExitRoutine());
