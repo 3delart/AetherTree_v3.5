@@ -18,6 +18,14 @@ using System.Collections.Generic;
 // PAS de ChatChannel.World (retiré, 2026-10-05, Florian) — "Monde" n'est plus un canal d'envoi,
 // juste un MODE D'AFFICHAGE côté ChatUI (agrégat Alentour+Guilde+Privé+Écho, Système toujours à
 // part) — voir ChatUI.cs. Aucun message n'est jamais tagué World ici.
+//
+// ChatChannel.Private RESTE (filtre "Privé" affiche tous les messages privés dans le flux
+// unifié, Florian 2026-10-05) — ce qui a changé, c'est juste l'ENVOI : plus de "Privé" comme
+// option du picker (un message privé sans destinataire n'avait pas de sens), remplacé par le
+// raccourci "/NomDuJoueur message" tapé directement dans la saisie (façon Nostale) — voir
+// ChatUI.OnSendClicked. Poste ici (tagué Private, visible/filtrable) ET dans
+// DirectMessageSystem (conversation dédiée par joueur, visible dans SocialUI), pas l'un OU
+// l'autre.
 // =============================================================
 
 public enum ChatChannel { Guild, Private, Nearby, System, AetherEcho }
@@ -176,7 +184,6 @@ public class ChatSystem : MonoBehaviour
         _history.Add(new ChatLine { channel = channel, sender = sender, text = text, timestamp = now });
         if (_history.Count > MAX_HISTORY) _history.RemoveAt(0);
 
-        Debug.Log($"[CHATSYS-DIAG] AddLine — canal={channel}, sender={sender}, texte={text}, historique={_history.Count} ligne(s). Publication GameEventBus.OnChatMessage...");
         GameEventBus.Publish(new ChatMessageEvent { channel = channel, sender = sender, text = text, timestamp = now });
     }
 
