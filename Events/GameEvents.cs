@@ -129,6 +129,9 @@ public enum ItemAction { Any = -1, Pickup, Craft, Use, Sell, Buy, Drop }
 public struct ItemEvent
 {
     public string     itemID;
+    public string     itemName;   // nom affiché, ajouté pour ChatSystem (loot en chat Système) —
+                                   // vide pour les publishers existants qui ne le remplissent pas
+                                   // encore (champ additif, ne casse rien).
     public ItemAction action;
     public int        quantity;
     public int        aerisAmount;
@@ -226,4 +229,21 @@ public struct InstanceCompletedEvent
 public struct PNJRouteCompletedEvent
 {
     public PNJData pnjData;
+}
+
+// ── Chat ─────────────────────────────────────────────────────
+// Publié par : ChatSystem.AddLine() — à CHAQUE nouvelle ligne (joueur ou Système).
+public struct ChatMessageEvent
+{
+    public ChatChannel channel;
+    public string      sender; // "" pour une ligne Système
+    public string      text;
+}
+
+// ── Mail reçu ────────────────────────────────────────────────
+// Publié par : MailboxSystem.SendMail() — point unique où un mail est réellement ajouté
+// (SendRewardMail/SendLootOverflowMail passent toutes les deux par là).
+public struct MailReceivedEvent
+{
+    public string subject;
 }
