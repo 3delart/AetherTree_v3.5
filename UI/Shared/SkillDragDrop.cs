@@ -252,10 +252,10 @@ public class SkillDropTarget : MonoBehaviour,
 
         if (source.slotType == SlotType.Passive)
         {
-            var a = PassifBarUI.Instance?.GetPassifAtSlot(source.slotIndex);
-            var b = PassifBarUI.Instance?.GetPassifAtSlot(dest.slotIndex);
-            PassifBarUI.Instance?.SetPassifAtSlot(dest.slotIndex,   a);
-            PassifBarUI.Instance?.SetPassifAtSlot(source.slotIndex, b);
+            // SwapPassifs, PAS 2x SetPassifAtSlot — les deux passifs restent équipés (juste
+            // relocalisés), SetPassifAtSlot révoquerait à tort leurs buffs actifs au passage
+            // (voir son commentaire, PassifBarUI.cs — Florian, 2026-10-05).
+            PassifBarUI.Instance?.SwapPassifs(source.slotIndex, dest.slotIndex);
             return;
         }
 
