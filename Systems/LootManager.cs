@@ -57,7 +57,7 @@ public class LootManager : MonoBehaviour
             return;
         }
 
-        LootRollResult roll = e.mob.lootTable.RollAll();
+        LootRollResult roll = e.mob.lootTable.RollAll(e.eligiblePlayers);
         if (roll.items.Count == 0 && roll.aeris == 0) return;
 
         string mobName = e.mob.mobName;
@@ -88,7 +88,7 @@ public class LootManager : MonoBehaviour
     {
         if (table == null || eligiblePlayers == null || eligiblePlayers.Count == 0) return;
 
-        LootRollResult roll = table.RollAll();
+        LootRollResult roll = table.RollAll(eligiblePlayers);
         if (roll.items.Count == 0 && roll.aeris == 0) return;
 
         var remainingPool = new List<Player>(eligiblePlayers);

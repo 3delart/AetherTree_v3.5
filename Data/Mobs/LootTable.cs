@@ -35,6 +35,18 @@ public class LootEntry
     [Range(0f, 1f)]
     [Tooltip("Biais vers la quantité max — 0 = toujours min | 0.5 = uniforme | 1 = toujours max")]
     public float quantityBias = 0.5f;
+
+    [Tooltip("Coché : cette entrée ne peut dropper QUE si au moins un joueur éligible a\n" +
+             "requiredQuest Active. La quantité droppée est aussi plafonnée pour ne jamais\n" +
+             "dépasser ce qu'il manque à l'objectif Gather correspondant (requiredCount -\n" +
+             "currentCount) — un joueur ne peut jamais accumuler plus que le nécessaire.")]
+    public bool questLootOnly = false;
+
+    [Tooltip("Quête devant être Active pour qu'un joueur éligible compte — voir questLootOnly.\n" +
+             "L'objectif Gather de CETTE quête ciblant le même item (itemSO ci-dessus) sert aussi\n" +
+             "à calculer le plafond de quantité.")]
+    [ShowIf(nameof(questLootOnly), true)]
+    public QuestData requiredQuest;
 }
 
 // ── Résultat d'un roll ────────────────────────────────────────
@@ -90,10 +102,12 @@ public class LootTable : ScriptableObject
     // =========================================================
 
     /// <summary>
-    /// Roll complet — retourne items + aeris + xp.
-    /// Chaque entry est tirée indépendamment.
+    /// Roll complet — retourne items + aeris + xp. Chaque entry est tirée indépendamment.
+    /// eligiblePlayers sert UNIQUEMENT au gating questLootOnly (voir LootEntry) — null/vide
+    /// désactive silencieusement toute entrée questLootOnly (pas d'exception), compatible avec
+    /// les appelants qui n'ont pas de contexte joueur (aucun aujourd'hui).
     /// </summary>
-    public LootRollResult RollAll()
+    public LootRollResult RollAll(List<Player> eligiblePlayers = null)
     {
         var result = new LootRollResult
         {
@@ -105,9 +119,18 @@ public class LootTable : ScriptableObject
         foreach (LootEntry entry in entries)
         {
             if (entry == null) continue;
+
+            int? cap = null;
+            if (entry.questLootOnly)
+            {
+                cap = QuestLootCap(entry, eligiblePlayers);
+                if (cap == null || cap.Value <= 0) continue; // pas éligible ou déjà assez
+            }
+
             if (Random.value > entry.dropChance) continue;
 
             int qty = RollQuantity(entry);
+            if (cap != null) qty = Mathf.Min(qty, cap.Value);
             if (qty <= 0) continue;
 
             var item = CreateInventoryItem(entry, qty);
@@ -115,6 +138,30 @@ public class LootTable : ScriptableObject
         }
 
         return result;
+    }
+
+    /// <summary>Combien cette entry questLootOnly peut encore dropper pour un joueur éligible —
+    /// null si aucun joueur éligible n'a requiredQuest Active (entrée désactivée ce roll-ci).
+    /// Solo uniquement (comme PickRandomEligible ailleurs dans le projet) : prend le PREMIER
+    /// joueur éligible avec la quête Active, lit son objectif Gather ciblant le même item.</summary>
+    private int? QuestLootCap(LootEntry entry, List<Player> eligiblePlayers)
+    {
+        if (entry.requiredQuest == null || eligiblePlayers == null || QuestSystem.Instance == null) return null;
+
+        foreach (var player in eligiblePlayers)
+        {
+            if (player == null) continue;
+            if (QuestSystem.Instance.GetQuestState(entry.requiredQuest) != QuestState.Active) continue;
+
+            if (entry.requiredQuest.objectives == null) return null;
+            foreach (var obj in entry.requiredQuest.objectives)
+            {
+                if (obj.type != QuestObjectiveType.Gather) continue;
+                if ((obj.targetItem as ItemData) != entry.itemSO as ItemData) continue;
+                return Mathf.Max(0, obj.requiredCount - obj.currentCount);
+            }
+        }
+        return null;
     }
 
     /// <summary>

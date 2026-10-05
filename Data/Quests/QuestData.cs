@@ -270,6 +270,13 @@ public class QuestObjective
     [ShowIf(nameof(type), QuestObjectiveType.DeliverToPNJ)]
     public bool autoGrantItem = true;
 
+    [Tooltip("Gather uniquement. Coché : retire requiredCount de targetItem de l'inventaire au\n" +
+             "turn-in (voir QuestSystem.TurnInQuest) — pour un objet de quête pur (ex: œufs de\n" +
+             "poule) qui ne doit pas rester après la quête. Décoché (défaut) : le joueur garde\n" +
+             "ce qu'il a récolté.")]
+    [ShowIf(nameof(type), QuestObjectiveType.Gather)]
+    public bool consumeOnTurnIn = false;
+
     [Tooltip("Explore — ID de zone (string), doit correspondre EXACTEMENT au zoneID tapé sur\n" +
              "l'instance ZoneTrigger placée en scène. Pas de référence directe possible — le prefab\n" +
              "ZoneTrigger est générique et réutilisé partout avec un zoneID différent par instance\n" +

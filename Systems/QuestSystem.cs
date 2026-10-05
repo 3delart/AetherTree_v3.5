@@ -216,6 +216,20 @@ public class QuestSystem : MonoBehaviour
 
         _states[quest.questID] = QuestState.TurnedIn;
 
+        // Retrait des objets de quête purs (Gather + consumeOnTurnIn) — avant les récompenses,
+        // libère potentiellement de la place. Ne bloque jamais le turn-in si l'item a disparu
+        // entre-temps (vendu, jeté...) — juste un warning, la quête est déjà validée à ce stade.
+        if (quest.objectives != null && InventorySystem.Instance != null)
+            foreach (var obj in quest.objectives)
+            {
+                if (obj.type != QuestObjectiveType.Gather || !obj.consumeOnTurnIn) continue;
+                if (obj.targetItem is not ItemData itemData) continue;
+
+                if (!InventorySystem.Instance.ConsumeItem(itemData, obj.requiredCount))
+                    Debug.LogWarning($"[QUEST] {quest.questName} : impossible de retirer " +
+                        $"{obj.requiredCount}× {itemData.name} (déjà absent de l'inventaire) — turn-in poursuivi quand même.");
+            }
+
         // XP
         if (quest.xpReward > 0)
         {
