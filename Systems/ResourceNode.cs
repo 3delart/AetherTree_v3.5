@@ -165,6 +165,7 @@ public class ResourceNode : MonoBehaviour
             GameEventBus.Publish(new ItemEvent
             {
                 itemID   = data.itemID,
+                itemName = data.displayName.Get(LocalizationManager.CurrentLanguage),
                 action   = ItemAction.Pickup,
                 quantity = qty,
             });

@@ -152,6 +152,7 @@ public class LootManager : MonoBehaviour
                 GameEventBus.Publish(new ItemEvent
                 {
                     itemID   = itemData.itemID,
+                    itemName = item.Name,
                     action   = ItemAction.Pickup,
                     quantity = item.GetQuantity(),
                 });
