@@ -39,6 +39,10 @@ public enum ConsumableType
     Other        = 4, // Effet custom
     RewardChest  = 5, // Tire 1 item pondéré dans chestEntries à l'usage — ajouté après coup,
                        // TOUJOURS en fin d'enum (ordinal safety).
+    AetherEcho   = 6, // Diffuse un message dans le chat (canal Écho d'Aether), consommé par
+                       // ChatSystem.TrySendPlayerMessage au moment de l'ENVOI réel — PAS un
+                       // effet instantané à l'usage comme les autres types, volontairement PAS
+                       // branché dans ConsoBarUI.UseConsumable (voir Systems/ChatSystem.cs).
 }
 
 [System.Serializable]
