@@ -309,9 +309,27 @@ public class SocialUI : MonoBehaviour
 
         foreach (var line in conv.messages)
         {
-            var go  = Instantiate(threadLinePrefab, threadContent);
-            var txt = go.GetComponentInChildren<TextMeshProUGUI>();
-            if (txt != null) txt.text = $"{line.sender} : {line.text}";
+            var go = Instantiate(threadLinePrefab, threadContent);
+
+            string timeStr = line.timestamp.ToString("HH:mm");
+
+            // Même pattern que ChatUI.Refresh — champ "Time" dédié optionnel (TMP nommé "Time"),
+            // sinon l'heure est préfixée dans le texte principal (Florian a réutilisé
+            // ChatLinePrefab comme ThreadLinePrefab, qui a déjà ce champ, 2026-10-05).
+            var timeTxt = go.transform.Find("Time")?.GetComponent<TextMeshProUGUI>();
+            if (timeTxt != null) timeTxt.text = timeStr;
+
+            TextMeshProUGUI txt = null;
+            foreach (var t in go.GetComponentsInChildren<TextMeshProUGUI>())
+            {
+                if (t == timeTxt) continue;
+                txt = t;
+                break;
+            }
+            if (txt == null) continue;
+
+            string timePrefix = timeTxt == null ? $"{timeStr} " : "";
+            txt.text = $"{timePrefix}{line.sender} : {line.text}";
         }
     }
 
