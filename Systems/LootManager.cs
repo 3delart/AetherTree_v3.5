@@ -62,10 +62,10 @@ public class LootManager : MonoBehaviour
 
         string mobName = e.mob.mobName;
 
-        foreach (InventoryItem item in roll.items)
+        foreach (RolledItem rolled in roll.items)
         {
-            Player winner = PickRandomEligible(e.eligiblePlayers);
-            DeliverItem(winner, item, mobName);
+            Player winner = rolled.restrictedTo ?? PickRandomEligible(e.eligiblePlayers);
+            DeliverItem(winner, rolled.item, mobName);
         }
 
         if (roll.aeris > 0)
@@ -92,13 +92,21 @@ public class LootManager : MonoBehaviour
         if (roll.items.Count == 0 && roll.aeris == 0) return;
 
         var remainingPool = new List<Player>(eligiblePlayers);
-        foreach (InventoryItem item in roll.items)
+        foreach (RolledItem rolled in roll.items)
         {
+            if (rolled.restrictedTo != null)
+            {
+                // Hors pool/tirage sans remise — un item questLootOnly va TOUJOURS à son joueur
+                // restreint, jamais à un autre, même si le pool général est épuisé.
+                DeliverItem(rolled.restrictedTo, rolled.item, "Événement");
+                continue;
+            }
+
             if (remainingPool.Count == 0) break;
             int index = Random.Range(0, remainingPool.Count);
             Player winner = remainingPool[index];
             remainingPool.RemoveAt(index);
-            DeliverItem(winner, item, "Événement");
+            DeliverItem(winner, rolled.item, "Événement");
         }
 
         if (roll.aeris > 0)

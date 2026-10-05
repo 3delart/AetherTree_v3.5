@@ -49,13 +49,27 @@ public class LootEntry
     public QuestData requiredQuest;
 }
 
+// ── Un item roulé + son éventuelle restriction de gagnant ────
+public class RolledItem
+{
+    public InventoryItem item;
+
+    /// <summary>null = n'importe quel joueur éligible peut gagner cet item (comportement
+    /// normal). Non-null = SEUL ce joueur peut le recevoir (drop questLootOnly — voir
+    /// LootTable.QuestLootCap). Tant que QuestSystem reste global (aucun suivi de quête PAR
+    /// JOUEUR aujourd'hui), c'est le premier joueur éligible non-null, pas forcément "celui qui
+    /// a vraiment la quête" en multijoueur — limitation connue, documentée, pas un bug de ce
+    /// fix : une vraie correction par-joueur demande une refonte de QuestSystem lui-même.</summary>
+    public Player restrictedTo;
+}
+
 // ── Résultat d'un roll ────────────────────────────────────────
 public class LootRollResult
 {
-    public List<InventoryItem> items    = new List<InventoryItem>();
-    public int                 aeris    = 0;
-    public int                 xp       = 0;
-    public int                 prestige = 0;
+    public List<RolledItem> items    = new List<RolledItem>();
+    public int              aeris    = 0;
+    public int              xp       = 0;
+    public int              prestige = 0;
 }
 
 // ── LootResult legacy ────────────────────────────────────────
@@ -120,11 +134,14 @@ public class LootTable : ScriptableObject
         {
             if (entry == null) continue;
 
-            int? cap = null;
+            int?   cap          = null;
+            Player restrictedTo = null;
             if (entry.questLootOnly)
             {
-                cap = QuestLootCap(entry, eligiblePlayers);
-                if (cap == null || cap.Value <= 0) continue; // pas éligible ou déjà assez
+                var questCap = QuestLootCap(entry, eligiblePlayers);
+                if (questCap == null || questCap.Value.cap <= 0) continue; // pas éligible ou déjà assez
+                cap          = questCap.Value.cap;
+                restrictedTo = questCap.Value.holder;
             }
 
             if (Random.value > entry.dropChance) continue;
@@ -134,32 +151,33 @@ public class LootTable : ScriptableObject
             if (qty <= 0) continue;
 
             var item = CreateInventoryItem(entry, qty);
-            if (item != null) result.items.Add(item);
+            if (item != null) result.items.Add(new RolledItem { item = item, restrictedTo = restrictedTo });
         }
 
         return result;
     }
 
-    /// <summary>Combien cette entry questLootOnly peut encore dropper pour un joueur éligible —
-    /// null si aucun joueur éligible n'a requiredQuest Active (entrée désactivée ce roll-ci).
-    /// Solo uniquement (comme PickRandomEligible ailleurs dans le projet) : prend le PREMIER
-    /// joueur éligible avec la quête Active, lit son objectif Gather ciblant le même item.</summary>
-    private int? QuestLootCap(LootEntry entry, List<Player> eligiblePlayers)
+    /// <summary>Plafond de quantité + joueur restreint pour une entry questLootOnly — null si la
+    /// quête n'est pas Active (vérifié UNE fois, pas par joueur : QuestSystem est global
+    /// aujourd'hui, voir RolledItem.restrictedTo) ou si aucun joueur éligible non-null n'existe.
+    /// cap = requiredCount - currentCount de l'objectif Gather de cette quête ciblant le même
+    /// item ; holder = premier joueur éligible non-null (voir limitation documentée ci-dessus).</summary>
+    private (int cap, Player holder)? QuestLootCap(LootEntry entry, List<Player> eligiblePlayers)
     {
         if (entry.requiredQuest == null || eligiblePlayers == null || QuestSystem.Instance == null) return null;
+        if (QuestSystem.Instance.GetQuestState(entry.requiredQuest) != QuestState.Active) return null;
 
-        foreach (var player in eligiblePlayers)
+        Player holder = null;
+        foreach (var p in eligiblePlayers)
+            if (p != null) { holder = p; break; }
+        if (holder == null) return null;
+
+        if (entry.requiredQuest.objectives == null) return null;
+        foreach (var obj in entry.requiredQuest.objectives)
         {
-            if (player == null) continue;
-            if (QuestSystem.Instance.GetQuestState(entry.requiredQuest) != QuestState.Active) continue;
-
-            if (entry.requiredQuest.objectives == null) return null;
-            foreach (var obj in entry.requiredQuest.objectives)
-            {
-                if (obj.type != QuestObjectiveType.Gather) continue;
-                if ((obj.targetItem as ItemData) != entry.itemSO as ItemData) continue;
-                return Mathf.Max(0, obj.requiredCount - obj.currentCount);
-            }
+            if (obj.type != QuestObjectiveType.Gather) continue;
+            if ((obj.targetItem as ItemData) != entry.itemSO as ItemData) continue;
+            return (Mathf.Max(0, obj.requiredCount - obj.currentCount), holder);
         }
         return null;
     }
