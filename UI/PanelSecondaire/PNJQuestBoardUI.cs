@@ -91,6 +91,8 @@ public class PNJQuestBoardUI : MonoBehaviour
     private readonly List<GameObject> _cardObjects   = new List<GameObject>();
     private readonly List<GameObject> _rewardEntries = new List<GameObject>();
 
+    private bool _dirty = false;
+
     // =========================================================
     private void Awake()
     {
@@ -102,7 +104,42 @@ public class PNJQuestBoardUI : MonoBehaviour
     {
         closeButton?.onClick.AddListener(Close);
         detailCloseButton?.onClick.AddListener(CloseDetail);
+        Subscribe();
         Close();
+    }
+
+    private void OnDestroy() => Unsubscribe();
+
+    // GameEventBus.Reset() (changement de scène) désabonne tout — sans Resubscribe() listé dans
+    // Reset(), ce panel perdrait son refresh live au premier changement de scène de la session,
+    // même bug que QuestTrackerUI/QuestJournalUI corrigé plus tôt (2026-10-05).
+    public void Resubscribe() { Unsubscribe(); Subscribe(); }
+
+    private void Subscribe()
+    {
+        GameEventBus.OnQuestAction += OnQuestAction;
+        GameEventBus.OnMobKilled   += OnMobKilled;
+    }
+
+    private void Unsubscribe()
+    {
+        GameEventBus.OnQuestAction -= OnQuestAction;
+        GameEventBus.OnMobKilled   -= OnMobKilled;
+    }
+
+    private void OnQuestAction(QuestEvent e) => _dirty = true;
+
+    private void OnMobKilled(MobKilledEvent e) => _dirty = true;
+
+    private void Update()
+    {
+        if (!_dirty) return;
+        _dirty = false;
+
+        if (panel == null || !panel.activeSelf) return;
+
+        RefreshGrid();
+        if (_selectedQuest != null) OpenDetail(_selectedQuest);
     }
 
     // =========================================================
@@ -187,12 +224,7 @@ public class PNJQuestBoardUI : MonoBehaviour
         {
             if (quest == null || QuestSystem.Instance == null) continue;
 
-            QuestState state = QuestSystem.Instance.GetQuestState(quest);
-
-            // Quotidienne TurnedIn mais nouveau jour réel commencé — traitée comme neuve (None)
-            // pour tout le reste (isLocked, badge, tri...), pas un cas spécial de plus.
-            if (state == QuestState.TurnedIn && QuestSystem.Instance.IsDailyResettable(quest, _player))
-                state = QuestState.None;
+            QuestState state = QuestSystem.Instance.GetEffectiveState(quest, _player);
 
             bool canAccept = QuestSystem.Instance.CanAccept(quest, _player);
             bool isLocked  = state == QuestState.None && !canAccept;
@@ -375,13 +407,7 @@ public class PNJQuestBoardUI : MonoBehaviour
     {
         if (detailActionButton == null) return;
 
-        QuestState state = QuestSystem.Instance.GetQuestState(quest);
-
-        // Quotidienne TurnedIn mais nouveau jour réel commencé — même normalisation que
-        // RefreshGrid, sinon le détail contredit la carte (carte "Disponible", détail "En
-        // cours" bloqué — trouvé en testant une quête repassée en Daily, Florian 2026-10-05).
-        if (state == QuestState.TurnedIn && QuestSystem.Instance.IsDailyResettable(quest, _player))
-            state = QuestState.None;
+        QuestState state = QuestSystem.Instance.GetEffectiveState(quest, _player);
 
         detailActionButton.onClick.RemoveAllListeners();
 
@@ -448,6 +474,7 @@ public class PNJQuestBoardUI : MonoBehaviour
         QuestRank.Guild     => "Guilde",
         QuestRank.Event     => "Événement",
         QuestRank.Secret    => "Secrète",
+        QuestRank.Repeatable => "Répétable",
         _                   => ""
     };
 
@@ -461,6 +488,7 @@ public class PNJQuestBoardUI : MonoBehaviour
         QuestRank.Guild     => new Color(0.9f, 0.65f, 1.0f,  alpha),
         QuestRank.Event     => new Color(1.0f, 0.65f, 0.35f, alpha),
         QuestRank.Secret    => new Color(0.7f, 0.7f,  0.75f, alpha),
+        QuestRank.Repeatable => new Color(0.55f, 0.8f, 0.9f, alpha),
         _                   => new Color(1f,   1f,    1f,    alpha)
     };
 }
